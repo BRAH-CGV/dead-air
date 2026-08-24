@@ -39,7 +39,7 @@ describe('player', () => {
   describe('updatePlayer', () => {
     it('applies movement direction to position based on speed and dt', () => {
       const player = createPlayer();
-      const input = { x: 0, z: -1 }; // forward
+      const input = { x: 0, z: -1 }; // forward (W key sends -Z, camera looks down -Z)
       updatePlayer(player, input, 1.0); // 1 second
       // player should have moved forward (negative z) by speed * dt
       expect(player.position.z).toBeLessThan(0);

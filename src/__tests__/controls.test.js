@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInputState, setKeyPressed, getMovementDirection, resetInputState } from '../controls.js';
+import { createInputState, setKeyPressed, getMovementDirection, resetInputState, setDragActive, accumulateDragDelta } from '../controls.js';
 
 describe('controls', () => {
   describe('createInputState', () => {
@@ -9,6 +9,7 @@ describe('controls', () => {
       expect(state.mouseDeltaX).toBe(0);
       expect(state.mouseDeltaY).toBe(0);
       expect(state.isPointerLocked).toBe(false);
+      expect(state.isDragging).toBe(false);
     });
   });
 
@@ -97,6 +98,57 @@ describe('controls', () => {
     });
   });
 
+  describe('setDragActive', () => {
+    it('sets isDragging to true', () => {
+      const state = createInputState();
+      setDragActive(state, true);
+      expect(state.isDragging).toBe(true);
+    });
+
+    it('sets isDragging to false', () => {
+      const state = createInputState();
+      setDragActive(state, true);
+      setDragActive(state, false);
+      expect(state.isDragging).toBe(false);
+    });
+  });
+
+  describe('accumulateDragDelta', () => {
+    it('adds deltaX and deltaY when dragging is active', () => {
+      const state = createInputState();
+      setDragActive(state, true);
+      accumulateDragDelta(state, 10, -5);
+      expect(state.mouseDeltaX).toBe(10);
+      expect(state.mouseDeltaY).toBe(-5);
+    });
+
+    it('accumulates multiple drag deltas', () => {
+      const state = createInputState();
+      setDragActive(state, true);
+      accumulateDragDelta(state, 10, -5);
+      accumulateDragDelta(state, 3, 2);
+      expect(state.mouseDeltaX).toBe(13);
+      expect(state.mouseDeltaY).toBe(-3);
+    });
+
+    it('ignores deltas when dragging is not active', () => {
+      const state = createInputState();
+      accumulateDragDelta(state, 10, -5);
+      expect(state.mouseDeltaX).toBe(0);
+      expect(state.mouseDeltaY).toBe(0);
+    });
+
+    it('ignores deltas after dragging is deactivated', () => {
+      const state = createInputState();
+      setDragActive(state, true);
+      accumulateDragDelta(state, 10, -5);
+      setDragActive(state, false);
+      accumulateDragDelta(state, 3, 2);
+      expect(state.mouseDeltaX).toBe(10);
+      expect(state.mouseDeltaY).toBe(-5);
+    });
+  });
+
   describe('resetInputState', () => {
     it('clears all keys and mouse deltas', () => {
       const state = createInputState();
@@ -107,6 +159,7 @@ describe('controls', () => {
       expect(state.keys.size).toBe(0);
       expect(state.mouseDeltaX).toBe(0);
       expect(state.mouseDeltaY).toBe(0);
+      expect(state.isDragging).toBe(false);
     });
   });
 });

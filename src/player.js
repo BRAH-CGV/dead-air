@@ -7,7 +7,7 @@ const DEFAULTS = {
   speed: 5,
   gravity: -20,
   height: 1.7,
-  mouseSensitivity: 2.5,
+  mouseSensitivity: 0.5,
   maxHealth: 100,
 };
 
@@ -42,8 +42,9 @@ export function updatePlayer(player, input, dt) {
   const moveZ = input.z ?? 0;
 
   if (moveX !== 0 || moveZ !== 0) {
-    const sinYaw = Math.sin(player.yaw);
-    const cosYaw = Math.cos(player.yaw);
+    // negate yaw: mouse delta makes yaw clockwise, but rotation formula is counter-clockwise
+    const sinYaw = Math.sin(-player.yaw);
+    const cosYaw = Math.cos(-player.yaw);
 
     // rotate movement direction by player yaw
     const worldX = moveX * cosYaw - moveZ * sinYaw;

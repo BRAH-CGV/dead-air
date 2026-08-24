@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createInputState, setKeyPressed, getMovementDirection } from './controls.js';
+import { createInputState, setKeyPressed, getMovementDirection, setDragActive, accumulateDragDelta } from './controls.js';
 import { createPlayer, updatePlayer, respawnPlayer } from './player.js';
 import { createCameraRig, updateCameraPosition, toggleCameraMode } from './camera.js';
 import { createLevel1Definition } from './levels/level1.js';
@@ -120,6 +120,7 @@ for (const lightDef of level.lights) {
 // --- game systems ---
 const inputState = createInputState();
 const player = createPlayer(level.spawnPoint);
+
 const cameraRig = createCameraRig();
 const interactionMgr = createInteractionManager(level.interactables);
 const gameState = createGameState(level.objectives);
@@ -180,8 +181,10 @@ function hideGameMessage() {
 }
 
 function clearHighlight() {
-  if (highlightedMesh && highlightedMesh.material) {
+  if (highlightedMesh && highlightedMesh.material && highlightedMesh.material.emissive) {
     highlightedMesh.material.emissive.copy(originalEmissive);
+    highlightedMesh = null;
+  } else {
     highlightedMesh = null;
   }
 }
@@ -189,50 +192,110 @@ function clearHighlight() {
 function setHighlight(mesh) {
   if (mesh === highlightedMesh) return;
   clearHighlight();
-  if (mesh && mesh.material) {
+  if (mesh && mesh.material && mesh.material.emissive) {
     highlightedMesh = mesh;
     originalEmissive.copy(mesh.material.emissive);
     mesh.material.emissive.set(0x333333);
   }
 }
 
-// --- pointer lock ---
+// --- input setup (pointer lock + click-and-drag both active for laptop compatibility) ---
 const canvas = renderer.domElement;
 
-canvas.addEventListener('click', () => {
+// overlay text covers both control modes
+overlay.innerHTML = 'Click to play<br><small>WASD to move · Mouse / Click+drag to look · E to interact · V to toggle camera</small>';
+
+// overlay click — starts the game (overlay sits above canvas, needs its own handler)
+overlay.addEventListener('click', () => {
   if (gameState.status === 'playing') {
+    overlay.classList.add('hidden');
+    crosshair.style.display = 'block';
     canvas.requestPointerLock();
   }
 });
 
+// pointer lock (works with desktop mouse)
 document.addEventListener('pointerlockchange', () => {
   inputState.isPointerLocked = document.pointerLockElement === canvas;
   if (inputState.isPointerLocked) {
     overlay.classList.add('hidden');
     crosshair.style.display = 'block';
-  } else {
-    overlay.classList.remove('hidden');
-    crosshair.style.display = 'none';
   }
+  // don't re-show overlay on exit — click-and-drag remains available
+});
+
+document.addEventListener('pointerlockerror', () => {
+  // pointer lock failed (e.g. touchpad) — hide overlay so click-and-drag works
+  overlay.classList.add('hidden');
+  crosshair.style.display = 'block';
+});
+
+// click-and-drag look (works with touchpad / laptop)
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && gameState.status === 'playing' && overlay.classList.contains('hidden')) {
+    setDragActive(inputState, true);
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  setDragActive(inputState, false);
 });
 
 document.addEventListener('mousemove', (e) => {
   if (inputState.isPointerLocked) {
     inputState.mouseDeltaX += e.movementX;
     inputState.mouseDeltaY += e.movementY;
+  } else if (inputState.isDragging) {
+    accumulateDragDelta(inputState, e.movementX, e.movementY);
   }
+});
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// touch support (trackpad gestures / mobile)
+let lastTouchX = 0;
+let lastTouchY = 0;
+let isTouching = false;
+
+canvas.addEventListener('touchstart', (e) => {
+  if (gameState.status !== 'playing') return;
+  e.preventDefault();
+  overlay.classList.add('hidden');
+  crosshair.style.display = 'block';
+  if (e.touches.length === 1) {
+    isTouching = true;
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+    setDragActive(inputState, true);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (!isTouching || gameState.status !== 'playing') return;
+  e.preventDefault();
+  const touch = e.touches[0];
+  const dx = touch.clientX - lastTouchX;
+  const dy = touch.clientY - lastTouchY;
+  accumulateDragDelta(inputState, dx, dy);
+  lastTouchX = touch.clientX;
+  lastTouchY = touch.clientY;
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  isTouching = false;
+  setDragActive(inputState, false);
 });
 
 // --- keyboard input ---
 document.addEventListener('keydown', (e) => {
   setKeyPressed(inputState, e.code, true);
 
-  if (e.code === 'KeyV' && inputState.isPointerLocked) {
+  if (e.code === 'KeyV' && overlay.classList.contains('hidden') && gameState.status === 'playing') {
     toggleCameraMode(cameraRig);
   }
 
   // interact with E
-  if (e.code === 'KeyE' && inputState.isPointerLocked) {
+  if (e.code === 'KeyE' && gameState.status === 'playing' && overlay.classList.contains('hidden')) {
     handleInteraction();
   }
 });
@@ -310,7 +373,7 @@ function animate() {
   updateHolographicUniforms(holoUniforms, dt);
 
   // --- interaction raycast ---
-  if (inputState.isPointerLocked && gameState.status === 'playing') {
+  if (gameState.status === 'playing' && overlay.classList.contains('hidden')) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera);
     interactRayOrigin.copy(raycaster.ray.origin);
     interactRayDir.copy(raycaster.ray.direction);

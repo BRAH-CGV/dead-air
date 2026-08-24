@@ -1,13 +1,13 @@
 /**
- * Input state management — tracks keyboard and mouse state.
+ * Input state management — tracks keyboard, mouse, touch, and drag state.
  * Pure logic, no DOM dependency.
  */
 
 const MOVEMENT_KEYS = {
-  KeyW: { x: 0, z: -1 },
-  KeyS: { x: 0, z: 1 },
-  KeyA: { x: -1, z: 0 },
-  KeyD: { x: 1, z: 0 },
+  KeyW: { x: 0, z: -1 },  // forward (camera looks down -Z)
+  KeyS: { x: 0, z: 1 },   // backward
+  KeyA: { x: -1, z: 0 },  // left
+  KeyD: { x: 1, z: 0 },   // right
 };
 
 export function createInputState() {
@@ -16,6 +16,7 @@ export function createInputState() {
     mouseDeltaX: 0,
     mouseDeltaY: 0,
     isPointerLocked: false,
+    isDragging: false,
   };
 }
 
@@ -53,4 +54,15 @@ export function resetInputState(state) {
   state.keys.clear();
   state.mouseDeltaX = 0;
   state.mouseDeltaY = 0;
+  state.isDragging = false;
+}
+
+export function setDragActive(state, active) {
+  state.isDragging = active;
+}
+
+export function accumulateDragDelta(state, deltaX, deltaY) {
+  if (!state.isDragging) return;
+  state.mouseDeltaX += deltaX;
+  state.mouseDeltaY += deltaY;
 }
