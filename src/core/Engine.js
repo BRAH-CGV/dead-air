@@ -173,6 +173,8 @@ export class Engine {
             distance: hit.distance.toFixed(2),
             point:    hit.point,
           });
+          console.log(hit)
+          hit.gameObject.rigidBody.applyImpulse(new RAPIER.Vector3(hit.ray.dir.x, hit.ray.dir.y + 3, hit.ray.dir.z), true);
         }
         onHover() {
           // Hook: highlight effect, prompt UI, etc.

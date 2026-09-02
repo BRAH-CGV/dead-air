@@ -11,7 +11,7 @@ import { Component } from '../core/Component.js';
 //     collider   – RAPIER.Collider that was hit
 //     gameObject – GameObject that owns the collider
 //     point      – { x, y, z }  world-space hit position
-//     normal     – { x, y, z }  surface normal at hit
+//     ray        – RAPIER.Ray      world-space ray that was cast
 //     distance   – number        distance from camera
 //   }
 // ─────────────────────────────────────────────

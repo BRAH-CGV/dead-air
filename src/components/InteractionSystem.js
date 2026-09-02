@@ -93,7 +93,8 @@ export class InteractionSystem extends Component {
           collider:   hit.collider,
           gameObject: go,
           point:      ray.pointAt(hit.timeOfImpact),
-          normal:     null,  // castRay doesn't return normal; use castRayAndGetNormal if needed
+        //   normal:     null,  // castRay doesn't return normal; use castRayAndGetNormal if needed
+          ray: ray,
           distance:   hit.timeOfImpact,
         };
       }
