@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-This starts Vite's dev server. Open the URL it prints (usually `http://localhost:5173`) in your browser. You should see a rotating blue cube on a dark floor with lighting and shadows.
+This starts Vite's dev server. Open the URL it prints (usually `http://localhost:5173`) in your browser. Click the canvas to lock the pointer, then use WASD to move and the mouse to look around.
 
 Hot-reload is enabled — edit files in `src/` and the browser updates instantly.
 
@@ -44,7 +44,7 @@ Open `http://localhost:3000` in your browser. If it works here, it will work on 
 npm run build
 ```
 
-Then zip the **contents** of `dist/` so that `index.html` is at the top level of the archive, and upload that zip to the Moodle submission. A pre-built zip is also included as `cgv-cube-deploy-ready.zip`.
+Then zip the **contents** of `dist/` so that `index.html` is at the top level of the archive, and upload that zip to the Moodle submission.
 
 > **Important:** The Vite config (`vite.config.js`) sets `base: './'` so all asset paths are relative. This is required because the LAMP server hosts each group's game in a subdirectory, not at the domain root.
 
@@ -52,18 +52,27 @@ Then zip the **contents** of `dist/` so that `index.html` is at the top level of
 
 ```
 dead-air/
-├── index.html          # Entry point
+├── index.html              # Entry point
 ├── src/
-│   └── main.js         # Three.js scene code
-├── vite.config.js      # Vite config (base: './' for LAMP)
-├── package.json        # Dependencies & scripts
-├── dist/               # Production build output (gitignored)
-└── cgv-cube-deploy-ready.zip  # Ready-to-upload build
+│   ├── main.js             # Boot — creates Engine and calls init()
+│   ├── core/
+│   │   ├── Engine.js       # Scene, renderer, physics, input, game loop
+│   │   ├── GameObject.js   # Scene-graph node (Object3D + RigidBody)
+│   │   └── Component.js    # Base class with lifecycle hooks
+│   └── components/
+│       └── FirstPersonController.js  # WASD + mouse look
+├── vite.config.js          # Vite config (base: './' for LAMP)
+├── package.json            # Dependencies & scripts
+└── dist/                   # Production build output (gitignored)
 ```
 
 ## Controls
 
-*Coming soon as the game develops.*
+| Input | Action |
+|---|---|
+| **W A S D** | Move forward / left / backward / right |
+| **Mouse** | Look around (requires pointer lock — click the canvas) |
+| **Esc** | Release pointer lock |
 
 ## Team
 
