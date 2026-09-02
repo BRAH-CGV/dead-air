@@ -19,6 +19,11 @@ export class Engine {
   world;
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
 
+  // ── Physics interpolation (pre-allocated) ──
+  _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
+  _prevQuat  = new Map();         // RigidBody.handle → { x, y, z, w }
+  _scratchQ  = new THREE.Quaternion();
+
   // ── Timing ────────────────────────────────
   _accumulator = 0;
   _lastTime    = 0;
@@ -56,7 +61,8 @@ export class Engine {
 
     // ── Physics world ──
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-
+    this.world.timestep = Engine.FIXED_DT;
+    
     // Expose engine to components via scene userData
     this.scene.userData.engine = this;
 
@@ -225,11 +231,16 @@ export class Engine {
     // ── Fixed update (physics) ──
     this._accumulator += frameDt;
     while (this._accumulator >= Engine.FIXED_DT) {
+      this._savePrevPhysics();
       for (const obj of this._rootObjects) obj._fixedUpdate(Engine.FIXED_DT);
       this.world.step();
       this._syncPhysicsToScene();
       this._accumulator -= Engine.FIXED_DT;
     }
+
+    // Interpolation factor: how far we are between the last two physics steps
+    const alpha = this._accumulator / Engine.FIXED_DT;
+    this._interpolatePhysics(alpha);
 
     // ── Variable update ──
     for (const obj of this._rootObjects) obj._update(frameDt);
@@ -245,7 +256,21 @@ export class Engine {
     this.input.mouse.dy = 0;
   };
 
-  /** Push Rapier body transforms into Three.js Object3Ds. */
+  /** Snapshot every rigid-body transform BEFORE world.step(). */
+  _savePrevPhysics() {
+    for (const [handle, go] of this.rigidBodyMap) {
+      const t = go.rigidBody.translation();
+      const r = go.rigidBody.rotation();
+      let p = this._prevPos.get(handle);
+      if (p) { p.x = t.x; p.y = t.y; p.z = t.z; }
+      else   { this._prevPos.set(handle, { x: t.x, y: t.y, z: t.z }); }
+      let q = this._prevQuat.get(handle);
+      if (q) { q.x = r.x; q.y = r.y; q.z = r.z; q.w = r.w; }
+      else   { this._prevQuat.set(handle, { x: r.x, y: r.y, z: r.z, w: r.w }); }
+    }
+  }
+
+  /** Push Rapier body transforms into Three.js Object3Ds (no interpolation). */
   _syncPhysicsToScene() {
     for (const obj of this._rootObjects) {
       if (!obj.rigidBody) continue;
@@ -253,6 +278,33 @@ export class Engine {
       const r = obj.rigidBody.rotation();
       obj.object3d.position.set(t.x, t.y, t.z);
       obj.object3d.quaternion.set(r.x, r.y, r.z, r.w);
+    }
+  }
+
+  /** Lerp/slerp dynamic-body visuals between previous and current physics
+   *  state so they appear to move at the display refresh rate, not 60 Hz. */
+  _interpolatePhysics(alpha) {
+    for (const [handle, go] of this.rigidBodyMap) {
+      // Only interpolate dynamic bodies; kinematics (Player) are
+      // driven every frame by their controller, so snapping is fine.
+      if (go.rigidBody.bodyType() !== RAPIER.RigidBodyType.Dynamic) continue;
+
+      const prev = this._prevPos.get(handle);
+      if (!prev) continue;
+      const cur = go.rigidBody.translation();
+      go.object3d.position.set(
+        prev.x + (cur.x - prev.x) * alpha,
+        prev.y + (cur.y - prev.y) * alpha,
+        prev.z + (cur.z - prev.z) * alpha,
+      );
+
+      const pq = this._prevQuat.get(handle);
+      if (pq) {
+        const cr = go.rigidBody.rotation();
+        this._scratchQ.set(pq.x, pq.y, pq.z, pq.w);
+        go.object3d.quaternion.set(cr.x, cr.y, cr.z, cr.w);
+        go.object3d.quaternion.slerp(this._scratchQ, 1 - alpha);
+      }
     }
   }
 }
