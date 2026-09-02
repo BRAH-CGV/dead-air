@@ -43,15 +43,23 @@ src/
 ├── core/
 │   ├── Engine.js        # Singleton: scene, renderer, physics, input, game loop
 │   ├── GameObject.js    # Scene-graph node: Object3D + RigidBody + Components
-│   └── Component.js     # Base class with lifecycle hooks
+│   ├── Component.js     # Base class with lifecycle hooks
+│   ├── AssetManager.js  # Loads, caches and clones .glb models + textures
+│   └── ModelUtils.js    # Per-mesh normalisation, measurement, disposal
 ├── components/
 │   └── FirstPersonController.js  # WASD + mouse look, Rapier character controller
-└── main.js              # Entry point: creates Engine, calls init()
+├── assets/
+│   └── manifest.js      # Every asset path, by key. Single source of truth.
+├── ui/
+│   └── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
+└── main.js              # Entry point: creates Engine, awaits init()
 ```
 
 ### Key classes
 
-**Engine** — Initializes Three.js scene, Rapier world, pointer-lock input, keyboard, resize. Runs a fixed-timestep loop: `fixedUpdate → world.step → syncPhysicsToScene → update → lateUpdate → render`. Access via `scene.userData.engine`.
+**Engine** — Initializes Three.js scene, Rapier world, pointer-lock input, keyboard, resize. `init()` is **async**: it preloads the manifest before building the scene, so nothing pops in mid-render. Runs a fixed-timestep loop: `fixedUpdate → world.step → syncPhysicsToScene → update → lateUpdate → render`. Access via `scene.userData.engine`.
+
+**AssetManager** — On the Engine as `engine.assets`. `load`/`loadAll` fetch and cache; `get(key)` reads the cache synchronously; `instantiate(key)` returns a clone. See the Assets section below.
 
 **GameObject** — Wraps `THREE.Object3D` with optional `RAPIER.RigidBody` / `Collider`. Parent-child hierarchy (`addChild`/`removeChild`), component attachment (`addComponent`/`getComponent`), depth-first `find(name)`. Lifecycle propagates to children.
 
@@ -65,8 +73,9 @@ src/
 Player (kinematic rigidBody, capsule collider)
   └─ CameraPivot
       └─ PerspectiveCamera (YXZ Euler)
-Ground (visual PlaneGeometry + static cuboid collider)
+Ground (visual PlaneGeometry + static cuboid collider, textured)
 Crates (dynamic rigidBodies, box colliders)
+Desk (imported .glb, no collider yet)
 ```
 
 ### Input system
@@ -75,6 +84,36 @@ Centralized on `Engine.input`:
 - `keys` — object keyed by `KeyboardEvent.code` (e.g. `KeyW`, `Space`)
 - `mouse` — `{ dx, dy }` accumulated deltas, consumed each frame
 - `locked` — boolean, pointer-lock active
+
+## Assets
+
+### Adding one
+
+1. Drop the file in `public/assets/` — lowercase, hyphen-separated, `.glb` for models.
+2. Add a key to [`src/assets/manifest.js`](src/assets/manifest.js). The `url` is relative to `public/`, so `public/assets/models/desk.glb` → `'assets/models/desk.glb'`.
+3. Use it: `engine.spawnModel('model:desk', { position: [0, 0, -3] })`, or `engine.assets.get('tex:foo')` for a texture.
+
+No path is ever hard-coded outside the manifest. `validateManifest()` runs in dev and warns about the two mistakes that only fail after upload: absolute paths and capital letters.
+
+### How loading works
+
+`GLTFLoader` returns a `Group` with geometry, materials and textures already wired up, including correct colour spaces. It does **not** set shadow flags, raise anisotropy, or fix bad units — `ModelUtils.prepareModel()` covers that on the way into the cache.
+
+**Ownership rule.** The cache holds one copy of each model. `instantiate()` returns clones that *share* its geometry, materials and textures, so twenty crates cost one GPU upload. The consequence: never call `.dispose()` from an instance — drop it by removing it from the scene. `assets.release(key)` / `assets.dispose()` are the only places that free GPU memory, which is what keeps memory flat across levels.
+
+Rigged models are cloned with `SkeletonUtils.clone()`; a plain `.clone()` leaves every copy bound to the original skeleton, so they animate in lockstep.
+
+### Conventions for custom models
+
+Author in **metres**, +Y up, origin on the floor at the object's centre. Export as `.glb` (single file — a `.gltf` with loose `.bin`/`.png` siblings is one more chance for a case-sensitive 404). `ModelUtils.normalize(root, targetSize)` is the escape hatch for a download authored in centimetres.
+
+### Compression
+
+The loader handles **plain `.glb` only**. Many Sketchfab / Poly Haven downloads are Draco- or Meshopt-packed and will fail with `No DRACOLoader instance provided`. Either re-export uncompressed from Blender, or wire the decoders in — see the header comment in [`src/core/AssetManager.js`](src/core/AssetManager.js).
+
+### Placeholders
+
+The desk and floor textures currently in `public/assets/` are stand-ins, not final art. Replacing one: drop the real file into `public/assets/` and point the manifest url at it.
 
 ## Commands
 
