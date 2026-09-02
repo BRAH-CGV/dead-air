@@ -7,9 +7,53 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
       canvas { display: block; }
+
+      /* ── Crosshair ─────────────────────────────────────── */
+      #crosshair {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 100;
+      }
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 1px;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+        transition: background 0.15s, transform 0.15s;
+      }
+      /* vertical bar */
+      #crosshair::before {
+        width: 2px;
+        height: 14px;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
+      /* horizontal bar */
+      #crosshair::after {
+        width: 14px;
+        height: 2px;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
+      /* Active state: brighter + slightly larger when targeting an interactable */
+      #crosshair.active::before,
+      #crosshair.active::after {
+        background: #00e5ff;
+        box-shadow: 0 0 4px #00e5ff;
+      }
+      #crosshair.active::before { height: 18px; }
+      #crosshair.active::after  { width:  18px; }
     </style>
   </head>
   <body>
+    <div id="crosshair"></div>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

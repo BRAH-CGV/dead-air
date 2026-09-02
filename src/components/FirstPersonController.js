@@ -36,8 +36,10 @@ export class FirstPersonController extends Component {
   onUpdate(dt) {
     if (!this.gameObject || !this.camera) return;
 
-    const { input } = this.gameObject.scene.userData.engine
-      ?? { input: { keys: {}, mouse: { dx: 0, dy: 0 }, locked: false } };
+    const engine = this.gameObject.scene?.userData.engine;
+    if (!engine) return;
+
+    const { input, keyBinds } = engine;
 
     // ── Mouse look ──
     if (input.locked) {
@@ -51,8 +53,8 @@ export class FirstPersonController extends Component {
     this.camera.rotation.set(this.pitch, this.yaw, 0);
 
     // ── Compute desired horizontal movement (relative to yaw) ──
-    const fwd   = Number(input.keys['KeyW'] ?? false) - Number(input.keys['KeyS'] ?? false);
-    const right = Number(input.keys['KeyD'] ?? false) - Number(input.keys['KeyA'] ?? false);
+    const fwd   = Number(!!input.keys[keyBinds.forward]) - Number(!!input.keys[keyBinds.back]);
+    const right = Number(!!input.keys[keyBinds.right])   - Number(!!input.keys[keyBinds.left]);
 
     const dir = new THREE.Vector3(right, 0, -fwd);
     if (dir.lengthSq() > 0) dir.normalize();
@@ -60,7 +62,7 @@ export class FirstPersonController extends Component {
 
     this._desiredMove.x = dir.x * this.speed;
     this._desiredMove.z = dir.z * this.speed;
-    this._wantJump = !!(input.keys['Space']);
+    this._wantJump = !!input.keys[keyBinds.jump];
   }
 
   // ── Fixed timestep: physics movement (runs before world.step) ──
