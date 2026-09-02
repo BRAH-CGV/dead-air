@@ -4,8 +4,9 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 // FirstPersonController  –  Component
 // ─────────────────────────────────────────────
-// Attach to the Player GameObject.  Reads Engine.input and drives
-// the Rapier character controller + camera rotation.
+// onUpdate   → mouse look + store desired movement (variable timestep)
+// onFixedUpdate → physics movement via character controller (fixed timestep,
+//                 runs just before world.step() so translation is applied)
 // ─────────────────────────────────────────────
 
 export class FirstPersonController extends Component {
@@ -17,18 +18,21 @@ export class FirstPersonController extends Component {
     this.speed       = opts.speed       ?? 5;
     this.jumpForce   = opts.jumpForce   ?? 4;
     this.sensitivity = opts.sensitivity ?? 0.002;
-    this.halfH       = opts.capsuleHalfHeight ?? 0.5;
-    this.radius      = opts.capsuleRadius     ?? 0.3;
 
     this.pitch     = 0;
     this.yaw       = 0;
     this.grounded  = false;
-    this.velocity  = { x: 0, y: 0, z: 0 };
+    this.vertVel   = 0;
 
     /** @type {THREE.Camera|null} set by Engine after construction */
     this.camera = null;
+
+    /** @type {{x:number, y:number, z:number}} consumed by onFixedUpdate */
+    this._desiredMove = { x: 0, y: 0, z: 0 };
+    this._wantJump = false;
   }
 
+  // ── Variable timestep: input + mouse look ─────────────
   onUpdate(dt) {
     if (!this.gameObject || !this.camera) return;
 
@@ -46,7 +50,7 @@ export class FirstPersonController extends Component {
     // Apply rotation directly to camera (YXZ Euler order set in Engine)
     this.camera.rotation.set(this.pitch, this.yaw, 0);
 
-    // ── Movement input (relative to yaw) ──
+    // ── Compute desired horizontal movement (relative to yaw) ──
     const fwd   = Number(input.keys['KeyW'] ?? false) - Number(input.keys['KeyS'] ?? false);
     const right = Number(input.keys['KeyD'] ?? false) - Number(input.keys['KeyA'] ?? false);
 
@@ -54,35 +58,45 @@ export class FirstPersonController extends Component {
     if (dir.lengthSq() > 0) dir.normalize();
     dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
 
-    this.velocity.x =  dir.x * this.speed;
-    this.velocity.z =  dir.z * this.speed;
+    this._desiredMove.x = dir.x * this.speed;
+    this._desiredMove.z = dir.z * this.speed;
+    this._wantJump = !!(input.keys['Space']);
+  }
+
+  // ── Fixed timestep: physics movement (runs before world.step) ──
+  onFixedUpdate(dt) {
+    if (!this.gameObject) return;
+    const rb = this.gameObject.rigidBody;
+    if (!rb) return;
 
     // ── Gravity & jump ──
-    this.velocity.y -= 9.81 * dt;
-
-    if (this.grounded && input.keys['Space']) {
-      this.velocity.y = this.jumpForce;
+    this.vertVel -= 9.81 * dt;
+    if (this.grounded && this._wantJump) {
+      this.vertVel = this.jumpForce;
     }
 
-    // ── Move via Rapier character controller ──
-    const rb = this.gameObject.rigidBody;
-    const ox = this.velocity.x * dt;
-    const oy = this.velocity.y * dt;
-    const oz = this.velocity.z * dt;
+    // ── Build desired translation delta for this physics step ──
+    const desired = {
+      x: this._desiredMove.x * dt,
+      y: this.vertVel * dt,
+      z: this._desiredMove.z * dt,
+    };
 
+    // ── Resolve via Rapier character controller ──
     this.ctrl.computeColliderMovement(
       this.gameObject.collider,
-      { x: ox, y: oy, z: oz },
+      desired,
     );
 
     const corrected = this.ctrl.computedMovement();
+    const t = rb.translation();
     rb.setNextKinematicTranslation({
-      x: rb.translation().x + corrected.x,
-      y: rb.translation().y + corrected.y,
-      z: rb.translation().z + corrected.z,
+      x: t.x + corrected.x,
+      y: t.y + corrected.y,
+      z: t.z + corrected.z,
     });
 
     this.grounded = this.ctrl.computedGrounded();
-    if (this.grounded && this.velocity.y < 0) this.velocity.y = 0;
+    if (this.grounded && this.vertVel < 0) this.vertVel = 0;
   }
 }

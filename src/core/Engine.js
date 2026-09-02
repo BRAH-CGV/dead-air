@@ -167,18 +167,13 @@ export class Engine {
   // Player – first-person character controller
   // ──────────────────────────────────────────
   _buildPlayer() {
-    // Scene-graph hierarchy:
-    //   player (body position, has rigidBody)
-    //     └─ cameraPivot (look rotation, camera attached here)
+    const player = new GameObject('Player');
 
-    const player       = new GameObject('Player');
-    const cameraPivot  = new GameObject('CameraPivot');
-
-    // Use YXZ Euler order — standard for FPS cameras (yaw then pitch)
+    // YXZ Euler order — standard for FPS cameras (yaw then pitch)
     this.camera.rotation.order = 'YXZ';
 
-    player.addChild(cameraPivot);
-    cameraPivot.object3d.add(this.camera);
+    // Attach camera directly to the player Object3D
+    player.object3d.add(this.camera);
 
     player.object3d.position.set(0, 1, 5);
 
@@ -208,8 +203,6 @@ export class Engine {
       speed: 5,
       jumpForce: 4,
       sensitivity: 0.002,
-      capsuleHalfHeight: capsuleHalf,
-      capsuleRadius: capsuleR,
     });
     ctrl.camera = this.camera;
 
