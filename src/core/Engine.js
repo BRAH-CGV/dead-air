@@ -7,6 +7,7 @@ import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
+import { PhysicsDebug } from './PhysicsDebug.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -29,6 +30,7 @@ export class Engine {
   /** Bodies that MOVE — dynamic and kinematic only. Static props never need a
    *  per-step snapshot, so keeping them out is free performance. */
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
+  /** @type {PhysicsDebug} */ physicsDebug;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -95,6 +97,12 @@ export class Engine {
     addEventListener('keydown', (e) => { this.input.keys[e.code] = true;  });
     addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
 
+    // Collider overlay. Its own listener rather than `input.keys`, which is
+    // level-triggered and so can't express "toggle on the press".
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Backquote') this.physicsDebug?.toggle();
+    });
+
     // ── Resize ──
     addEventListener('resize', () => {
       this.camera.aspect = innerWidth / innerHeight;
@@ -114,6 +122,9 @@ export class Engine {
     // ── Build world ──
     this._buildScene();
 
+    // Hidden until ` is pressed, and costs nothing while hidden.
+    this.physicsDebug = new PhysicsDebug(this.scene, this.world);
+
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
 
@@ -126,6 +137,7 @@ export class Engine {
   /** Free every GPU resource we own. Call before rebuilding a level, so
    *  memory doesn't climb across restarts. */
   dispose() {
+    this.physicsDebug?.dispose();
     this.assets?.dispose();
     this.renderer?.dispose();
   }
@@ -182,7 +194,7 @@ export class Engine {
 
     // ── Imported meshes ──
     // Solid: the manifest entry carries `physics: 'static'`, which fits a box
-    // to the bounds measured at load.
+    // to the bounds measured at load. Press ` to see it.
     this.spawnModel('model:desk', { name: 'Desk', position: [0, 0, -3] });
 
     // ── Player ──
@@ -362,6 +374,7 @@ export class Engine {
     for (const obj of this._rootObjects) obj._lateUpdate(frameDt);
 
     // ── Render ──
+    this.physicsDebug?.update();
     this.renderer.render(this.scene, this.camera);
 
     // Consume mouse deltas after all updates
