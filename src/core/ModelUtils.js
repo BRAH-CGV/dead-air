@@ -98,6 +98,120 @@ export function normalize(root, targetSize) {
   return root;
 }
 
+// ─────────────────────────────────────────────
+// Collision geometry
+// ─────────────────────────────────────────────
+// Both helpers below run once, at load time, on the cached model root — and
+// they rely on that. A cached root has no parent, so a child mesh's
+// `matrixWorld` is expressed in exactly the space the spawned GameObject's
+// Object3D will provide. Baking it into the points means nested node
+// transforms and the manifest's `scale` (already applied by `prepareModel`)
+// come along for free, and the collider lands where the geometry is.
+// ─────────────────────────────────────────────
+
+/** A mesh whose name marks it as collision, not art. `UCX_` is the convention
+ *  Unreal popularised and Blender exporters preserve; `collider_` reads better
+ *  if you've never met it. Matching is case-insensitive. */
+const COLLIDER_NAME = /^(ucx|collider)[_.]|[_.]collider$/i;
+
+/**
+ * Pull the collision proxy meshes out of a freshly loaded model.
+ *
+ * They are removed from the render tree (so clones never draw them), their
+ * vertices baked into root space, and their geometry disposed immediately —
+ * once detached, `AssetManager.release()` can no longer reach it.
+ *
+ * @param {THREE.Object3D} root
+ * @returns {Float32Array[]} one point cloud per proxy mesh, each a convex hull
+ */
+export function extractColliderMeshes(root) {
+  root.updateMatrixWorld(true);
+
+  const found = [];
+  root.traverse((child) => {
+    if (child.isMesh && COLLIDER_NAME.test(child.name)) found.push(child);
+  });
+
+  const hulls = [];
+  for (const mesh of found) {
+    const position = mesh.geometry?.getAttribute('position');
+    if (position) hulls.push(bakePoints(position, mesh.matrixWorld));
+
+    mesh.removeFromParent();
+    mesh.geometry?.dispose();
+  }
+
+  return hulls;
+}
+
+/**
+ * Merge every render mesh into one vertex/index buffer in root space — the
+ * input for a `trimesh` collider, or a convex hull over a model that shipped
+ * no proxy meshes.
+ *
+ * Expensive on a detailed model, so `AssetManager` only calls it on demand.
+ *
+ * @param {THREE.Object3D} root
+ * @returns {{ vertices: Float32Array, indices: Uint32Array } | null}
+ */
+export function collectGeometry(root) {
+  root.updateMatrixWorld(true);
+
+  const chunks = [];
+  let vertexCount = 0;
+  let indexCount = 0;
+
+  root.traverse((child) => {
+    const position = child.isMesh ? child.geometry?.getAttribute('position') : null;
+    if (!position) return;
+
+    const index = child.geometry.getIndex();
+    // A non-indexed geometry is already triangle soup: vertices 0,1,2 form the
+    // first triangle, and so on.
+    const count = index ? index.count : position.count;
+
+    chunks.push({ position, index, matrix: child.matrixWorld, offset: vertexCount });
+    vertexCount += position.count;
+    indexCount += count;
+  });
+
+  if (!vertexCount) return null;
+
+  const vertices = new Float32Array(vertexCount * 3);
+  const indices = new Uint32Array(indexCount);
+  let v = 0;
+  let i = 0;
+
+  for (const chunk of chunks) {
+    vertices.set(bakePoints(chunk.position, chunk.matrix), v);
+    v += chunk.position.count * 3;
+
+    // Indices are per-geometry; shift them into the merged buffer's numbering.
+    if (chunk.index) {
+      for (let k = 0; k < chunk.index.count; k++) indices[i++] = chunk.index.getX(k) + chunk.offset;
+    } else {
+      for (let k = 0; k < chunk.position.count; k++) indices[i++] = k + chunk.offset;
+    }
+  }
+
+  return { vertices, indices };
+}
+
+/** Copy a position attribute into a flat array, transformed by `matrix`. */
+function bakePoints(position, matrix) {
+  const out = new Float32Array(position.count * 3);
+  const p = new THREE.Vector3();
+
+  for (let i = 0; i < position.count; i++) {
+    p.fromBufferAttribute(position, i).applyMatrix4(matrix);
+    out[i * 3] = p.x;
+    out[i * 3 + 1] = p.y;
+    out[i * 3 + 2] = p.z;
+  }
+
+  return out;
+}
+
 /**
  * Detach `root` from its parent, and optionally free its GPU resources.
  *
