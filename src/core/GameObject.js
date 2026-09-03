@@ -14,8 +14,13 @@ export class GameObject {
   object3d;
   /** @type {RAPIER.RigidBody|null} */
   rigidBody = null;
-  /** @type {RAPIER.Collider|null} */
+  /** Shorthand for `colliders[0]` — most objects have exactly one.
+   *  @type {RAPIER.Collider|null} */
   collider = null;
+  /** A compound shape is just a body owning several colliders; Rapier has no
+   *  separate compound type. Kept so teardown and queries can reach them all.
+   *  @type {RAPIER.Collider[]} */
+  colliders = [];
   /** @type {import('./Component').Component[]} */
   components = [];
   /** @type {GameObject[]} */

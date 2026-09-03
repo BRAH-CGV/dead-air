@@ -3,8 +3,10 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { AssetManager } from './AssetManager.js';
-import { PRELOAD } from '../assets/manifest.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
+import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
+import { createBody, attachColliders } from './Colliders.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -24,6 +26,8 @@ export class Engine {
 
   // ── Rapier ────────────────────────────────
   world;
+  /** Bodies that MOVE — dynamic and kinematic only. Static props never need a
+   *  per-step snapshot, so keeping them out is free performance. */
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
 
   // ── Physics interpolation (pre-allocated) ──
@@ -177,7 +181,8 @@ export class Engine {
     this._addBox('Crate_C', new THREE.Vector3( 2, 0.5,  8), 0x44aa55);
 
     // ── Imported meshes ──
-    // Render-only for now; colliders for imported geometry come later.
+    // Solid: the manifest entry carries `physics: 'static'`, which fits a box
+    // to the bounds measured at load.
     this.spawnModel('model:desk', { name: 'Desk', position: [0, 0, -3] });
 
     // ── Player ──
@@ -189,8 +194,11 @@ export class Engine {
    * The mesh is a clone sharing geometry/materials with the cache, so calling
    * this repeatedly is cheap.
    *
-   * Purely visual — no rigid body is created, so `_syncPhysicsToScene` skips
-   * it and the transform set here is the one that sticks.
+   * ── Physics ──
+   * Opt-in: a model with no `physics` in its manifest entry is render-only, so
+   * decorative geometry never quietly becomes solid. Adding `physics: 'static'`
+   * is the whole of what most props need — the collider is fitted to bounds
+   * measured once at load. See ColliderSpec.js for the three tiers.
    *
    * @param {string} key                     Manifest key, e.g. 'model:desk'.
    * @param {Object} [opts]
@@ -198,10 +206,13 @@ export class Engine {
    * @param {[number,number,number]} [opts.position]
    * @param {number} [opts.rotationY]        Yaw in radians.
    * @param {number} [opts.scale]            Uniform scale on top of the manifest's.
+   * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
+   *        Per-spawn override, merged over the manifest's block. Handy for one
+   *        crate that should be dynamic when the rest are scenery.
    * @returns {GameObject}
    */
   spawnModel(key, opts = {}) {
-    const { name, position = [0, 0, 0], rotationY = 0, scale = 1 } = opts;
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
 
     const go = new GameObject(name ?? key);
     go.object3d.add(this.assets.instantiate(key));
@@ -209,8 +220,42 @@ export class Engine {
     go.object3d.rotation.y = rotationY;
     if (scale !== 1) go.object3d.scale.setScalar(scale);
 
+    this._attachPhysics(go, key, { position, rotationY, scale, physics });
+
     this._rootObjects.push(go);
     return go;
+  }
+
+  /** Build the rigid body and colliders for a spawned model, if it asked for
+   *  any. Split out of `spawnModel` so the visual path stays readable. */
+  _attachPhysics(go, key, { position, rotationY, scale, physics }) {
+    // null means neither the manifest nor this spawn asked for physics — the
+    // model is render-only, which is the default for anything decorative.
+    const spec = mergePhysics(ASSETS[key]?.physics, physics);
+    if (!spec || spec.body === 'none') return;
+
+    // Only 'trimesh', and 'hull' on a model with no UCX_ proxies, need the
+    // merged render geometry — everything else is answered by the bounds.
+    const needsMesh = spec.shape === 'trimesh' || spec.shape === 'hull';
+    const resolved = resolvePhysics(spec, this.assets.getCollision(key, needsMesh), scale);
+    if (!resolved) return;
+
+    if (resolved.body === 'dynamic' && spec.shape === 'trimesh') {
+      console.warn(
+        `[physics] '${key}': trimesh colliders are hollow and can't be dynamic — ` +
+        "use 'hull' or a compound of primitives instead.",
+      );
+    }
+
+    // The body has to start where the Object3D is: `_syncPhysicsToScene` copies
+    // the body's transform onto the mesh every step, so a body left at the
+    // origin would yank the model there on the first frame.
+    go.rigidBody = createBody(this.world, resolved, { position, rotationY });
+    go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
+    go.collider  = go.colliders[0] ?? null;
+
+    // Static props never move, so they stay out of the interpolation map.
+    if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
 
   /** Helper: spawn a physics-backed box GameObject. */
@@ -342,6 +387,9 @@ export class Engine {
   _syncPhysicsToScene() {
     for (const obj of this._rootObjects) {
       if (!obj.rigidBody) continue;
+      // A fixed body's transform is the one we gave it and never changes;
+      // copying it back every step would be pure cost in a room full of props.
+      if (obj.rigidBody.bodyType() === RAPIER.RigidBodyType.Fixed) continue;
       const t = obj.rigidBody.translation();
       const r = obj.rigidBody.rotation();
       obj.object3d.position.set(t.x, t.y, t.z);
