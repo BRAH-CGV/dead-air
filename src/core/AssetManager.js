@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { ASSETS, validateManifest } from '../assets/manifest.js';
-import { prepareModel, disposeObject3D } from './ModelUtils.js';
+import {
+  prepareModel, disposeObject3D, measure, extractColliderMeshes, collectGeometry,
+} from './ModelUtils.js';
 
 // ─────────────────────────────────────────────
 // AssetManager  –  loads, caches and hands out meshes & textures
@@ -131,7 +133,23 @@ export class AssetManager {
         receiveShadow: entry.receiveShadow,
         anisotropy: this.maxAnisotropy,
       });
-      return { scene: gltf.scene, animations: gltf.animations ?? [] };
+
+      // Collision geometry is derived once, here, so spawning stays cheap
+      // enough to call in a loop. Order matters: the UCX_ proxies have to come
+      // out before we measure, or a collision box drawn generously around the
+      // model would inflate the bounds we then fit a collider to.
+      const hulls = extractColliderMeshes(gltf.scene);
+      const { size, center } = measure(gltf.scene);
+
+      return {
+        scene: gltf.scene,
+        animations: gltf.animations ?? [],
+        collision: {
+          bounds: { size: size.toArray(), center: center.toArray() },
+          hulls,
+          mesh: null,          // filled in on demand — see getCollision()
+        },
+      };
     });
   }
 
@@ -196,6 +214,26 @@ export class AssetManager {
   /** Animation clips shipped inside a model's glTF. */
   getAnimations(key) {
     return this.get(key).animations ?? [];
+  }
+
+  /**
+   * Collision geometry for a model: measured bounds, plus any `UCX_*` hulls the
+   * .glb shipped. Feed it to `resolvePhysics()`.
+   *
+   * The merged render mesh is only built when something actually asks for a
+   * `trimesh` or hulls a model with no proxies — it's the one expensive part,
+   * and most assets never need it. Memoised on the cache entry, so a hundred
+   * spawns of the same key pay for it once.
+   *
+   * @param {string} key
+   * @param {boolean} [needsMesh=false]
+   */
+  getCollision(key, needsMesh = false) {
+    const { scene, collision } = this.get(key);
+    if (!collision) return null;
+
+    if (needsMesh && !collision.mesh) collision.mesh = collectGeometry(scene);
+    return collision;
   }
 
   // ──────────────────────────────────────────
