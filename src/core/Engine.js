@@ -67,6 +67,7 @@ export class Engine {
     left:     'KeyA',
     right:    'KeyD',
     jump:     'Space',
+    crouch:   'KeyC',
     interact: 'KeyE',
   };
 
@@ -278,18 +279,31 @@ export class Engine {
     const capsuleHalf = 0.5;
     const capsuleR    = 0.3;
 
+    // Crouch clearance: the desk's under-top gap is 0.72 m (AGENTS.md worked
+    // example), so 0.65 is the tallest capsule that still fits under it.
+    const crouchHeight = 0.65;
+    const crouchHalf   = crouchHeight / 2 - capsuleR;
+
     const rb = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased()
         .setTranslation(0, 1, 5)
         .lockRotations(),
     );
-    const col = this.world.createCollider(
+    const standCol  = this.world.createCollider(
       RAPIER.ColliderDesc.capsule(capsuleHalf, capsuleR),
       rb,
     );
+    // The crouch capsule shares the body; exactly one of the two is enabled
+    // at a time and the controller swaps them (see FirstPersonController).
+    const crouchCol = this.world.createCollider(
+      RAPIER.ColliderDesc.capsule(crouchHalf, capsuleR),
+      rb,
+    );
+    crouchCol.setEnabled(false);
 
     player.rigidBody = rb;
-    player.collider  = col;
+    player.collider  = standCol;
+    player.colliders = [standCol, crouchCol];
     this._bodyToGO.set(rb.handle, player);
 
     // ── FirstPersonController component ──
@@ -297,6 +311,14 @@ export class Engine {
       speed: 5,
       jumpForce: 4,
       sensitivity: 0.002,
+      // Source-style movement: velocity ramps instead of snapping.
+      accel: 6,        // ground accelerate
+      airAccel: 2,     // gentler air control (momentum is kept)
+      friction: 6,     // ground friction
+      standCollider:  standCol,
+      crouchCollider: crouchCol,
+      crouchSpeed: 2.5,
+      crouchMode: 'toggle',   // flip to 'hold' for hold-to-crouch — nothing else changes
     });
     ctrl.camera = this.camera;
 

@@ -130,6 +130,7 @@ Press **`` ` ``** in game to see every collider drawn over the scene. Use it —
 |---|---|
 | **W A S D** | Move forward / left / backward / right |
 | **Space** | Jump |
+| **C** | Crouch |
 | **Mouse** | Look around (requires pointer lock — click the canvas) |
 | **`** | Toggle the collider debug overlay |
 | **Esc** | Release pointer lock |
