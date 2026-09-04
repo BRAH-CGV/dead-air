@@ -1,3 +1,5 @@
+import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
+
 // ─────────────────────────────────────────────
 // Asset manifest  –  the single source of truth for every file we load
 // ─────────────────────────────────────────────
@@ -21,6 +23,25 @@
 //     the decoders into AssetManager (see its header comment).
 // ─────────────────────────────────────────────
 
+// ── Collision ──
+// A model is render-only until its entry carries a `physics` block, so nothing
+// decorative silently becomes solid. Three tiers, cheapest first:
+//
+//   1. `physics: 'static'`   A box fitted to the model's measured bounds. One
+//                            line, no authoring, one cheap Rapier shape. This
+//                            is right for most props.
+//
+//   2. Collider meshes in the .glb. Model simplified collision next to the art
+//      in Blender, name those objects `UCX_something` or `collider_something`,
+//      and export as usual. They are stripped from the render tree at load and
+//      become convex hulls. The manifest line stays `physics: 'static'`.
+//
+//   3. `shape: [ … ]`        Hand-written primitives, for a downloaded model
+//                            you can't re-export. Sizes are FULL metres — a
+//                            1.6 m wide desk is `size: [1.6, …]`.
+//
+// Press ` in-game to see what you actually got. See src/core/ColliderSpec.js.
+
 /**
  * @typedef {Object} ModelEntry
  * @property {'model'} type
@@ -28,6 +49,21 @@
  * @property {number}  [scale]         Uniform scale baked in once, at load time.
  * @property {boolean} [castShadow]    Default true.
  * @property {boolean} [receiveShadow] Default true.
+ * @property {PhysicsBlock|'static'|'dynamic'|'kinematic'} [physics]
+ *           Absent means render-only. The bare string is shorthand for
+ *           `{ body: … }`, which is all most entries need.
+ *
+ * @typedef {Object} PhysicsBlock
+ * @property {'none'|'static'|'dynamic'|'kinematic'} [body='static']
+ *           static = scenery, dynamic = pushable, kinematic = script-driven.
+ * @property {'auto'|'box'|'hull'|'trimesh'|'none'|Object[]} [shape='auto']
+ *           'auto' uses the .glb's collider meshes if it has any, else a box.
+ *           'trimesh' is exact but hollow — static geometry only.
+ * @property {number}  [friction=0.8]
+ * @property {number}  [restitution=0]  Bounciness.
+ * @property {number}  [mass]           kg. Dynamic only; overrides density.
+ * @property {number}  [density=1000]   kg/m³. Dynamic only.
+ * @property {boolean} [sensor=false]   Reports overlaps, blocks nothing.
  *
  * @typedef {Object} TextureEntry
  * @property {'texture'} type
@@ -48,6 +84,10 @@ export const ASSETS = {
   'model:desk': {
     type: 'model',
     url: 'assets/models/desk.glb',
+    // Tier 1: a box fitted to the desk's bounds. When the real desk model
+    // arrives with UCX_ meshes for the leg gap, this line doesn't change —
+    // shape:'auto' picks them up on its own.
+    physics: 'static',
   },
 
   // ── Textures ────────────────────────────────
@@ -75,7 +115,9 @@ export const PRELOAD = Object.keys(ASSETS);
 
 /**
  * Dev-time sanity check. Catches the mistakes that build fine locally and then
- * 404 on the marker's server: absolute paths and capital letters.
+ * 404 on the marker's server: absolute paths and capital letters. Also checks
+ * the physics vocabulary, where a typo'd body type would otherwise show up as
+ * a prop you walk straight through.
  * @param {Record<string, object>} [assets]
  * @returns {string[]} human-readable problems, empty if the manifest is clean
  */
@@ -95,6 +137,42 @@ export function validateManifest(assets = ASSETS) {
     }
     if (entry.type !== 'model' && entry.type !== 'texture') {
       problems.push(`${key}: unknown type '${entry.type}'`);
+    }
+
+    problems.push(...validatePhysics(key, entry));
+  }
+
+  return problems;
+}
+
+/** @returns {string[]} */
+function validatePhysics(key, entry) {
+  if (entry.physics === undefined) return [];
+  if (entry.type !== 'model') {
+    return [`${key}: only models can have 'physics' — a texture has no geometry to fit`];
+  }
+
+  const spec = typeof entry.physics === 'string' ? { body: entry.physics } : entry.physics;
+  const problems = [];
+
+  if (spec.body !== undefined && !BODY_TYPES.includes(spec.body)) {
+    problems.push(`${key}: unknown physics body '${spec.body}' — one of ${BODY_TYPES.join(', ')}`);
+  }
+
+  const { shape } = spec;
+  if (shape !== undefined && !Array.isArray(shape)) {
+    if (typeof shape === 'string' && !AUTO_SHAPES.includes(shape)) {
+      problems.push(`${key}: unknown physics shape '${shape}' — one of ${AUTO_SHAPES.join(', ')}, or a list of parts`);
+    }
+  }
+
+  for (const part of [shape].flat()) {
+    if (!part || typeof part !== 'object') continue;
+    if (!PART_TYPES.includes(part.type)) {
+      problems.push(`${key}: unknown collider part type '${part.type}' — one of ${PART_TYPES.join(', ')}`);
+    }
+    if (part.type === 'box' && !Array.isArray(part.size)) {
+      problems.push(`${key}: box collider needs 'size: [w, h, d]' in full metres`);
     }
   }
 
