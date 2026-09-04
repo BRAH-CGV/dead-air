@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Interactable } from '../components/Interactable.js';
+import { InteractionSystem } from '../components/InteractionSystem.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
@@ -27,9 +29,11 @@ export class Engine {
 
   // ── Rapier ────────────────────────────────
   world;
+
   /** Bodies that MOVE — dynamic and kinematic only. Static props never need a
    *  per-step snapshot, so keeping them out is free performance. */
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
+  _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
   /** @type {PhysicsDebug} */ physicsDebug;
 
   // ── Physics interpolation (pre-allocated) ──
@@ -48,6 +52,24 @@ export class Engine {
     mouse: { dx: 0, dy: 0 },
     locked: false,
   };
+
+  // ── Key binds ─────────────────────────────
+  // Maps action names → KeyboardEvent.code strings.
+  // Change values at runtime or load from config to remap controls.
+  keyBinds = {
+    forward:  'KeyW',
+    back:     'KeyS',
+    left:     'KeyA',
+    right:    'KeyD',
+    jump:     'Space',
+    interact: 'KeyE',
+  };
+
+  /** Returns true while the key mapped to [action] is held down. */
+  isAction(action) {
+    const code = this.keyBinds[action];
+    return code ? !!this.input.keys[code] : false;
+  }
 
   // ──────────────────────────────────────────
   // Bootstrap
@@ -187,10 +209,33 @@ export class Engine {
       groundBody,
     );
 
-    // ── Decorative boxes ──
-    this._addBox('Crate_A', new THREE.Vector3( 5, 0.5, -3), 0x5588aa);
-    this._addBox('Crate_B', new THREE.Vector3(-4, 0.5, -6), 0xaa5544);
-    this._addBox('Crate_C', new THREE.Vector3( 2, 0.5,  8), 0x44aa55);
+    // ── Decorative boxes (interactable by default) ──
+    const crateA = this._addBox('Crate_A', new THREE.Vector3( 5, 0.5, -3), 0x5588aa);
+    const crateB = this._addBox('Crate_B', new THREE.Vector3(-4, 0.5, -6), 0xaa5544);
+    const crateC = this._addBox('Crate_C', new THREE.Vector3( 2, 0.5,  8), 0x44aa55);
+
+    // Attach Interactable components with example behaviour
+    for (const crate of [crateA, crateB /*, crateC*/]) {
+      const label = crate.name;
+      crate.addComponent(new class extends Interactable {
+        promptLabel = `[E] Inspect ${label}`;
+        interactRange = 4;
+        onInteract(hit) {
+          console.log(`[Interact] ${label}`, {
+            distance: hit.distance.toFixed(2),
+            point:    hit.point,
+          });
+          console.log(hit)
+          hit.gameObject.rigidBody.applyImpulse(new RAPIER.Vector3(hit.ray.dir.x, hit.ray.dir.y + 3, hit.ray.dir.z), true);
+        }
+        onHover() {
+          // Hook: highlight effect, prompt UI, etc.
+        }
+        onHoverEnd() {
+          // Hook: clear highlight
+        }
+      }());
+    }
 
     // ── Imported meshes ──
     // Solid: the manifest entry carries `physics: 'static'`, which fits a box
@@ -289,6 +334,7 @@ export class Engine {
     this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.5, 0.5, 0.5), rb);
     go.rigidBody = rb;
     this.rigidBodyMap.set(rb.handle, go);
+    this._bodyToGO.set(rb.handle, go);
 
     this._rootObjects.push(go);
     return go;
@@ -328,6 +374,7 @@ export class Engine {
 
     player.rigidBody = rb;
     player.collider  = col;
+    this._bodyToGO.set(rb.handle, player);
 
     // ── FirstPersonController component ──
     const ctrl = new FirstPersonController(controller, {
@@ -338,6 +385,10 @@ export class Engine {
     ctrl.camera = this.camera;
 
     player.addComponent(ctrl);
+
+    // ── InteractionSystem component ──
+    player.addComponent(new InteractionSystem({ range: 5 }));
+
     this._rootObjects.push(player);
   }
 
