@@ -400,6 +400,10 @@ export class Engine {
       speed: 5,
       jumpForce: 4,
       sensitivity: 0.002,
+      // Source-style movement: velocity ramps instead of snapping.
+      accel: 6,        // ground accelerate
+      airAccel: 2,     // gentler air control (momentum is kept)
+      friction: 6,     // ground friction
       standCollider:  standCol,
       crouchCollider: crouchCol,
       crouchSpeed: 2.5,
