@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { AssetManager } from './AssetManager.js';
+import { PRELOAD } from '../assets/manifest.js';
+import { LoadingScreen } from '../ui/LoadingScreen.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -14,6 +17,10 @@ export class Engine {
 
   // ── Three.js ──────────────────────────────
   scene; camera; renderer;
+
+  // ── Assets ────────────────────────────────
+  /** @type {AssetManager} */ assets;
+  /** @type {LoadingScreen} */ loadingScreen;
 
   // ── Rapier ────────────────────────────────
   world;
@@ -39,7 +46,9 @@ export class Engine {
   // ──────────────────────────────────────────
   // Bootstrap
   // ──────────────────────────────────────────
-  init() {
+  async init() {
+    this.loadingScreen = new LoadingScreen();
+
     // ── Scene & camera ──
     this.scene  = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1a2e);
@@ -89,14 +98,32 @@ export class Engine {
       this.renderer.setSize(innerWidth, innerHeight);
     });
 
+    // ── Assets ──
+    // Everything the first frame needs is fetched before the scene is built,
+    // so nothing pops in mid-render. The renderer has to exist first — the
+    // AssetManager reads its anisotropy cap.
+    this.assets = new AssetManager({ renderer: this.renderer });
+    await this.assets.loadAll(PRELOAD, (fraction, loaded, total) => {
+      this.loadingScreen.setProgress(fraction, loaded, total);
+    });
+
     // ── Build world ──
     this._buildScene();
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
 
+    this.loadingScreen.hide();
+
     // ── Kick off the loop ──
     requestAnimationFrame(this._loop);
+  }
+
+  /** Free every GPU resource we own. Call before rebuilding a level, so
+   *  memory doesn't climb across restarts. */
+  dispose() {
+    this.assets?.dispose();
+    this.renderer?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -119,9 +146,17 @@ export class Engine {
     this.scene.add(sun);
 
     // ── Ground (visual) ──
+    // Textures come from the manifest, already in the right colour space and
+    // set to repeat — see AssetManager._loadTexture.
     const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 100),
-      new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({
+        color: 0x8890a0,
+        roughness: 0.9,
+        map: this.assets.get('tex:floor-basecolor'),
+        normalMap: this.assets.get('tex:floor-normal'),
+        normalScale: new THREE.Vector2(0.8, 0.8),
+      }),
     );
     groundMesh.rotation.x    = -Math.PI / 2;
     groundMesh.receiveShadow = true;
@@ -141,8 +176,41 @@ export class Engine {
     this._addBox('Crate_B', new THREE.Vector3(-4, 0.5, -6), 0xaa5544);
     this._addBox('Crate_C', new THREE.Vector3( 2, 0.5,  8), 0x44aa55);
 
+    // ── Imported meshes ──
+    // Render-only for now; colliders for imported geometry come later.
+    this.spawnModel('model:desk', { name: 'Desk', position: [0, 0, -3] });
+
     // ── Player ──
     this._buildPlayer();
+  }
+
+  /**
+   * Place a manifest model in the world and return the GameObject wrapping it.
+   * The mesh is a clone sharing geometry/materials with the cache, so calling
+   * this repeatedly is cheap.
+   *
+   * Purely visual — no rigid body is created, so `_syncPhysicsToScene` skips
+   * it and the transform set here is the one that sticks.
+   *
+   * @param {string} key                     Manifest key, e.g. 'model:desk'.
+   * @param {Object} [opts]
+   * @param {string} [opts.name]             GameObject name; defaults to the key.
+   * @param {[number,number,number]} [opts.position]
+   * @param {number} [opts.rotationY]        Yaw in radians.
+   * @param {number} [opts.scale]            Uniform scale on top of the manifest's.
+   * @returns {GameObject}
+   */
+  spawnModel(key, opts = {}) {
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1 } = opts;
+
+    const go = new GameObject(name ?? key);
+    go.object3d.add(this.assets.instantiate(key));
+    go.object3d.position.set(position[0], position[1], position[2]);
+    go.object3d.rotation.y = rotationY;
+    if (scale !== 1) go.object3d.scale.setScalar(scale);
+
+    this._rootObjects.push(go);
+    return go;
   }
 
   /** Helper: spawn a physics-backed box GameObject. */
