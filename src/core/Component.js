@@ -11,6 +11,13 @@ export class Component {
   /** @type {import('./GameObject').GameObject|null} */
   gameObject = null;
 
+  /** Suspend the per-frame hooks while false — Unity's `Behaviour.enabled`.
+   *  The one-shot lifecycle (onAwake, onStart, onDestroy) is unaffected: a
+   *  component that starts disabled still gets its onStart, it just doesn't
+   *  tick until re-enabled. Used by the debug fly camera to freeze the
+   *  player while the camera is detached. */
+  enabled = true;
+
   get transform() { return this.gameObject?.object3d; }
   get scene()     { return this.gameObject?.scene; }
   get world()     { return this.gameObject?.world; }

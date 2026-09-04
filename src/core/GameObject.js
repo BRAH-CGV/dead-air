@@ -106,17 +106,23 @@ export class GameObject {
       this._started = true;
       for (const c of this.components) c.onStart();
     }
-    for (const c of this.components) c.onUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onUpdate(dt);
+    }
     for (const ch of this.children) ch._update(dt);
   }
 
   _fixedUpdate(dt) {
-    for (const c of this.components) c.onFixedUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onFixedUpdate(dt);
+    }
     for (const ch of this.children) ch._fixedUpdate(dt);
   }
 
   _lateUpdate(dt) {
-    for (const c of this.components) c.onLateUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onLateUpdate(dt);
+    }
     for (const ch of this.children) ch._lateUpdate(dt);
   }
 }

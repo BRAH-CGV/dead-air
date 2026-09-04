@@ -65,7 +65,9 @@ dead-air/
 │   │   ├── ModelUtils.js   # Per-mesh normalisation, measurement, collision
 │   │   ├── ColliderSpec.js # Manifest physics block → collider shapes
 │   │   ├── Colliders.js    # Collider shapes → Rapier bodies
-│   │   └── PhysicsDebug.js # Collider wireframe overlay
+│   │   ├── PhysicsDebug.js # Collider wireframe overlay
+│   │   ├── DebugCamera.js  # Free-fly noclip camera (V)
+│   │   └── Fullbright.js   # Unlit debug lighting (B)
 │   ├── components/
 │   │   └── FirstPersonController.js  # WASD + mouse look
 │   ├── assets/
@@ -133,6 +135,8 @@ Press **`` ` ``** in game to see every collider drawn over the scene. Use it —
 | **C** | Crouch |
 | **Mouse** | Look around (requires pointer lock — click the canvas) |
 | **`** | Toggle the collider debug overlay |
+| **V** | Toggle the free-fly debug camera (noclip; WASD + mouse, Space/C up/down, Shift boost) |
+| **B** | Toggle fullbright (all lights off, unlit materials) |
 | **Esc** | Release pointer lock |
 
 ## Team
