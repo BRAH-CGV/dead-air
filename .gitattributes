@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Never line-ending-normalise assets
+*.glb binary
+*.gltf binary
+*.png binary
+*.jpg binary
+*.hdr binary
+*.mp3 binary
+*.ogg binary

@@ -50,10 +50,52 @@
       }
       #crosshair.active::before { height: 18px; }
       #crosshair.active::after  { width:  18px; }
+      /* Inlined so the panel paints before any script has parsed. */
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        background: #0d0d14;
+        color: #b8b8c8;
+        font: 14px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        transition: opacity 0.4s ease;
+        z-index: 10;
+      }
+      #loading.is-hidden { opacity: 0; pointer-events: none; }
+      #loading-track {
+        width: min(320px, 60vw);
+        height: 2px;
+        background: #23232e;
+        overflow: hidden;
+      }
+      #loading-bar {
+        width: 0%;
+        height: 100%;
+        background: #6ecf9a;
+        transition: width 0.2s ease;
+      }
+      #loading.is-error #loading-bar { background: #cf6e6e; }
+      #loading.is-error #loading-label {
+        color: #cf8a8a;
+        max-width: 60vw;
+        text-align: center;
+        text-transform: none;
+        letter-spacing: 0;
+      }
     </style>
   </head>
   <body>
     <div id="crosshair"></div>
+    <div id="loading">
+      <div id="loading-track"><div id="loading-bar"></div></div>
+      <div id="loading-label">Loading…</div>
+    </div>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

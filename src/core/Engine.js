@@ -4,6 +4,12 @@ import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { Interactable } from '../components/Interactable.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
+import { AssetManager } from './AssetManager.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
+import { LoadingScreen } from '../ui/LoadingScreen.js';
+import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
+import { createBody, attachColliders } from './Colliders.js';
+import { PhysicsDebug } from './PhysicsDebug.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -17,10 +23,18 @@ export class Engine {
   // ── Three.js ──────────────────────────────
   scene; camera; renderer;
 
+  // ── Assets ────────────────────────────────
+  /** @type {AssetManager} */ assets;
+  /** @type {LoadingScreen} */ loadingScreen;
+
   // ── Rapier ────────────────────────────────
   world;
-  rigidBodyMap = new Map();       // RigidBody.handle → GameObject (dynamic bodies, for interpolation)
+
+  /** Bodies that MOVE — dynamic and kinematic only. Static props never need a
+   *  per-step snapshot, so keeping them out is free performance. */
+  rigidBodyMap = new Map();       // RigidBody.handle → GameObject
   _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
+  /** @type {PhysicsDebug} */ physicsDebug;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -60,7 +74,9 @@ export class Engine {
   // ──────────────────────────────────────────
   // Bootstrap
   // ──────────────────────────────────────────
-  init() {
+  async init() {
+    this.loadingScreen = new LoadingScreen();
+
     // ── Scene & camera ──
     this.scene  = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1a1a2e);
@@ -103,6 +119,12 @@ export class Engine {
     addEventListener('keydown', (e) => { this.input.keys[e.code] = true;  });
     addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
 
+    // Collider overlay. Its own listener rather than `input.keys`, which is
+    // level-triggered and so can't express "toggle on the press".
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Backquote') this.physicsDebug?.toggle();
+    });
+
     // ── Resize ──
     addEventListener('resize', () => {
       this.camera.aspect = innerWidth / innerHeight;
@@ -110,14 +132,36 @@ export class Engine {
       this.renderer.setSize(innerWidth, innerHeight);
     });
 
+    // ── Assets ──
+    // Everything the first frame needs is fetched before the scene is built,
+    // so nothing pops in mid-render. The renderer has to exist first — the
+    // AssetManager reads its anisotropy cap.
+    this.assets = new AssetManager({ renderer: this.renderer });
+    await this.assets.loadAll(PRELOAD, (fraction, loaded, total) => {
+      this.loadingScreen.setProgress(fraction, loaded, total);
+    });
+
     // ── Build world ──
     this._buildScene();
+
+    // Hidden until ` is pressed, and costs nothing while hidden.
+    this.physicsDebug = new PhysicsDebug(this.scene, this.world);
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
 
+    this.loadingScreen.hide();
+
     // ── Kick off the loop ──
     requestAnimationFrame(this._loop);
+  }
+
+  /** Free every GPU resource we own. Call before rebuilding a level, so
+   *  memory doesn't climb across restarts. */
+  dispose() {
+    this.physicsDebug?.dispose();
+    this.assets?.dispose();
+    this.renderer?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -140,9 +184,17 @@ export class Engine {
     this.scene.add(sun);
 
     // ── Ground (visual) ──
+    // Textures come from the manifest, already in the right colour space and
+    // set to repeat — see AssetManager._loadTexture.
     const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 100),
-      new THREE.MeshStandardMaterial({ color: 0x222233, roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({
+        color: 0x8890a0,
+        roughness: 0.9,
+        map: this.assets.get('tex:floor-basecolor'),
+        normalMap: this.assets.get('tex:floor-normal'),
+        normalScale: new THREE.Vector2(0.8, 0.8),
+      }),
     );
     groundMesh.rotation.x    = -Math.PI / 2;
     groundMesh.receiveShadow = true;
@@ -185,8 +237,82 @@ export class Engine {
       }());
     }
 
+    // ── Imported meshes ──
+    // Solid: the manifest entry carries `physics: 'static'`, which fits a box
+    // to the bounds measured at load. Press ` to see it.
+    this.spawnModel('model:desk', { name: 'Desk', position: [0, 0, -3] });
+
     // ── Player ──
     this._buildPlayer();
+  }
+
+  /**
+   * Place a manifest model in the world and return the GameObject wrapping it.
+   * The mesh is a clone sharing geometry/materials with the cache, so calling
+   * this repeatedly is cheap.
+   *
+   * ── Physics ──
+   * Opt-in: a model with no `physics` in its manifest entry is render-only, so
+   * decorative geometry never quietly becomes solid. Adding `physics: 'static'`
+   * is the whole of what most props need — the collider is fitted to bounds
+   * measured once at load. See ColliderSpec.js for the three tiers.
+   *
+   * @param {string} key                     Manifest key, e.g. 'model:desk'.
+   * @param {Object} [opts]
+   * @param {string} [opts.name]             GameObject name; defaults to the key.
+   * @param {[number,number,number]} [opts.position]
+   * @param {number} [opts.rotationY]        Yaw in radians.
+   * @param {number} [opts.scale]            Uniform scale on top of the manifest's.
+   * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
+   *        Per-spawn override, merged over the manifest's block. Handy for one
+   *        crate that should be dynamic when the rest are scenery.
+   * @returns {GameObject}
+   */
+  spawnModel(key, opts = {}) {
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
+
+    const go = new GameObject(name ?? key);
+    go.object3d.add(this.assets.instantiate(key));
+    go.object3d.position.set(position[0], position[1], position[2]);
+    go.object3d.rotation.y = rotationY;
+    if (scale !== 1) go.object3d.scale.setScalar(scale);
+
+    this._attachPhysics(go, key, { position, rotationY, scale, physics });
+
+    this._rootObjects.push(go);
+    return go;
+  }
+
+  /** Build the rigid body and colliders for a spawned model, if it asked for
+   *  any. Split out of `spawnModel` so the visual path stays readable. */
+  _attachPhysics(go, key, { position, rotationY, scale, physics }) {
+    // null means neither the manifest nor this spawn asked for physics — the
+    // model is render-only, which is the default for anything decorative.
+    const spec = mergePhysics(ASSETS[key]?.physics, physics);
+    if (!spec || spec.body === 'none') return;
+
+    // Only 'trimesh', and 'hull' on a model with no UCX_ proxies, need the
+    // merged render geometry — everything else is answered by the bounds.
+    const needsMesh = spec.shape === 'trimesh' || spec.shape === 'hull';
+    const resolved = resolvePhysics(spec, this.assets.getCollision(key, needsMesh), scale);
+    if (!resolved) return;
+
+    if (resolved.body === 'dynamic' && spec.shape === 'trimesh') {
+      console.warn(
+        `[physics] '${key}': trimesh colliders are hollow and can't be dynamic — ` +
+        "use 'hull' or a compound of primitives instead.",
+      );
+    }
+
+    // The body has to start where the Object3D is: `_syncPhysicsToScene` copies
+    // the body's transform onto the mesh every step, so a body left at the
+    // origin would yank the model there on the first frame.
+    go.rigidBody = createBody(this.world, resolved, { position, rotationY });
+    go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
+    go.collider  = go.colliders[0] ?? null;
+
+    // Static props never move, so they stay out of the interpolation map.
+    if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
 
   /** Helper: spawn a physics-backed box GameObject. */
@@ -299,6 +425,7 @@ export class Engine {
     for (const obj of this._rootObjects) obj._lateUpdate(frameDt);
 
     // ── Render ──
+    this.physicsDebug?.update();
     this.renderer.render(this.scene, this.camera);
 
     // Consume mouse deltas after all updates
@@ -324,6 +451,9 @@ export class Engine {
   _syncPhysicsToScene() {
     for (const obj of this._rootObjects) {
       if (!obj.rigidBody) continue;
+      // A fixed body's transform is the one we gave it and never changes;
+      // copying it back every step would be pure cost in a room full of props.
+      if (obj.rigidBody.bodyType() === RAPIER.RigidBodyType.Fixed) continue;
       const t = obj.rigidBody.translation();
       const r = obj.rigidBody.rotation();
       obj.object3d.position.set(t.x, t.y, t.z);
