@@ -7,6 +7,7 @@ import { InteractionSystem } from '../components/InteractionSystem.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
+import { Crosshair } from '../ui/Crosshair.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
@@ -26,6 +27,7 @@ export class Engine {
   // ── Assets ────────────────────────────────
   /** @type {AssetManager} */ assets;
   /** @type {LoadingScreen} */ loadingScreen;
+  /** @type {Crosshair}     */ crosshair;
 
   // ── Rapier ────────────────────────────────
   world;
@@ -76,6 +78,8 @@ export class Engine {
   // ──────────────────────────────────────────
   async init() {
     this.loadingScreen = new LoadingScreen();
+    this.crosshair     = new Crosshair();
+    this.crosshair.hide();   // revealed once the player exists
 
     // ── Scene & camera ──
     this.scene  = new THREE.Scene();
@@ -101,7 +105,8 @@ export class Engine {
     this.world.timestep = Engine.FIXED_DT;
     
     // Expose engine to components via scene userData
-    this.scene.userData.engine = this;
+    this.scene.userData.engine    = this;
+    this.scene.userData.crosshair = this.crosshair;
 
     // ── Pointer-lock mouse look ──
     const canvas = this.renderer.domElement;
@@ -390,6 +395,7 @@ export class Engine {
     player.addComponent(new InteractionSystem({ range: 5 }));
 
     this._rootObjects.push(player);
+    this.crosshair.show();
   }
 
   // ──────────────────────────────────────────
