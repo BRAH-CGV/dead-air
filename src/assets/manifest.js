@@ -103,6 +103,11 @@ export const ASSETS = {
     colorSpace: 'linear',
     repeat: [24, 24],
   },
+  'model:office-scene': {
+  type: 'model',
+  url: 'assets/models/Untiled.glb',
+  physics: 'static',
+},
 };
 
 /**

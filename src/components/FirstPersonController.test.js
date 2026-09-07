@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import RAPIER from '@dimforge/rapier3d';
 import { FirstPersonController } from './FirstPersonController.js';
 
@@ -23,6 +23,23 @@ function buildController(opts = {}) {
     standCollider: stand, crouchCollider: crouch,
     ...opts,
   });
+}
+
+function buildControllerWithStubs(opts = {}) {
+  const ctrl = {
+    computeColliderMovement: vi.fn(),
+    computedMovement: vi.fn(() => ({ x: 0, y: 0, z: 0 })),
+    computedGrounded: vi.fn(() => false),
+  };
+  const standCollider = { halfHeight: () => 0.5, radius: () => 0.3 };
+  const crouchCollider = { halfHeight: () => 0.025, radius: () => 0.3 };
+  const controller = new FirstPersonController(ctrl, {
+    standCollider,
+    crouchCollider,
+    ...opts,
+  });
+
+  return { controller, ctrl };
 }
 
 describe('FirstPersonController movement math', () => {
@@ -126,5 +143,105 @@ describe('FirstPersonController movement math', () => {
       expect(c._vel.x).toBeGreaterThan(4.8);
       expect(c._vel.x).toBeLessThanOrEqual(5);
     });
+  });
+});
+
+describe('FirstPersonController freecam coordination', () => {
+  it('keeps mouse look but clears player movement input while freecam is active', () => {
+    const { controller } = buildControllerWithStubs();
+    const isAction = vi.fn();
+    controller.camera = { position: { y: 0 } };
+    controller.gameObject = {
+      components: [controller, { blocksFirstPersonController: true, active: true }],
+      scene: {
+        userData: {
+          engine: {
+            input: {
+              locked: true,
+              mouse: { dx: 10, dy: -5 },
+              keys: { KeyW: true, Space: true },
+            },
+            keyBinds: {
+              forward: 'KeyW',
+              back: 'KeyS',
+              left: 'KeyA',
+              right: 'KeyD',
+              jump: 'Space',
+            },
+            isAction,
+          },
+        },
+      },
+    };
+    controller._wish = true;
+    controller._wantJump = true;
+    controller._vel.x = 2;
+    controller.vertVel = -3;
+
+    controller.onUpdate(DT);
+
+    expect(controller.yaw).toBeCloseTo(-0.02, 10);
+    expect(controller.pitch).toBeCloseTo(0.01, 10);
+    expect(controller._wish).toBe(false);
+    expect(controller._wantJump).toBe(false);
+    expect(controller._vel.x).toBe(0);
+    expect(controller.vertVel).toBe(0);
+    expect(isAction).not.toHaveBeenCalled();
+  });
+
+  it('skips gravity, jumping, and character-controller movement while freecam is active', () => {
+    const { controller, ctrl } = buildControllerWithStubs();
+    const rb = {
+      translation: vi.fn(() => ({ x: 0, y: 1, z: 0 })),
+      setNextKinematicTranslation: vi.fn(),
+    };
+    controller.gameObject = {
+      rigidBody: rb,
+      components: [controller, { blocksFirstPersonController: true, active: true }],
+    };
+    controller.grounded = true;
+    controller._wantJump = true;
+    controller._vel.x = 4;
+    controller.vertVel = -2;
+
+    controller.onFixedUpdate(DT);
+
+    expect(controller.vertVel).toBe(0);
+    expect(controller._vel.x).toBe(0);
+    expect(controller._wantJump).toBe(false);
+    expect(ctrl.computeColliderMovement).not.toHaveBeenCalled();
+    expect(rb.setNextKinematicTranslation).not.toHaveBeenCalled();
+  });
+
+  it('clamps one-frame touchpad mouse spikes before applying camera look', () => {
+    const { controller } = buildControllerWithStubs({ maxMouseDelta: 5 });
+    controller.camera = { position: { y: 0 } };
+    controller.gameObject = {
+      components: [controller],
+      scene: {
+        userData: {
+          engine: {
+            input: {
+              locked: true,
+              mouse: { dx: 1000, dy: -1000 },
+              keys: {},
+            },
+            keyBinds: {
+              forward: 'KeyW',
+              back: 'KeyS',
+              left: 'KeyA',
+              right: 'KeyD',
+              jump: 'Space',
+            },
+            isAction: vi.fn(() => false),
+          },
+        },
+      },
+    };
+
+    controller.onUpdate(DT);
+
+    expect(controller.yaw).toBeCloseTo(-0.01, 10);
+    expect(controller.pitch).toBeCloseTo(0.01, 10);
   });
 });

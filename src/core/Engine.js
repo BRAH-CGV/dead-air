@@ -3,6 +3,7 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
+import { FreeCam } from '../components/FreeCam.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
@@ -11,6 +12,8 @@ import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
+import { logModelDebugInfo } from './ModelUtils.js';
+import { LevelEditor } from '../editor/LevelEditor.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -37,6 +40,7 @@ export class Engine {
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
   _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
   /** @type {PhysicsDebug} */ physicsDebug;
+  /** @type {LevelEditor} */ levelEditor;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -52,11 +56,19 @@ export class Engine {
   _rootObjects = [];
 
   // ── Input ─────────────────────────────────
+  // Touchpads can occasionally emit one huge movement event. Cap each raw
+  // event before accumulation; FirstPersonController also caps the frame total.
+  mouseEventMaxDelta = 40;
   input = {
     keys: {},
+    pressed: {},
     mouse: { dx: 0, dy: 0 },
     locked: false,
   };
+  
+  // ── Debug ─────────────────────────────────
+  /** When true, spawnModel() logs position/scale/bounds to console. */
+  debugModels = false;
 
   // ── Key binds ─────────────────────────────
   // Maps action names → KeyboardEvent.code strings.
@@ -117,21 +129,38 @@ export class Engine {
     canvas.addEventListener('click', () => canvas.requestPointerLock());
     document.addEventListener('pointerlockchange', () => {
       this.input.locked = document.pointerLockElement === canvas;
+      this.input.mouse.dx = 0;
+      this.input.mouse.dy = 0;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.input.locked) return;
-      this.input.mouse.dx += e.movementX;
-      this.input.mouse.dy += e.movementY;
+      this.input.mouse.dx += this._clampMouseEventDelta(e.movementX);
+      this.input.mouse.dy += this._clampMouseEventDelta(e.movementY);
     });
 
     // ── Keyboard ──
-    addEventListener('keydown', (e) => { this.input.keys[e.code] = true;  });
+    addEventListener('keydown', (e) => {
+      this.input.keys[e.code] = true;
+      if (!e.repeat) this.input.pressed[e.code] = true;
+    });
     addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
-
+    
     // Collider overlay. Its own listener rather than `input.keys`, which is
     // level-triggered and so can't express "toggle on the press".
     addEventListener('keydown', (e) => {
       if (e.code === 'Backquote') this.physicsDebug?.toggle();
+      if (e.code === 'F2') this.levelEditor?.toggle();
+      if (e.code === 'F1') {
+        this.debugModels = !this.debugModels;
+        console.log(`[DEBUG] Model debug logging ${this.debugModels ? 'ENABLED' : 'DISABLED'}`);
+        if (this.debugModels) {
+          console.log('[DEBUG] Re-spawning models to show debug info...');
+          // Re-spawn current scene to show debug info
+          if (this.activeScene) {
+            this.loadScene(this.activeScene.constructor);
+          }
+        }
+      }
     });
 
     // ── Resize ──
@@ -155,6 +184,10 @@ export class Engine {
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
+    
+    // Level editor — toggle with F2. Provides visual object placement.
+    this.levelEditor = new LevelEditor(this);
+    this.levelEditor.init();
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
@@ -169,6 +202,7 @@ export class Engine {
    *  memory doesn't climb across restarts. */
   dispose() {
     this.physicsDebug?.dispose();
+    this.levelEditor?.dispose();
     this.assets?.dispose();
     this.renderer?.dispose();
   }
@@ -202,7 +236,8 @@ export class Engine {
    * @param {string} [opts.name]             GameObject name; defaults to the key.
    * @param {[number,number,number]} [opts.position]
    * @param {number} [opts.rotationY]        Yaw in radians.
-   * @param {number} [opts.scale]            Uniform scale on top of the manifest's.
+   * @param {number|[number,number,number]} [opts.scale]
+   *        Uniform or XYZ scale on top of the manifest's.
    * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
    *        Per-spawn override, merged over the manifest's block. Handy for one
    *        crate that should be dynamic when the rest are scenery.
@@ -212,14 +247,22 @@ export class Engine {
     const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
 
     const go = new GameObject(name ?? key);
+    go.physicsAssetKey = key;
+    go.physicsOverride = physics;
     go.object3d.add(this.assets.instantiate(key));
     go.object3d.position.set(position[0], position[1], position[2]);
     go.object3d.rotation.y = rotationY;
-    if (scale !== 1) go.object3d.scale.setScalar(scale);
-
+    this._applyObjectScale(go.object3d, scale);
+    
     this._attachPhysics(go, key, { position, rotationY, scale, physics });
-
+    
     this._rootObjects.push(go);
+    
+    // Debug: log model info to console
+    if (this.debugModels) {
+      logModelDebugInfo(key, go.object3d);
+    }
+    
     return go;
   }
 
@@ -250,11 +293,47 @@ export class Engine {
     go.rigidBody = createBody(this.world, resolved, { position, rotationY });
     go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
     go.collider  = go.colliders[0] ?? null;
-
+    go._physicsScale = this._scaleArray(scale);
+  
+    this._bodyToGO.set(go.rigidBody.handle, go);
+  
     // Static props never move, so they stay out of the interpolation map.
     if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
-
+  
+  rebuildModelPhysicsForScale(go) {
+    if (!go?.rigidBody || !go.physicsAssetKey) return false;
+  
+    const key = go.physicsAssetKey;
+    const spec = mergePhysics(ASSETS[key]?.physics, go.physicsOverride);
+    if (!spec || spec.body === 'none') return false;
+  
+    const scale = this._scaleArray(go.object3d.scale);
+    const needsMesh = spec.shape === 'trimesh' || spec.shape === 'hull';
+    const resolved = resolvePhysics(spec, this.assets.getCollision(key, needsMesh), scale);
+    if (!resolved) return false;
+  
+    for (const collider of go.colliders ?? (go.collider ? [go.collider] : [])) {
+      this.world.removeCollider(collider, true);
+    }
+  
+    go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
+    go.collider = go.colliders[0] ?? null;
+    go._physicsScale = scale;
+    return true;
+  }
+  
+  _applyObjectScale(object3d, scale) {
+    const [x, y, z] = this._scaleArray(scale);
+    object3d.scale.set(x, y, z);
+  }
+  
+  _scaleArray(scale) {
+    if (Array.isArray(scale)) return [scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1];
+    if (typeof scale === 'object' && scale !== null) return [scale.x ?? 1, scale.y ?? 1, scale.z ?? 1];
+    return [scale, scale, scale];
+  }
+    
   // ──────────────────────────────────────────
   // Player – first-person character controller
   // ──────────────────────────────────────────
@@ -326,6 +405,11 @@ export class Engine {
 
     // ── InteractionSystem component ──
     player.addComponent(new InteractionSystem({ range: 5 }));
+    
+    // ── FreeCam component (V toggles flight; E/Q ascend/descend) ──
+    const freeCam = new FreeCam({ speed: 10 });
+    freeCam.camera = this.camera;
+    player.addComponent(freeCam);
 
     this._rootObjects.push(player);
     this.crosshair.show();
@@ -365,12 +449,19 @@ export class Engine {
 
     // ── Render ──
     this.physicsDebug?.update();
+    this.levelEditor?.update();
     this.renderer.render(this.scene, this.camera);
 
-    // Consume mouse deltas after all updates
+    // Consume one-frame input after all updates have read it
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
+    this.input.pressed = {};
   };
+
+  _clampMouseEventDelta(delta) {
+    if (!Number.isFinite(delta)) return 0;
+    return Math.max(-this.mouseEventMaxDelta, Math.min(this.mouseEventMaxDelta, delta));
+  }
 
   /** Snapshot every rigid-body transform BEFORE world.step(). */
   _savePrevPhysics() {
@@ -404,8 +495,8 @@ export class Engine {
    *  state so they appear to move at the display refresh rate, not 60 Hz. */
   _interpolatePhysics(alpha) {
     for (const [handle, go] of this.rigidBodyMap) {
-      // Only interpolate dynamic bodies; kinematics (Player) are
-      // driven every frame by their controller, so snapping is fine.
+      // Only interpolate dynamic bodies. The player is kinematic and camera-owned;
+      // interpolating it can fight pointer-look and cause visible jitter.
       if (go.rigidBody.bodyType() !== RAPIER.RigidBodyType.Dynamic) continue;
 
       const prev = this._prevPos.get(handle);
