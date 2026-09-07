@@ -206,15 +206,21 @@ export class Engine {
    * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
    *        Per-spawn override, merged over the manifest's block. Handy for one
    *        crate that should be dynamic when the rest are scenery.
+   * @param {typeof GameObject} [opts.type]   GameObject subclass to wrap the
+   *        clone in instead of a plain GameObject — spawns the model as a
+   *        smarter object with behaviour of its own (see
+   *        gameobjects/Satellite.js). The subclass must keep GameObject's
+   *        constructor signature; override `static fromObject3D` to latch
+   *        onto named sub-nodes.
    * @returns {GameObject}
    */
   spawnModel(key, opts = {}) {
-    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics, type = GameObject } = opts;
 
     // Wrap the entire cloned GLB hierarchy into GameObjects so that named
     // sub-parts are reachable via go.find() and lifecycle hooks propagate.
     const clone = this.assets.instantiate(key);
-    const go = GameObject.fromObject3D(clone);
+    const go = type.fromObject3D(clone);
     go.name = name ?? key;
     go.object3d.name = go.name;
     go.object3d.position.set(position[0], position[1], position[2]);

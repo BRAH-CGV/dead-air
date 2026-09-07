@@ -89,6 +89,11 @@ export const ASSETS = {
     // shape:'auto' picks them up on its own.
     physics: 'static',
   },
+  'model:dish_tower': {
+    type: 'model',
+    url: 'assets/models/dish_test.glb',
+    physics: 'kinematic',
+  },
 
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {

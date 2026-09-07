@@ -46,11 +46,15 @@ export class GameObject {
    * calling `object3d.add()` would splice that array via `removeFromParent()`
    * even for same-parent re-adds, silently dropping siblings.
    *
+   * Subclass-aware: `SubClass.fromObject3D(obj)` wraps the root in a
+   * `SubClass` instance (children stay plain GameObjects), which is how
+   * Engine.spawnModel's `type` option hands back a smarter object.
+   *
    * @param {THREE.Object3D} obj
    * @returns {GameObject}
    */
   static fromObject3D(obj) {
-    const go = new GameObject();
+    const go = new this();
     go.object3d = obj;
     go.name = obj.name || 'GameObject';
     obj.name = go.name;
