@@ -94,6 +94,8 @@ dead-air/
 
 Asset paths never appear outside the manifest, so there is one place to check before submitting. Anything listed in `PRELOAD` is fetched before the first frame, with progress shown on the loading screen.
 
+Downloaded assets (Sketchfab, Poly Haven, etc.) carry their own licence terms — record every non-original asset in [ATTRIBUTIONS.md](ATTRIBUTIONS.md) when you add it. The course rubric requires a credits screen listing all non-original work, and that file is its source of truth.
+
 Two things worth knowing:
 
 - **Instances share their geometry.** `spawnModel` clones from a single cached copy, so placing the same model twenty times costs one GPU upload. The flip side: never `.dispose()` an instance's geometry or material — you'd blank out every other copy. Teardown goes through `engine.assets.release(key)`.
