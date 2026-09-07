@@ -49,6 +49,8 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  * @property {number}  [scale]         Uniform scale baked in once, at load time.
  * @property {boolean} [castShadow]    Default true.
  * @property {boolean} [receiveShadow] Default true.
+ * @property {{ side?: 'front'|'back'|'double', depthWrite?: boolean }} [material]
+ *           Optional per-model cleanup for GLB material flags.
  * @property {PhysicsBlock|'static'|'dynamic'|'kinematic'} [physics]
  *           Absent means render-only. The bare string is shorthand for
  *           `{ body: … }`, which is all most entries need.
@@ -84,9 +86,34 @@ export const ASSETS = {
   'model:desk': {
     type: 'model',
     url: 'assets/models/desk.glb',
-    // Tier 1: a box fitted to the desk's bounds. When the real desk model
-    // arrives with UCX_ meshes for the leg gap, this line doesn't change —
-    // shape:'auto' picks them up on its own.
+    physics: 'static',
+  },
+  'model:retro-computer': {
+    type: 'model',
+    url: 'assets/models/retro_futuristic_computer.glb',
+    // This download marks some surfaces double-sided, which makes the front
+    // keyboard/monitor faces visible from behind. Treat it like solid plastic.
+    material: { side: 'front', depthWrite: true },
+    physics: 'static',
+  },
+  'model:server-rack': {
+    type: 'model',
+    url: 'assets/models/server.glb',
+    physics: 'static',
+  },
+  'model:radar-terminal': {
+    type: 'model',
+    url: 'assets/models/industrial_terminal.glb',
+    physics: 'static',
+  },
+  'model:security-camera': {
+    type: 'model',
+    url: 'assets/models/security_camera.glb',
+    physics: 'static',
+  },
+  'model:switchboard': {
+    type: 'model',
+    url: 'assets/models/switchboard_ussr.glb',
     physics: 'static',
   },
 
@@ -103,11 +130,6 @@ export const ASSETS = {
     colorSpace: 'linear',
     repeat: [24, 24],
   },
-  'model:office-scene': {
-  type: 'model',
-  url: 'assets/models/Untiled.glb',
-  physics: 'static',
-},
 };
 
 /**
