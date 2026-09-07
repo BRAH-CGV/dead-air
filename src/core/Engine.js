@@ -211,12 +211,8 @@ export class Engine {
   spawnModel(key, opts = {}) {
     const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
 
-    // Wrap the entire cloned GLB hierarchy into GameObjects so that named
-    // sub-parts are reachable via go.find() and lifecycle hooks propagate.
-    const clone = this.assets.instantiate(key);
-    const go = GameObject.fromObject3D(clone);
-    go.name = name ?? key;
-    go.object3d.name = go.name;
+    const go = new GameObject(name ?? key);
+    go.object3d.add(this.assets.instantiate(key));
     go.object3d.position.set(position[0], position[1], position[2]);
     go.object3d.rotation.y = rotationY;
     if (scale !== 1) go.object3d.scale.setScalar(scale);
@@ -255,10 +251,7 @@ export class Engine {
     go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
     go.collider  = go.colliders[0] ?? null;
 
-    // Every spawned body goes into _bodyToGO so raycasts (InteractionSystem)
-    // can look up the owning GameObject from a collider handle. Static props
-    // stay out of rigidBodyMap — they never move, so interpolation is wasted.
-    this._bodyToGO.set(go.rigidBody.handle, go);
+    // Static props never move, so they stay out of the interpolation map.
     if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
 
