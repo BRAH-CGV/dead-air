@@ -34,6 +34,34 @@ export class GameObject {
 
   _started = false;
 
+  /**
+   * Recursively wrap an existing Object3D hierarchy into GameObjects,
+   * reusing every node in place.  The Object3D tree is not cloned — each
+   * GameObject adopts the Object3D it wraps, so transforms, materials and
+   * GPU buffers are untouched.
+   *
+   * Only the GameObject bookkeeping (`parent`, `children[]`) is wired up.
+   * The Three.js scene graph is left alone — the parent-child relationships
+   * in `object3d.children` already exist from the source hierarchy, and
+   * calling `object3d.add()` would splice that array via `removeFromParent()`
+   * even for same-parent re-adds, silently dropping siblings.
+   *
+   * @param {THREE.Object3D} obj
+   * @returns {GameObject}
+   */
+  static fromObject3D(obj) {
+    const go = new GameObject();
+    go.object3d = obj;
+    go.name = obj.name || 'GameObject';
+    obj.name = go.name;
+    for (const child of obj.children) {
+      const childGO = GameObject.fromObject3D(child);
+      childGO.parent = go;
+      go.children.push(childGO);
+    }
+    return go;
+  }
+
   constructor(name = 'GameObject') {
     this.name = name;
     this.object3d = new THREE.Object3D();
@@ -96,7 +124,11 @@ export class GameObject {
   _init(scene, world) {
     this.scene = scene;
     this.world = world;
-    scene.add(this.object3d);
+    // Only add to the scene when this is a root object (no parent). Children
+    // are already in the scene graph through their parent's Object3D — calling
+    // scene.add() on them would detach them from the parent and re-parent them
+    // to the scene root, scattering the model's sub-meshes across the origin.
+    if (!this.parent) scene.add(this.object3d);
     for (const c of this.components) c.onAwake();
     for (const ch of this.children) ch._init(scene, world);
   }
