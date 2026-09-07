@@ -48,7 +48,13 @@ describe('auto bounding box', () => {
     expect(box.halfExtents).toEqual([1, 1, 1]);
     expect(box.position).toEqual([0, 1, 0]);
   });
-
+  
+  it('supports non-uniform editor scale for fitted boxes', () => {
+    const [box] = resolveShape('box', CUBE, [2, 3, 4]);
+    expect(box.halfExtents).toEqual([1, 1.5, 2]);
+    expect(box.position).toEqual([0, 1.5, 0]);
+  });
+  
   it('gives a flat model enough thickness for Rapier to cope', () => {
     const poster = { bounds: { size: [1, 0, 1], center: [0, 1, 0] } };
     expect(resolveShape('box', poster)[0].halfExtents[1]).toBeGreaterThan(0);
@@ -74,6 +80,11 @@ describe("shape: 'auto'", () => {
     expect(resolveShape('hull', { hulls: [TETRA] })[0].points).toBe(TETRA);
     expect(resolveShape('hull', { hulls: [TETRA] }, 2)[0].points[3]).toBe(2);
   });
+
+  it('scales hull points per axis for non-uniform editor scale', () => {
+    const points = resolveShape('hull', { hulls: [TETRA] }, [2, 3, 4])[0].points;
+    expect([...points]).toEqual([0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4]);
+  });
 });
 
 describe('hand-written primitives', () => {
@@ -89,7 +100,13 @@ describe('hand-written primitives', () => {
     expect(cap.halfHeight).toBeCloseTo(0.7);
     expect(cap.radius).toBe(0.3);
   });
-
+  
+  it('uses Y scale for primitive height and horizontal scale for primitive radius', () => {
+    const [cyl] = resolveShape([{ type: 'cylinder', height: 2, radius: 0.5 }], undefined, [2, 3, 4]);
+    expect(cyl.halfHeight).toBeCloseTo(3);
+    expect(cyl.radius).toBeCloseTo(2);
+  });
+  
   it('keeps a capsule valid when the caps would swallow the height', () => {
     const [cap] = resolveShape([{ type: 'capsule', height: 0.4, radius: 0.5 }]);
     expect(cap.halfHeight).toBeGreaterThan(0);

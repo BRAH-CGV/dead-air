@@ -19,6 +19,20 @@ function meshAt(name, position = [0, 0, 0], size = 1) {
   return mesh;
 }
 
+describe('prepareModel', () => {
+  it('can force imported double-sided materials back to front-side rendering', () => {
+    const material = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material);
+    const root = new THREE.Group();
+    root.add(mesh);
+
+    prepareModel(root, { material: { side: 'front', depthWrite: true } });
+
+    expect(material.side).toBe(THREE.FrontSide);
+    expect(material.depthWrite).toBe(true);
+  });
+});
+
 describe('extractColliderMeshes', () => {
   it('pulls collision proxies out of the render tree and leaves the art', () => {
     const root = new THREE.Group();

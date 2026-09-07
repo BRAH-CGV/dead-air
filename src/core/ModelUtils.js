@@ -18,6 +18,8 @@ import * as THREE from 'three';
  * @param {boolean} [opts.castShadow=true]
  * @param {boolean} [opts.receiveShadow=true]
  * @param {number}  [opts.anisotropy=1]     Usually renderer.capabilities.getMaxAnisotropy().
+ * @param {{ side?: 'front'|'back'|'double', depthWrite?: boolean }} [opts.material]
+ *        Optional per-asset material cleanup for imported models with bad GLB flags.
  */
 export function prepareModel(root, opts = {}) {
   const {
@@ -25,6 +27,7 @@ export function prepareModel(root, opts = {}) {
     castShadow = true,
     receiveShadow = true,
     anisotropy = 1,
+    material: materialOpts,
   } = opts;
 
   if (scale !== undefined) root.scale.setScalar(scale);
@@ -36,6 +39,8 @@ export function prepareModel(root, opts = {}) {
     child.receiveShadow = receiveShadow;
 
     for (const material of materialsOf(child)) {
+      applyMaterialOptions(material, materialOpts);
+
       for (const tex of texturesOf(material)) {
         tex.anisotropy = Math.max(tex.anisotropy, anisotropy);
       }
@@ -44,6 +49,26 @@ export function prepareModel(root, opts = {}) {
 
   root.updateMatrixWorld(true);
   return root;
+}
+
+function applyMaterialOptions(material, opts) {
+  if (!material || !opts) return;
+
+  if (opts.side !== undefined) {
+    material.side = sideConstant(opts.side);
+    material.needsUpdate = true;
+  }
+
+  if (opts.depthWrite !== undefined) {
+    material.depthWrite = opts.depthWrite;
+  }
+}
+
+function sideConstant(side) {
+  if (side === 'front') return THREE.FrontSide;
+  if (side === 'back') return THREE.BackSide;
+  if (side === 'double') return THREE.DoubleSide;
+  return side;
 }
 
 /** Materials on a mesh, normalised to an array — a mesh may carry several. */
@@ -238,4 +263,39 @@ export function disposeObject3D(root, { disposeShared = false } = {}) {
       material.dispose();
     }
   });
+}
+
+/**
+ * Get bounding box dimensions and center of an object.
+ * @param {THREE.Object3D} object
+ * @returns {{ size: number[], center: number[] }}
+ */
+export function getModelBounds(object) {
+  object.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  
+  return {
+    size: [size.x, size.y, size.z],
+    center: [center.x, center.y, center.z],
+  };
+}
+
+/**
+ * Log debug information about a spawned model to the console.
+ * Shows scale, position, rotation, and bounding box dimensions.
+ * @param {string} key - The manifest key (e.g. 'model:desk')
+ * @param {THREE.Object3D} object - The spawned object
+ */
+export function logModelDebugInfo(key, object) {
+  const bounds = getModelBounds(object);
+  
+  console.log(`\n[DEBUG] ${key}`);
+  console.log(`  Name: ${object.name}`);
+  console.log(`  Position: [${object.position.x.toFixed(2)}, ${object.position.y.toFixed(2)}, ${object.position.z.toFixed(2)}]`);
+  console.log(`  Rotation: [${object.rotation.x.toFixed(2)}, ${object.rotation.y.toFixed(2)}, ${object.rotation.z.toFixed(2)}]`);
+  console.log(`  Scale: [${object.scale.x.toFixed(2)}, ${object.scale.y.toFixed(2)}, ${object.scale.z.toFixed(2)}]`);
+  console.log(`  Bounds size: [${bounds.size[0].toFixed(2)}, ${bounds.size[1].toFixed(2)}, ${bounds.size[2].toFixed(2)}]`);
+  console.log(`  Bounds center: [${bounds.center[0].toFixed(2)}, ${bounds.center[1].toFixed(2)}, ${bounds.center[2].toFixed(2)}]`);
 }

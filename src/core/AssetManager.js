@@ -132,6 +132,7 @@ export class AssetManager {
         castShadow: entry.castShadow,
         receiveShadow: entry.receiveShadow,
         anisotropy: this.maxAnisotropy,
+        material: entry.material,
       });
 
       // Collision geometry is derived once, here, so spawning stays cheap
