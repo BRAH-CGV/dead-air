@@ -3,6 +3,7 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
+import { Satellite } from '../gameobjects/Satellite.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -41,7 +42,23 @@ export class OfficeScene extends Scene {
     this._addWindow();
     this._addOfficeFurniture();
     this._addProps();
-  
+
+    // ── Satellite (outside, steerable dish tower) ──
+    // The dish tower spawns as a Satellite (GameObject subclass): its neck
+    // slews toward targetYaw and its dish tilts toward targetPitch, never
+    // faster than maxRotationSpeed — steering instead of spinning forever.
+    this.satellite = this.engine.spawnModel('model:dish_tower', {
+      name: 'Satellite',
+      position: [0, 0, -25],
+      scale: 0.5,
+      type: Satellite,
+    });
+    this._outside.addChild(this.satellite);
+    // Aim it off the shipped pose so the slew plays out on load. Gameplay
+    // (the radar terminal) will steer these later.
+    this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
+    this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+
     // ── Player (shared across all scenes) ──
     this.engine.buildPlayer();
   }

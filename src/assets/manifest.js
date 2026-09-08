@@ -116,6 +116,11 @@ export const ASSETS = {
     url: 'assets/models/switchboard_ussr.glb',
     physics: 'static',
   },
+  'model:dish_tower': {
+    type: 'model',
+    url: 'assets/models/dish_test.glb',
+    physics: 'kinematic',
+  },
 
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {

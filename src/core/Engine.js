@@ -329,15 +329,25 @@ export class Engine {
    * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
    *        Per-spawn override, merged over the manifest's block. Handy for one
    *        crate that should be dynamic when the rest are scenery.
+   * @param {typeof GameObject} [opts.type]   GameObject subclass to wrap the
+   *        clone in instead of a plain GameObject — spawns the model as a
+   *        smarter object with behaviour of its own (see
+   *        gameobjects/Satellite.js). The subclass must keep GameObject's
+   *        constructor signature; override `static fromObject3D` to latch
+   *        onto named sub-nodes.
    * @returns {GameObject}
    */
   spawnModel(key, opts = {}) {
-    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics, type = GameObject } = opts;
 
-    const go = new GameObject(name ?? key);
+    // Wrap the entire cloned GLB hierarchy into GameObjects so that named
+    // sub-parts are reachable via go.find() and lifecycle hooks propagate.
+    const clone = this.assets.instantiate(key);
+    const go = type.fromObject3D(clone);
+    go.name = name ?? key;
+    go.object3d.name = go.name;
     go.physicsAssetKey = key;
     go.physicsOverride = physics;
-    go.object3d.add(this.assets.instantiate(key));
     go.object3d.position.set(position[0], position[1], position[2]);
     go.object3d.rotation.y = rotationY;
     this._applyObjectScale(go.object3d, scale);
@@ -385,10 +395,11 @@ export class Engine {
     go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
     go.collider  = go.colliders[0] ?? null;
     go._physicsScale = this._scaleArray(scale);
-  
+
+    // Every spawned body goes into _bodyToGO so raycasts (InteractionSystem)
+    // can look up the owning GameObject from a collider handle. Static props
+    // stay out of rigidBodyMap — they never move, so interpolation is wasted.
     this._bodyToGO.set(go.rigidBody.handle, go);
-  
-    // Static props never move, so they stay out of the interpolation map.
     if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
   
