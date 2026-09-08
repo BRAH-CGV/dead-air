@@ -124,4 +124,67 @@ describe('OfficeScene hierarchy', () => {
     // buildPlayer is called, which adds Player to _rootObjects
     expect(mockEngine.buildPlayer).toHaveBeenCalled();
   });
+
+  it('ground exposes its rigid body and collider for scene teardown', () => {
+    scene.build();
+
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    const outside = sceneRoot.children.find(go => go.name === 'Outside');
+    const ground = outside.descendants().find(go => go.name === 'Ground');
+
+    // An orphan ground body would survive loadScene() and stack a ghost
+    // floor collider on every scene reload.
+    expect(ground.rigidBody).toBeDefined();
+    expect(ground.colliders.length).toBeGreaterThan(0);
+    expect(ground._originalSize).toEqual([100, 0.2, 100]);
+  });
+
+  it('static boxes expose their rigid body and collider for editor sync', () => {
+    scene.build();
+
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    const office = sceneRoot.children.find(go => go.name === 'Office');
+    const walls = office.descendants().filter(go => go.name.includes('Wall'));
+
+    expect(walls.length).toBeGreaterThan(0);
+    for (const wall of walls) {
+      // Without go.rigidBody the editor's _syncSingleTransformToPhysics
+      // early-returns and scale/rotate never reach the collider.
+      expect(wall.rigidBody).toBeDefined();
+      expect(wall.collider).toBeDefined();
+      expect(wall.colliders.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('static boxes are centred on their own pivot (mesh at local origin)', () => {
+    scene.build();
+
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    const office = sceneRoot.children.find(go => go.name === 'Office');
+    const walls = office.descendants().filter(go => go.name.includes('Wall'));
+
+    for (const wall of walls) {
+      const mesh = wall.object3d.children.find(c => c.isMesh);
+      expect(mesh).toBeDefined();
+      // Mesh centred on the GameObject so scale/rotate pivot on the box centre
+      expect(mesh.position.x).toBe(0);
+      expect(mesh.position.y).toBe(0);
+      expect(mesh.position.z).toBe(0);
+      // Position lives on the GameObject itself
+      expect(wall.object3d.position.lengthSq()).toBeGreaterThan(0);
+    }
+  });
+
+  it('static boxes record _originalSize for procedural collider rebuilds', () => {
+    scene.build();
+
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    const office = sceneRoot.children.find(go => go.name === 'Office');
+    const walls = office.descendants().filter(go => go.name.includes('Wall'));
+
+    for (const wall of walls) {
+      expect(Array.isArray(wall._originalSize)).toBe(true);
+      expect(wall._originalSize.length).toBe(3);
+    }
+  });
 });

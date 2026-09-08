@@ -30,6 +30,10 @@ describe('LevelEditor', () => {
     };
 
     // Mock engine
+    const colliderDesc = () => {
+      const desc = { setTranslation: vi.fn(() => desc) };
+      return desc;
+    };
     mockEngine = {
       scene: mockScene,
       camera: mockCamera,
@@ -38,6 +42,11 @@ describe('LevelEditor', () => {
       _rootObjects: [],
       world: {
         removeRigidBody: vi.fn(),
+        removeCollider: vi.fn(),
+        createCollider: vi.fn(() => ({ handle: 1 })),
+      },
+      RAPIER: {
+        ColliderDesc: { cuboid: vi.fn(colliderDesc) },
       },
       rigidBodyMap: new Map(),
       _bodyToGO: new Map(),
@@ -1367,6 +1376,196 @@ describe('LevelEditor', () => {
     });
   });
 
+  describe('recenter object on self (P key)', () => {
+    it('moves a single object pivot to its visual centre, preserving world position', () => {
+      const go = new GameObject('OffCentreBox');
+      // Mesh offset from the pivot: pivot at origin, mesh centred at (2, 0, 0)
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.position.set(2, 0, 0);
+      go.object3d.add(mesh);
+
+      editor._recenterObjectOnSelf(go);
+
+      // Pivot now at the mesh centre
+      expect(go.object3d.position.x).toBeCloseTo(2, 5);
+      // Mesh content shifted back so the visual stayed put
+      expect(mesh.position.x).toBeCloseTo(0, 5);
+
+      go.object3d.updateMatrixWorld(true);
+      const world = new THREE.Vector3();
+      mesh.getWorldPosition(world);
+      expect(world.x).toBeCloseTo(2, 5); // visual unchanged
+    });
+
+    it('is a no-op for an object whose mesh is already centred on its pivot', () => {
+      const go = new GameObject('CentredBox');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.position.set(0, 0, 0);
+      go.object3d.add(mesh);
+      go.object3d.position.set(5, 1, -3);
+
+      editor._recenterObjectOnSelf(go);
+
+      expect(go.object3d.position.x).toBe(5);
+      expect(go.object3d.position.y).toBe(1);
+      expect(go.object3d.position.z).toBe(-3);
+      expect(mesh.position.x).toBe(0);
+    });
+
+    it('handles an offset mesh on a rotated, scaled object', () => {
+      const go = new GameObject('RotatedBox');
+      go.object3d.rotation.y = Math.PI / 2;
+      go.object3d.scale.set(2, 2, 2);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.position.set(1, 0, 0);
+      go.object3d.add(mesh);
+
+      go.object3d.updateMatrixWorld(true);
+      const before = new THREE.Vector3();
+      mesh.getWorldPosition(before);
+
+      editor._recenterObjectOnSelf(go);
+
+      go.object3d.updateMatrixWorld(true);
+      const after = new THREE.Vector3();
+      mesh.getWorldPosition(after);
+      // Visual position preserved despite rotation + scale
+      expect(after.x).toBeCloseTo(before.x, 4);
+      expect(after.y).toBeCloseTo(before.y, 4);
+      expect(after.z).toBeCloseTo(before.z, 4);
+      // Pivot is now at the visual centre: local (1,0,0) at scale 2 rotated
+      // 90° about Y lands on world -Z, not +X.
+      expect(go.object3d.position.x).toBeCloseTo(0, 4);
+      expect(go.object3d.position.z).toBeCloseTo(-2, 4);
+    });
+
+    it('preserves visual position under non-uniform scale (no scale-division bug)', () => {
+      // Non-uniform scale is the case that breaks if the mesh shift divides
+      // by obj.scale — the correction is too small on scaled axes and the
+      // visual mesh drifts away from the collider.
+      const go = new GameObject('ScaledDesk');
+      go.object3d.scale.set(2, 3, 1);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.position.set(1, 0.5, 2);
+      go.object3d.add(mesh);
+
+      go.object3d.updateMatrixWorld(true);
+      const before = new THREE.Vector3();
+      mesh.getWorldPosition(before);
+
+      editor._recenterObjectOnSelf(go);
+
+      go.object3d.updateMatrixWorld(true);
+      const after = new THREE.Vector3();
+      mesh.getWorldPosition(after);
+      // Visual position must be preserved exactly
+      expect(after.x).toBeCloseTo(before.x, 4);
+      expect(after.y).toBeCloseTo(before.y, 4);
+      expect(after.z).toBeCloseTo(before.z, 4);
+    });
+
+    it('rebuilds model collider with zero offset after recentering (P key)', () => {
+      // Models spawned via spawnModel have a collider offset baked at load
+      // time (bounds.center relative to the model origin). When P recentres
+      // the pivot on the mesh centre, the body moves but the cached offset
+      // becomes stale — the collider drifts away from the visual. The fix
+      // forces a measured-bbox rebuild after every P so the offset is always
+      // zero (pivot IS the mesh centre).
+      const go = new GameObject('Desk');
+      go.physicsAssetKey = 'model:desk';
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 0.6));
+      mesh.position.set(0, 0.375, 0); // off-centre: model origin on floor
+      go.object3d.add(mesh);
+      go.object3d.position.set(2, 0, 1);
+      go.colliders = [{ handle: 0 }];
+      go.collider = go.colliders[0];
+      go._physicsScale = [1, 1, 1];
+
+      let bodyPos = { x: 2, y: 0, z: 1 };
+      go.rigidBody = {
+        setTranslation: vi.fn((p) => { bodyPos = { ...p }; }),
+        setRotation: vi.fn(),
+        translation: vi.fn(() => bodyPos),
+        rotation: vi.fn(() => ({ x: 0, y: 0, z: 0, w: 1 })),
+      };
+
+      // Simulate P key handler
+      editor.selectedObject = go;
+      editor._recenterObjectOnSelf(go);
+      editor._syncTransformToPhysics();
+      if (!go.isGroup && go.rigidBody) {
+        editor._rebuildProceduralCollider(go);
+      }
+
+      // Collider must be rebuilt
+      expect(mockEngine.world.removeCollider).toHaveBeenCalled();
+      expect(mockEngine.world.createCollider).toHaveBeenCalled();
+      // Zero offset: pivot is now at the mesh centre
+      const desc = mockEngine.RAPIER.ColliderDesc.cuboid.mock.results[0].value;
+      expect(desc.setTranslation).toHaveBeenCalledWith(0, 0, 0);
+      // Correct size from measured world bbox
+      expect(mockEngine.RAPIER.ColliderDesc.cuboid).toHaveBeenCalledWith(
+        expect.closeTo(0.6, 4),
+        expect.closeTo(0.375, 4),
+        expect.closeTo(0.3, 4),
+      );
+    });
+  });
+
+  describe('procedural collider rebuild from measured bbox', () => {
+    const makeWall = (meshLocal = [0, 0, 0]) => {
+      const go = new GameObject('Wall');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.position.set(...meshLocal);
+      go.object3d.add(mesh);
+      go.object3d.position.set(5, 1.5, -4);
+      go._originalSize = [1, 1, 1];
+      go.colliders = [{ handle: 0 }];
+      go.collider = go.colliders[0];
+      go.rigidBody = {
+        setTranslation: vi.fn(),
+        setRotation: vi.fn(),
+        translation: vi.fn(() => ({ x: 5, y: 1.5, z: -4 })),
+        rotation: vi.fn(() => ({ x: 0, y: 0, z: 0, w: 1 })),
+      };
+      return go;
+    };
+
+    it('sizes the collider from the measured world bbox at the current scale', () => {
+      const go = makeWall();
+      go.object3d.scale.set(2, 2, 2);
+
+      editor._syncSingleTransformToPhysics(go);
+
+      expect(mockEngine.world.removeCollider).toHaveBeenCalled();
+      // 1 m box at scale 2 → 2 m world box → half-extents (1, 1, 1)
+      expect(mockEngine.RAPIER.ColliderDesc.cuboid).toHaveBeenCalledWith(1, 1, 1);
+    });
+
+    it('offsets the collider to wrap a mesh that is off-centre from the pivot', () => {
+      const go = makeWall([1, 0, 0]);
+      go.object3d.scale.set(2, 2, 2);
+      // Mesh world centre = pivot + 2*(1,0,0) = (7, 1.5, -4); body at pivot
+
+      editor._syncSingleTransformToPhysics(go);
+
+      // The cuboid desc must be translated by the world delta, body frame
+      const desc = mockEngine.RAPIER.ColliderDesc.cuboid.mock.results[0].value;
+      expect(desc.setTranslation).toHaveBeenCalledWith(2, 0, 0);
+    });
+
+    it('does not rebuild when scale matches the last rebuilt scale', () => {
+      const go = makeWall();
+      go.object3d.scale.set(2, 2, 2);
+      editor._syncSingleTransformToPhysics(go);
+      const callsAfterFirst = mockEngine.world.createCollider.mock.calls.length;
+
+      editor._syncSingleTransformToPhysics(go);
+
+      expect(mockEngine.world.createCollider.mock.calls.length).toBe(callsAfterFirst);
+    });
+  });
+
   describe('create group button', () => {
     beforeEach(() => {
       editor.init();
@@ -1441,6 +1640,44 @@ describe('LevelEditor', () => {
         expect(clickSpy).toHaveBeenCalled();
         clickSpy.mockRestore();
       });
+    });
+  });
+
+  describe('onSceneRebuilt (engine hook after F4/scene switch)', () => {
+    beforeEach(() => {
+      editor.init();
+    });
+
+    it('clears a stale selection and rebuilds the hierarchy when open', () => {
+      const go = new GameObject('Thing');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      go.object3d.add(mesh);
+      mockEngine._rootObjects = [go];
+
+      editor._refreshEditableObjects();
+      editor.selectObject(go);
+      expect(editor.selectedObject).toBe(go);
+
+      editor.enabled = true;
+      editor.onSceneRebuilt();
+
+      expect(editor.selectedObject).toBeNull();
+      // Hierarchy re-adopted from the (new) engine root objects
+      expect(editor.editableObjects).toContain(go);
+    });
+
+    it('clears the selection even when the editor is closed', () => {
+      const go = new GameObject('Thing');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      go.object3d.add(mesh);
+      mockEngine._rootObjects = [go];
+      editor._refreshEditableObjects();
+      editor.selectObject(go);
+
+      editor.enabled = false;
+      editor.onSceneRebuilt();
+
+      expect(editor.selectedObject).toBeNull();
     });
   });
 

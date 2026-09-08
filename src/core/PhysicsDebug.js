@@ -37,9 +37,17 @@ export class PhysicsDebug {
       geometry,
       new THREE.LineBasicMaterial({
         vertexColors: true,
-        // Colliders sit exactly on the surfaces they wrap, so z-fighting is
-        // guaranteed. Drawing on top is the point of an overlay anyway.
-        depthTest: false,
+        // Colliders sit exactly on the surfaces they wrap.  depthTest: false
+        // used to force the overlay on top, but on large surfaces the lines
+        // and mesh fragments competed for the same pixels and the resulting
+        // z-fighting shimmered when the camera moved ("collider drifts with
+        // the camera").  depthTest: true + polygonOffset keeps the wireframe
+        // just behind mesh surfaces so it's stable and still visible through
+        // objects further away.
+        depthTest: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
         transparent: true,
       }),
     );

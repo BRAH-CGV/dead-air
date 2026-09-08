@@ -121,6 +121,28 @@ export class LevelEditor {
       if (e.code === 'Delete' && this.selectedObject) {
         this._deleteSelected();
       }
+
+      // P = recenter pivot. Groups pivot at the average centre of children;
+      // single objects pivot on their own visual (bounding-box) centre.
+      if (e.code === 'KeyP' && this.selectedObject) {
+        if (this.selectedObject.isGroup) {
+          this._recenterPivot(this.selectedObject);
+        } else {
+          this._recenterObjectOnSelf(this.selectedObject);
+        }
+        this._syncTransformToPhysics();
+        // Recentering shifts the pivot, which invalidates the cached collider
+        // offset for models (the offset was computed at load time relative to
+        // the model's original origin, not the new pivot). Force a rebuild
+        // from the measured world bbox so the collider stays centred on the
+        // visual mesh instead of drifting upward by the old offset.
+        if (!this.selectedObject.isGroup && this.selectedObject.rigidBody) {
+          this._rebuildProceduralCollider(this.selectedObject);
+        }
+        this._updateInfoPanel();
+        this._updateTreeView();
+        e.preventDefault();
+      }
     });
     
     // Mouse click for selection
@@ -146,6 +168,20 @@ export class LevelEditor {
   
   _refreshEditableObjects() {
     this._buildHierarchy();
+  }
+
+  /** Called by the engine after a scene (re)build — e.g. F4 model-debug
+   *  respawn or a scene-switcher change. An open editor must never keep
+   *  references into the old scene: a stale selection would sync dead
+   *  physics bodies (use-after-free in Rapier) on the next edit. */
+  onSceneRebuilt() {
+    this.deselectAll();
+    this.sceneRoot = null;          // force re-adoption of the new SceneRoot
+    this._collapsedGroups.clear();  // old group refs are gone
+    if (this.enabled) {
+      this._refreshEditableObjects();
+      this._updateInfoPanel();
+    }
   }
   
   /** Build the hierarchy from the current engine._rootObjects.
@@ -283,6 +319,7 @@ export class LevelEditor {
         <strong>Arrow Keys</strong>: Transform selected object<br>
         <strong>PageUp/Down</strong>: Move up/down or rotate Z<br>
         <strong>Click</strong>: Select object | <strong>Del</strong>: Delete<br>
+        <strong>P</strong>: Recenter pivot (group = avg centre, object = own centre)<br>
       </div>
     `;
     this.panel.appendChild(help);
@@ -884,36 +921,178 @@ export class LevelEditor {
     this._syncSingleTransformToPhysics(go);
   }
   
-  /** Sync a single GameObject's physics to match its visual transform. */
+  /** Sync a single GameObject's physics to match its visual transform.
+   *  Uses WORLD position/rotation so nested objects sync correctly,
+   *  and handles scale changes for both model and procedural colliders. */
   _syncSingleTransformToPhysics(go) {
     const obj = go.object3d;
     const rb = go.rigidBody;
     
-    if (!rb) return; // No physics body, nothing to sync
+    if (!rb) return;
+
+    // Force world matrix recalculation (parent/child transforms may have changed)
+    obj.updateMatrixWorld(true);
     
-    // Update rigid body position
-    const pos = obj.position;
-    rb.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+    // Use world position — correct for objects nested under groups
+    const worldPos = new THREE.Vector3();
+    obj.getWorldPosition(worldPos);
+    rb.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
     
-    // Update rigid body rotation
-    const rot = obj.quaternion;
-    rb.setRotation({ x: rot.x, y: rot.y, z: rot.z, w: rot.w }, true);
+    // Use world rotation — correct for objects under rotated groups
+    const worldQuat = new THREE.Quaternion();
+    obj.getWorldQuaternion(worldQuat);
+    rb.setRotation({ x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w }, true);
       
-    // Rapier colliders cannot be scaled in place. Manifest-spawned models ask
-    // the engine to rebuild their collider shapes when visual scale changes.
+    // Scale: rebuild colliders when visual scale changes
     if (this._scaleChanged(go)) {
-      this.engine.rebuildModelPhysicsForScale?.(go);
+      if (go.physicsAssetKey) {
+        // Manifest-spawned model — engine knows how to rebuild
+        this.engine.rebuildModelPhysicsForScale?.(go);
+      } else if (go._originalSize) {
+        // Procedural box — rebuild cuboid collider at new scale
+        this._rebuildProceduralCollider(go);
+      }
     }
   }
   
   _scaleChanged(go) {
-    if (!go.physicsAssetKey || !go._physicsScale) return false;
-  
-    const scale = go.object3d.scale;
-    const previous = go._physicsScale;
-    return Math.abs(scale.x - previous[0]) > 1e-6
-      || Math.abs(scale.y - previous[1]) > 1e-6
-      || Math.abs(scale.z - previous[2]) > 1e-6;
+    // Procedural objects: first build has no _physicsScale — compare to identity.
+    // After a rebuild, _physicsScale holds the last collider scale — compare to that.
+    if (go._originalSize) {
+      const scale = go.object3d.scale;
+      const previous = go._physicsScale ?? [1, 1, 1];
+      return Math.abs(scale.x - previous[0]) > 1e-6
+        || Math.abs(scale.y - previous[1]) > 1e-6
+        || Math.abs(scale.z - previous[2]) > 1e-6;
+    }
+    // Model objects: check _physicsScale (set by engine at spawn)
+    if (go.physicsAssetKey && go._physicsScale) {
+      const scale = go.object3d.scale;
+      const previous = go._physicsScale;
+      return Math.abs(scale.x - previous[0]) > 1e-6
+        || Math.abs(scale.y - previous[1]) > 1e-6
+        || Math.abs(scale.z - previous[2]) > 1e-6;
+    }
+    return false;
+  }
+
+  /** Rebuild a procedural box collider from the mesh's MEASURED world bounding
+   *  box. Measuring reality (instead of trusting stored size × scale) keeps the
+   *  wireframe exactly on the visible mesh whatever the scale or parent
+   *  transforms are, and the collider offset keeps off-centre meshes wrapped. */
+  _rebuildProceduralCollider(go) {
+    const world = this.engine.world;
+    const RAPIER = this.engine.RAPIER;
+    if (!RAPIER) return;
+
+    // Measure the visual mesh's world-space bounding box. Matrices are already
+    // fresh — the caller ran updateMatrixWorld(true) before the scale check.
+    const box = new THREE.Box3();
+    let hasMesh = false;
+    go.object3d.traverse((child) => {
+      if (child.isMesh) { box.expandByObject(child); hasMesh = true; }
+    });
+    if (!hasMesh) return;
+
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    if (!(size.x > 0 && size.y > 0 && size.z > 0)) return;
+
+    // Remove old colliders
+    for (const c of go.colliders ?? (go.collider ? [go.collider] : [])) {
+      world.removeCollider(c, true);
+    }
+
+    // Collider offsets are relative to the BODY, in the body's rotated frame:
+    // world delta from body to bbox centre, rotated by the inverse rotation.
+    const t = go.rigidBody.translation();
+    const r = go.rigidBody.rotation();
+    const offset = new THREE.Vector3(center.x - t.x, center.y - t.y, center.z - t.z);
+    offset.applyQuaternion(new THREE.Quaternion(-r.x, -r.y, -r.z, r.w));
+
+    const newCollider = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
+        .setTranslation(offset.x, offset.y, offset.z),
+      go.rigidBody,
+    );
+    go.colliders = [newCollider];
+    go.collider = newCollider;
+    go._physicsScale = [...go.object3d.scale];
+
+    // Diagnostic: proves what Rapier was told vs what the mesh shows.
+    // If the overlay still drifts after scaling, these numbers say whether the
+    // body itself moved or only the size was wrong.
+    console.log(
+      `[LevelEditor] rebuilt collider '${go.name}': size=(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}) center=(${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`,
+    );
+  }
+
+  /** Recenter a group's pivot at the average position of its direct children
+   *  (in the group's local space). After this, rotating or scaling the group
+   *  pivots around the children's centre instead of the group's origin. */
+  _recenterPivot(group) {
+    if (!group || !group.isGroup || group.children.length === 0) return;
+
+    const center = new THREE.Vector3();
+    let count = 0;
+    for (const child of group.children) {
+      child.object3d.updateMatrixWorld(true);
+      center.add(child.object3d.position);
+      count++;
+    }
+    if (count === 0) return;
+    center.divideScalar(count);
+
+    // Shift group to the centre
+    group.object3d.position.add(center);
+
+    // Offset each child so world positions are preserved
+    for (const child of group.children) {
+      child.object3d.position.sub(center);
+    }
+
+    group.object3d.updateMatrixWorld(true);
+  }
+
+  /** Recenter a single object's pivot on its own visual centre (bounding box
+   *  of its meshes), preserving world position. Useful for models whose origin
+   *  sits off-centre, or after moving a group leaves a stale pivot. */
+  _recenterObjectOnSelf(go) {
+    const obj = go.object3d;
+    obj.updateMatrixWorld(true);
+
+    // Bounding box of all mesh descendants, in world space
+    const box = new THREE.Box3();
+    obj.traverse((child) => {
+      if (child.isMesh) box.expandByObject(child);
+    });
+    if (box.isEmpty()) return;
+
+    const worldCenter = box.getCenter(new THREE.Vector3());
+
+    // Offset from the current pivot to the visual centre, in the parent's
+    // local space (obj.position is parent-space, so work in that space).
+    const centerInParent = worldCenter.clone();
+    if (obj.parent) obj.parent.worldToLocal(centerInParent);
+    const offset = centerInParent.sub(obj.position);
+    if (offset.lengthSq() < 1e-10) return; // already centred
+
+    // Move the pivot to the visual centre
+    obj.position.add(offset);
+
+    // Shift the mesh content the other way so it stays put in the world.
+    // `offset` is in parent space but mesh positions are in obj-local space,
+    // so convert: un-rotate then un-scale (the full inverse of R*S).
+    const d = offset.clone().negate();
+    d.applyQuaternion(obj.quaternion.clone().invert());
+    d.x /= obj.scale.x || 1;
+    d.y /= obj.scale.y || 1;
+    d.z /= obj.scale.z || 1;
+    for (const child of obj.children) {
+      child.position.add(d);
+    }
+
+    obj.updateMatrixWorld(true);
   }
 
   /** Reparent the selected object under a new parent, preserving world position.

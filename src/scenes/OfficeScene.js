@@ -139,14 +139,20 @@ export class OfficeScene extends Scene {
     groundGO.object3d.add(groundMesh);
     this._outside.addChild(groundGO);
 
-    // Ground collider (static, no GameObject needed)
+    // Ground collider — attached to the GameObject so scene teardown can
+    // find and remove it. An orphan body would leak a ghost floor on every
+    // scene reload.
     const groundBody = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
     );
-    world.createCollider(
+    const groundCollider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(50, 0.1, 50).setTranslation(0, -0.1, 0),
       groundBody,
     );
+    groundGO.rigidBody = groundBody;
+    groundGO.colliders = [groundCollider];
+    groundGO.collider  = groundCollider;
+    groundGO._originalSize = [100, 0.2, 100];
   }
 
   // ──────────────────────────────────────────
@@ -277,19 +283,30 @@ export class OfficeScene extends Scene {
     const { world } = this.engine;
   
     const go = new GameObject(name);
+    // Position lives on the GameObject; the mesh is centred on it, so scale
+    // and rotate pivot around the box's own centre, not a corner.
+    go.object3d.position.set(...position);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
     mesh.name = name;
-    mesh.position.set(...position);
+    mesh.position.set(0, 0, 0);
     mesh.castShadow = mesh.receiveShadow = true;
     go.object3d.add(mesh);
   
+    // Offset the physics body to compensate — the collider still sits at
+    // the correct world position even though the mesh is at local origin.
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(...position),
     );
-    world.createCollider(
+    const collider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2),
       body,
     );
+    // The editor syncs colliders through go.rigidBody — without this
+    // reference the sync bails out and scale/rotate never reach Rapier.
+    go.rigidBody = body;
+    go.colliders = [collider];
+    go.collider  = collider;
+    go._originalSize = [...size];
   
     if (parent) parent.addChild(go);
     return go;

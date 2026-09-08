@@ -93,13 +93,19 @@ export class TestScene extends Scene {
     groundGO.object3d.add(groundMesh);
     this._outside.addChild(groundGO);
 
+    // Ground collider — attached to the GameObject so scene teardown can
+    // find and remove it (mirrors OfficeScene._addGround).
     const groundBody = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
     );
-    world.createCollider(
+    const groundCollider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(30, 0.1, 30).setTranslation(0, -0.1, 0),
       groundBody,
     );
+    groundGO.rigidBody = groundBody;
+    groundGO.colliders = [groundCollider];
+    groundGO.collider  = groundCollider;
+    groundGO._originalSize = [60, 0.2, 60];
   }
 
   // ──────────────────────────────────────────
@@ -190,10 +196,17 @@ export class TestScene extends Scene {
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(...position),
     );
-    world.createCollider(
+    const collider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2),
       body,
     );
+
+    // Expose for editor sync and scene teardown (mirrors OfficeScene).
+    // Without go.rigidBody the bodies leak as ghost colliders on reload.
+    go.rigidBody = body;
+    go.colliders = [collider];
+    go.collider  = collider;
+    go._originalSize = [...size];
 
     if (parent) parent.addChild(go);
     return go;

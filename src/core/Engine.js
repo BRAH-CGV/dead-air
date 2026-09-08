@@ -24,6 +24,7 @@ export class Engine {
   // ── Tunables ──────────────────────────────
   static FIXED_DT   = 1 / 60;
   static MAX_FRAME  = 0.25;       // spiral-of-death clamp (seconds)
+  static GRAVITY    = { x: 0, y: -9.81, z: 0 };
 
   // ── Three.js ──────────────────────────────
   scene; camera; renderer;
@@ -122,8 +123,9 @@ export class Engine {
     document.body.appendChild(this.renderer.domElement);
 
     // ── Physics world ──
-    this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    this.world = new RAPIER.World(Engine.GRAVITY);
     this.world.timestep = Engine.FIXED_DT;
+    this.RAPIER = RAPIER; // exposed so components/editors can build colliders without importing (test wasm resolver)
     
     // Expose engine to components via scene userData
     this.scene.userData.engine    = this;
@@ -155,7 +157,11 @@ export class Engine {
     addEventListener('keydown', (e) => {
       if (e.code === 'Backquote') this.physicsDebug?.toggle();
       if (e.code === 'F2') this.levelEditor?.toggle();
-      if (e.code === 'F1') {
+      // F4, not F1: F1 belongs to the browser — Chrome opens help with it
+      // and DevTools opens its settings — and those contexts swallow the
+      // key before the page ever sees it, preventDefault or not.
+      if (e.code === 'F4') {
+        e.preventDefault();
         this.debugModels = !this.debugModels;
         console.log(`[DEBUG] Model debug logging ${this.debugModels ? 'ENABLED' : 'DISABLED'}`);
         if (this.debugModels) {
@@ -245,6 +251,11 @@ export class Engine {
     // Initialise every new root object (sets scene/world refs, adds to
     // the Three.js scene graph via _init).
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+
+    // The editor may be open across a scene switch (F4 reset): refresh its
+    // tree and drop any selection pointing into the old scene, or the next
+    // arrow-key press would sync dead physics bodies.
+    this.levelEditor?.onSceneRebuilt?.();
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping
@@ -253,15 +264,17 @@ export class Engine {
   _teardownScene() {
     this.activeScene?.dispose();
 
-    // Remove all rigid bodies from the Rapier world BEFORE clearing root
-    // objects.  world.removeRigidBody() needs the actual RigidBody reference
-    // (not the numeric handle) — passing a handle silently fails and leaves
-    // orphaned bodies that corrupt the world for the next scene.
-    for (const go of this._rootObjects) {
-      if (go.rigidBody) {
-        try { this.world.removeRigidBody(go.rigidBody); } catch (_) { /* already gone */ }
-      }
-    }
+    // ── Physics: drop the whole world and start a fresh one ──
+    // Removing bodies one-by-one proved fragile: a stale wrapper or any
+    // mid-operation panic bricks the WASM arena — the borrow flag never
+    // clears, and every later world call dies with "recursive use of an
+    // object detected", repeating every frame in step(). A fresh world is
+    // cheap and removes every body, collider and character controller in
+    // one shot.
+    try { this.world.free(); } catch (_) { /* already bricked — just drop it */ }
+    this.world = new RAPIER.World(Engine.GRAVITY);
+    this.world.timestep = Engine.FIXED_DT;
+    if (this.physicsDebug) this.physicsDebug.world = this.world;
 
     // Remove all root Object3Ds from the Three.js scene
     for (const go of this._rootObjects) {
