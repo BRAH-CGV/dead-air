@@ -235,7 +235,7 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 - Use `vitest` with `jsdom` environment for DOM-touching code (editor, UI).
 - Never commit code without its tests passing.
 - Pre-existing WASM-related test failures in unrelated modules are acknowledged as background noise — do not block new feature tests on them. Filter to the affected module: `npx vitest run src/path/to/module.test.js`.
-- When implementing from a plan (e.g. `LEVEL-EDITOR-ADVANCED-EXPORT-HANDOFF.md`), follow the phase order — each phase lists the exact tests to write before the implementation.
+- When implementing from a plan (e.g. `docs/LEVEL-EDITOR-ADVANCED-EXPORT-HANDOFF.md`), follow the phase order — each phase lists the exact tests to write before the implementation.
 
 ## Deployment
 
