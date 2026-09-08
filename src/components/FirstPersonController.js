@@ -125,12 +125,6 @@ export class FirstPersonController extends Component {
       (c) => c !== this.standCollider && c !== this.crouchCollider;
   }
   
-  _isFreeCamActive() {
-    return this.gameObject?.components?.some(
-      c => c !== this && c.blocksFirstPersonController === true && c.active === true,
-    ) ?? false;
-  }
-  
   _clearMovementIntent() {
     this._wish = false;
     this._wishDir.x = 0;
@@ -170,11 +164,6 @@ export class FirstPersonController extends Component {
       // Clamp pitch to prevent flipping
       this.pitch  = Math.max(-Math.PI / 2 + 0.01,
                     Math.min( Math.PI / 2 - 0.01, this.pitch));
-    }
-    
-    if (this._isFreeCamActive()) {
-      this._clearMovementIntent();
-      return;
     }
     
     // ── Crouch input — the entire input-mode seam ──
@@ -231,11 +220,6 @@ export class FirstPersonController extends Component {
     if (!this.gameObject) return;
     const rb = this.gameObject.rigidBody;
     if (!rb) return;
-    
-    if (this._isFreeCamActive()) {
-      this._clearMovementIntent();
-      return;
-    }
     
     // ── Gravity & jump (crouch-jumping allowed: hiding beats hopping) ──
     this.vertVel -= 9.81 * dt;

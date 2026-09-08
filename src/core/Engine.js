@@ -3,7 +3,6 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
-import { FreeCam } from '../components/FreeCam.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
@@ -507,11 +506,6 @@ export class Engine {
 
     // ── InteractionSystem component ──
     player.addComponent(new InteractionSystem({ range: 5 }));
-    
-    // ── FreeCam component (V toggles flight; E/Q ascend/descend) ──
-    const freeCam = new FreeCam({ speed: 10 });
-    freeCam.camera = this.camera;
-    player.addComponent(freeCam);
 
     this.player = player;           // the debug fly camera freezes whoever this is
     this._rootObjects.push(player);
