@@ -204,6 +204,21 @@ npx serve dist     # Alternative: test production build over HTTP
 npm run test       # Run Vitest
 ```
 
+## Development Workflow — TDD (Mandatory)
+
+This project uses **test-driven development**. For every new feature, bug fix, or refactor:
+
+1. **RED** — Write a failing test first. The test must exercise the new behaviour (not the implementation). Run `npm run test` and confirm the test fails for the right reason.
+2. **GREEN** — Write the minimum implementation to make the test pass. No more.
+3. **REFACTOR** — Clean up while tests stay green. Remove duplication, improve naming, extract helpers.
+
+**Rules:**
+- Tests live beside source: `src/core/Foo.test.js` next to `src/core/Foo.js`.
+- Use `vitest` with `jsdom` environment for DOM-touching code (editor, UI).
+- Never commit code without its tests passing.
+- Pre-existing WASM-related test failures in unrelated modules are acknowledged as background noise — do not block new feature tests on them. Filter to the affected module: `npx vitest run src/path/to/module.test.js`.
+- When implementing from a plan (e.g. `LEVEL-EDITOR-ADVANCED-EXPORT-HANDOFF.md`), follow the phase order — each phase lists the exact tests to write before the implementation.
+
 ## Deployment
 
 - Build with `npm run build`, zip the **contents** of `dist/` (not the folder) so `index.html` is at the archive root.

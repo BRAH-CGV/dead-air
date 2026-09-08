@@ -11,6 +11,30 @@ import { Interactable } from '../components/Interactable.js';
 export class OfficeScene extends Scene {
 
   build() {
+    // ── Create hierarchy groups ──
+    const sceneRoot = new GameObject('SceneRoot');
+    sceneRoot.makeGroup();
+    this.engine._rootObjects.push(sceneRoot);
+    this.engine.scene.add(sceneRoot.object3d);
+
+    const office = new GameObject('Office');
+    office.makeGroup();
+    sceneRoot.addChild(office);
+
+    const outside = new GameObject('Outside');
+    outside.makeGroup();
+    sceneRoot.addChild(outside);
+
+    const lighting = new GameObject('Lighting');
+    lighting.makeGroup();
+    sceneRoot.addChild(lighting);
+
+    // Store references for child methods
+    this._sceneRoot = sceneRoot;
+    this._office = office;
+    this._outside = outside;
+    this._lighting = lighting;
+
     this._addLighting();
     this._addGround();
     this._addWalls();
@@ -32,8 +56,11 @@ export class OfficeScene extends Scene {
   _addLighting() {
     const { scene } = this.engine;
   
-    scene.add(new THREE.AmbientLight(0x435472, 1.0));
+    const ambientGO = new GameObject('AmbientLight');
+    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+    this._lighting.addChild(ambientGO);
           
+    const moonGO = new GameObject('MoonLight');
     const moon = new THREE.DirectionalLight(0x8fb7ff, 1.8);
     moon.position.set(-6, 8, -10);
     moon.castShadow = true;
@@ -44,13 +71,16 @@ export class OfficeScene extends Scene {
     moon.shadow.camera.right  =  12;
     moon.shadow.camera.top    =  12;
     moon.shadow.camera.bottom = -12;
-    scene.add(moon);
+    moonGO.object3d.add(moon);
+    this._lighting.addChild(moonGO);
   
+    const ceilingLightGO = new GameObject('CeilingLight');
     const ceilingLight = new THREE.PointLight(0xffd8a8, 10.0, 24, 1.0);
     ceilingLight.position.set(0, 2.75, 0.4);
     ceilingLight.castShadow = true;
     ceilingLight.shadow.mapSize.set(1024, 1024);
-    scene.add(ceilingLight);
+    ceilingLightGO.object3d.add(ceilingLight);
+    this._lighting.addChild(ceilingLightGO);
   
     const fixture = new THREE.Mesh(
       new THREE.CylinderGeometry(0.35, 0.45, 0.08, 24),
@@ -62,33 +92,38 @@ export class OfficeScene extends Scene {
     );
     fixture.position.copy(ceilingLight.position);
     fixture.rotation.x = Math.PI / 2;
-    scene.add(fixture);
+    ceilingLightGO.object3d.add(fixture);
   
+    const deskGlowGO = new GameObject('DeskGlow');
     const deskGlow = new THREE.PointLight(0x66ccff, 2.8, 6, 1.6);
     deskGlow.position.set(0, 1.1, -2.1);
-    scene.add(deskGlow);
+    deskGlowGO.object3d.add(deskGlow);
+    this._lighting.addChild(deskGlowGO);
   
+    const visibleMoonGO = new GameObject('VisibleMoon');
     const visibleMoon = new THREE.Mesh(
       new THREE.SphereGeometry(0.85, 32, 16),
       new THREE.MeshBasicMaterial({ color: 0xffe1a3 }),
     );
     visibleMoon.name = 'VisibleMoon';
     visibleMoon.position.set(-2.4, 5.3, -15);
-    scene.add(visibleMoon);
+    visibleMoonGO.object3d.add(visibleMoon);
+    this._lighting.addChild(visibleMoonGO);
   
+    const moonGlowGO = new GameObject('MoonGlow');
     const moonGlow = new THREE.PointLight(0xffe1a3, 5.0, 32, 1.4);
     moonGlow.position.copy(visibleMoon.position);
-    scene.add(moonGlow);
+    moonGlowGO.object3d.add(moonGlow);
+    this._lighting.addChild(moonGlowGO);
   }
   
   // ─────────────────────────────────────────
   // Ground (visual plane + static collider)
   // ──────────────────────────────────────────
   _addGround() {
-    const { scene, world, assets } = this.engine;
+    const { world, assets } = this.engine;
 
-    // Textures come from the manifest, already in the right colour space and
-    // set to repeat — see AssetManager._loadTexture.
+    const groundGO = new GameObject('Ground');
     const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 100),
       new THREE.MeshStandardMaterial({
@@ -101,7 +136,8 @@ export class OfficeScene extends Scene {
     );
     groundMesh.rotation.x    = -Math.PI / 2;
     groundMesh.receiveShadow = true;
-    scene.add(groundMesh);
+    groundGO.object3d.add(groundMesh);
+    this._outside.addChild(groundGO);
 
     // Ground collider (static, no GameObject needed)
     const groundBody = world.createRigidBody(
@@ -138,10 +174,10 @@ export class OfficeScene extends Scene {
     const lowerHeight  = windowY - windowHeight / 2;
     const upperHeight  = wallHeight - (windowY + windowHeight / 2);
   
-    this._addStaticBox('BackWall_Left', [-windowWidth / 2 - sideWidth / 2, wallHeight / 2, backZ], [sideWidth, wallHeight, wallThick], wallMaterial);
-    this._addStaticBox('BackWall_Right', [windowWidth / 2 + sideWidth / 2, wallHeight / 2, backZ], [sideWidth, wallHeight, wallThick], wallMaterial);
-    this._addStaticBox('BackWall_Lower', [0, lowerHeight / 2, backZ], [windowWidth, lowerHeight, wallThick], wallMaterial);
-    this._addStaticBox('BackWall_Upper', [0, windowY + windowHeight / 2 + upperHeight / 2, backZ], [windowWidth, upperHeight, wallThick], wallMaterial);
+    this._addStaticBox('BackWall_Left', [-windowWidth / 2 - sideWidth / 2, wallHeight / 2, backZ], [sideWidth, wallHeight, wallThick], wallMaterial, this._office);
+    this._addStaticBox('BackWall_Right', [windowWidth / 2 + sideWidth / 2, wallHeight / 2, backZ], [sideWidth, wallHeight, wallThick], wallMaterial, this._office);
+    this._addStaticBox('BackWall_Lower', [0, lowerHeight / 2, backZ], [windowWidth, lowerHeight, wallThick], wallMaterial, this._office);
+    this._addStaticBox('BackWall_Upper', [0, windowY + windowHeight / 2 + upperHeight / 2, backZ], [windowWidth, upperHeight, wallThick], wallMaterial, this._office);
   
     // Front wall with a door opening. Explicit edges avoid skewed/overlapping segments.
     const doorWidth  = 1;
@@ -153,20 +189,20 @@ export class OfficeScene extends Scene {
     const roomRight  =  roomWidth / 2;
     const frontLeftWidth  = doorLeft - roomLeft;
     const frontRightWidth = roomRight - doorRight;
-    this._addStaticBox('FrontWall_Left', [roomLeft + frontLeftWidth / 2, wallHeight / 2, frontZ], [frontLeftWidth, wallHeight, wallThick], wallMaterial);
-    this._addStaticBox('FrontWall_Right', [doorRight + frontRightWidth / 2, wallHeight / 2, frontZ], [frontRightWidth, wallHeight, wallThick], wallMaterial);
-    this._addStaticBox('DoorHeader', [doorX, doorHeight + (wallHeight - doorHeight) / 2, frontZ], [doorWidth, wallHeight - doorHeight, wallThick], wallMaterial);
+    this._addStaticBox('FrontWall_Left', [roomLeft + frontLeftWidth / 2, wallHeight / 2, frontZ], [frontLeftWidth, wallHeight, wallThick], wallMaterial, this._office);
+    this._addStaticBox('FrontWall_Right', [doorRight + frontRightWidth / 2, wallHeight / 2, frontZ], [frontRightWidth, wallHeight, wallThick], wallMaterial, this._office);
+    this._addStaticBox('DoorHeader', [doorX, doorHeight + (wallHeight - doorHeight) / 2, frontZ], [doorWidth, wallHeight - doorHeight, wallThick], wallMaterial, this._office);
     
     // Side walls and ceiling.
-    this._addStaticBox('LeftWall', [-roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial);
-    this._addStaticBox('RightWall', [roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial);
-    this._addStaticBox('Ceiling', [0, wallHeight + wallThick / 2, 0], [roomWidth, wallThick, roomDepth], wallMaterial);
+    this._addStaticBox('LeftWall', [-roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial, this._office);
+    this._addStaticBox('RightWall', [roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial, this._office);
+    this._addStaticBox('Ceiling', [0, wallHeight + wallThick / 2, 0], [roomWidth, wallThick, roomDepth], wallMaterial, this._office);
       
     // Open doorway placeholder; a proper door model can be added later.
     const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 });
-    this._addStaticBox('DoorTrim_Left', [doorLeft - 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial);
-    this._addStaticBox('DoorTrim_Right', [doorRight + 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial);
-    this._addStaticBox('DoorTrim_Top', [doorX, doorHeight + 0.06, frontZ - 0.05], [doorWidth + 0.24, 0.12, 0.18], trimMaterial);
+    this._addStaticBox('DoorTrim_Left', [doorLeft - 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial, this._office);
+    this._addStaticBox('DoorTrim_Right', [doorRight + 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial, this._office);
+    this._addStaticBox('DoorTrim_Top', [doorX, doorHeight + 0.06, frontZ - 0.05], [doorWidth + 0.24, 0.12, 0.18], trimMaterial, this._office);
   }
   
   _addWindow() {
@@ -174,44 +210,48 @@ export class OfficeScene extends Scene {
     // transparent glass plane sorts badly against them from inside the room.
     const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 });
   
-    this._addStaticBox('WindowFrame_Top', [0, 2.9, -4.84], [8.75, 0.12, 0.18], frameMaterial);
-    this._addStaticBox('WindowFrame_Bottom', [0, 0.4, -4.84], [8.75, 0.12, 0.18], frameMaterial);
-    this._addStaticBox('WindowFrame_Left', [-4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial);
-    this._addStaticBox('WindowFrame_Right', [4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial);
-    this._addStaticBox('WindowFrame_Mullion_Left', [-1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial);
-    this._addStaticBox('WindowFrame_Mullion_Right', [1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial);
-    this._addStaticBox('WindowFrame_Crossbar', [0, 1.65, -4.82], [8.5, 0.06, 0.12], frameMaterial);
+    this._addStaticBox('WindowFrame_TOP', [0, 2.9, -4.84], [8.75, 0.12, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Bottom', [0, 0.4, -4.84], [8.75, 0.12, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Left', [-4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Right', [4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Mullion_Left', [-1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Mullion_Right', [1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Crossbar', [0, 1.65, -4.82], [8.5, 0.06, 0.12], frameMaterial, this._office);
   }
   
   _addOfficeFurniture() {
     // Retro computer with built-in desk: central focal point facing into the room.
-    this.engine.spawnModel('model:retro-computer', { 
+    const computer = this.engine.spawnModel('model:retro-computer', { 
       name: 'ComputerDesk', 
       position: [0, 0, -2.55],
       rotationY: Math.PI,
       scale: 0.016,
     });
+    this._office.addChild(computer);
       
-    this.engine.spawnModel('model:server-rack', { 
+    const server = this.engine.spawnModel('model:server-rack', { 
       name: 'ServerRack', 
       position: [4.55, 0, -1.35], 
       rotationY: -Math.PI / 2,
       scale: 0.333,
     });
+    this._office.addChild(server);
       
-    this.engine.spawnModel('model:radar-terminal', { 
+    const radar = this.engine.spawnModel('model:radar-terminal', { 
       name: 'RadarTerminal', 
       position: [-4.45, 0, -0.55], 
       rotationY: Math.PI / 2,
       scale: 0.478,
     });
+    this._office.addChild(radar);
       
-    this.engine.spawnModel('model:switchboard', { 
+    const switchboard = this.engine.spawnModel('model:switchboard', { 
       name: 'Switchboard', 
       position: [5.72, 1.15, 1.25], 
       rotationY: -Math.PI / 2,
       scale: 0.638,
     });
+    this._office.addChild(switchboard);
   
     const cameras = [
       { name: 'SecurityCamera_Window', position: [-2.2, 2.75, -4.65], rotation: [Math.PI / 5, -Math.PI / 8, 0] },
@@ -227,18 +267,21 @@ export class OfficeScene extends Scene {
         physics: 'none',
       });
       go.object3d.rotation.set(...camera.rotation);
+      this._office.addChild(go);
     }
   }
   
-  /** Helper: add static procedural room geometry with matching collision. */
-  _addStaticBox(name, position, size, material) {
-    const { scene, world } = this.engine;
+  /** Helper: add static procedural room geometry with matching collision.
+   *  Returns the GameObject so callers can parent it into the hierarchy. */
+  _addStaticBox(name, position, size, material, parent) {
+    const { world } = this.engine;
   
+    const go = new GameObject(name);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
     mesh.name = name;
     mesh.position.set(...position);
     mesh.castShadow = mesh.receiveShadow = true;
-    scene.add(mesh);
+    go.object3d.add(mesh);
   
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(...position),
@@ -248,7 +291,8 @@ export class OfficeScene extends Scene {
       body,
     );
   
-    return mesh;
+    if (parent) parent.addChild(go);
+    return go;
   }
   
   // ──────────────────────────────────────────

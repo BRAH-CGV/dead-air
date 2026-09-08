@@ -31,6 +31,8 @@ export class GameObject {
   scene = null;
   /** @type {RAPIER.World|null} */
   world = null;
+  /** Marker for group nodes (no mesh, no physics, just a container). */
+  isGroup = false;
 
   _started = false;
 
@@ -91,12 +93,57 @@ export class GameObject {
     return null;
   }
 
+  /** Return all descendants (depth-first) including self. */
+  descendants() {
+    const result = [this];
+    for (const c of this.children) {
+      if (typeof c.descendants === 'function') {
+        result.push(...c.descendants());
+      } else {
+        result.push(c);
+      }
+    }
+    return result;
+  }
+
+  /** Convert this node into a group (strip render/physics, keep hierarchy). */
+  makeGroup() {
+    this.isGroup = true;
+    return this;
+  }
+
+  /** Reparent: move this object under a new parent, preserving world transform. */
+  reparentUnder(newParent) {
+    // Capture world position before reparenting
+    const worldPos = new THREE.Vector3();
+    this.object3d.getWorldPosition(worldPos);
+
+    // Remove from current parent
+    if (this.parent) this.parent.removeChild(this);
+
+    // Add to new parent
+    newParent.addChild(this);
+
+    // Recalculate local position so world position is unchanged
+    newParent.object3d.updateWorldMatrix(true, false);
+    const parentWorldInverse = new THREE.Matrix4();
+    parentWorldInverse.copy(newParent.object3d.matrixWorld).invert();
+    const localPos = worldPos.applyMatrix4(parentWorldInverse);
+    this.object3d.position.copy(localPos);
+
+    return this;
+  }
+
   // ── Lifecycle propagation ─────────────────
 
   _init(scene, world) {
     this.scene = scene;
     this.world = world;
-    scene.add(this.object3d);
+    // Only add to the Three.js scene if this object has no GameObject parent.
+    // Children inherit their scene-graph position through the parent's object3d;
+    // calling scene.add() on them would detach them from their parent (Three.js
+    // automatically removes an Object3D from its previous parent on add).
+    if (!this.parent) scene.add(this.object3d);
     for (const c of this.components) c.onAwake();
     for (const ch of this.children) ch._init(scene, world);
   }

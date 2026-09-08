@@ -12,6 +12,7 @@ import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
+import { TestScene } from '../scenes/TestScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
 
@@ -49,6 +50,10 @@ export class Engine {
 
   // ── Scene ────────────────────────────────
   /** @type {import('./Scene.js').Scene} */ activeScene;
+
+  /** Registered scenes available in the switcher dropdown.
+   *  @type {Map<string, typeof import('./Scene.js').Scene>} */
+  sceneRegistry = new Map();
 
   // ── Timing ────────────────────────────────
   _accumulator = 0;
@@ -180,6 +185,8 @@ export class Engine {
     });
 
     // ── Build world ──
+    this.registerScene('OfficeScene', OfficeScene);
+    this.registerScene('TestScene', TestScene);
     this.loadScene(OfficeScene);
 
     // Hidden until ` is pressed, and costs nothing while hidden.
@@ -210,14 +217,63 @@ export class Engine {
   // ──────────────────────────────────────────
   // Scene management
   // ──────────────────────────────────────────
-  /** Swap to a new scene.  Disposes the current one, instantiates the
-   *  given class, calls `build()`, and initialises every new root object.
+  /** Register a Scene class so it appears in the editor's scene switcher.
+   *  @param {string} name  Display name (must match the class name).
+   *  @param {typeof import('./Scene.js').Scene} SceneClass */
+  registerScene(name, SceneClass) {
+    this.sceneRegistry.set(name, SceneClass);
+  }
+
+  /** Return all registered scene names. */
+  getRegisteredSceneNames() {
+    return [...this.sceneRegistry.keys()];
+  }
+
+  /** Swap to a new scene.  Tears down the old one (removes Three.js objects,
+   *  physics bodies, colliders, and root-object bookkeeping), then builds
+   *  the new scene and initialises its root objects.
    *
    *  @param {typeof import('./Scene.js').Scene} SceneClass */
   loadScene(SceneClass) {
-    this.activeScene?.dispose();
+    // ── Tear down the old scene ──
+    this._teardownScene();
+
+    // ── Build the new one ──
     this.activeScene = new SceneClass(this);
     this.activeScene.build();
+
+    // Initialise every new root object (sets scene/world refs, adds to
+    // the Three.js scene graph via _init).
+    for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+  }
+
+  /** Remove every Three.js object, Rapier body/collider, and bookkeeping
+   *  entry left by the current scene.  Keeps the renderer, camera, and
+   *  world alive for the next scene. */
+  _teardownScene() {
+    this.activeScene?.dispose();
+
+    // Remove all rigid bodies from the Rapier world BEFORE clearing root
+    // objects.  world.removeRigidBody() needs the actual RigidBody reference
+    // (not the numeric handle) — passing a handle silently fails and leaves
+    // orphaned bodies that corrupt the world for the next scene.
+    for (const go of this._rootObjects) {
+      if (go.rigidBody) {
+        try { this.world.removeRigidBody(go.rigidBody); } catch (_) { /* already gone */ }
+      }
+    }
+
+    // Remove all root Object3Ds from the Three.js scene
+    for (const go of this._rootObjects) {
+      this.scene.remove(go.object3d);
+    }
+
+    // Clear bookkeeping
+    this._rootObjects.length = 0;
+    this.rigidBodyMap.clear();
+    this._bodyToGO.clear();
+    this._prevPos.clear();
+    this._prevQuat.clear();
   }
 
   /**
