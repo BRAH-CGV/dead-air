@@ -48,7 +48,9 @@ src/
 │   ├── ModelUtils.js    # Per-mesh normalisation, measurement, collision, disposal
 │   ├── ColliderSpec.js  # Manifest physics block → shape parts (pure, tested)
 │   ├── Colliders.js     # Shape parts → Rapier bodies and colliders
-│   └── PhysicsDebug.js  # Collider wireframe overlay (` to toggle)
+│   ├── PhysicsDebug.js  # Collider wireframe overlay (` to toggle)
+│   ├── DebugCamera.js   # Free-fly noclip camera (V to toggle)
+│   └── Fullbright.js    # Unlit debug lighting (B to toggle)
 ├── components/
 │   └── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 ├── assets/
@@ -66,7 +68,7 @@ src/
 
 **GameObject** — Wraps `THREE.Object3D` with optional `RAPIER.RigidBody` / `Collider`. Parent-child hierarchy (`addChild`/`removeChild`), component attachment (`addComponent`/`getComponent`), depth-first `find(name)`. Lifecycle propagates to children.
 
-**Component** — Base class. Hooks: `onAwake` → `onStart` → `onUpdate(dt)` | `onFixedUpdate(dt)` | `onLateUpdate(dt)` → `onDestroy`. Getters: `transform`, `scene`, `world`.
+**Component** — Base class. Hooks: `onAwake` → `onStart` → `onUpdate(dt)` | `onFixedUpdate(dt)` | `onLateUpdate(dt)` → `onDestroy`. Getters: `transform`, `scene`, `world`. A component with `enabled = false` skips its per-frame hooks (but still gets its one-shot lifecycle) — the debug fly camera uses this to freeze the player in place.
 
 **FirstPersonController** — Component on Player. Reads `Engine.input` for WASD + mouse. YXZ Euler camera rotation. Drives `KinematicCharacterController` with capsule collider. Handles gravity, jump (crouching included), ground detection, and Source-style movement — horizontal velocity integrates on the fixed step (`accel`/`airAccel`/`friction`/`stopSpeed` tunables) instead of snapping to wish speed. Crouch (`C` — toggle by default; `crouchMode: 'hold'` switches to hold-to-crouch): the player body carries two swapped capsules — standing 1.6 m and crouch 0.65 m, the tallest that clears the desk's 0.72 m under-top gap. Grounded swaps anchor the feet (stand-up gated by a headroom check); mid-air swaps anchor the capsule's centre — crouching tucks the legs up (crouch-jump), standing sweeps them back down and pops the body up onto whatever is below, so only the ceiling can refuse a stand-up.
 
@@ -87,6 +89,22 @@ Centralized on `Engine.input`:
 - `keys` — object keyed by `KeyboardEvent.code` (e.g. `KeyW`, `Space`)
 - `mouse` — `{ dx, dy }` accumulated deltas, consumed each frame
 - `locked` — boolean, pointer-lock active
+
+`Engine.keyBinds` maps action names to codes, including the debug keys (`debugFly`, `fullbright`). Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
+
+## Debug tooling
+
+Three toggles, all edge-triggered and free while off:
+
+| Key | Tool | What it does |
+|---|---|---|
+| `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
+| `V` | `DebugCamera` | Free-fly noclip camera |
+| `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
+
+**DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
+
+**Fullbright (`engine.fullbright`)** — three things have to die for a scene to stop being dark: every light is hidden (remembering which were already off), fog is nulled, and tone mapping is switched to `NoToneMapping`. Hiding lights alone isn't enough — a lit material with no light renders black, not bright — so every `MeshStandard/Physical/Phong/Lambert` material is swapped for a `MeshBasicMaterial` twin carrying the same map and colour. Twins are cached per original material (shared materials stay shared) and disposed the moment the mode is toggled off, so the asset-cache ownership rule holds and memory stays flat. Unlit materials (Basic, Shader) are left alone. Meshes spawned while the mode is on are picked up by `fullbright.refresh()` — `Engine.spawnModel` already calls it.
 
 ## Assets
 

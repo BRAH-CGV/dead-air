@@ -11,6 +11,8 @@ import { Crosshair } from '../ui/Crosshair.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
+import { DebugCamera } from './DebugCamera.js';
+import { Fullbright } from './Fullbright.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
@@ -42,7 +44,10 @@ export class Engine {
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
   _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
   /** @type {PhysicsDebug} */ physicsDebug;
-  /** @type {LevelEditor} */ levelEditor;
+  /** @type {LevelEditor}  */ levelEditor;
+  /** @type {DebugCamera}  */ debugCamera;
+  /** @type {Fullbright}   */ fullbright;
+  /** @type {GameObject}   */ player;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -87,6 +92,9 @@ export class Engine {
     jump:     'Space',
     crouch:   'KeyC',
     interact: 'KeyE',
+    // Debug keys, in the same table so they remap with everything else.
+    debugFly:   'KeyV',   // toggle the noclip fly camera
+    fullbright: 'KeyB',   // toggle the unlit lighting mode
   };
 
   /** Returns true while the key mapped to [action] is held down. */
@@ -151,12 +159,22 @@ export class Engine {
       if (!e.repeat) this.input.pressed[e.code] = true;
     });
     addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
-    
-    // Collider overlay. Its own listener rather than `input.keys`, which is
-    // level-triggered and so can't express "toggle on the press".
+
+    // ── Debug tooling ──
+    // Built before their key handlers are registered, so a debug key can
+    // never arrive before the tool it toggles exists.
+    this.debugCamera = new DebugCamera(this.camera, this.scene);
+    this.fullbright  = new Fullbright(this.scene, this.renderer);
+
+    // ── Debug toggles ──
+    // Edge-triggered, so like the collider overlay they get their own
+    // listener rather than `input.keys`, which is level-triggered.
     addEventListener('keydown', (e) => {
-      if (e.code === 'Backquote') this.physicsDebug?.toggle();
-      if (e.code === 'F2') this.levelEditor?.toggle();
+      if (e.code === 'Backquote')        this.physicsDebug?.toggle();
+      if (e.code === 'F2')               this.levelEditor?.toggle();
+      if (e.code === this.keyBinds.debugFly)
+        this.debugCamera?.toggle(this.player);
+      if (e.code === this.keyBinds.fullbright) this.fullbright?.toggle();
       // F4, not F1: F1 belongs to the browser — Chrome opens help with it
       // and DevTools opens its settings — and those contexts swallow the
       // key before the page ever sees it, preventDefault or not.
@@ -214,6 +232,7 @@ export class Engine {
   /** Free every GPU resource we own. Call before rebuilding a level, so
    *  memory doesn't climb across restarts. */
   dispose() {
+    this.fullbright?.dispose();     // restores lights/fog/materials if active
     this.physicsDebug?.dispose();
     this.levelEditor?.dispose();
     this.assets?.dispose();
@@ -326,12 +345,15 @@ export class Engine {
     this._attachPhysics(go, key, { position, rotationY, scale, physics });
     
     this._rootObjects.push(go);
-    
+
     // Debug: log model info to console
     if (this.debugModels) {
       logModelDebugInfo(key, go.object3d);
     }
-    
+
+    // Spawned while fullbright is on: swap the newcomer too, so a level built
+    // under the debug light looks consistent immediately.
+    this.fullbright?.refresh();
     return go;
   }
 
@@ -480,6 +502,7 @@ export class Engine {
     freeCam.camera = this.camera;
     player.addComponent(freeCam);
 
+    this.player = player;           // the debug fly camera freezes whoever this is
     this._rootObjects.push(player);
     this.crosshair.show();
   }
@@ -509,6 +532,14 @@ export class Engine {
     // Interpolation factor: how far we are between the last two physics steps
     const alpha = this._accumulator / Engine.FIXED_DT;
     this._interpolatePhysics(alpha);
+
+    // ── Debug fly camera ──
+    // Above the variable update on purpose: the player's components are
+    // suspended while it flies, so nothing else touches the camera this frame,
+    // and the mouse deltas it consumes are reset at the bottom of the loop.
+    if (this.debugCamera?.active) {
+      this.debugCamera.update(frameDt, this.input, this.keyBinds);
+    }
 
     // ── Variable update ──
     for (const obj of this._rootObjects) obj._update(frameDt);
