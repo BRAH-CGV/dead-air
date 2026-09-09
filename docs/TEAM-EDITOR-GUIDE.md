@@ -9,9 +9,10 @@ Everything your team needs to know about the in-browser editor, free camera, and
 | Key | What it does |
 |-----|-------------|
 | **F2** | Toggle Level Editor on/off |
-| **V** | Toggle FreeCam (fly mode) on/off |
+| **V** | Toggle DebugCamera (noclip fly mode) on/off |
 | **\`** (backtick) | Toggle physics collider wireframe overlay |
 | **F4** | Toggle model debug logging (bounds/scale to console) |
+| **B** | Toggle Fullbright (unlit debug lighting) |
 | **G** | Switch to **Move** mode (editor) |
 | **R** | Switch to **Rotate** mode (editor) |
 | **T** | Switch to **Scale** mode (editor) |
@@ -19,9 +20,9 @@ Everything your team needs to know about the in-browser editor, free camera, and
 | **PageUp / PageDown** | Move up/down or rotate Z axis (editor) |
 | **Delete** | Delete selected object (editor) |
 | **WASD** | Walk / fly movement |
-| **E / Q** | Ascend / descend (FreeCam) |
-| **Space** | Jump |
-| **C** | Crouch (tap = toggle, hold = hold mode) |
+| **Space** | Ascend (DebugCamera) / Jump (normal) |
+| **C** | Descend (DebugCamera) / Crouch (tap = toggle, hold = hold) |
+| **Shift** | Speed boost (DebugCamera) |
 | **Mouse** | Look around (pointer lock) |
 | **Left Click** | Select object (editor) / Interact |
 
@@ -442,27 +443,28 @@ myLightGO.object3d.add(fixture);           // add to the SAME GameObject as the 
 
 ---
 
-## FreeCam (V)
+## DebugCamera (V)
 
-FreeCam lets you fly around the scene freely, ignoring physics and gravity.
+The DebugCamera is a noclip fly camera that lets you inspect the scene from any angle. It's not a separate FreeCam component — it detaches the actual game camera from the player, suspends all player components (movement, look, physics), and lets you fly freely.
 
 ### How to Use
 
-1. Press **V** to toggle FreeCam ON
-2. You're now flying — gravity is disabled
+1. Press **V** to toggle the DebugCamera ON
+2. The player freezes in place (all components suspended)
 3. Use these controls:
 
 | Key | Movement |
 |-----|----------|
-| **W / S** | Fly forward / backward |
+| **W / S** | Fly forward / backward (follows view pitch) |
 | **A / D** | Strafe left / right |
-| **E** | Ascend (go up) |
-| **Q** | Descend (go down) |
+| **Space** | Ascend (go up) |
+| **C** | Descend (go down) |
+| **Shift** | Speed boost (4× normal) |
 | **Mouse** | Look around |
 
-4. Press **V** again to toggle FreeCam OFF and return to normal walking
+4. Press **V** again to toggle OFF — the camera snaps back to the player's eyes exactly where they left off (the player never moved)
 
-### When to Use FreeCam
+### When to Use DebugCamera
 
 - Inspecting the scene from above or from angles you can't reach normally
 - Positioning objects that are high up (lights, ceiling elements)
@@ -492,6 +494,16 @@ Press **F4** to toggle per-model console logging. When enabled, the console show
 Useful when a model lands at the wrong size or floats above the floor.
 
 > F4 rather than F1 — Chrome and DevTools own F1, so the key never reached the game.
+
+### Fullbright (B)
+
+Press **B** to toggle unlit debug lighting. Every lit material is swapped for a `MeshBasicMaterial` twin showing its albedo colour at full brightness — useful for spotting texture issues or checking a scene without shadow darkness. Fog is also disabled while active.
+
+- All standard lit materials (Standard, Physical, Phong, Lambert) are swapped for unlit twins
+- Twins are cached and reused, so memory stays flat
+- Unlit materials (Basic, Shader) are left alone
+- Toggle off restores the original materials and fog
+- Implementation: [src/core/Fullbright.js](../src/core/Fullbright.js)
 
 ### P — Recentering the Pivot
 
@@ -560,9 +572,9 @@ Every transform edit syncs the physics body to match the visuals:
 
 ### "I want to fly up and inspect the ceiling"
 
-1. Press **V** to enable FreeCam
-2. Hold **E** to ascend
-3. Use **WASD** + mouse to navigate
+1. Press **V** to enable the DebugCamera
+2. Hold **Space** to ascend
+3. Use **WASD** + mouse to navigate (hold **Shift** for speed boost)
 4. Press **V** again to return to normal controls
 
 ---
