@@ -765,13 +765,52 @@ export class LevelEditor {
         this.sceneRoot.removeChild(go);
         parentGO.addChild(go);
       }
-    } else if (entry.assetKey && this.engine.spawnModel) {
-      go = this.engine.spawnModel(entry.assetKey, {
-        name: entry.name,
-        position: entry.position ?? [0, 0, 0],
-      });
-      if (go && parentGO) {
+    } else if (entry.bboxSize && (!entry.assetKey || !this.engine.assets?.has(entry.assetKey))) {
+      // Non-manifest object (procedural wall, light fixture, etc.) — rebuild
+      // as a box primitive using the measured bounding box size from the JSON.
+      go = new GameObject(entry.name);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(entry.bboxSize[0], entry.bboxSize[1], entry.bboxSize[2]),
+        new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7 }),
+      );
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+      if (parentGO) {
         parentGO.addChild(go);
+      } else {
+        this.engine._rootObjects.push(go);
+        this.engine.scene.add(go.object3d);
+      }
+    } else if (entry.assetKey && this.engine.spawnModel) {
+      try {
+        go = this.engine.spawnModel(entry.assetKey, {
+          name: entry.name,
+          position: entry.position ?? [0, 0, 0],
+        });
+        if (go && parentGO) {
+          parentGO.addChild(go);
+        }
+      } catch (e) {
+        console.warn(`[LevelEditor] spawnModel failed for '${entry.assetKey}', falling back to bboxSize box`);
+        go = null;
+        // Fall through to bboxSize fallback below
+        if (entry.bboxSize) {
+          go = new GameObject(entry.name);
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(entry.bboxSize[0], entry.bboxSize[1], entry.bboxSize[2]),
+            new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7 }),
+          );
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          go.object3d.add(mesh);
+          if (parentGO) {
+            parentGO.addChild(go);
+          } else {
+            this.engine._rootObjects.push(go);
+            this.engine.scene.add(go.object3d);
+          }
+        }
       }
     }
 
@@ -2336,13 +2375,37 @@ export class LevelEditor {
     const serialize = (go) => {
       const obj = go.object3d;
       const light = this._findGlowLight(go);
+
+      // Only keep assetKey if it's a real manifest model; procedural objects
+      // (walls, lights, etc.) get null + a measured bboxSize so the loader
+      // can rebuild them as box primitives instead of calling spawnModel
+      // with a name that doesn't exist in the manifest.
+      let assetKey = null;
+      let bboxSize = null;
+      if (go.isGroup) {
+        // groups have no asset
+      } else if (go._shapeType) {
+        assetKey = null; // primitive — shapeType is enough
+      } else {
+        const rawKey = this._assetKeyFor(go);
+        if (rawKey && this.engine.assets?.has(rawKey)) {
+          assetKey = rawKey;
+        } else {
+          // Non-manifest object — measure bounding box for rebuild
+          obj.updateMatrixWorld(true);
+          const box = new THREE.Box3();
+          obj.traverse(child => { if (child.isMesh) box.expandByObject(child); });
+          if (!box.isEmpty()) bboxSize = box.getSize(new THREE.Vector3()).toArray();
+        }
+      }
+
       const entry = {
         name: go.name,
         isGroup: go.isGroup || false,
         position: obj ? [obj.position.x, obj.position.y, obj.position.z] : [0, 0, 0],
         rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
         scale: obj ? [obj.scale.x, obj.scale.y, obj.scale.z] : [1, 1, 1],
-        assetKey: this._assetKeyFor(go),
+        assetKey,
         shapeType: go._shapeType ?? null,
         collider: !!(go.rigidBody),
         glow: light
@@ -2352,6 +2415,7 @@ export class LevelEditor {
         hidden: go.isGroup ? false : this._isHidden(go),
         children: [],
       };
+      if (bboxSize) entry.bboxSize = bboxSize;
       for (const child of (go.children || [])) {
         entry.children.push(serialize(child));
       }
@@ -2363,9 +2427,26 @@ export class LevelEditor {
       dynamicObjects: (this.dynamicObjects || []).map(go => {
         const obj = go.object3d;
         const light = this._findGlowLight(go);
-        return {
+
+        let assetKey = null;
+        let bboxSize = null;
+        if (go._shapeType) {
+          // primitive
+        } else {
+          const rawKey = this._assetKeyFor(go);
+          if (rawKey && this.engine.assets?.has(rawKey)) {
+            assetKey = rawKey;
+          } else {
+            obj.updateMatrixWorld(true);
+            const box = new THREE.Box3();
+            obj.traverse(child => { if (child.isMesh) box.expandByObject(child); });
+            if (!box.isEmpty()) bboxSize = box.getSize(new THREE.Vector3()).toArray();
+          }
+        }
+
+        const entry = {
           name: go.name,
-          assetKey: this._assetKeyFor(go),
+          assetKey,
           shapeType: go._shapeType ?? null,
           position: obj ? [obj.position.x, obj.position.y, obj.position.z] : [0, 0, 0],
           rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
@@ -2377,6 +2458,8 @@ export class LevelEditor {
           color: this._getObjectColor(go),
           hidden: this._isHidden(go),
         };
+        if (bboxSize) entry.bboxSize = bboxSize;
+        return entry;
       }),
     };
 

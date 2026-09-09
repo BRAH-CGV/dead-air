@@ -65,6 +65,7 @@ describe('LevelEditor', () => {
       rigidBodyMap: new Map(),
       _bodyToGO: new Map(),
       rebuildModelPhysicsForScale: vi.fn(() => true),
+      assets: { has: vi.fn(() => false) },
     };
     
     editor = new LevelEditor(mockEngine);
@@ -485,6 +486,110 @@ describe('LevelEditor', () => {
     it('_applyHierarchy() returns false for invalid data', () => {
       expect(editor._applyHierarchy(null)).toBe(false);
       expect(editor._applyHierarchy({})).toBe(false);
+    });
+
+    it('_generateJSON() stores bboxSize and nulls assetKey for non-manifest objects', () => {
+      // Simulate a procedural wall — no physicsAssetKey, not in manifest
+      const wall = new GameObject('BackWall_Left');
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(4, 3, 0.2),
+        new THREE.MeshStandardMaterial({ color: 0x2f3945 }),
+      );
+      mesh.position.set(-5.125, 1.5, -5);
+      wall.object3d.add(mesh);
+      editor.sceneRoot.addChild(wall);
+      editor._enableCollider(wall);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      // Not a manifest model → assetKey should be null
+      expect(entry.assetKey).toBeNull();
+      // bboxSize should capture the measured bounding box
+      expect(entry.bboxSize).toBeDefined();
+      expect(entry.bboxSize[0]).toBeCloseTo(4, 0);
+      expect(entry.bboxSize[1]).toBeCloseTo(3, 0);
+      expect(entry.bboxSize[2]).toBeCloseTo(0.2, 1);
+    });
+
+    it('_applyHierarchy() rebuilds non-manifest objects as boxes from bboxSize', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'Office', isGroup: true,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              children: [
+                {
+                  name: 'BackWall_Left', isGroup: false,
+                  assetKey: null, bboxSize: [4, 3, 0.2],
+                  position: [-5.125, 1.5, -5], rotation: [0, 0, 0], scale: [1, 1, 1],
+                  collider: true, glow: { enabled: false },
+                  color: '#2f3945', hidden: false,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const office = editor.sceneRoot.children.find(c => c.name === 'Office');
+      expect(office).toBeDefined();
+
+      const wall = office.children.find(c => c.name === 'BackWall_Left');
+      expect(wall).toBeDefined();
+      // Should have a mesh (box primitive)
+      let meshCount = 0;
+      wall.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(1);
+      // Should have the correct position
+      expect(wall.object3d.position.x).toBe(-5.125);
+      expect(wall.object3d.position.y).toBe(1.5);
+      expect(wall.object3d.position.z).toBe(-5);
+      // Should have collider
+      expect(editor._hasCollider(wall)).toBe(true);
+      // Should have the colour applied
+      expect(editor._getObjectColor(wall)).toBe('#2f3945');
+    });
+
+    it('_applyHierarchy() falls back to bboxSize box when spawnModel throws', () => {
+      mockEngine.assets.has = vi.fn(() => true); // key IS in manifest
+      mockEngine.spawnModel = vi.fn(() => { throw new Error('asset not loaded'); });
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'BrokenModel', isGroup: false,
+              assetKey: 'model:broken', bboxSize: [2, 1, 1],
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: true, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      // Should NOT throw — falls back to bboxSize box
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'BrokenModel');
+      expect(go).toBeDefined();
+      let meshCount = 0;
+      go.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(1);
     });
 
     it('_applyHierarchy() rebuilds dynamic objects', () => {
