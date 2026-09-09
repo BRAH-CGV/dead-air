@@ -534,6 +534,23 @@ export class Engine {
       this._accumulator -= Engine.FIXED_DT;
     }
 
+    // ── Deferred body removal ──
+    // Clean up rigid bodies that were flagged for removal during the physics
+    // step (e.g. editor delete). The try/catch in _deleteSelected queues
+    // them here if Rapier threw "recursive use". Safe to remove now that
+    // world.step() has finished.
+    if (this._deferredBodyRemovals?.length > 0) {
+      for (const body of this._deferredBodyRemovals) {
+        try {
+          this.world.removeRigidBody(body);
+        } catch (e) {
+          // Still can't remove it — leave it queued for next frame.
+          // This shouldn't happen outside world.step(), but guard anyway.
+        }
+      }
+      this._deferredBodyRemovals = [];
+    }
+
     // Interpolation factor: how far we are between the last two physics steps
     const alpha = this._accumulator / Engine.FIXED_DT;
     this._interpolatePhysics(alpha);

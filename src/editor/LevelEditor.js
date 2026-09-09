@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
+import { ASSETS } from '../assets/manifest.js';
 
 // ─────────────────────────────────────────────
 // LevelEditor  –  Visual scene editing tool
@@ -52,6 +53,9 @@ export class LevelEditor {
     
     // Create Group button ref
     this._createGroupBtn = null;
+    
+    // Add Object panel ref
+    this._addObjectPanel = null;
   }
   
   init() {
@@ -234,6 +238,12 @@ export class LevelEditor {
       if (go.name === 'Player' || !go.object3d) continue;
       if (go === this.sceneRoot) continue; // already handled
 
+      // Skip objects that have already been reparented under the hierarchy
+      // (e.g. spawnModel pushes to _rootObjects, then scene code calls
+      // group.addChild(go) — the object is already in the tree via the
+      // sceneRoot walk above, so adding it again would create duplicates).
+      if (this._isUnderHierarchy(go, this.sceneRoot)) continue;
+
       const isDynamic = go.rigidBody && this.engine.rigidBodyMap.has(go.rigidBody.handle);
       if (isDynamic) {
         if (!this.dynamicObjects.includes(go)) this.dynamicObjects.push(go);
@@ -252,13 +262,34 @@ export class LevelEditor {
     }
   }
 
-  /** Recursively add a GameObject and all its descendants to editableObjects. */
+  /** Return true if `go` is a descendant of `root` (walks the GameObject
+   *  parent chain). Used to skip objects that spawnModel pushed to
+   *  _rootObjects but that scene code already reparented into the tree. */
+  _isUnderHierarchy(go, root) {
+    let current = go.parent;
+    while (current) {
+      if (current === root) return true;
+      current = current.parent;
+    }
+    return false;
+  }
+
+  /** Recursively add a GameObject and its DIRECT children to editableObjects.
+   *  Does NOT recurse into sub-meshes of imported models — those internal
+   *  nodes (e.g. Satellite's Neck_block, Dish) are implementation details
+   *  of the model, not independently editable scene objects. Only the model
+   *  root itself is editable. Groups DO recurse because their children are
+   *  user-created scene objects, not model internals. */
   _collectEditableObjects(go) {
     if (!this.editableObjects.includes(go)) {
       this.editableObjects.push(go);
     }
     if (go.isGroup) this._collapsedGroups.delete(go);
-    if (go.children) {
+    // Only recurse into groups (user-created containers). Model sub-parts
+    // (children of non-group GameObjects) are hidden from the tree — they
+    // are internal to the imported model and selecting them separately
+    // causes confusion (duplicate entries, orphan transforms).
+    if (go.isGroup && go.children) {
       for (const child of go.children) {
         this._collectEditableObjects(child);
       }
@@ -380,63 +411,9 @@ export class LevelEditor {
     this._createGroupBtn = createGroupBtn;
     this.panel.appendChild(createGroupBtn);
     
-    // Export buttons
-    const buttonDiv = document.createElement('div');
-    buttonDiv.style.display = 'flex';
-    buttonDiv.style.gap = '5px';
-    
-    const exportJsonBtn = document.createElement('button');
-    exportJsonBtn.textContent = 'Export JSON';
-    exportJsonBtn.style.cssText = `
-      flex: 1;
-      padding: 8px;
-      background: #2a5;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      font-family: monospace;
-    `;
-    exportJsonBtn.onclick = () => this._exportJSON();
-    buttonDiv.appendChild(exportJsonBtn);
-    
-    const exportCodeBtn = document.createElement('button');
-    exportCodeBtn.textContent = 'Export Code';
-    exportCodeBtn.style.cssText = `
-      flex: 1;
-      padding: 8px;
-      background: #25a;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      cursor: pointer;
-      font-family: monospace;
-    `;
-    exportCodeBtn.onclick = () => this._exportCode();
-    buttonDiv.appendChild(exportCodeBtn);
-    
-    this.panel.appendChild(buttonDiv);
+    // Add Object panel
+    this._buildAddObjectPanel();
 
-    // Export mode buttons (standalone scene file + hierarchy JSON)
-    const exportModeDiv = document.createElement('div');
-    exportModeDiv.style.display = 'flex';
-    exportModeDiv.style.gap = '5px';
-    exportModeDiv.style.marginTop = '5px';
-
-    const exportStandaloneBtn = document.createElement('button');
-    exportStandaloneBtn.textContent = '\uD83D\uDCE6 Standalone';
-    exportStandaloneBtn.style.cssText = 'flex:1; padding:8px; background:#a52; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
-    exportStandaloneBtn.onclick = () => this._exportStandalone();
-    exportModeDiv.appendChild(exportStandaloneBtn);
-
-    const exportHierBtn = document.createElement('button');
-    exportHierBtn.textContent = '\uD83C\uDF33 Hierarchy';
-    exportHierBtn.style.cssText = 'flex:1; padding:8px; background:#25a; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
-    exportHierBtn.onclick = () => this._exportHierarchy();
-    exportModeDiv.appendChild(exportHierBtn);
-
-    this.panel.appendChild(exportModeDiv);
-    
     document.body.appendChild(this.panel);
   }
   
@@ -521,6 +498,14 @@ export class LevelEditor {
     saveCodeBtn.style.cssText = 'flex:1; padding:6px; background:#555; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
     saveCodeBtn.onclick = () => this._saveSceneCode();
     saveRow.appendChild(saveCodeBtn);
+
+    // Load hierarchy back from a saved .hierarchy.json (round-trip)
+    const loadBtn = document.createElement('button');
+    loadBtn.id = 'load-hierarchy-btn';
+    loadBtn.textContent = '\uD83D\uDCC2 Load';
+    loadBtn.style.cssText = 'flex:1; padding:6px; background:#a52; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
+    loadBtn.onclick = () => this._loadHierarchy();
+    saveRow.appendChild(loadBtn);
 
     header.appendChild(saveRow);
     this.panel.appendChild(header);
@@ -635,38 +620,6 @@ export class LevelEditor {
     console.log(`[LevelEditor] Saved scene code: ${filename}`);
   }
 
-  /** Export a complete standalone Scene class as a downloadable file. */
-  _exportStandalone() {
-    const code = this._generateFullSceneClass();
-    const sceneName = this._getSceneName();
-    const filename = `${sceneName}.standalone.js`;
-
-    const blob = new Blob([code], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    console.log(`[LevelEditor] Exported standalone: ${filename}`);
-  }
-
-  /** Export just the hierarchy structure as a JSON file. */
-  _exportHierarchy() {
-    const hierarchy = this._generateJSON();
-    const sceneName = this._getSceneName();
-    const filename = `${sceneName}.hierarchy.json`;
-
-    const blob = new Blob([hierarchy], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    console.log(`[LevelEditor] Exported hierarchy: ${filename}`);
-  }
-
   /** Generate a complete Scene class that can replace the original file. */
   _generateFullSceneClass() {
     const sceneName = this._getSceneName();
@@ -682,6 +635,191 @@ export class LevelEditor {
     code += `  }\n`;
     code += `}\n`;
     return code;
+  }
+
+  /** Open a file picker and load a saved .hierarchy.json back into the scene. */
+  _loadHierarchy() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.style.display = 'none';
+
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          const ok = this._applyHierarchy(data);
+          if (ok) console.log(`[LevelEditor] Loaded hierarchy from ${file.name}`);
+          else console.warn(`[LevelEditor] Failed to load hierarchy from ${file.name}`);
+        } catch (e) {
+          console.warn(`[LevelEditor] Invalid hierarchy JSON: ${e.message}`);
+        }
+      };
+      reader.readAsText(file);
+      input.remove();
+    };
+
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  /** Rebuild the editable hierarchy from saved JSON data. Returns true on
+   *  success. Clears every existing editable object first, then recreates
+   *  groups, primitives (shapeType) and manifest models (assetKey), restoring
+   *  transforms, colliders, glow, colour and hidden state along the way. */
+  _applyHierarchy(data) {
+    if (!data || !data.root || !Array.isArray(data.root.children)) {
+      console.warn('[LevelEditor] _applyHierarchy: invalid data (missing root)');
+      return false;
+    }
+
+    // ── Clear existing editable content ────────────────────────────
+    this.deselectAll();
+    if (this.sceneRoot) {
+      for (const go of [...this.sceneRoot.children]) {
+        this._removeObjectFromScene(go);
+      }
+    }
+    for (const go of [...(this.dynamicObjects ?? [])]) {
+      this._removeObjectFromScene(go);
+    }
+
+    // ── Rebuild from the root's children (sceneRoot itself is adopted, not recreated) ──
+    for (const entry of data.root.children) {
+      this._instantiateEntry(entry, this.sceneRoot);
+    }
+
+    // ── Dynamic objects (Rapier-owned position, kept at root level) ──
+    for (const entry of (data.dynamicObjects ?? [])) {
+      this._instantiateEntry(entry, null);
+    }
+
+    this._refreshEditableObjects();
+    this._updateObjectList();
+    this._dirty = false;
+    this._updateDirtyIndicator();
+    return true;
+  }
+
+  /** Remove a GameObject (and its descendants' physics) from the scene.
+   *  Same cleanup rules as _deleteSelected, without the selection handling. */
+  _removeObjectFromScene(go) {
+    const allParts = go.descendants ? go.descendants() : [go];
+
+    this.engine.scene.remove(go.object3d);
+
+    for (const part of allParts) {
+      if (part.rigidBody) {
+        const handle = part.rigidBody.handle;
+        this.engine.rigidBodyMap.delete(handle);
+        this.engine._bodyToGO.delete(handle);
+        for (const c of part.colliders ?? (part.collider ? [part.collider] : [])) {
+          this.engine.world.removeCollider(c, true);
+        }
+        part.colliders = [];
+        part.collider = null;
+        try {
+          this.engine.world.removeRigidBody(part.rigidBody);
+        } catch (e) {
+          if (!this.engine._deferredBodyRemovals) this.engine._deferredBodyRemovals = [];
+          this.engine._deferredBodyRemovals.push(part.rigidBody);
+        }
+        part.rigidBody = null;
+      }
+      // PointLights (editor glow) need disposal
+      part.object3d?.traverse?.((child) => {
+        if (child.isLight && child.dispose) child.dispose();
+      });
+    }
+
+    if (go.parent) go.parent.removeChild(go);
+    const idx = this.engine._rootObjects.indexOf(go);
+    if (idx >= 0) this.engine._rootObjects.splice(idx, 1);
+  }
+
+  /** Instantiate one JSON entry (group, primitive or manifest model) under a
+   *  parent GameObject, restoring transform and per-object state. Returns the
+   *  created/adopted GameObject or null on failure. */
+  _instantiateEntry(entry, parentGO) {
+    if (!entry || !entry.name) return null;
+
+    let go = null;
+
+    if (entry.isGroup) {
+      go = new GameObject(entry.name);
+      go.makeGroup();
+      if (parentGO) {
+        parentGO.addChild(go);
+      } else {
+        this.engine._rootObjects.push(go);
+        this.engine.scene.add(go.object3d);
+      }
+    } else if (entry.shapeType) {
+      // Editor-created primitive — rebuild via the same pipeline as the add panel
+      go = this._createPrimitiveShape(entry.shapeType, entry.name);
+      if (go && parentGO && this.sceneRoot) {
+        // _createPrimitiveShape parents to sceneRoot — reparent to the group
+        this.sceneRoot.removeChild(go);
+        parentGO.addChild(go);
+      }
+    } else if (entry.assetKey && this.engine.spawnModel) {
+      go = this.engine.spawnModel(entry.assetKey, {
+        name: entry.name,
+        position: entry.position ?? [0, 0, 0],
+      });
+      if (go && parentGO) {
+        parentGO.addChild(go);
+      }
+    }
+
+    if (!go) {
+      console.warn(`[LevelEditor] _instantiateEntry: cannot rebuild '${entry.name}' (no shapeType or spawnable assetKey '${entry.assetKey ?? 'none'}')`);
+      return null;
+    }
+
+    // ── Transform ─────────────────────────────────────────────────
+    go.object3d.position.fromArray(entry.position ?? [0, 0, 0]);
+    if (entry.rotation) go.object3d.rotation.set(entry.rotation[0], entry.rotation[1], entry.rotation[2]);
+    if (entry.scale) go.object3d.scale.fromArray(entry.scale);
+
+    if (!entry.isGroup) {
+      // ── Per-object state: collider, colour, glow, hidden ────────
+      // Primitives spawn with a scale-1 collider; models may carry a
+      // manifest-fitted one. Sync at the end rebuilds it at the final transform.
+      if (entry.collider === false) {
+        this._disableCollider(go);
+      } else if (!this._hasCollider(go)) {
+        this._enableCollider(go);
+      }
+
+      if (entry.color && entry.color !== '#808080') {
+        this._setObjectColor(go, entry.color);
+      }
+
+      if (entry.glow?.enabled) {
+        this._setGlow(go, true, entry.glow.color ?? '#ffffff', entry.glow.intensity ?? 5, entry.glow.range ?? LevelEditor.GLOW_DEFAULT_RANGE);
+      }
+
+      if (entry.hidden) {
+        this._setHidden(go, true);
+      }
+    }
+
+    // ── Children (depth-first) ──────────────────────────────────
+    for (const child of (entry.children ?? [])) {
+      this._instantiateEntry(child, go);
+    }
+
+    // The collider was measured before the transform above applied —
+    // re-sync position/rotation and rebuild for scale.
+    if (!entry.isGroup && go.rigidBody) {
+      this._syncSingleTransformToPhysics(go);
+    }
+
+    return go;
   }
 
   _onMouseDown(event) {
@@ -872,6 +1010,9 @@ export class LevelEditor {
       };
     }
     
+    // Add collider toggle and glow controls to the info panel
+    this._buildColliderAndGlowControls();
+    
     // Add event listeners to inputs
     const inputs = this.infoDiv.querySelectorAll('input');
     inputs.forEach((input) => {
@@ -976,43 +1117,64 @@ export class LevelEditor {
     return false;
   }
 
-  /** Rebuild a procedural box collider from the mesh's MEASURED world bounding
-   *  box. Measuring reality (instead of trusting stored size × scale) keeps the
-   *  wireframe exactly on the visible mesh whatever the scale or parent
-   *  transforms are, and the collider offset keeps off-centre meshes wrapped. */
+  /** Rebuild a procedural box collider from the mesh's MEASURED bounding box
+   *  in the BODY'S LOCAL FRAME. Computing in body-local space (instead of
+   *  world space) ensures the cuboid dimensions stay correct when the body is
+   *  rotated — a world-space bbox would be axis-aligned, but the cuboid
+   *  rotates with the body, causing dimension swaps on rotated objects. */
   _rebuildProceduralCollider(go) {
     const world = this.engine.world;
     const RAPIER = this.engine.RAPIER;
     if (!RAPIER) return;
 
-    // Measure the visual mesh's world-space bounding box. Matrices are already
-    // fresh — the caller ran updateMatrixWorld(true) before the scale check.
-    const box = new THREE.Box3();
+    // Get the body's current transform so we can convert mesh vertices into
+    // the body's local coordinate frame.
+    const bodyPos = go.rigidBody.translation();
+    const bodyRot = go.rigidBody.rotation();
+    const bodyQuat = new THREE.Quaternion(bodyRot.x, bodyRot.y, bodyRot.z, bodyRot.w);
+    const bodyQuatInv = bodyQuat.clone().invert();
+
+    // Compute the bounding box in the BODY'S LOCAL FRAME by transforming each
+    // mesh vertex: world → body-local (subtract position, rotate by inverse).
+    // This ensures the cuboid dimensions are correct for the body's orientation.
+    const localBox = new THREE.Box3();
+    const localVert = new THREE.Vector3();
     let hasMesh = false;
     go.object3d.traverse((child) => {
-      if (child.isMesh) { box.expandByObject(child); hasMesh = true; }
+      if (!child.isMesh) return;
+      const geom = child.geometry;
+      if (!geom?.attributes?.position) return;
+      child.updateWorldMatrix(true, false);
+      const positions = geom.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        localVert.fromBufferAttribute(positions, i);
+        localVert.applyMatrix4(child.matrixWorld);
+        // World → body-local: subtract body position, rotate by inverse quat
+        localVert.x -= bodyPos.x;
+        localVert.y -= bodyPos.y;
+        localVert.z -= bodyPos.z;
+        localVert.applyQuaternion(bodyQuatInv);
+        localBox.expandByPoint(localVert);
+        hasMesh = true;
+      }
     });
     if (!hasMesh) return;
 
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    if (!(size.x > 0 && size.y > 0 && size.z > 0)) return;
+    const localSize = localBox.getSize(new THREE.Vector3());
+    const localCenter = localBox.getCenter(new THREE.Vector3());
+    if (!(localSize.x > 0 && localSize.y > 0 && localSize.z > 0)) return;
 
     // Remove old colliders
     for (const c of go.colliders ?? (go.collider ? [go.collider] : [])) {
       world.removeCollider(c, true);
     }
 
-    // Collider offsets are relative to the BODY, in the body's rotated frame:
-    // world delta from body to bbox centre, rotated by the inverse rotation.
-    const t = go.rigidBody.translation();
-    const r = go.rigidBody.rotation();
-    const offset = new THREE.Vector3(center.x - t.x, center.y - t.y, center.z - t.z);
-    offset.applyQuaternion(new THREE.Quaternion(-r.x, -r.y, -r.z, r.w));
-
+    // Create the cuboid in the body's local frame — no rotation needed because
+    // the dimensions are already computed in that frame. The offset is the
+    // local-space center of the bounding box.
     const newCollider = world.createCollider(
-      RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
-        .setTranslation(offset.x, offset.y, offset.z),
+      RAPIER.ColliderDesc.cuboid(localSize.x / 2, localSize.y / 2, localSize.z / 2)
+        .setTranslation(localCenter.x, localCenter.y, localCenter.z),
       go.rigidBody,
     );
     go.colliders = [newCollider];
@@ -1020,10 +1182,8 @@ export class LevelEditor {
     go._physicsScale = [...go.object3d.scale];
 
     // Diagnostic: proves what Rapier was told vs what the mesh shows.
-    // If the overlay still drifts after scaling, these numbers say whether the
-    // body itself moved or only the size was wrong.
     console.log(
-      `[LevelEditor] rebuilt collider '${go.name}': size=(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}) center=(${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`,
+      `[LevelEditor] rebuilt collider '${go.name}': localSize=(${localSize.x.toFixed(2)}, ${localSize.y.toFixed(2)}, ${localSize.z.toFixed(2)}) localCenter=(${localCenter.x.toFixed(2)}, ${localCenter.y.toFixed(2)}, ${localCenter.z.toFixed(2)})`,
     );
   }
 
@@ -1151,6 +1311,800 @@ export class LevelEditor {
     this._collapsedGroups.delete(group);
     this._updateObjectList();
     return group;
+  }
+
+  // ── Add Object functionality ─────────────────────────────────────
+
+  /** Build the "Add Object" panel with manifest models and primitive shapes. */
+  _buildAddObjectPanel() {
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: rgba(0, 0, 0, 0.4);
+      padding: 8px;
+      border-radius: 3px;
+      margin-bottom: 10px;
+    `;
+
+    // Title
+    const title = document.createElement('div');
+    title.textContent = '\u2795 Add Object';
+    title.style.cssText = 'margin-bottom: 8px; color: #aaa; font-weight: bold;';
+    panel.appendChild(title);
+
+    // Primitive shapes section
+    const primitivesTitle = document.createElement('div');
+    primitivesTitle.textContent = 'Primitives:';
+    primitivesTitle.style.cssText = 'margin-bottom: 4px; color: #888; font-size: 11px;';
+    panel.appendChild(primitivesTitle);
+
+    const primitivesGrid = document.createElement('div');
+    primitivesGrid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px;';
+    
+    const shapes = this._getPrimitiveShapes();
+    for (const shape of shapes) {
+      const btn = document.createElement('button');
+      btn.textContent = this._shapeDisplayName(shape);
+      btn.style.cssText = `
+        padding: 6px;
+        background: #555;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 11px;
+      `;
+      btn.onclick = () => this._promptAndAddPrimitive(shape);
+      primitivesGrid.appendChild(btn);
+    }
+    panel.appendChild(primitivesGrid);
+
+    // Manifest models section
+    const modelsTitle = document.createElement('div');
+    modelsTitle.textContent = 'Models:';
+    modelsTitle.style.cssText = 'margin-bottom: 4px; color: #888; font-size: 11px;';
+    panel.appendChild(modelsTitle);
+
+    const modelsList = document.createElement('div');
+    modelsList.style.cssText = 'max-height: 120px; overflow-y: auto;';
+    
+    const models = this._getManifestModels();
+    for (const key of models) {
+      const btn = document.createElement('button');
+      btn.textContent = key;
+      btn.title = `Add ${key} to scene`;
+      btn.style.cssText = `
+        width: 100%;
+        padding: 5px 8px;
+        margin-bottom: 2px;
+        background: #446;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 10px;
+        text-align: left;
+      `;
+      btn.onclick = () => this._promptAndAddManifestModel(key);
+      modelsList.appendChild(btn);
+    }
+    panel.appendChild(modelsList);
+
+    this._addObjectPanel = panel;
+    this.panel.appendChild(panel);
+  }
+
+  /** Get a user-friendly display name for a shape type. */
+  _shapeDisplayName(shape) {
+    const names = {
+      box: '\u25A1 Box',
+      sphere: '\u25CB Sphere',
+      cylinder: '\u25E8 Cylinder',
+      cone: '\u25B2 Cone',
+      torus: '\u25CE Torus',
+      plane: '\u25AD Plane',
+    };
+    return names[shape] || shape;
+  }
+
+  /** Get all model keys from the manifest (excludes textures). */
+  _getManifestModels() {
+    return Object.keys(ASSETS).filter(key => {
+      const entry = ASSETS[key];
+      return entry.type === 'model';
+    });
+  }
+
+  /** Get available primitive shape types. */
+  _getPrimitiveShapes() {
+    return ['box', 'sphere', 'cylinder', 'cone', 'torus', 'plane'];
+  }
+
+  /** Create a primitive shape GameObject and add it to the scene. */
+  _createPrimitiveShape(shape, name) {
+    const go = new GameObject(name);
+    
+    // Create the geometry based on shape type
+    let geometry;
+    let defaultSize;
+    switch (shape) {
+      case 'box':
+        geometry = new THREE.BoxGeometry(1, 1, 1);
+        defaultSize = [1, 1, 1];
+        break;
+      case 'sphere':
+        geometry = new THREE.SphereGeometry(0.5, 32, 16);
+        defaultSize = [1, 1, 1];
+        break;
+      case 'cylinder':
+        geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+        defaultSize = [1, 1, 1];
+        break;
+      case 'cone':
+        geometry = new THREE.ConeGeometry(0.5, 1, 32);
+        defaultSize = [1, 1, 1];
+        break;
+      case 'torus':
+        geometry = new THREE.TorusGeometry(0.5, 0.2, 16, 32);
+        defaultSize = [1, 1, 1];
+        break;
+      case 'plane':
+        geometry = new THREE.PlaneGeometry(1, 1);
+        defaultSize = [1, 0, 1];
+        break;
+      default:
+        geometry = new THREE.BoxGeometry(1, 1, 1);
+        defaultSize = [1, 1, 1];
+    }
+
+    // Create a basic material (grey)
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0x808080,
+      roughness: 0.7,
+      metalness: 0.0,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    
+    // For shapes like cone/cylinder, lift them so the base is at y=0
+    if (shape === 'cone' || shape === 'cylinder') {
+      mesh.position.y = 0.5;
+    }
+    // For plane, rotate to be horizontal
+    if (shape === 'plane') {
+      mesh.rotation.x = -Math.PI / 2;
+    }
+    
+    go.object3d.add(mesh);
+    
+    // Store original size for collider rebuilds
+    go._originalSize = defaultSize;
+    go._shapeType = shape;
+    
+    // Add to scene hierarchy
+    const targetParent = this.sceneRoot;
+    if (targetParent) {
+      targetParent.addChild(go);
+    }
+    
+    // Add to engine's root objects for tracking
+    this.engine._rootObjects.push(go);
+    
+    // Create a static collider from the measured bounding box
+    this._enableCollider(go);
+    
+    // Mark as dirty
+    this._markDirty();
+    this._updateObjectList();
+    
+    console.log(`[LevelEditor] Created primitive ${shape}: ${name}`);
+    return go;
+  }
+
+  /** Spawn a manifest model and add it to the hierarchy. */
+  _addManifestModel(key, name) {
+    if (!this.engine.spawnModel) {
+      console.warn('[LevelEditor] engine.spawnModel not available');
+      return null;
+    }
+
+    const go = this.engine.spawnModel(key, {
+      name: name,
+      position: [0, 0, 0],
+    });
+
+    if (go) {
+      // Add to scene hierarchy
+      if (this.sceneRoot) {
+        this.sceneRoot.addChild(go);
+      }
+      
+      // Refresh the editor to pick up the new object
+      this._refreshEditableObjects();
+      this._markDirty();
+      
+      console.log(`[LevelEditor] Added manifest model: ${name} (${key})`);
+    }
+    
+    return go;
+  }
+
+  /** Prompt the user for a name and add a primitive shape. */
+  _promptAndAddPrimitive(shape) {
+    const defaultName = this._shapeDefaultName(shape);
+    let name = defaultName;
+    
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      const result = prompt(`Name for ${shape}:`, defaultName);
+      if (result === null) return null; // User cancelled
+      name = result || defaultName;
+    }
+    
+    return this._createPrimitiveShape(shape, name);
+  }
+
+  /** Prompt the user for a name and add a manifest model. */
+  _promptAndAddManifestModel(key) {
+    const defaultName = this._modelDefaultName(key);
+    let name = defaultName;
+    
+    if (typeof window !== 'undefined' && typeof window.prompt === 'function') {
+      const result = prompt(`Name for ${key}:`, defaultName);
+      if (result === null) return null; // User cancelled
+      name = result || defaultName;
+    }
+    
+    return this._addManifestModel(key, name);
+  }
+
+  /** Generate a default name for a primitive shape. */
+  _shapeDefaultName(shape) {
+    const names = {
+      box: 'Box',
+      sphere: 'Sphere',
+      cylinder: 'Cylinder',
+      cone: 'Cone',
+      torus: 'Torus',
+      plane: 'Plane',
+    };
+    return names[shape] || 'Object';
+  }
+
+  /** Generate a default name for a manifest model key. */
+  _modelDefaultName(key) {
+    // 'model:desk' -> 'Desk'
+    const raw = key.replace(/^model:/, '');
+    return raw.split(/[-_]/).map(part => 
+      part.charAt(0).toUpperCase() + part.slice(1)
+    ).join('');
+  }
+
+  // ── Collider management ─────────────────────────────────────────
+
+  /** Check whether a GameObject has an active collider (rigid body present). */
+  _hasCollider(go) {
+    return !!go.rigidBody;
+  }
+
+  /** Create a static cuboid collider from the mesh's measured bounding box.
+   *  Used for primitives and for objects that don't already have physics. */
+  _enableCollider(go) {
+    if (go.rigidBody) return; // already has one
+    const world = this.engine.world;
+    const RAPIER = this.engine.RAPIER;
+    if (!world || !RAPIER) return;
+
+    // Measure the bounding box in world space
+    go.object3d.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    go.object3d.traverse((child) => {
+      if (child.isMesh) box.expandByObject(child);
+    });
+    if (box.isEmpty()) return;
+
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    if (!(size.x > 0 && size.y > 0 && size.z > 0)) return;
+
+    // Get world position of the object
+    const worldPos = new THREE.Vector3();
+    go.object3d.getWorldPosition(worldPos);
+
+    // Create a static rigid body at the object's world position
+    const bodyDesc = RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(worldPos.x, worldPos.y, worldPos.z);
+    go.rigidBody = world.createRigidBody(bodyDesc);
+
+    // Create a cuboid collider with half-extents, offset by the bbox centre
+    // relative to the body origin
+    const localCenter = new THREE.Vector3(
+      center.x - worldPos.x,
+      center.y - worldPos.y,
+      center.z - worldPos.z,
+    );
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
+      .setTranslation(localCenter.x, localCenter.y, localCenter.z);
+    const collider = world.createCollider(colliderDesc, go.rigidBody);
+
+    go.colliders = [collider];
+    go.collider = collider;
+    go._physicsScale = [...go.object3d.scale];
+
+    // Register in engine maps for raycasts etc.
+    if (this.engine._bodyToGO) {
+      this.engine._bodyToGO.set(go.rigidBody.handle, go);
+    }
+
+    this._markDirty();
+    console.log(`[LevelEditor] Collider enabled on '${go.name}': size=(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})`);
+  }
+
+  /** Remove the collider and rigid body from a GameObject. */
+  _disableCollider(go) {
+    if (!go.rigidBody) return;
+    const world = this.engine.world;
+
+    // Remove colliders
+    for (const c of go.colliders ?? (go.collider ? [go.collider] : [])) {
+      world.removeCollider(c, true);
+    }
+
+    // Remove the body
+    try {
+      world.removeRigidBody(go.rigidBody);
+    } catch (e) {
+      // Rapier throws on recursive use during world.step — defer
+      if (!this.engine._deferredBodyRemovals) this.engine._deferredBodyRemovals = [];
+      this.engine._deferredBodyRemovals.push(go.rigidBody);
+    }
+
+    // Clean up engine maps
+    if (go.rigidBody && this.engine._bodyToGO) {
+      this.engine._bodyToGO.delete(go.rigidBody.handle);
+    }
+    if (go.rigidBody && this.engine.rigidBodyMap) {
+      this.engine.rigidBodyMap.delete(go.rigidBody.handle);
+    }
+
+    go.rigidBody = null;
+    go.colliders = [];
+    go.collider = null;
+
+    this._markDirty();
+    console.log(`[LevelEditor] Collider disabled on '${go.name}'`);
+  }
+
+  // ── Glow (PointLight + emissive) management ─────────────────────
+  //
+  // Glow detection looks for TWO kinds of PointLight:
+  //   • Tagged (_editorGlowLight = true) — created or adopted by the editor.
+  //   • Untagged — scene-authored lights (e.g. CeilingLight in OfficeScene).
+  //     These are treated as preset values: the glow controls show them as ON
+  //     with the scene's colour/intensity/range, and on first edit the editor
+  //     "adopts" the light (tags it) instead of creating a duplicate.
+  //
+  // When glow is enabled, the original emissive of every mesh is saved so
+  // that disabling glow can restore it instead of clearing to black.
+
+  /** Default light range in metres for editor-spawned glow lights. */
+  static GLOW_DEFAULT_RANGE = 8;
+
+  /** Check whether the object has any PointLight child (tagged or scene). */
+  _hasGlow(go) {
+    let hasGlow = false;
+    go.object3d.traverse((child) => {
+      if (child.isPointLight) {
+        hasGlow = true;
+      }
+    });
+    return hasGlow;
+  }
+
+  /** Get the glow light's colour as a hex string (#rrggbb). */
+  _getGlowColor(go) {
+    let color = '#000000';
+    go.object3d.traverse((child) => {
+      if (child.isPointLight) {
+        color = '#' + child.color.getHexString();
+      }
+    });
+    return color;
+  }
+
+  /** Get the glow light's intensity. */
+  _getGlowIntensity(go) {
+    let intensity = 0;
+    go.object3d.traverse((child) => {
+      if (child.isPointLight) {
+        intensity = child.intensity;
+      }
+    });
+    return intensity;
+  }
+
+  /** Get the glow light's range (distance). */
+  _getGlowRange(go) {
+    let range = LevelEditor.GLOW_DEFAULT_RANGE;
+    go.object3d.traverse((child) => {
+      if (child.isPointLight) {
+        range = child.distance;
+      }
+    });
+    return range;
+  }
+
+  /** Find any PointLight child (tagged preferred, else first untagged). */
+  _findGlowLight(go) {
+    let tagged = null;
+    let untagged = null;
+    go.object3d.traverse((child) => {
+      if (child.isPointLight) {
+        if (child._editorGlowLight) tagged = child;
+        else if (!untagged) untagged = child;
+      }
+    });
+    return tagged || untagged;
+  }
+
+  /** Enable or disable a PointLight (and matching emissive) on the object.
+   *
+   *  When an untagged scene-authored light already exists on the object,
+   *  enabling glow "adopts" it (tags it, applies new values) instead of
+   *  creating a duplicate.  When disabling, the original emissive saved
+   *  at enable-time is restored so the object's scene-authored glow
+   *  returns instead of going black. */
+  _setGlow(go, enabled, colorHex, intensity, range) {
+    range = range ?? LevelEditor.GLOW_DEFAULT_RANGE;
+
+    const existing = this._findGlowLight(go);
+
+    if (enabled) {
+      const color = new THREE.Color(colorHex);
+
+      if (existing && !existing._editorGlowLight) {
+        // ── Adopt scene-authored light: tag + update in place ──
+        existing._editorGlowLight = true;
+        existing.color.copy(color);
+        existing.intensity = intensity;
+        existing.distance = range;
+        existing.castShadow = true;
+        existing.shadow.mapSize.set(1024, 1024);
+      } else if (existing && existing._editorGlowLight) {
+        // ── Update already-adopted light ──
+        existing.color.copy(color);
+        existing.intensity = intensity;
+        existing.distance = range;
+        existing.castShadow = true;
+        existing.shadow.mapSize.set(1024, 1024);
+      } else {
+        // ── No light at all: create one ──
+        const light = new THREE.PointLight(color, intensity, range, 1.0);
+        light._editorGlowLight = true;
+        light.castShadow = true;
+        light.shadow.mapSize.set(1024, 1024);
+        go.object3d.add(light);
+      }
+
+      // Save original emissive (once) then override for glow
+      go.object3d.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const mat = child.material;
+        if (!('emissive' in mat)) return;
+        if (mat._originalEmissive === undefined) {
+          mat._originalEmissive = mat.emissive.clone();
+          mat._originalEmissiveIntensity = mat.emissiveIntensity;
+        }
+        mat.emissive.copy(color);
+        mat.emissiveIntensity = Math.min(intensity, 3.0);
+      });
+    } else {
+      // ── Disable: remove light (tagged or adopted), restore original emissive ──
+      if (existing) {
+        go.object3d.remove(existing);
+        existing.dispose?.();
+      }
+
+      go.object3d.traverse((child) => {
+        if (!child.isMesh || !child.material) return;
+        const mat = child.material;
+        if (!('emissive' in mat)) return;
+        if (mat._originalEmissive !== undefined) {
+          mat.emissive.copy(mat._originalEmissive);
+          mat.emissiveIntensity = mat._originalEmissiveIntensity;
+          delete mat._originalEmissive;
+          delete mat._originalEmissiveIntensity;
+        } else {
+          mat.emissive.set(0x000000);
+          mat.emissiveIntensity = 0;
+        }
+      });
+    }
+
+    this._markDirty();
+    console.log(`[LevelEditor] Glow ${enabled ? 'enabled' : 'disabled'} on '${go.name}': color=${colorHex}, intensity=${intensity}, range=${range}m`);
+  }
+
+  // ── Object colour management ───────────────────────────────────
+
+  /** Get the base colour of the first mesh as a hex string (#rrggbb). */
+  _getObjectColor(go) {
+    let color = '#808080';
+    go.object3d.traverse((child) => {
+      if (child.isMesh && child.material && child.material.color) {
+        color = '#' + child.material.color.getHexString();
+        return; // take the first one found
+      }
+    });
+    return color;
+  }
+
+  /** Set the base colour on all mesh materials. Also updates the glow light
+   *  colour (if glow is active) so the emitted light matches the material. */
+  _setObjectColor(go, colorHex) {
+    const color = new THREE.Color(colorHex);
+
+    // Update base colour on every mesh
+    go.object3d.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      if (!('color' in child.material)) return;
+      child.material.color.copy(color);
+      // If emissive is active (glow on), keep it in sync
+      if ('emissive' in child.material) {
+        const ei = child.material.emissiveIntensity;
+        if (ei > 0) {
+          child.material.emissive.copy(color);
+        }
+      }
+    });
+
+    // Update the glow light colour if glow is on
+    const light = this._findGlowLight(go);
+    if (light) {
+      light.color.copy(color);
+    }
+
+    this._markDirty();
+    console.log(`[LevelEditor] Object colour set on '${go.name}': ${colorHex}`);
+  }
+
+  // ── Object hide/show ────────────────────────────────────────────
+
+  /** Check whether the object's meshes are currently hidden. */
+  _isHidden(go) {
+    let hidden = false;
+    go.object3d.traverse((child) => {
+      if (child.isMesh) {
+        hidden = !child.visible;
+      }
+    });
+    return hidden;
+  }
+
+  /** Hide or show all meshes in the object. Lights and colliders persist. */
+  _setHidden(go, hidden) {
+    go.object3d.traverse((child) => {
+      if (child.isMesh) {
+        child.visible = !hidden;
+      }
+    });
+
+    this._markDirty();
+    console.log(`[LevelEditor] Object '${go.name}' ${hidden ? 'hidden' : 'shown'}`);
+  }
+
+  /** Build and append collider toggle + glow controls to the info panel.
+   *  Called after the base transform inputs are rendered. Appends DOM elements
+   *  rather than using innerHTML to preserve the existing inputs and their
+   *  event listeners (which the per-frame update loop queries). */
+  _buildColliderAndGlowControls() {
+    if (!this.selectedObject || this.selectedObject.isGroup) return;
+    const go = this.selectedObject;
+
+    const btnStyle = 'padding:4px 8px; margin-top:4px; border:none; border-radius:3px; cursor:pointer; font-family:monospace; font-size:11px;';
+    const sectionStyle = 'margin-top:8px; padding-top:6px; border-top:1px solid #444;';
+
+    // ── Collider section ─────────────────────────────────────────────
+    const colliderSection = document.createElement('div');
+    colliderSection.style.cssText = sectionStyle;
+    const colliderLabel = document.createElement('span');
+    colliderLabel.textContent = 'Collider:';
+    colliderLabel.style.color = '#aaa';
+    colliderSection.appendChild(colliderLabel);
+    colliderSection.appendChild(document.createElement('br'));
+
+    const hasCollider = this._hasCollider(go);
+    const colliderBtn = document.createElement('button');
+    colliderBtn.id = 'collider-toggle-btn';
+    colliderBtn.textContent = hasCollider ? '\u274C Remove Collider' : '\u2705 Add Collider';
+    colliderBtn.style.cssText = btnStyle + `background: ${hasCollider ? '#a33' : '#3a5'}; color: white;`;
+    colliderBtn.onclick = () => {
+      if (this._hasCollider(go)) {
+        this._disableCollider(go);
+      } else {
+        this._enableCollider(go);
+      }
+      // Refresh the panel to reflect new state
+      this._updateInfoPanel();
+    };
+    colliderSection.appendChild(colliderBtn);
+    this.infoDiv.appendChild(colliderSection);
+
+    // ── Glow section ─────────────────────────────────────────────────
+    const glowSection = document.createElement('div');
+    glowSection.style.cssText = sectionStyle;
+    const glowLabel = document.createElement('span');
+    glowLabel.textContent = 'Glow (light):';
+    glowLabel.style.color = '#aaa';
+    glowSection.appendChild(glowLabel);
+    glowSection.appendChild(document.createElement('br'));
+
+    const hasGlow = this._hasGlow(go);
+    const glowColor = this._getGlowColor(go);
+    const glowIntensity = this._getGlowIntensity(go);
+    const glowRange = this._getGlowRange(go);
+
+    const glowRow = document.createElement('div');
+    glowRow.style.cssText = 'display:flex; align-items:center; gap:6px; margin-top:4px; flex-wrap:wrap;';
+
+    const glowToggleBtn = document.createElement('button');
+    glowToggleBtn.id = 'glow-toggle-btn';
+    glowToggleBtn.textContent = hasGlow ? 'OFF' : 'ON';
+    glowToggleBtn.style.cssText = btnStyle + `background: ${hasGlow ? '#3a5' : '#555'}; color: white;`;
+
+    const colorInput = document.createElement('input');
+    colorInput.id = 'glow-color';
+    colorInput.type = 'color';
+    colorInput.value = hasGlow ? glowColor : '#ff8800';
+    colorInput.style.cssText = 'width:40px; height:22px; border:none; background:none; cursor:pointer; padding:0;';
+
+    const intensityLabel = document.createElement('span');
+    intensityLabel.textContent = 'Int:';
+    intensityLabel.style.color = '#aaa';
+    intensityLabel.style.fontSize = '11px';
+
+    const intensityInput = document.createElement('input');
+    intensityInput.id = 'glow-intensity';
+    intensityInput.type = 'number';
+    intensityInput.step = '0.5';
+    intensityInput.min = '0';
+    intensityInput.value = hasGlow ? glowIntensity.toFixed(1) : '5.0';
+    intensityInput.style.cssText = 'width:50px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #555; border-radius:2px; padding:2px 4px; font-family:monospace; font-size:11px;';
+
+    const rangeLabel = document.createElement('span');
+    rangeLabel.textContent = 'Range:';
+    rangeLabel.style.color = '#aaa';
+    rangeLabel.style.fontSize = '11px';
+
+    const rangeInput = document.createElement('input');
+    rangeInput.id = 'glow-range';
+    rangeInput.type = 'number';
+    rangeInput.step = '1';
+    rangeInput.min = '0.5';
+    rangeInput.value = hasGlow ? glowRange.toFixed(1) : String(LevelEditor.GLOW_DEFAULT_RANGE);
+    rangeInput.style.cssText = 'width:50px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #555; border-radius:2px; padding:2px 4px; font-family:monospace; font-size:11px;';
+
+    // Helper: read current control values
+    const readValues = () => ({
+      color: colorInput.value,
+      intensity: parseFloat(intensityInput.value) || 5.0,
+      range: parseFloat(rangeInput.value) || LevelEditor.GLOW_DEFAULT_RANGE,
+    });
+
+    // Wire up events: toggle ON/OFF
+    glowToggleBtn.onclick = () => {
+      const enabled = !this._hasGlow(go);
+      const { color, intensity, range } = readValues();
+      this._setGlow(go, enabled, color, intensity, range);
+      // Update button appearance
+      glowToggleBtn.textContent = enabled ? 'OFF' : 'ON';
+      glowToggleBtn.style.background = enabled ? '#3a5' : '#555';
+      this._markDirty();
+    };
+
+    // Wire up color change
+    colorInput.addEventListener('input', () => {
+      if (!this._hasGlow(go)) return;
+      const { color, intensity, range } = readValues();
+      this._setGlow(go, true, color, intensity, range);
+    });
+
+    // Wire up intensity change
+    intensityInput.addEventListener('change', () => {
+      const val = parseFloat(intensityInput.value);
+      if (isNaN(val)) return;
+      if (this._hasGlow(go)) {
+        const { color, range } = readValues();
+        this._setGlow(go, true, color, val, range);
+      }
+    });
+
+    // Wire up range change
+    rangeInput.addEventListener('change', () => {
+      const val = parseFloat(rangeInput.value);
+      if (isNaN(val)) return;
+      if (this._hasGlow(go)) {
+        const { color, intensity } = readValues();
+        this._setGlow(go, true, color, intensity, val);
+      }
+    });
+
+    glowRow.appendChild(glowToggleBtn);
+    glowRow.appendChild(colorInput);
+    glowRow.appendChild(intensityLabel);
+    glowRow.appendChild(intensityInput);
+    glowRow.appendChild(rangeLabel);
+    glowRow.appendChild(rangeInput);
+    glowSection.appendChild(glowRow);
+    this.infoDiv.appendChild(glowSection);
+
+    // ── Colour picker section ─────────────────────────────────────────
+    const colorSection = document.createElement('div');
+    colorSection.style.cssText = sectionStyle;
+    const colorLabel = document.createElement('span');
+    colorLabel.textContent = 'Object Colour:';
+    colorLabel.style.color = '#aaa';
+    colorSection.appendChild(colorLabel);
+
+    const colorRow = document.createElement('div');
+    colorRow.style.cssText = 'display:flex; align-items:center; gap:6px; margin-top:4px;';
+
+    const objColorInput = document.createElement('input');
+    objColorInput.id = 'object-color';
+    objColorInput.type = 'color';
+    objColorInput.value = this._getObjectColor(go);
+    objColorInput.style.cssText = 'width:40px; height:22px; border:none; background:none; cursor:pointer; padding:0;';
+
+    const resetColorBtn = document.createElement('button');
+    resetColorBtn.textContent = 'Reset';
+    resetColorBtn.style.cssText = btnStyle + 'background:#555; color:white;';
+
+    const originalColor = objColorInput.value; // snapshot for reset
+    resetColorBtn.onclick = () => {
+      this._setObjectColor(go, originalColor);
+      objColorInput.value = originalColor;
+    };
+
+    // Wire up colour change — also updates glow if active
+    objColorInput.addEventListener('input', () => {
+      this._setObjectColor(go, objColorInput.value);
+    });
+
+    colorRow.appendChild(objColorInput);
+    colorRow.appendChild(resetColorBtn);
+    colorSection.appendChild(colorRow);
+    this.infoDiv.appendChild(colorSection);
+
+    // ── Visibility section ────────────────────────────────────────────
+    const visSection = document.createElement('div');
+    visSection.style.cssText = sectionStyle;
+    const visLabel = document.createElement('span');
+    visLabel.textContent = 'Visibility:';
+    visLabel.style.color = '#aaa';
+    visSection.appendChild(visLabel);
+
+    const visRow = document.createElement('div');
+    visRow.style.cssText = 'display:flex; align-items:center; gap:6px; margin-top:4px;';
+
+    const isHidden = this._isHidden(go);
+    const hideToggleBtn = document.createElement('button');
+    hideToggleBtn.id = 'hide-toggle-btn';
+    hideToggleBtn.textContent = isHidden ? 'SHOW' : 'HIDE';
+    hideToggleBtn.style.cssText = btnStyle + `background: ${isHidden ? '#a53' : '#555'}; color: white;`;
+
+    hideToggleBtn.onclick = () => {
+      const nowHidden = !this._isHidden(go);
+      this._setHidden(go, nowHidden);
+      hideToggleBtn.textContent = nowHidden ? 'SHOW' : 'HIDE';
+      hideToggleBtn.style.background = nowHidden ? '#a53' : '#555';
+      this._markDirty();
+    };
+
+    visRow.appendChild(hideToggleBtn);
+    visSection.appendChild(visRow);
+    this.infoDiv.appendChild(visSection);
   }
 
   /** Move selected object up in sibling order. No-op if at index 0. */
@@ -1288,17 +2242,50 @@ export class LevelEditor {
     
     const go = this.selectedObject;
     console.log(`[LevelEditor] Deleting ${go.name}`);
-    
-    // Remove from scene
+
+    // Collect ALL descendants that have rigid bodies (including the object
+    // itself) so we can clean them up. For groups, children may have their
+    // own physics bodies that also need removal.
+    const allParts = go.descendants ? go.descendants() : [go];
+
+    // Remove from scene (Three.js)
     this.engine.scene.remove(go.object3d);
-    
-    // Remove from rigid body map
-    if (go.rigidBody) {
-      this.engine.rigidBodyMap.delete(go.rigidBody.handle);
-      this.engine._bodyToGO.delete(go.rigidBody.handle);
-      this.engine.world.removeRigidBody(go.rigidBody);
+
+    // Remove physics for the object and all its descendants.
+    // Defer rigid body removal to avoid Rapier "recursive use" crash when
+    // delete is pressed during the physics step. We just detach our
+    // references and let the world rebuild cleanly.
+    for (const part of allParts) {
+      if (part.rigidBody) {
+        const handle = part.rigidBody.handle;
+        this.engine.rigidBodyMap.delete(handle);
+        this.engine._bodyToGO.delete(handle);
+        // Remove colliders first (they reference the body)
+        for (const c of part.colliders ?? (part.collider ? [part.collider] : [])) {
+          this.engine.world.removeCollider(c, true);
+        }
+        part.colliders = [];
+        part.collider = null;
+        // Defer body removal — flag it for the engine to clean up outside
+        // the physics step, or remove directly if we're not mid-step.
+        try {
+          this.engine.world.removeRigidBody(part.rigidBody);
+        } catch (e) {
+          // Rapier throws "recursive use" if called during world.step().
+          // The body is already detached from our maps, so it's harmless
+          // but leaked. Queue it for the engine's deferred cleanup.
+          if (!this.engine._deferredBodyRemovals) this.engine._deferredBodyRemovals = [];
+          this.engine._deferredBodyRemovals.push(part.rigidBody);
+        }
+        part.rigidBody = null;
+      }
     }
     
+    // Remove from parent (GameObject hierarchy)
+    if (go.parent) {
+      go.parent.removeChild(go);
+    }
+
     // Remove from root objects
     const idx = this.engine._rootObjects.indexOf(go);
     if (idx >= 0) this.engine._rootObjects.splice(idx, 1);
@@ -1308,32 +2295,6 @@ export class LevelEditor {
     this._updateObjectList();
   }
   
-  _exportJSON() {
-    const json = this._generateJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'level-layout.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    console.log('[LevelEditor] Exported JSON layout');
-  }
-  
-  _exportCode() {
-    const code = this._generateCode();
-    const blob = new Blob([code], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'level-layout.js';
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    console.log('[LevelEditor] Exported code layout');
-  }
-
   /** Generate hierarchy-aware JavaScript code as a string. */
   _generateCode() {
     let code = '// ── Generated by Level Editor ──\n\n';
@@ -1368,10 +2329,13 @@ export class LevelEditor {
     return code;
   }
 
-  /** Generate hierarchy-aware JSON as a string. */
+  /** Generate hierarchy-aware JSON as a string. Serializes the full editor
+   *  state per object (assetKey/shapeType, transform, collider, glow, colour,
+   *  hidden) so _applyHierarchy can round-trip the scene losslessly. */
   _generateJSON() {
     const serialize = (go) => {
       const obj = go.object3d;
+      const light = this._findGlowLight(go);
       const entry = {
         name: go.name,
         isGroup: go.isGroup || false,
@@ -1379,6 +2343,13 @@ export class LevelEditor {
         rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
         scale: obj ? [obj.scale.x, obj.scale.y, obj.scale.z] : [1, 1, 1],
         assetKey: this._assetKeyFor(go),
+        shapeType: go._shapeType ?? null,
+        collider: !!(go.rigidBody),
+        glow: light
+          ? { enabled: true, color: '#' + light.color.getHexString(), intensity: light.intensity, range: light.distance }
+          : { enabled: false },
+        color: go.isGroup ? null : this._getObjectColor(go),
+        hidden: go.isGroup ? false : this._isHidden(go),
         children: [],
       };
       for (const child of (go.children || [])) {
@@ -1391,12 +2362,20 @@ export class LevelEditor {
       root: this.sceneRoot ? serialize(this.sceneRoot) : null,
       dynamicObjects: (this.dynamicObjects || []).map(go => {
         const obj = go.object3d;
+        const light = this._findGlowLight(go);
         return {
           name: go.name,
           assetKey: this._assetKeyFor(go),
+          shapeType: go._shapeType ?? null,
           position: obj ? [obj.position.x, obj.position.y, obj.position.z] : [0, 0, 0],
           rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
           scale: obj ? [obj.scale.x, obj.scale.y, obj.scale.z] : [1, 1, 1],
+          collider: !!(go.rigidBody),
+          glow: light
+            ? { enabled: true, color: '#' + light.color.getHexString(), intensity: light.intensity, range: light.distance }
+            : { enabled: false },
+          color: this._getObjectColor(go),
+          hidden: this._isHidden(go),
         };
       }),
     };

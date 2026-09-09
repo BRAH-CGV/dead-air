@@ -14,6 +14,12 @@ describe('LevelEditor', () => {
   let mockRenderer;
 
   beforeEach(() => {
+    // Clean up any leftover panels from previous tests
+    document.querySelectorAll('div').forEach(el => {
+      if (el.style?.position === 'fixed' && el.style?.zIndex === '1000') {
+        el.remove();
+      }
+    });
     // Mock document.exitPointerLock for jsdom
     document.exitPointerLock = vi.fn();
     
@@ -44,9 +50,17 @@ describe('LevelEditor', () => {
         removeRigidBody: vi.fn(),
         removeCollider: vi.fn(),
         createCollider: vi.fn(() => ({ handle: 1 })),
+        createRigidBody: vi.fn(() => ({
+          handle: 99,
+          setTranslation: vi.fn(),
+          setRotation: vi.fn(),
+          translation: vi.fn(() => ({ x: 0, y: 0, z: 0 })),
+          rotation: vi.fn(() => ({ x: 0, y: 0, z: 0, w: 1 })),
+        })),
       },
       RAPIER: {
         ColliderDesc: { cuboid: vi.fn(colliderDesc) },
+        RigidBodyDesc: { fixed: vi.fn(() => ({ setTranslation: vi.fn(function() { return this; }) })) },
       },
       rigidBodyMap: new Map(),
       _bodyToGO: new Map(),
@@ -252,7 +266,7 @@ describe('LevelEditor', () => {
     });
   });
   
-  describe('export', () => {
+  describe('save', () => {
     beforeEach(() => {
       editor.init();
       editor.toggle();
@@ -273,7 +287,7 @@ describe('LevelEditor', () => {
       editor._refreshEditableObjects();
     });
 
-    it('exports JSON layout with correct structure', () => {
+    it('saves hierarchy JSON as a download', () => {
       const createObjectURL = vi.fn(() => 'blob:test');
       const revokeObjectURL = vi.fn();
       global.URL.createObjectURL = createObjectURL;
@@ -281,7 +295,7 @@ describe('LevelEditor', () => {
       
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
       
-      editor._exportJSON();
+      editor._saveHierarchy();
       
       expect(createObjectURL).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
@@ -289,7 +303,7 @@ describe('LevelEditor', () => {
       clickSpy.mockRestore();
     });
 
-    it('exports JavaScript code with spawnModel calls', () => {
+    it('saves scene code as a download', () => {
       const createObjectURL = vi.fn(() => 'blob:test');
       const revokeObjectURL = vi.fn();
       global.URL.createObjectURL = createObjectURL;
@@ -297,12 +311,205 @@ describe('LevelEditor', () => {
       
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
       
-      editor._exportCode();
+      editor._saveSceneCode();
       
       expect(createObjectURL).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
       
       clickSpy.mockRestore();
+    });
+  });
+
+  describe('button dedupe', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+    });
+
+    it('panel has no redundant export buttons', () => {
+      const texts = [...editor.panel.querySelectorAll('button')].map(b => b.textContent);
+      expect(texts.some(t => t.includes('Export JSON'))).toBe(false);
+      expect(texts.some(t => t.includes('Export Code'))).toBe(false);
+      expect(texts.some(t => t.includes('Standalone'))).toBe(false);
+      expect(texts.some(t => t.includes('Hierarchy'))).toBe(false);
+    });
+
+    it('panel keeps Save All, .json, .js and adds a Load button', () => {
+      const texts = [...editor.panel.querySelectorAll('button')].map(b => b.textContent);
+      expect(texts.some(t => t.includes('Save All'))).toBe(true);
+      expect(texts.some(t => t.includes('.json'))).toBe(true);
+      expect(texts.some(t => t.includes('.js'))).toBe(true);
+      expect(texts.some(t => t.includes('Load'))).toBe(true);
+    });
+
+    it('dead export methods are removed', () => {
+      expect(editor._exportJSON).toBeUndefined();
+      expect(editor._exportCode).toBeUndefined();
+      expect(editor._exportStandalone).toBeUndefined();
+      expect(editor._exportHierarchy).toBeUndefined();
+    });
+  });
+
+  describe('JSON round-trip loader', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+      // Real scenes register their SceneRoot in _rootObjects — without this,
+      // _refreshEditableObjects() would build a brand-new root and orphan the
+      // objects we just rebuilt.
+      mockEngine._rootObjects.push(editor.sceneRoot);
+      editor.dynamicObjects = [];
+    });
+
+    it('_generateJSON() serializes shapeType, collider, glow, color and hidden', () => {
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+
+      const go = new GameObject('GlowyBox');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x33aacc });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      go._shapeType = 'box';
+      go._originalSize = [1, 1, 1];
+      group.addChild(go);
+      editor._setGlow(go, true, '#ff0000', 5, 10);
+      editor._setHidden(go, true);
+      editor._enableCollider(go);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0].children[0];
+
+      expect(entry.shapeType).toBe('box');
+      expect(entry.collider).toBe(true);
+      expect(entry.glow).toEqual({ enabled: true, color: '#ff0000', intensity: 5, range: 10 });
+      expect(entry.color).toBe('#33aacc');
+      expect(entry.hidden).toBe(true);
+    });
+
+    it('_generateJSON() serializes collider false and glow disabled for plain objects', () => {
+      const go = new GameObject('PlainBox');
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      go._shapeType = 'box';
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.collider).toBe(false);
+      expect(entry.glow.enabled).toBe(false);
+      expect(entry.hidden).toBe(false);
+    });
+
+    it('_applyHierarchy() clears existing objects and rebuilds groups, primitives and models', () => {
+      // Existing junk object that should be cleared
+      const junk = editor._createPrimitiveShape('box', 'Junk');
+      expect(editor.sceneRoot.children).toContain(junk);
+
+      // Manifest model mock
+      const spawnedGO = new GameObject('SpawnedDesk');
+      spawnedGO.physicsAssetKey = 'model:desk';
+      spawnedGO.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      mockEngine.spawnModel = vi.fn((key, opts) => {
+        mockEngine._rootObjects.push(spawnedGO);
+        return spawnedGO;
+      });
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'Office', isGroup: true,
+              position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              children: [
+                {
+                  name: 'WallBox', isGroup: false, shapeType: 'box',
+                  position: [2, 1, 3], rotation: [0, 1, 0], scale: [4, 2, 0.2],
+                  collider: true, glow: { enabled: true, color: '#ff0000', intensity: 5, range: 10 },
+                  color: '#33aacc', hidden: true,
+                  children: [],
+                },
+                {
+                  name: 'SpawnedDesk', isGroup: false, assetKey: 'model:desk',
+                  position: [0, 0, -3], rotation: [0, 0, 0], scale: [1, 1, 1],
+                  collider: false, glow: { enabled: false }, color: '#808080', hidden: false,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      // Junk is gone
+      expect(editor.sceneRoot.children).not.toContain(junk);
+      expect(mockEngine._rootObjects).not.toContain(junk);
+
+      // Group rebuilt
+      const group = editor.sceneRoot.children.find(c => c.name === 'Office');
+      expect(group).toBeDefined();
+      expect(group.isGroup).toBe(true);
+      expect(group.object3d.position.x).toBe(1);
+
+      // Primitive rebuilt with transform + state
+      const wall = group.children.find(c => c.name === 'WallBox');
+      expect(wall).toBeDefined();
+      expect(wall._shapeType).toBe('box');
+      expect(wall.object3d.position.x).toBe(2);
+      expect(wall.object3d.position.y).toBe(1);
+      expect(wall.object3d.position.z).toBe(3);
+      expect(wall.object3d.scale.x).toBe(4);
+      expect(wall.object3d.rotation.y).toBe(1);
+      expect(editor._hasCollider(wall)).toBe(true);
+      expect(editor._hasGlow(wall)).toBe(true);
+      expect(editor._getGlowColor(wall)).toBe('#ff0000');
+      expect(editor._getGlowIntensity(wall)).toBe(5);
+      expect(editor._getGlowRange(wall)).toBe(10);
+      expect(editor._getObjectColor(wall)).toBe('#33aacc');
+      expect(editor._isHidden(wall)).toBe(true);
+
+      // Manifest model rebuilt via spawnModel
+      expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:desk', expect.objectContaining({ name: 'SpawnedDesk' }));
+      expect(group.children.find(c => c.name === 'SpawnedDesk')).toBe(spawnedGO);
+      expect(editor._hasCollider(spawnedGO)).toBe(false);
+    });
+
+    it('_applyHierarchy() returns false for invalid data', () => {
+      expect(editor._applyHierarchy(null)).toBe(false);
+      expect(editor._applyHierarchy({})).toBe(false);
+    });
+
+    it('_applyHierarchy() rebuilds dynamic objects', () => {
+      const data = {
+        root: { name: 'SceneRoot', isGroup: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], children: [] },
+        dynamicObjects: [
+          {
+            name: 'Crate', assetKey: 'model:crate',
+            position: [1, 2, 3], rotation: [0, 0, 0], scale: [1, 1, 1],
+            collider: true, glow: { enabled: false }, color: '#808080', hidden: false,
+          },
+        ],
+      };
+
+      const crateGO = new GameObject('Crate');
+      crateGO.physicsAssetKey = 'model:crate';
+      crateGO.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      mockEngine.spawnModel = vi.fn(() => {
+        mockEngine._rootObjects.push(crateGO);
+        return crateGO;
+      });
+
+      expect(editor._applyHierarchy(data)).toBe(true);
+      expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:crate', expect.objectContaining({ name: 'Crate' }));
+      expect(crateGO.object3d.position.y).toBe(2);
     });
   });
 
@@ -937,14 +1144,14 @@ describe('LevelEditor', () => {
       expect(() => JSON.parse(json)).not.toThrow();
     });
 
-    it('_exportCode() triggers a download', () => {
+    it('_saveSceneCode() triggers a download', () => {
       const createObjectURL = vi.fn(() => 'blob:test');
       const revokeObjectURL = vi.fn();
       global.URL.createObjectURL = createObjectURL;
       global.URL.revokeObjectURL = revokeObjectURL;
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
 
-      editor._exportCode();
+      editor._saveSceneCode();
 
       expect(createObjectURL).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
@@ -952,14 +1159,14 @@ describe('LevelEditor', () => {
       clickSpy.mockRestore();
     });
 
-    it('_exportJSON() triggers a download', () => {
+    it('_saveHierarchy() triggers a download', () => {
       const createObjectURL = vi.fn(() => 'blob:test');
       const revokeObjectURL = vi.fn();
       global.URL.createObjectURL = createObjectURL;
       global.URL.revokeObjectURL = revokeObjectURL;
       const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
 
-      editor._exportJSON();
+      editor._saveHierarchy();
 
       expect(createObjectURL).toHaveBeenCalled();
       expect(clickSpy).toHaveBeenCalled();
@@ -1589,7 +1796,7 @@ describe('LevelEditor', () => {
     });
   });
 
-  describe('export modes', () => {
+  describe('save modes', () => {
     beforeEach(() => {
       editor.init();
       editor.toggle();
@@ -1598,28 +1805,28 @@ describe('LevelEditor', () => {
       editor.dynamicObjects = [];
     });
 
-    describe('standalone export', () => {
-      it('_exportStandalone() generates a complete Scene class', () => {
+    describe('scene class generation', () => {
+      it('_generateFullSceneClass() generates a complete Scene class', () => {
         const code = editor._generateFullSceneClass();
         expect(code).toContain('import');
         expect(code).toContain('extends Scene');
         expect(code).toContain('build()');
       });
 
-      it('_exportStandalone() includes all imports', () => {
+      it('_generateFullSceneClass() includes all imports', () => {
         const code = editor._generateFullSceneClass();
         expect(code).toContain("import * as THREE from 'three'");
         expect(code).toContain("import { GameObject }");
         expect(code).toContain("import { Scene }");
       });
 
-      it('_exportStandalone() triggers a download', () => {
+      it('scene code save (.js button) triggers a download', () => {
         const createObjectURL = vi.fn(() => 'blob:test');
         global.URL.createObjectURL = createObjectURL;
         global.URL.revokeObjectURL = vi.fn();
         const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
 
-        editor._exportStandalone();
+        editor._saveSceneCode();
 
         expect(createObjectURL).toHaveBeenCalled();
         expect(clickSpy).toHaveBeenCalled();
@@ -1627,14 +1834,14 @@ describe('LevelEditor', () => {
       });
     });
 
-    describe('hierarchy export', () => {
-      it('_exportHierarchy() triggers a JSON download', () => {
+    describe('hierarchy save', () => {
+      it('hierarchy save (.json button) triggers a JSON download', () => {
         const createObjectURL = vi.fn(() => 'blob:test');
         global.URL.createObjectURL = createObjectURL;
         global.URL.revokeObjectURL = vi.fn();
         const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
 
-        editor._exportHierarchy();
+        editor._saveHierarchy();
 
         expect(createObjectURL).toHaveBeenCalled();
         expect(clickSpy).toHaveBeenCalled();
@@ -1678,6 +1885,597 @@ describe('LevelEditor', () => {
       editor.onSceneRebuilt();
 
       expect(editor.selectedObject).toBeNull();
+    });
+  });
+
+  describe('add object panel', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    describe('manifest model listing', () => {
+      it('_getManifestModels() returns an array of model keys from the manifest', () => {
+        const models = editor._getManifestModels();
+        expect(Array.isArray(models)).toBe(true);
+        expect(models.length).toBeGreaterThan(0);
+        // Each entry should be a key like 'model:desk'
+        expect(models.every(k => k.startsWith('model:'))).toBe(true);
+      });
+
+      it('_getManifestModels() does not include texture entries', () => {
+        const models = editor._getManifestModels();
+        expect(models.every(k => !k.startsWith('tex:'))).toBe(true);
+      });
+    });
+
+    describe('primitive shapes', () => {
+      it('_getPrimitiveShapes() returns a list of available shape types', () => {
+        const shapes = editor._getPrimitiveShapes();
+        expect(Array.isArray(shapes)).toBe(true);
+        expect(shapes).toContain('box');
+        expect(shapes).toContain('sphere');
+        expect(shapes).toContain('cylinder');
+        expect(shapes).toContain('cone');
+      });
+
+      it('_createPrimitiveShape() creates a GameObject with the correct geometry', () => {
+        const go = editor._createPrimitiveShape('box', 'TestBox');
+        expect(go).toBeDefined();
+        expect(go.name).toBe('TestBox');
+        expect(go.object3d).toBeDefined();
+        // Should have a mesh child
+        let hasMesh = false;
+        go.object3d.traverse(c => { if (c.isMesh) hasMesh = true; });
+        expect(hasMesh).toBe(true);
+      });
+
+      it('_createPrimitiveShape() adds the object to sceneRoot', () => {
+        const go = editor._createPrimitiveShape('sphere', 'TestSphere');
+        expect(editor.sceneRoot.children).toContain(go);
+        expect(go.parent).toBe(editor.sceneRoot);
+      });
+
+      it('_createPrimitiveShape() marks the object with _originalSize for collider rebuilds', () => {
+        const go = editor._createPrimitiveShape('box', 'TestBox');
+        expect(go._originalSize).toBeDefined();
+        expect(Array.isArray(go._originalSize)).toBe(true);
+      });
+
+      it('_createPrimitiveShape() creates different shape types', () => {
+        const box = editor._createPrimitiveShape('box', 'Box');
+        const sphere = editor._createPrimitiveShape('sphere', 'Sphere');
+        const cylinder = editor._createPrimitiveShape('cylinder', 'Cylinder');
+        const cone = editor._createPrimitiveShape('cone', 'Cone');
+
+        expect(box).toBeDefined();
+        expect(sphere).toBeDefined();
+        expect(cylinder).toBeDefined();
+        expect(cone).toBeDefined();
+      });
+    });
+
+    describe('adding manifest models', () => {
+      it('_addManifestModel() spawns a model from the manifest and adds it to the hierarchy', () => {
+        // Mock spawnModel
+        const spawnedGO = new GameObject('model:desk');
+        spawnedGO.physicsAssetKey = 'model:desk';
+        mockEngine.spawnModel = vi.fn(() => spawnedGO);
+
+        const result = editor._addManifestModel('model:desk', 'MyDesk');
+
+        expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:desk', expect.objectContaining({
+          name: 'MyDesk',
+        }));
+        expect(result).toBe(spawnedGO);
+      });
+
+      it('_addManifestModel() adds the spawned object to sceneRoot', () => {
+        const spawnedGO = new GameObject('MyDesk');
+        spawnedGO.physicsAssetKey = 'model:desk';
+        // Mock spawnModel to simulate real engine behavior (pushes to _rootObjects)
+        mockEngine.spawnModel = vi.fn((key, opts) => {
+          mockEngine._rootObjects.push(spawnedGO);
+          return spawnedGO;
+        });
+
+        editor._addManifestModel('model:desk', 'MyDesk');
+
+        // After adding, the object should be under sceneRoot
+        expect(editor.sceneRoot.children).toContain(spawnedGO);
+      });
+    });
+
+    describe('add object UI', () => {
+      it('has an "Add Object" section in the editor panel', () => {
+        expect(editor._addObjectPanel).toBeDefined();
+        expect(editor._addObjectPanel).not.toBeNull();
+      });
+
+      it('add object panel lists manifest models', () => {
+        const buttons = editor._addObjectPanel.querySelectorAll('button');
+        const modelButtons = Array.from(buttons).filter(b => b.textContent.includes('model:'));
+        expect(modelButtons.length).toBeGreaterThan(0);
+      });
+
+      it('add object panel lists primitive shape options', () => {
+        const buttons = editor._addObjectPanel.querySelectorAll('button');
+        const shapeButtons = Array.from(buttons).filter(b =>
+          b.textContent.toLowerCase().includes('box') ||
+          b.textContent.toLowerCase().includes('sphere')
+        );
+        expect(shapeButtons.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('naming on add', () => {
+      it('prompts the user for a name when adding a primitive shape', () => {
+        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('MyCustomBox');
+
+        editor._promptAndAddPrimitive('box');
+
+        expect(promptSpy).toHaveBeenCalled();
+        promptSpy.mockRestore();
+      });
+
+      it('prompts the user for a name when adding a manifest model', () => {
+        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('MyCustomDesk');
+        const spawnedGO = new GameObject('MyCustomDesk');
+        mockEngine.spawnModel = vi.fn(() => spawnedGO);
+
+        editor._promptAndAddManifestModel('model:desk');
+
+        expect(promptSpy).toHaveBeenCalled();
+        promptSpy.mockRestore();
+      });
+
+      it('uses default name based on shape type if user provides empty string', () => {
+        vi.spyOn(window, 'prompt').mockReturnValue('');
+
+        const go = editor._promptAndAddPrimitive('box');
+
+        expect(go.name).toContain('Box');
+        window.prompt.mockRestore();
+      });
+
+      it('cancels add when user clicks cancel on the prompt', () => {
+        vi.spyOn(window, 'prompt').mockReturnValue(null);
+
+        const childrenBefore = editor.sceneRoot.children.length;
+        editor._promptAndAddPrimitive('box');
+
+        expect(editor.sceneRoot.children.length).toBe(childrenBefore);
+        window.prompt.mockRestore();
+      });
+
+      it('uses default name based on model key if user provides empty string', () => {
+        vi.spyOn(window, 'prompt').mockReturnValue('');
+        const spawnedGO = new GameObject('Desk');
+        mockEngine.spawnModel = vi.fn(() => spawnedGO);
+
+        editor._promptAndAddManifestModel('model:desk');
+
+        // Should use a name derived from the key
+        expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:desk', expect.objectContaining({
+          name: expect.any(String),
+        }));
+        window.prompt.mockRestore();
+      });
+    });
+  });
+
+  describe('collider enable/disable', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    it('_createPrimitiveShape() spawns primitives with a static collider by default', () => {
+      const go = editor._createPrimitiveShape('box', 'ColliderBox');
+      expect(go.rigidBody).toBeDefined();
+      expect(go.rigidBody).not.toBeNull();
+      expect(go.colliders.length).toBeGreaterThan(0);
+    });
+
+    it('_enableCollider() creates a static body and cuboid collider from the mesh bbox', () => {
+      const go = new GameObject('NoColliderObj');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 3));
+      go.object3d.add(mesh);
+      go._originalSize = [2, 1, 3];
+      editor.sceneRoot.addChild(go);
+
+      // No collider initially
+      expect(go.rigidBody).toBeNull();
+
+      editor._enableCollider(go);
+
+      // Should now have a body and collider
+      expect(mockEngine.world.createRigidBody).toHaveBeenCalled();
+      expect(mockEngine.world.createCollider).toHaveBeenCalled();
+      expect(go.rigidBody).not.toBeNull();
+      expect(go.colliders.length).toBeGreaterThan(0);
+    });
+
+    it('_disableCollider() removes the body and colliders from the Rapier world', () => {
+      const go = editor._createPrimitiveShape('box', 'RemovableCollider');
+      expect(go.rigidBody).not.toBeNull();
+
+      editor._disableCollider(go);
+
+      expect(mockEngine.world.removeCollider).toHaveBeenCalled();
+      expect(mockEngine.world.removeRigidBody).toHaveBeenCalled();
+      expect(go.rigidBody).toBeNull();
+      expect(go.colliders.length).toBe(0);
+    });
+
+    it('_hasCollider() returns true for objects with a rigidBody', () => {
+      const go = editor._createPrimitiveShape('box', 'TestCol');
+      expect(editor._hasCollider(go)).toBe(true);
+    });
+
+    it('_hasCollider() returns false for objects without a rigidBody', () => {
+      const go = new GameObject('PlainObj');
+      expect(editor._hasCollider(go)).toBe(false);
+    });
+
+    it('info panel shows collider toggle button for non-group objects', () => {
+      const go = new GameObject('TestObj');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      go.object3d.add(mesh);
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      editor.selectObject(go);
+
+      const colliderBtn = editor.infoDiv.querySelector('#collider-toggle-btn');
+      expect(colliderBtn).not.toBeNull();
+    });
+  });
+
+  describe('glow enable/disable and intensity', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    it('_setGlow() adds a PointLight to the object and sets emissive on meshes', () => {
+      const go = new GameObject('GlowObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+      editor.sceneRoot.addChild(go);
+
+      editor._setGlow(go, true, '#ff0000', 5.0, 10);
+
+      // Should have a PointLight child tagged as editor glow
+      const light = editor._findGlowLight(go);
+      expect(light).not.toBeNull();
+      expect(light.isPointLight).toBe(true);
+      expect(light.intensity).toBe(5.0);
+      expect(light.distance).toBe(10);
+      // Emissive should also be set
+      expect(mat.emissive.getHexString()).not.toBe('000000');
+    });
+
+    it('_setGlow() removes the PointLight and clears emissive when disabled', () => {
+      const go = new GameObject('GlowObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+      editor.sceneRoot.addChild(go);
+
+      // Enable then disable
+      editor._setGlow(go, true, '#ff0000', 5.0, 8);
+      expect(editor._hasGlow(go)).toBe(true);
+
+      editor._setGlow(go, false, '#ff0000', 0, 8);
+      expect(editor._hasGlow(go)).toBe(false);
+      expect(mat.emissive.getHexString()).toBe('000000');
+    });
+
+    it('_hasGlow() returns true when object has a tagged PointLight', () => {
+      const go = new GameObject('GlowObj');
+      const light = new THREE.PointLight(0xff0000, 5.0, 8);
+      light._editorGlowLight = true;
+      go.object3d.add(light);
+
+      expect(editor._hasGlow(go)).toBe(true);
+    });
+
+    it('_hasGlow() returns false when object has no tagged PointLight', () => {
+      const go = new GameObject('NoGlowObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+
+      expect(editor._hasGlow(go)).toBe(false);
+    });
+
+    it('_getGlowColor() returns the PointLight colour as a hex string', () => {
+      const go = new GameObject('GlowObj');
+      const light = new THREE.PointLight(0x00ff00, 5.0, 8);
+      light._editorGlowLight = true;
+      go.object3d.add(light);
+
+      const color = editor._getGlowColor(go);
+      expect(color).toBe('#00ff00');
+    });
+
+    it('_getGlowIntensity() returns the PointLight intensity', () => {
+      const go = new GameObject('GlowObj');
+      const light = new THREE.PointLight(0xff0000, 7.5, 8);
+      light._editorGlowLight = true;
+      go.object3d.add(light);
+
+      expect(editor._getGlowIntensity(go)).toBe(7.5);
+    });
+
+    it('_getGlowRange() returns the PointLight distance', () => {
+      const go = new GameObject('GlowObj');
+      const light = new THREE.PointLight(0xff0000, 5.0, 12);
+      light._editorGlowLight = true;
+      go.object3d.add(light);
+
+      expect(editor._getGlowRange(go)).toBe(12);
+    });
+
+    it('info panel shows glow controls including range for non-group objects', () => {
+      const go = new GameObject('TestObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      editor.selectObject(go);
+
+      const glowToggle = editor.infoDiv.querySelector('#glow-toggle-btn');
+      const glowColor = editor.infoDiv.querySelector('#glow-color');
+      const glowIntensity = editor.infoDiv.querySelector('#glow-intensity');
+      const glowRange = editor.infoDiv.querySelector('#glow-range');
+      expect(glowToggle).not.toBeNull();
+      expect(glowColor).not.toBeNull();
+      expect(glowIntensity).not.toBeNull();
+      expect(glowRange).not.toBeNull();
+    });
+
+    it('_hasGlow() detects an untagged scene-authored PointLight', () => {
+      const go = new GameObject('CeilingLight');
+      const light = new THREE.PointLight(0xffd8a8, 10.0, 24);
+      go.object3d.add(light);
+
+      expect(editor._hasGlow(go)).toBe(true);
+    });
+
+    it('_getGlowColor/Intensity/Range read from an untagged scene PointLight', () => {
+      const go = new GameObject('DeskGlow');
+      const light = new THREE.PointLight(0x66ccff, 2.8, 6);
+      go.object3d.add(light);
+
+      expect(editor._getGlowColor(go)).toBe('#66ccff');
+      expect(editor._getGlowIntensity(go)).toBeCloseTo(2.8);
+      expect(editor._getGlowRange(go)).toBe(6);
+    });
+
+    it('_setGlow(enable) adopts an existing untagged light instead of creating a duplicate', () => {
+      const go = new GameObject('CeilingLight');
+      const sceneLight = new THREE.PointLight(0xffd8a8, 10.0, 24);
+      go.object3d.add(sceneLight);
+
+      // "Enable" glow — should adopt the scene light, not create a second one
+      editor._setGlow(go, true, '#ff0000', 5.0, 8);
+
+      // Should still have exactly one PointLight
+      const lights = [];
+      go.object3d.traverse((c) => { if (c.isPointLight) lights.push(c); });
+      expect(lights.length).toBe(1);
+      // The adopted light should now be tagged
+      expect(lights[0]._editorGlowLight).toBe(true);
+      // And it should reflect the new values
+      expect(lights[0].color.getHexString()).toBe('ff0000');
+      expect(lights[0].intensity).toBe(5.0);
+    });
+
+    it('_setGlow(disable) restores original emissive instead of clearing to black', () => {
+      const go = new GameObject('Fixture');
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x2a2a2a,
+        emissive: 0xffc36b,
+        emissiveIntensity: 1.8,
+      });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+
+      // Enable glow (saves original emissive), then disable
+      editor._setGlow(go, true, '#ff0000', 5.0, 8);
+      expect(mat.emissive.getHexString()).not.toBe('ffc36b'); // overridden
+
+      editor._setGlow(go, false, '#ff0000', 0, 8);
+      // Emissive should be restored to the original warm glow
+      expect(mat.emissive.getHexString()).toBe('ffc36b');
+      expect(mat.emissiveIntensity).toBeCloseTo(1.8);
+    });
+
+    it('_setGlow(enable) sets castShadow and shadow map on the created light', () => {
+      const go = new GameObject('ShadowGlow');
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+      go.object3d.add(mesh);
+
+      editor._setGlow(go, true, '#ffffff', 5.0, 10);
+
+      const light = editor._findGlowLight(go);
+      expect(light).not.toBeNull();
+      expect(light.castShadow).toBe(true);
+      expect(light.shadow.mapSize.width).toBe(1024);
+      expect(light.shadow.mapSize.height).toBe(1024);
+    });
+
+    it('_setGlow(enable) enables castShadow on an adopted scene light', () => {
+      const go = new GameObject('SceneLightShadow');
+      const sceneLight = new THREE.PointLight(0xffd8a8, 10.0, 24);
+      sceneLight.castShadow = false;
+      go.object3d.add(sceneLight);
+
+      editor._setGlow(go, true, '#ffd8a8', 10.0, 24);
+
+      expect(sceneLight.castShadow).toBe(true);
+      expect(sceneLight.shadow.mapSize.width).toBe(1024);
+    });
+  });
+
+  describe('object colour picker', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    it('_getObjectColor() returns the base colour of the first mesh as a hex string', () => {
+      const go = new GameObject('ColorObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x33aacc });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+
+      expect(editor._getObjectColor(go)).toBe('#33aacc');
+    });
+
+    it('_setObjectColor() changes the base colour on all mesh materials', () => {
+      const go = new GameObject('ColorObj');
+      const mat1 = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mat2 = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat1));
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat2));
+
+      editor._setObjectColor(go, '#ff3300');
+
+      expect(mat1.color.getHexString()).toBe('ff3300');
+      expect(mat2.color.getHexString()).toBe('ff3300');
+    });
+
+    it('_setObjectColor() also updates the glow light colour when glow is active', () => {
+      const go = new GameObject('GlowColorObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+
+      // Enable glow first
+      editor._setGlow(go, true, '#00ff00', 5.0, 8);
+      const light = editor._findGlowLight(go);
+      expect(light).not.toBeNull();
+
+      // Change object colour
+      editor._setObjectColor(go, '#ff00ff');
+
+      // Glow light should now be magenta
+      expect(light.color.getHexString()).toBe('ff00ff');
+    });
+
+    it('_setObjectColor() does not affect glow when glow is off', () => {
+      const go = new GameObject('NoGlowColorObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+
+      editor._setObjectColor(go, '#aabbcc');
+
+      expect(editor._hasGlow(go)).toBe(false);
+      expect(mat.color.getHexString()).toBe('aabbcc');
+    });
+
+    it('info panel shows the object colour picker', () => {
+      const go = new GameObject('TestObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      editor.selectObject(go);
+
+      const objColor = editor.infoDiv.querySelector('#object-color');
+      expect(objColor).not.toBeNull();
+      expect(objColor.type).toBe('color');
+    });
+  });
+
+  describe('object hide/show', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    it('_isHidden() returns false for a visible object', () => {
+      const go = new GameObject('VisibleObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+
+      expect(editor._isHidden(go)).toBe(false);
+    });
+
+    it('_setHidden(true) hides meshes but keeps glow lights active', () => {
+      const go = new GameObject('HideObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+      // Enable glow
+      editor._setGlow(go, true, '#ff0000', 5.0, 8);
+      const light = editor._findGlowLight(go);
+
+      editor._setHidden(go, true);
+
+      expect(editor._isHidden(go)).toBe(true);
+      expect(mesh.visible).toBe(false);
+      // Light should still be visible (it persists)
+      expect(light.visible).toBe(true);
+    });
+
+    it('_setHidden(false) restores mesh visibility', () => {
+      const go = new GameObject('ShowObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+      go.object3d.add(mesh);
+
+      editor._setHidden(go, true);
+      expect(mesh.visible).toBe(false);
+
+      editor._setHidden(go, false);
+      expect(mesh.visible).toBe(true);
+    });
+
+    it('_setHidden() does not affect the collider', () => {
+      const go = new GameObject('ColliderObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      // Enable collider
+      editor._enableCollider(go);
+      expect(editor._hasCollider(go)).toBe(true);
+
+      // Hide — collider should still be on
+      editor._setHidden(go, true);
+      expect(editor._hasCollider(go)).toBe(true);
+    });
+
+    it('info panel shows the hide/show toggle button', () => {
+      const go = new GameObject('TestObj');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x808080 });
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      go._originalSize = [1, 1, 1];
+      editor.sceneRoot.addChild(go);
+
+      editor.selectObject(go);
+
+      const hideBtn = editor.infoDiv.querySelector('#hide-toggle-btn');
+      expect(hideBtn).not.toBeNull();
     });
   });
 

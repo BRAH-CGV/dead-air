@@ -50,7 +50,7 @@ export class OfficeScene extends Scene {
     this.satellite = this.engine.spawnModel('model:dish_tower', {
       name: 'Satellite',
       position: [0, 0, -25],
-      scale: 0.5,
+      scale: 0.137,
       type: Satellite,
     });
     this._outside.addChild(this.satellite);

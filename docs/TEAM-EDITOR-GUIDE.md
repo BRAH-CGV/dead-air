@@ -11,7 +11,7 @@ Everything your team needs to know about the in-browser editor, free camera, and
 | **F2** | Toggle Level Editor on/off |
 | **V** | Toggle FreeCam (fly mode) on/off |
 | **\`** (backtick) | Toggle physics collider wireframe overlay |
-| **F1** | Toggle model debug info (bounds/scale) |
+| **F4** | Toggle model debug logging (bounds/scale to console) |
 | **G** | Switch to **Move** mode (editor) |
 | **R** | Switch to **Rotate** mode (editor) |
 | **T** | Switch to **Scale** mode (editor) |
@@ -43,7 +43,7 @@ Everything your team needs to know about the in-browser editor, free camera, and
 ├─────────────────────────────────┤
 │  Scene: OfficeScene  *          │  ← Scene name (* = unsaved changes)
 │  Switch: [OfficeScene ▼]       │  ← Scene switcher dropdown
-│  [💾 Save All] [🌳 .json] [📜 .js] │  ← Save buttons
+│  [💾 Save All] [🌳 .json] [📜 .js] [📂 Load] │  ← Save/load buttons
 ├─────────────────────────────────┤
 │  🔀 MOVE MODE (G)               │  ← Current transform mode
 ├─────────────────────────────────┤
@@ -77,8 +77,7 @@ Everything your team needs to know about the in-browser editor, free camera, and
 ├─────────────────────────────────┤
 │  [➕ Create Group]              │  ← New group button
 ├─────────────────────────────────┤
-│  [Export JSON] [Export Code]    │  ← Quick export
-│  [📦 Standalone] [🌳 Hierarchy] │  ← Full export
+│  [+ Add Object…]                │  ← Manifest models & primitives
 └─────────────────────────────────┘
 ```
 
@@ -205,28 +204,31 @@ When you select a **group** (folder icon in the tree), the info panel shows the 
 | **💾 Save All** | Both .json + .js | Your go-to save button. Gets everything. |
 | **🌳 .json** | Just the hierarchy JSON | When you want to back up the layout data only |
 | **📜 .js** | Just the JavaScript scene file | When you want the code file only |
-| **Export JSON** | Same as .json save | Alternative export (same format) |
-| **Export Code** | Same as .js save | Alternative export (same format) |
-| **📦 Standalone** | Complete Scene class with imports | When you want a drop-in replacement file for `src/scenes/` |
-| **🌳 Hierarchy** | Just the hierarchy tree as JSON | Same as .json save |
+| **📂 Load** | Nothing — it *opens* a file picker | **Rebuild a saved .hierarchy.json in the editor** and keep editing |
 
-### How to Use the Exported Files
+### How to Use the Saved Files
 
-**The .js file (Standalone export)** is the most useful one. It contains a complete Scene class that mirrors your editor layout. To apply it:
+**📂 Load is the main workflow now.** Save your layout as `.hierarchy.json`, then
+load it back any time to continue where you left off — the editor rebuilds the
+groups, objects, transforms, colliders, glow, colours and hidden state exactly
+as they were. No copy-pasting required.
 
-1. Click **📦 Standalone** (or **📜 .js**) to download the file
-2. Open the downloaded `.js` file in a text editor
-3. Copy its contents
-4. In the project, open the matching scene file (e.g. `src/scenes/OfficeScene.js`)
-5. Replace the contents with the exported code
-6. The next time the game loads that scene, it uses your new layout
+> ⚠️ **Loading replaces the current editable scene.** Objects the editor can
+> rebuild (groups, editor-added primitives, manifest models) come back fully;
+> hand-coded scene content (procedural walls, `Interactable` wiring, the
+> `Satellite` class) is not part of the JSON — those still live in the scene's
+> source file. Treat Load as "restore my editor work", not "replace the scene".
 
-**The .json file** is a data backup of your layout. It stores:
+**The .js file** contains a complete Scene class that mirrors your editor
+layout — useful as a reference or scaffold for new scenes. To use it as a real
+scene, place it in `src/scenes/` and register it with the engine. Don't paste
+it into an existing scene's `build()` method — the imports won't work there.
+
+**The .json file** is the round-trip format. It stores:
 - Every object's name, position, rotation, and scale
 - The group hierarchy (which objects are children of which groups)
+- Editor state per object: collider on/off, glow (colour/intensity/range), object colour, hidden
 - Which objects are dynamic (physics-driven) vs static
-
-You can use the JSON to restore a layout later or share it with teammates.
 
 ### The `*` Dirty Indicator
 
@@ -475,14 +477,44 @@ FreeCam lets you fly around the scene freely, ignoring physics and gravity.
 
 Press the **backtick key** (\`) to toggle a wireframe overlay showing every physics collider in the scene.
 
+- Drawn in Rapier's own colours, straight over the scene
 - Green/colored lines = static colliders (walls, floor, props)
 - Shows you exactly what shape Rapier is using for collision
 - Useful for checking if colliders match the visual geometry
-- Costs nothing when hidden
+- Off by default; costs nothing while hidden
+- The wireframe is a fresh snapshot of the physics world every frame — if it disagrees with what you see, the *physics* is wrong, not the drawing
+- Implementation: [src/core/PhysicsDebug.js](../src/core/PhysicsDebug.js)
 
-### Model Debug Info (F1)
+### Model Debug Logging (F4)
 
-Press **F1** to toggle model debug logging. When enabled, the console shows position, scale, and bounds info for every loaded model. Useful for checking if models are the right size.
+Press **F4** to toggle per-model console logging. When enabled, the console shows measured bounding box, position, and scale for every loaded model. Turns the logging on and re-spawns the current scene so you get the numbers immediately.
+
+Useful when a model lands at the wrong size or floats above the floor.
+
+> F4 rather than F1 — Chrome and DevTools own F1, so the key never reached the game.
+
+### P — Recentering the Pivot
+
+Rotation and scale happen around an object's pivot. Objects whose pivot is stale (off in a corner, or parked at the group's origin) rotate and scale around the wrong point. **P** fixes that:
+
+- **Group selected** — the pivot moves to the **average position of the group's direct children**, and each child is offset the other way so nothing visually moves. Rotating/scaling the group now pivots around the children's centre.
+- **Single object selected** — the pivot moves to the object's **own visual (bounding-box) centre**. The mesh content is shifted back so the object stays exactly where it was on screen; only the pivot moved.
+
+After recentering, the collider is **rebuilt from the measured world bounding box**. This matters for models like the desk: their collider offset was baked at load time relative to the model's original origin, so after the pivot moves the offset would be stale and the collider would drift upward. The forced rebuild keeps the collider glued to the visual.
+
+### Measured Colliders (What Happens Behind the Scenes)
+
+Every transform edit syncs the physics body to match the visuals:
+
+- **Move / rotate** — the body's world position and rotation are updated.
+- **Scale** — the collider is **rebuilt by measuring the mesh's actual world bounding box**, not by trusting stored size × scale bookkeeping. Whatever the scale, parent transforms, or mesh offsets are, the collider wraps what you can see. Applies to procedural boxes (walls, window parts) and models.
+- Every rebuild logs a line like:
+
+  ```
+  [LevelEditor] rebuilt collider 'Wall': size=(2.00, 4.00, 2.00) center=(5.00, 1.50, -4.00)
+  ```
+
+  If a collider ever looks misplaced, these numbers tell you whether the size or the centre is wrong.
 
 ---
 
@@ -512,12 +544,11 @@ Press **F1** to toggle model debug logging. When enabled, the console shows posi
 ### "I want to save my layout and use it permanently"
 
 1. Make your changes in the editor
-2. Click **📦 Standalone** to download a complete scene file
-3. Open the downloaded `.js` file in a text editor
-4. Copy everything in it
-5. Open the matching file in `src/scenes/` (e.g. `OfficeScene.js`)
-6. Paste the exported code to replace it
-7. Next time the game loads, your new layout is there
+2. Click **💾 Save All** to download both `.hierarchy.json` and `.js`
+3. Click **📂 Load** anytime to rebuild a saved `.hierarchy.json` in the editor
+4. The `.js` file is a scaffold for new scenes — place it in `src/scenes/` and register it with the engine
+
+> ⚠️ Don't paste the `.js` export into an existing scene's `build()` method — the `import` statements are module-top-only.
 
 ### "I want to add a new model to the scene"
 
@@ -541,5 +572,5 @@ Press **F1** to toggle model debug logging. When enabled, the console shows posi
 - **Moving a group moves everything under it.** This is the most powerful feature — use it to reposition entire rooms instantly.
 - **Dynamic objects (crates) are outside groups** because physics controls their position. You can still select and move them individually.
 - **The tree view mirrors the Three.js scene graph.** If something is nested under a group in the tree, it's a child in the 3D engine too.
-- **Export often.** The Standalone export gives you a drop-in replacement scene file with all your edits baked in.
+- **Save and reload your layout.** 💾 Save All gives you a `.hierarchy.json` you can 📂 Load straight back into the editor — your edits survive across sessions without touching scene code.
 - **PageUp/PageDown on a laptop:** You may need to hold **Fn** + arrow key.
