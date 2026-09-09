@@ -765,12 +765,29 @@ export class LevelEditor {
         this.sceneRoot.removeChild(go);
         parentGO.addChild(go);
       }
-    } else if (entry.bboxSize && (!entry.assetKey || !this.engine.assets?.has(entry.assetKey))) {
-      // Non-manifest object (procedural wall, light fixture, etc.) — rebuild
-      // as a box primitive using the measured bounding box size from the JSON.
+    } else if (entry.assetKey && this.engine.spawnModel) {
+      try {
+        go = this.engine.spawnModel(entry.assetKey, {
+          name: entry.name,
+          position: entry.position ?? [0, 0, 0],
+        });
+        if (go && parentGO) {
+          parentGO.addChild(go);
+        }
+      } catch (e) {
+        console.warn(`[LevelEditor] spawnModel failed for '${entry.assetKey}', falling back to box`);
+        go = null;
+      }
+    }
+
+    // Last-resort fallback: if nothing created a GO yet and we have no
+    // shapeType or valid manifest key, make a placeholder box so the
+    // hierarchy isn't silently missing. Uses bboxSize if available, else 1³.
+    if (!go && !entry.isGroup && !entry.shapeType) {
+      const size = entry.bboxSize ?? [1, 1, 1];
       go = new GameObject(entry.name);
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(entry.bboxSize[0], entry.bboxSize[1], entry.bboxSize[2]),
+        new THREE.BoxGeometry(size[0], size[1], size[2]),
         new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7 }),
       );
       mesh.castShadow = true;
@@ -782,35 +799,8 @@ export class LevelEditor {
         this.engine._rootObjects.push(go);
         this.engine.scene.add(go.object3d);
       }
-    } else if (entry.assetKey && this.engine.spawnModel) {
-      try {
-        go = this.engine.spawnModel(entry.assetKey, {
-          name: entry.name,
-          position: entry.position ?? [0, 0, 0],
-        });
-        if (go && parentGO) {
-          parentGO.addChild(go);
-        }
-      } catch (e) {
-        console.warn(`[LevelEditor] spawnModel failed for '${entry.assetKey}', falling back to bboxSize box`);
-        go = null;
-        // Fall through to bboxSize fallback below
-        if (entry.bboxSize) {
-          go = new GameObject(entry.name);
-          const mesh = new THREE.Mesh(
-            new THREE.BoxGeometry(entry.bboxSize[0], entry.bboxSize[1], entry.bboxSize[2]),
-            new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7 }),
-          );
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          go.object3d.add(mesh);
-          if (parentGO) {
-            parentGO.addChild(go);
-          } else {
-            this.engine._rootObjects.push(go);
-            this.engine.scene.add(go.object3d);
-          }
-        }
+      if (!entry.bboxSize) {
+        console.log(`[LevelEditor] placeholder 1³ box for '${entry.name}' (no bboxSize in saved JSON)`);
       }
     }
 

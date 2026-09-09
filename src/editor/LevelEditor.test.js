@@ -592,6 +592,41 @@ describe('LevelEditor', () => {
       expect(meshCount).toBe(1);
     });
 
+    it('_applyHierarchy() creates placeholder 1³ box for old JSON without bboxSize', () => {
+      // Old JSON has assetKey set to a non-manifest name and no bboxSize
+      mockEngine.spawnModel = vi.fn(() => { throw new Error('not a model'); });
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'BackWall_Left', isGroup: false,
+              assetKey: 'BackWall_Left', // old format: name as assetKey
+              position: [-5, 1.5, -5], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: true, glow: { enabled: false },
+              color: '#2f3945', hidden: false,
+              children: [],
+              // no bboxSize — saved with old code
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const wall = editor.sceneRoot.children.find(c => c.name === 'BackWall_Left');
+      expect(wall).toBeDefined();
+      let meshCount = 0;
+      wall.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(1);
+      // Position should still be applied
+      expect(wall.object3d.position.x).toBe(-5);
+    });
+
     it('_applyHierarchy() rebuilds dynamic objects', () => {
       const data = {
         root: { name: 'SceneRoot', isGroup: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], children: [] },
