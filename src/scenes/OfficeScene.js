@@ -3,7 +3,9 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
+import { SkyFollow } from '../components/SkyFollow.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createMarsSky } from '../gameobjects/MarsSky.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -37,6 +39,7 @@ export class OfficeScene extends Scene {
     this._lighting = lighting;
 
     this._addLighting();
+    this._addSky();
     this._addGround();
     this._addWalls();
     this._addWindow();
@@ -64,6 +67,11 @@ export class OfficeScene extends Scene {
   }
   
   dispose() {
+    // Scene teardown never resets scene.fog, so hand back the colour _addSky
+    // borrowed or the Mars horizon tint follows us into the next scene.
+    if (this._prevFogColor !== undefined) {
+      this.engine.scene.fog?.color.setHex(this._prevFogColor);
+    }
     // Future: dispose level-specific GPU resources (lights, ground geom, etc.)
   }
 
@@ -389,5 +397,24 @@ export class OfficeScene extends Scene {
 
     this.engine._rootObjects.push(go);
     return go;
+  }
+
+  // ──────────────────────────────────────────
+  // Sky (procedural Mars night dome + moons)
+  // ──────────────────────────────────────────
+  _addSky() {
+    const skyGroup = new GameObject('Sky');
+    skyGroup.makeGroup();
+    this._sceneRoot.addChild(skyGroup);
+
+    const sky = createMarsSky();
+    sky.addComponent(new SkyFollow());
+    skyGroup.addChild(sky);
+
+    // Match the fog to the dome's horizon. FogExp2 washes the ground plane out
+    // to the fog colour by ~100 m, well inside the dome, so the engine default
+    // shows up as a seam where the faded ground meets the rust horizon.
+    this._prevFogColor = this.engine.scene.fog?.color.getHex();
+    this.engine.scene.fog?.color.set(0x2a1810);
   }
 }
