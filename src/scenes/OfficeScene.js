@@ -415,6 +415,6 @@ export class OfficeScene extends Scene {
     // to the fog colour by ~100 m, well inside the dome, so the engine default
     // shows up as a seam where the faded ground meets the rust horizon.
     this._prevFogColor = this.engine.scene.fog?.color.getHex();
-    this.engine.scene.fog?.color.set(0x2a1810);
+    this.engine.scene.fog?.color.set(0x3a2820);
   }
 }

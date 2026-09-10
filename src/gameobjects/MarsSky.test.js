@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { createMarsSky, directionFromAngles } from './MarsSky.js';
 
@@ -10,6 +10,9 @@ import { createMarsSky, directionFromAngles } from './MarsSky.js';
 // — the same line Fullbright.test.js draws between material types and pixels.
 
 const findMesh = (go, name) => go.object3d.children.find(c => c.name === name);
+
+/** The moon's body, ignoring the halo quad sitting alongside it. */
+const moonBody = (sky, name) => findMesh(sky.find(name), name);
 
 describe('createMarsSky structure', () => {
   it('returns a group so the level editor treats it as a container', () => {
@@ -47,6 +50,24 @@ describe('createMarsSky structure', () => {
   });
 });
 
+describe('star sizing', () => {
+  // A star wider than its hash cell is clipped at the boundary and renders as
+  // a hard-edged wedge rather than a dot, which is what a "broken sky" looks
+  // like. The defaults must stay on the right side of that.
+  it('keeps default stars inside their own hash cell', () => {
+    const { uStarSize, uStarDensity } = createMarsSky().skyUniforms;
+    expect(uStarSize.value).toBeLessThanOrEqual(0.25 / uStarDensity.value);
+  });
+
+  it('warns when an override would clip stars at cell edges', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    createMarsSky({ starDensity: 100, starSize: 0.02 });
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('starSize'));
+    warn.mockRestore();
+  });
+});
+
 describe('moon aiming', () => {
   // The whole "keep the moons framed in the window" requirement rests on this
   // convention, so pin it down: azimuth 0° looks out the window (−Z).
@@ -65,16 +86,18 @@ describe('moon aiming', () => {
 
   it('places a moon just inside the dome, in its aimed direction', () => {
     const sky  = createMarsSky({ radius: 100, phobos: { azimuth: 0, elevation: 0 } });
-    const moon = sky.find('Phobos').object3d.children[0];
+    const moon = moonBody(sky, 'Phobos');
 
     expect(moon.position.z).toBeCloseTo(-95);
     expect(moon.position.x).toBeCloseTo(0);
   });
 
   it('keeps both default moons inside the window opening', () => {
-    // Mid-room the window spans roughly ±41° across and −13°..+14° up.
+    // The window spans roughly ±41° across. Vertically it depends on where the
+    // player stands: ~14° from mid-room, ~31° up close, so the ceiling here is
+    // "visible from the near half of the room", not "visible from anywhere".
     for (const name of ['Phobos', 'Deimos']) {
-      const moon = createMarsSky().find(name).object3d.children[0];
+      const moon = moonBody(createMarsSky(), name);
       const azimuth   = THREE.MathUtils.radToDeg(Math.atan2(moon.position.x, -moon.position.z));
       const elevation = THREE.MathUtils.radToDeg(
         Math.asin(moon.position.y / moon.position.length()),
@@ -82,7 +105,60 @@ describe('moon aiming', () => {
 
       expect(Math.abs(azimuth)).toBeLessThan(41);
       expect(elevation).toBeGreaterThan(0);
-      expect(elevation).toBeLessThan(14);
+      expect(elevation).toBeLessThan(25);
     }
+  });
+});
+
+describe('moon materials', () => {
+  it('opts the moon bodies out of fog', () => {
+    // At sky distance FogExp2 resolves to ~100% fog colour, so a fogged moon
+    // renders as a flat dark disc sitting inside its own halo.
+    for (const name of ['Phobos', 'Deimos']) {
+      expect(moonBody(createMarsSky(), name).material.fog).toBe(false);
+    }
+  });
+
+  it('tints the two moons differently so they do not read as one moon twice', () => {
+    const sky = createMarsSky();
+    const phobos = moonBody(sky, 'Phobos').material.color;
+    const deimos = moonBody(sky, 'Deimos').material.color;
+
+    expect(phobos.getHex()).not.toBe(deimos.getHex());
+  });
+});
+
+describe('moon glow', () => {
+  it('gives each moon an additive halo wider than its body', () => {
+    const sky  = createMarsSky();
+    const body = moonBody(sky, 'Phobos');
+    const halo = findMesh(sky.find('Phobos'), 'PhobosGlow');
+
+    expect(halo.material.blending).toBe(THREE.AdditiveBlending);
+    expect(halo.material.depthWrite).toBe(false);
+    expect(halo.geometry.parameters.width).toBeGreaterThan(body.geometry.parameters.radius * 2);
+  });
+
+  it('sits beyond the moon so the body occludes the middle of the halo', () => {
+    const sky = createMarsSky();
+    const body = moonBody(sky, 'Phobos');
+    const halo = findMesh(sky.find('Phobos'), 'PhobosGlow');
+
+    expect(halo.position.length()).toBeGreaterThan(body.position.length());
+  });
+
+  it('faces the sky origin, which SkyFollow keeps pinned to the camera', () => {
+    const halo = findMesh(createMarsSky().find('Phobos'), 'PhobosGlow');
+    // The quad's +Z normal should point back at the origin it was aimed at.
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(halo.quaternion);
+    const toOrigin = halo.position.clone().negate().normalize();
+
+    expect(normal.dot(toOrigin)).toBeCloseTo(1);
+  });
+
+  it('omits the halo when a moon asks for no glow', () => {
+    const sky = createMarsSky({ deimos: { glow: 0 } });
+    expect(findMesh(sky.find('Deimos'), 'DeimosGlow')).toBeUndefined();
+    expect(moonBody(sky, 'Deimos')).toBeDefined();
   });
 });
