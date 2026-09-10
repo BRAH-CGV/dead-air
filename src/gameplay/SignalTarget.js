@@ -14,7 +14,9 @@ export class SignalTarget {
   yaw;
   pitch;
 
-  /** Angular acceptance cone (radians). Dish must be within this to scan. */
+  /** Angular acceptance (radians). The aim check combines yaw AND pitch
+   *  error into one magnitude, so 12° combined ≈ 8.5° per axis — tight
+   *  enough to demand aiming, loose enough to hold with taps. */
   tolerance;
 
   /** Seconds the dish must stay aimed to complete the scan. */
@@ -41,7 +43,7 @@ export class SignalTarget {
    * @param {number} [opts.scanTime]
    * @param {string} [opts.payloadUrl]
    */
-  constructor({ id, yaw, pitch, tolerance = 0.1396, scanTime = 3, payloadUrl = '' }) {
+  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, payloadUrl = '' }) {
     this.id = id;
     this.yaw = yaw;
     this.pitch = pitch;
