@@ -18,7 +18,10 @@ import { FirstPersonController } from './FirstPersonController.js';
 // ─────────────────────────────────────────────
 
 /** @readonly */
-const STEER_RATE = Math.PI / 4;  // rad/s — dish steering speed from keyboard
+// Matches Satellite.maxRotationSpeed so the steered target never outruns
+// the dish — held keys move both in sync, taps give fine control inside
+// the scan tolerance.
+const STEER_RATE = Math.PI / 8;  // rad/s — dish steering speed from keyboard
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
@@ -108,6 +111,7 @@ export class ComputerTerminal extends Component {
   }
 
   /** Steer the dish in a direction. Called each frame in AIMING.
+   *  Pitch clamps to the sky hemisphere: horizon (0) to zenith (-π/2).
    *  @param {{ left: boolean, right: boolean, up: boolean, down: boolean }} dir
    *  @param {number} dt  seconds */
   steerDish(dir, dt) {
@@ -117,6 +121,7 @@ export class ComputerTerminal extends Component {
     if (dir.right) this.satellite.targetYaw += step;
     if (dir.up)    this.satellite.targetPitch -= step;
     if (dir.down)  this.satellite.targetPitch += step;
+    this.satellite.targetPitch = Math.min(0, Math.max(-Math.PI / 2, this.satellite.targetPitch));
   }
 
   /** Save the currently reviewed signal. */
@@ -181,7 +186,7 @@ export class ComputerTerminal extends Component {
     this.satellite.isScanning = false;
 
     this.radar?.setInfo(`Signal #${sig.id} — aim the dish toward the blip`);
-    this.radar?.setHint('WASD: steer dish  |  ESC: exit');
+    this.radar?.setHint('A/D: sweep | W/S: elevate | ESC: exit');
     this.hud?.setScanProgress(0);
   }
 
@@ -338,11 +343,15 @@ export class ComputerTerminal extends Component {
     if (!this.radar || !this.signalManager || !this.satellite) return;
     const dishYaw   = this.satellite.neck?.object3d?.rotation?.y ?? 0;
     const dishPitch = this.satellite.dish?.object3d?.rotation?.x ?? 0;
+    // The slew target rides along so the radar can show where the dish is
+    // heading while it lags behind steering.
     this.radar.update(
       this.signalManager.signals,
       dishYaw,
       dishPitch,
       this._selectedId,
+      this.satellite.targetYaw,
+      this.satellite.targetPitch,
     );
   }
 }

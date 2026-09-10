@@ -135,6 +135,20 @@ describe('ComputerTerminal', () => {
     expect(sat.targetYaw).toBeGreaterThan(after1);
   });
 
+  it('clamps pitch steering to the sky hemisphere', () => {
+    term.enter();
+    term.selectNextSignal();
+
+    // Pushing down past the horizon (pitch > 0) clamps at 0
+    sat.targetPitch = 0;
+    term.steerDish({ left: false, right: false, up: false, down: true }, 1);
+    expect(sat.targetPitch).toBe(0);
+
+    // Pushing up past the zenith (pitch < -π/2) clamps at -π/2
+    term.steerDish({ left: false, right: false, up: true, down: false }, 100);
+    expect(sat.targetPitch).toBeCloseTo(-Math.PI / 2);
+  });
+
   // ── SCANNING ──
 
   it('transitions to scanning when aimed, then to review on completion', () => {
