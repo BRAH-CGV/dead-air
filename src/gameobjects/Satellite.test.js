@@ -103,4 +103,50 @@ describe('Satellite', () => {
 
     expect(sat.isRotating()).toBe(false);
   });
+
+  // ── Gameplay helpers ─────────────────────────────────────
+
+  it('aimAt sets both target angles', () => {
+    const { root } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.aimAt(1.2, -0.4);
+    expect(sat.targetYaw).toBeCloseTo(1.2);
+    expect(sat.targetPitch).toBeCloseTo(-0.4);
+  });
+
+  it('getAimError returns 0 when on target', () => {
+    const { root, neck, dish } = buildTower();
+    neck.rotation.y = 0.5;
+    dish.rotation.x = -0.3;
+    const sat = Satellite.fromObject3D(root);
+    expect(sat.getAimError(0.5, -0.3)).toBeCloseTo(0);
+  });
+
+  it('getAimError returns combined angular distance', () => {
+    const { root, neck, dish } = buildTower();
+    neck.rotation.y = 0;
+    dish.rotation.x = 0;
+    const sat = Satellite.fromObject3D(root);
+    // yaw error = 0.3, pitch error = 0.4, combined = 0.5 (Pythagorean)
+    const error = sat.getAimError(0.3, 0.4);
+    expect(error).toBeCloseTo(0.5);
+  });
+
+  it('isAimedAt returns true within tolerance and false outside', () => {
+    const { root, neck, dish } = buildTower();
+    neck.rotation.y = 0;
+    dish.rotation.x = 0;
+    const sat = Satellite.fromObject3D(root);
+
+    expect(sat.isAimedAt(0.01, 0.01, 0.1)).toBe(true);   // tiny error < 0.1
+    expect(sat.isAimedAt(1.0, 1.0, 0.1)).toBe(false);     // large error > 0.1
+  });
+
+  it('scan state starts cleared', () => {
+    const { root } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    expect(sat.scanProgress).toBe(0);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.isScanning).toBe(false);
+  });
 });
