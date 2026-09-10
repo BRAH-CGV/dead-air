@@ -35,7 +35,9 @@ const DEFAULT_RADIUS = 400;
 /** Moons sit just inside the dome surface so they always render against it. */
 const MOON_DISTANCE_FRACTION = 0.95;
 
-const DEFAULT_MOONS = {
+/** Exported so scene lighting can aim itself at a moon rather than repeating
+ *  its angles — see OfficeScene's MoonLight. */
+export const DEFAULT_MOONS = {
   // Still bigger than the real thing (Phobos is ~0.2° wide from Mars, this is
   // ~1.8°) — enough to read as wrong without dominating the window. The two
   // are tinted apart, warm against cool, so they don't read as one moon twice.

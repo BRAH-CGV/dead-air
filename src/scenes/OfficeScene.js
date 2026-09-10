@@ -5,7 +5,7 @@ import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { Satellite } from '../gameobjects/Satellite.js';
-import { createMarsSky } from '../gameobjects/MarsSky.js';
+import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -86,8 +86,12 @@ export class OfficeScene extends Scene {
     this._lighting.addChild(ambientGO);
           
     const moonGO = new GameObject('MoonLight');
-    const moon = new THREE.DirectionalLight(0x8fb7ff, 1.8);
-    moon.position.set(-6, 8, -10);
+    // Aimed at Phobos, derived from the moon's own angles so the two cannot
+    // drift apart. That elevation is genuinely low, so shadows rake long across
+    // the floor — that is the moon you can see through the window.
+    const moon = new THREE.DirectionalLight(0xd4d4d4, 1.1);
+    const { azimuth, elevation } = DEFAULT_MOONS.phobos;
+    moon.position.copy(directionFromAngles(azimuth, elevation)).multiplyScalar(12);
     moon.castShadow = true;
     moon.shadow.mapSize.set(1024, 1024);
     moon.shadow.camera.near   =  0.5;
