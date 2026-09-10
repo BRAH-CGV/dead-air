@@ -15,7 +15,7 @@
 // ── HUD ────────────────────────────────────────────────────
 
 export class HUD {
-  constructor(root = document.getElementById('hud')) {
+  constructor(root = typeof document !== 'undefined' ? document.getElementById('hud') : null) {
     this.root = root;
     this._clock     = root?.querySelector('#hud-clock')     ?? null;
     this._signals   = root?.querySelector('#hud-signals')   ?? null;
@@ -58,7 +58,7 @@ export class HUD {
 // ── RadarOverlay ───────────────────────────────────────────
 
 export class RadarOverlay {
-  constructor(root = document.getElementById('radar-overlay')) {
+  constructor(root = typeof document !== 'undefined' ? document.getElementById('radar-overlay') : null) {
     this.root = root;
     this._canvas = root?.querySelector('#radar-canvas') ?? null;
     this._ctx    = this._canvas?.getContext('2d')        ?? null;
@@ -181,7 +181,7 @@ export class RadarOverlay {
 // ── SignalReviewPanel ──────────────────────────────────────
 
 export class SignalReviewPanel {
-  constructor(root = document.getElementById('signal-review')) {
+  constructor(root = typeof document !== 'undefined' ? document.getElementById('signal-review') : null) {
     this.root = root;
     this._image    = root?.querySelector('#signal-review-image')  ?? null;
     this._saveBtn  = root?.querySelector('#signal-save-btn')      ?? null;

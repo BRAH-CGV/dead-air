@@ -4,6 +4,11 @@ import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { NightClock } from '../gameplay/NightClock.js';
+import { SignalManager } from '../gameplay/SignalManager.js';
+import { GameController } from '../gameplay/GameController.js';
+import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -61,10 +66,79 @@ export class OfficeScene extends Scene {
 
     // ── Player (shared across all scenes) ──
     this.engine.buildPlayer();
+
+    // ── Gameplay systems ──
+    this._addGameplaySystems();
   }
   
   dispose() {
-    // Future: dispose level-specific GPU resources (lights, ground geom, etc.)
+    // Hide gameplay UI on teardown so a scene reload doesn't show stale HUD.
+    this.hud?.hide();
+    this.radarOverlay?.hide();
+    this.reviewPanel?.hide();
+  }
+
+  // ──────────────────────────────────────────
+  // Gameplay systems wiring
+  // ──────────────────────────────────────────
+  _addGameplaySystems() {
+    // ── Night clock ──
+    this.nightClock = new NightClock({ nightDuration: 300 });
+
+    // ── Signal manager ──
+    // Payload URLs are direct paths to the placeholder images, not
+    // manifest keys — they're displayed via HTML <img>, not Three.js.
+    const payloadPool = Array.from({ length: 8 }, (_, i) =>
+      `assets/signals/signal-${i + 1}.png`,
+    );
+    this.signalManager = new SignalManager({
+      signalsPerNight: 5,
+      payloadPool,
+    });
+
+    // ── UI wrappers (read from DOM elements in index.html) ──
+    this.hud          = new HUD();
+    this.radarOverlay = new RadarOverlay();
+    this.reviewPanel  = new SignalReviewPanel();
+
+    // ── Computer terminal (component on the retro-computer) ──
+    this.terminal = new ComputerTerminal();
+    this.terminal.satellite     = this.satellite;
+    this.terminal.signalManager = this.signalManager;
+    this.terminal.hud           = this.hud;
+    this.terminal.radar         = this.radarOverlay;
+    this.terminal.reviewPanel   = this.reviewPanel;
+
+    // Attach the terminal and its Interactable to the computer model.
+    // The computer is the first child of _office (spawned in _addOfficeFurniture).
+    const computer = this._office.children.find(c => c.name === 'ComputerDesk');
+    if (computer) {
+      computer.addComponent(this.terminal);
+      computer.addComponent(createComputerInteractable(this.terminal));
+    }
+
+    // ── Game controller (Component on a group node) ──
+    const gameplayGO = new GameObject('GameplaySystems');
+    gameplayGO.makeGroup();
+    this._sceneRoot.addChild(gameplayGO);
+
+    this.gameController = new GameController();
+    this.gameController.nightClock    = this.nightClock;
+    this.gameController.signalManager = this.signalManager;
+    this.gameController.satellite     = this.satellite;
+    this.gameController.terminal      = this.terminal;
+    this.gameController.hud           = this.hud;
+    gameplayGO.addComponent(this.gameController);
+
+    // Wire review panel callbacks into the terminal.
+    this.reviewPanel.onSave(() => {
+      this.terminal.saveSignal();
+      this.gameController.onSignalSaved();
+    });
+    this.reviewPanel.onDelete(() => {
+      this.terminal.deleteSignal();
+      this.gameController.onSignalDeleted();
+    });
   }
 
   // ──────────────────────────────────────────
