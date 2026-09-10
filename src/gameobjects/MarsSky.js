@@ -112,6 +112,8 @@ export function createMarsSky(opts = {}) {
       fragmentShader: DOME_FRAGMENT_SHADER,
       side: THREE.BackSide,
       depthWrite: false,
+      // Gates the DITHERING define the shader's chunks sit behind.
+      dithering: true,
     }),
   );
   dome.name = 'MarsSkyDome';
@@ -169,6 +171,7 @@ function createMoonGlow(name, position, size, color, intensity) {
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      dithering: true,
     }),
   );
   glow.name = `${name}Glow`;
@@ -210,11 +213,20 @@ const DOME_VERTEX_SHADER = /* glsl */`
 // back on the unit sphere, so `distance` measures a real angle and the falloff
 // draws a small round dot.
 //
-// The two trailing includes are not optional: a hand-written ShaderMaterial
-// skips the renderer's output stage, so without them the sky misses ACES
-// tone mapping and the linear→sRGB conversion every other material gets,
-// and renders darker and more saturated than the scene around it.
+// The trailing includes are not optional: a hand-written ShaderMaterial skips
+// the renderer's output stage, so without them the sky misses ACES tone
+// mapping and the linear→sRGB conversion every other material gets, and
+// renders darker and more saturated than the scene around it.
+//
+// Dithering is what keeps the gradient smooth. The framebuffer holds 8 bits a
+// channel, and this ramp crosses only ~60 of those levels while covering most
+// of the screen, so each level lands as a wide visible band. A half-LSB of
+// noise before quantisation scatters the boundaries into grain the eye reads
+// as a smooth ramp. `common` is included for the rand() the chunk calls.
 const DOME_FRAGMENT_SHADER = /* glsl */`
+  #include <common>
+  #include <dithering_pars_fragment>
+
   uniform vec3  uHorizonColor;
   uniform vec3  uZenithColor;
   uniform float uHorizonExponent;
@@ -261,6 +273,7 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+    #include <dithering_fragment>
   }
 `;
 
@@ -274,6 +287,9 @@ const GLOW_VERTEX_SHADER = /* glsl */`
 `;
 
 const GLOW_FRAGMENT_SHADER = /* glsl */`
+  #include <common>
+  #include <dithering_pars_fragment>
+
   uniform vec3  uGlowColor;
   uniform float uGlowIntensity;
 
@@ -289,5 +305,6 @@ const GLOW_FRAGMENT_SHADER = /* glsl */`
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+    #include <dithering_fragment>
   }
 `;

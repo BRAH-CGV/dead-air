@@ -30,6 +30,9 @@ describe('createMarsSky structure', () => {
     // Fullbright only swaps lit materials, and FogExp2 would otherwise wash
     // a 400 m dome into a flat blob.
     expect(dome.material.fog).toBe(false);
+    // Gates the DITHERING define; without it the dark gradient quantises into
+    // visible bands, and the shader's dithering chunks compile to nothing.
+    expect(dome.material.dithering).toBe(true);
   });
 
   it('carries both moons as their own GameObjects', () => {
