@@ -34,6 +34,14 @@ export class Satellite extends GameObject {
   /** The tilting reflector. @type {GameObject|null} */
   dish = null;
 
+  // ── Scan state (driven by ComputerTerminal, stored here for convenience) ──
+  /** Accumulated scan seconds (0..scanTime). @type {number} */
+  scanProgress = 0;
+  /** The signal currently being scanned. @type {import('../gameplay/SignalTarget.js').SignalTarget|null} */
+  scanTarget = null;
+  /** True while the terminal is actively scanning this dish. */
+  isScanning = false;
+
   /** Wrap a dish-tower clone and latch onto the two moving parts. Reached
    *  via `engine.spawnModel(..., { type: Satellite })`, so the parts are
    *  resolved before the first update ticks. */
@@ -79,6 +87,32 @@ export class Satellite extends GameObject {
       return true;
     }
     return false;
+  }
+
+  // ── Gameplay helpers ──────────────────────────────────────
+
+  /** Aim the dish at a sky direction. The slew happens over subsequent
+   *  _update ticks at maxRotationSpeed. */
+  aimAt(yaw, pitch) {
+    this.targetYaw = yaw;
+    this.targetPitch = pitch;
+  }
+
+  /** Angular distance (radians) from the dish's current aim to a target
+   *  direction. Combines yaw and pitch error into a single magnitude. */
+  getAimError(targetYaw, targetPitch) {
+    const yawErr = this.neck
+      ? Math.abs(angleDelta(this.neck.object3d.rotation.y, targetYaw))
+      : 0;
+    const pitchErr = this.dish
+      ? Math.abs(angleDelta(this.dish.object3d.rotation.x, targetPitch))
+      : 0;
+    return Math.sqrt(yawErr * yawErr + pitchErr * pitchErr);
+  }
+
+  /** True when the dish is aimed within `tolerance` radians of the target. */
+  isAimedAt(targetYaw, targetPitch, tolerance) {
+    return this.getAimError(targetYaw, targetPitch) <= tolerance;
   }
 }
 
