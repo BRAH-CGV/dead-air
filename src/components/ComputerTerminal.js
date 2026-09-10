@@ -283,19 +283,13 @@ export class ComputerTerminal extends Component {
       const keys = engine.input.keys;
       const kb = engine.keyBinds;
 
+      // WASD steers the dish (A/D yaw, W/S pitch). Space/C as alternative
+      // vertical.  Single steerDish call so no axis is double-counted.
       this.steerDish({
         left:  !!keys[kb.left],
         right: !!keys[kb.right],
-        up:    !!keys[kb.jump],    // Space = up (pitch up = more negative)
-        down:  !!keys[kb.crouch],  // C = down
-      }, dt);
-
-      // Also allow WASD as alternative steering
-      this.steerDish({
-        left:  !!keys[kb.left],
-        right: !!keys[kb.right],
-        up:    !!keys[kb.forward],
-        down:  !!keys[kb.back],
+        up:    !!keys[kb.forward] || !!keys[kb.jump],
+        down:  !!keys[kb.back]    || !!keys[kb.crouch],
       }, dt);
 
       // Check if aimed at the active signal
