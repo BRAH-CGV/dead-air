@@ -10,7 +10,12 @@ import { Crosshair } from '../ui/Crosshair.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
+import { DebugCamera } from './DebugCamera.js';
+import { Fullbright } from './Fullbright.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
+import { TestScene } from '../scenes/TestScene.js';
+import { logModelDebugInfo } from './ModelUtils.js';
+import { LevelEditor } from '../editor/LevelEditor.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -20,6 +25,7 @@ export class Engine {
   // ── Tunables ──────────────────────────────
   static FIXED_DT   = 1 / 60;
   static MAX_FRAME  = 0.25;       // spiral-of-death clamp (seconds)
+  static GRAVITY    = { x: 0, y: -9.81, z: 0 };
 
   // ── Three.js ──────────────────────────────
   scene; camera; renderer;
@@ -37,6 +43,10 @@ export class Engine {
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
   _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
   /** @type {PhysicsDebug} */ physicsDebug;
+  /** @type {LevelEditor}  */ levelEditor;
+  /** @type {DebugCamera}  */ debugCamera;
+  /** @type {Fullbright}   */ fullbright;
+  /** @type {GameObject}   */ player;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -46,17 +56,29 @@ export class Engine {
   // ── Scene ────────────────────────────────
   /** @type {import('./Scene.js').Scene} */ activeScene;
 
+  /** Registered scenes available in the switcher dropdown.
+   *  @type {Map<string, typeof import('./Scene.js').Scene>} */
+  sceneRegistry = new Map();
+
   // ── Timing ────────────────────────────────
   _accumulator = 0;
   _lastTime    = 0;
   _rootObjects = [];
 
   // ── Input ─────────────────────────────────
+  // Touchpads can occasionally emit one huge movement event. Cap each raw
+  // event before accumulation; FirstPersonController also caps the frame total.
+  mouseEventMaxDelta = 40;
   input = {
     keys: {},
+    pressed: {},
     mouse: { dx: 0, dy: 0 },
     locked: false,
   };
+  
+  // ── Debug ─────────────────────────────────
+  /** When true, spawnModel() logs position/scale/bounds to console. */
+  debugModels = false;
 
   // ── Key binds ─────────────────────────────
   // Maps action names → KeyboardEvent.code strings.
@@ -69,6 +91,9 @@ export class Engine {
     jump:     'Space',
     crouch:   'KeyC',
     interact: 'KeyE',
+    // Debug keys, in the same table so they remap with everything else.
+    debugFly:   'KeyV',   // toggle the noclip fly camera
+    fullbright: 'KeyB',   // toggle the unlit lighting mode
   };
 
   /** Returns true while the key mapped to [action] is held down. */
@@ -105,8 +130,9 @@ export class Engine {
     document.body.appendChild(this.renderer.domElement);
 
     // ── Physics world ──
-    this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    this.world = new RAPIER.World(Engine.GRAVITY);
     this.world.timestep = Engine.FIXED_DT;
+    this.RAPIER = RAPIER; // exposed so components/editors can build colliders without importing (test wasm resolver)
     
     // Expose engine to components via scene userData
     this.scene.userData.engine    = this;
@@ -117,21 +143,52 @@ export class Engine {
     canvas.addEventListener('click', () => canvas.requestPointerLock());
     document.addEventListener('pointerlockchange', () => {
       this.input.locked = document.pointerLockElement === canvas;
+      this.input.mouse.dx = 0;
+      this.input.mouse.dy = 0;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.input.locked) return;
-      this.input.mouse.dx += e.movementX;
-      this.input.mouse.dy += e.movementY;
+      this.input.mouse.dx += this._clampMouseEventDelta(e.movementX);
+      this.input.mouse.dy += this._clampMouseEventDelta(e.movementY);
     });
 
     // ── Keyboard ──
-    addEventListener('keydown', (e) => { this.input.keys[e.code] = true;  });
+    addEventListener('keydown', (e) => {
+      this.input.keys[e.code] = true;
+      if (!e.repeat) this.input.pressed[e.code] = true;
+    });
     addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
 
-    // Collider overlay. Its own listener rather than `input.keys`, which is
-    // level-triggered and so can't express "toggle on the press".
+    // ── Debug tooling ──
+    // Built before their key handlers are registered, so a debug key can
+    // never arrive before the tool it toggles exists.
+    this.debugCamera = new DebugCamera(this.camera, this.scene);
+    this.fullbright  = new Fullbright(this.scene, this.renderer);
+
+    // ── Debug toggles ──
+    // Edge-triggered, so like the collider overlay they get their own
+    // listener rather than `input.keys`, which is level-triggered.
     addEventListener('keydown', (e) => {
-      if (e.code === 'Backquote') this.physicsDebug?.toggle();
+      if (e.code === 'Backquote')        this.physicsDebug?.toggle();
+      if (e.code === 'F2')               this.levelEditor?.toggle();
+      if (e.code === this.keyBinds.debugFly)
+        this.debugCamera?.toggle(this.player);
+      if (e.code === this.keyBinds.fullbright) this.fullbright?.toggle();
+      // F4, not F1: F1 belongs to the browser — Chrome opens help with it
+      // and DevTools opens its settings — and those contexts swallow the
+      // key before the page ever sees it, preventDefault or not.
+      if (e.code === 'F4') {
+        e.preventDefault();
+        this.debugModels = !this.debugModels;
+        console.log(`[DEBUG] Model debug logging ${this.debugModels ? 'ENABLED' : 'DISABLED'}`);
+        if (this.debugModels) {
+          console.log('[DEBUG] Re-spawning models to show debug info...');
+          // Re-spawn current scene to show debug info
+          if (this.activeScene) {
+            this.loadScene(this.activeScene.constructor);
+          }
+        }
+      }
     });
 
     // ── Resize ──
@@ -151,10 +208,16 @@ export class Engine {
     });
 
     // ── Build world ──
+    this.registerScene('OfficeScene', OfficeScene);
+    this.registerScene('TestScene', TestScene);
     this.loadScene(OfficeScene);
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
+    
+    // Level editor — toggle with F2. Provides visual object placement.
+    this.levelEditor = new LevelEditor(this);
+    this.levelEditor.init();
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
@@ -168,7 +231,9 @@ export class Engine {
   /** Free every GPU resource we own. Call before rebuilding a level, so
    *  memory doesn't climb across restarts. */
   dispose() {
+    this.fullbright?.dispose();     // restores lights/fog/materials if active
     this.physicsDebug?.dispose();
+    this.levelEditor?.dispose();
     this.assets?.dispose();
     this.renderer?.dispose();
   }
@@ -176,14 +241,70 @@ export class Engine {
   // ──────────────────────────────────────────
   // Scene management
   // ──────────────────────────────────────────
-  /** Swap to a new scene.  Disposes the current one, instantiates the
-   *  given class, calls `build()`, and initialises every new root object.
+  /** Register a Scene class so it appears in the editor's scene switcher.
+   *  @param {string} name  Display name (must match the class name).
+   *  @param {typeof import('./Scene.js').Scene} SceneClass */
+  registerScene(name, SceneClass) {
+    this.sceneRegistry.set(name, SceneClass);
+  }
+
+  /** Return all registered scene names. */
+  getRegisteredSceneNames() {
+    return [...this.sceneRegistry.keys()];
+  }
+
+  /** Swap to a new scene.  Tears down the old one (removes Three.js objects,
+   *  physics bodies, colliders, and root-object bookkeeping), then builds
+   *  the new scene and initialises its root objects.
    *
    *  @param {typeof import('./Scene.js').Scene} SceneClass */
   loadScene(SceneClass) {
-    this.activeScene?.dispose();
+    // ── Tear down the old scene ──
+    this._teardownScene();
+
+    // ── Build the new one ──
     this.activeScene = new SceneClass(this);
     this.activeScene.build();
+
+    // Initialise every new root object (sets scene/world refs, adds to
+    // the Three.js scene graph via _init).
+    for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+
+    // The editor may be open across a scene switch (F4 reset): refresh its
+    // tree and drop any selection pointing into the old scene, or the next
+    // arrow-key press would sync dead physics bodies.
+    this.levelEditor?.onSceneRebuilt?.();
+  }
+
+  /** Remove every Three.js object, Rapier body/collider, and bookkeeping
+   *  entry left by the current scene.  Keeps the renderer, camera, and
+   *  world alive for the next scene. */
+  _teardownScene() {
+    this.activeScene?.dispose();
+
+    // ── Physics: drop the whole world and start a fresh one ──
+    // Removing bodies one-by-one proved fragile: a stale wrapper or any
+    // mid-operation panic bricks the WASM arena — the borrow flag never
+    // clears, and every later world call dies with "recursive use of an
+    // object detected", repeating every frame in step(). A fresh world is
+    // cheap and removes every body, collider and character controller in
+    // one shot.
+    try { this.world.free(); } catch (_) { /* already bricked — just drop it */ }
+    this.world = new RAPIER.World(Engine.GRAVITY);
+    this.world.timestep = Engine.FIXED_DT;
+    if (this.physicsDebug) this.physicsDebug.world = this.world;
+
+    // Remove all root Object3Ds from the Three.js scene
+    for (const go of this._rootObjects) {
+      this.scene.remove(go.object3d);
+    }
+
+    // Clear bookkeeping
+    this._rootObjects.length = 0;
+    this.rigidBodyMap.clear();
+    this._bodyToGO.clear();
+    this._prevPos.clear();
+    this._prevQuat.clear();
   }
 
   /**
@@ -202,24 +323,46 @@ export class Engine {
    * @param {string} [opts.name]             GameObject name; defaults to the key.
    * @param {[number,number,number]} [opts.position]
    * @param {number} [opts.rotationY]        Yaw in radians.
-   * @param {number} [opts.scale]            Uniform scale on top of the manifest's.
+   * @param {number|[number,number,number]} [opts.scale]
+   *        Uniform or XYZ scale on top of the manifest's.
    * @param {import('./ColliderSpec.js').PhysicsSpec|string} [opts.physics]
    *        Per-spawn override, merged over the manifest's block. Handy for one
    *        crate that should be dynamic when the rest are scenery.
+   * @param {typeof GameObject} [opts.type]   GameObject subclass to wrap the
+   *        clone in instead of a plain GameObject — spawns the model as a
+   *        smarter object with behaviour of its own (see
+   *        gameobjects/Satellite.js). The subclass must keep GameObject's
+   *        constructor signature; override `static fromObject3D` to latch
+   *        onto named sub-nodes.
    * @returns {GameObject}
    */
   spawnModel(key, opts = {}) {
-    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics } = opts;
+    const { name, position = [0, 0, 0], rotationY = 0, scale = 1, physics, type = GameObject } = opts;
 
-    const go = new GameObject(name ?? key);
-    go.object3d.add(this.assets.instantiate(key));
+    // Wrap the entire cloned GLB hierarchy into GameObjects so that named
+    // sub-parts are reachable via go.find() and lifecycle hooks propagate.
+    const clone = this.assets.instantiate(key);
+    const go = type.fromObject3D(clone);
+    go.name = name ?? key;
+    go.object3d.name = go.name;
+    go.physicsAssetKey = key;
+    go.physicsOverride = physics;
     go.object3d.position.set(position[0], position[1], position[2]);
     go.object3d.rotation.y = rotationY;
-    if (scale !== 1) go.object3d.scale.setScalar(scale);
-
+    this._applyObjectScale(go.object3d, scale);
+    
     this._attachPhysics(go, key, { position, rotationY, scale, physics });
-
+    
     this._rootObjects.push(go);
+
+    // Debug: log model info to console
+    if (this.debugModels) {
+      logModelDebugInfo(key, go.object3d);
+    }
+
+    // Spawned while fullbright is on: swap the newcomer too, so a level built
+    // under the debug light looks consistent immediately.
+    this.fullbright?.refresh();
     return go;
   }
 
@@ -250,11 +393,48 @@ export class Engine {
     go.rigidBody = createBody(this.world, resolved, { position, rotationY });
     go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
     go.collider  = go.colliders[0] ?? null;
+    go._physicsScale = this._scaleArray(scale);
 
-    // Static props never move, so they stay out of the interpolation map.
+    // Every spawned body goes into _bodyToGO so raycasts (InteractionSystem)
+    // can look up the owning GameObject from a collider handle. Static props
+    // stay out of rigidBodyMap — they never move, so interpolation is wasted.
+    this._bodyToGO.set(go.rigidBody.handle, go);
     if (resolved.body !== 'static') this.rigidBodyMap.set(go.rigidBody.handle, go);
   }
-
+  
+  rebuildModelPhysicsForScale(go) {
+    if (!go?.rigidBody || !go.physicsAssetKey) return false;
+  
+    const key = go.physicsAssetKey;
+    const spec = mergePhysics(ASSETS[key]?.physics, go.physicsOverride);
+    if (!spec || spec.body === 'none') return false;
+  
+    const scale = this._scaleArray(go.object3d.scale);
+    const needsMesh = spec.shape === 'trimesh' || spec.shape === 'hull';
+    const resolved = resolvePhysics(spec, this.assets.getCollision(key, needsMesh), scale);
+    if (!resolved) return false;
+  
+    for (const collider of go.colliders ?? (go.collider ? [go.collider] : [])) {
+      this.world.removeCollider(collider, true);
+    }
+  
+    go.colliders = attachColliders(this.world, go.rigidBody, resolved, key);
+    go.collider = go.colliders[0] ?? null;
+    go._physicsScale = scale;
+    return true;
+  }
+  
+  _applyObjectScale(object3d, scale) {
+    const [x, y, z] = this._scaleArray(scale);
+    object3d.scale.set(x, y, z);
+  }
+  
+  _scaleArray(scale) {
+    if (Array.isArray(scale)) return [scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1];
+    if (typeof scale === 'object' && scale !== null) return [scale.x ?? 1, scale.y ?? 1, scale.z ?? 1];
+    return [scale, scale, scale];
+  }
+    
   // ──────────────────────────────────────────
   // Player – first-person character controller
   // ──────────────────────────────────────────
@@ -327,6 +507,7 @@ export class Engine {
     // ── InteractionSystem component ──
     player.addComponent(new InteractionSystem({ range: 5 }));
 
+    this.player = player;           // the debug fly camera freezes whoever this is
     this._rootObjects.push(player);
     this.crosshair.show();
   }
@@ -353,9 +534,34 @@ export class Engine {
       this._accumulator -= Engine.FIXED_DT;
     }
 
+    // ── Deferred body removal ──
+    // Clean up rigid bodies that were flagged for removal during the physics
+    // step (e.g. editor delete). The try/catch in _deleteSelected queues
+    // them here if Rapier threw "recursive use". Safe to remove now that
+    // world.step() has finished.
+    if (this._deferredBodyRemovals?.length > 0) {
+      for (const body of this._deferredBodyRemovals) {
+        try {
+          this.world.removeRigidBody(body);
+        } catch (e) {
+          // Still can't remove it — leave it queued for next frame.
+          // This shouldn't happen outside world.step(), but guard anyway.
+        }
+      }
+      this._deferredBodyRemovals = [];
+    }
+
     // Interpolation factor: how far we are between the last two physics steps
     const alpha = this._accumulator / Engine.FIXED_DT;
     this._interpolatePhysics(alpha);
+
+    // ── Debug fly camera ──
+    // Above the variable update on purpose: the player's components are
+    // suspended while it flies, so nothing else touches the camera this frame,
+    // and the mouse deltas it consumes are reset at the bottom of the loop.
+    if (this.debugCamera?.active) {
+      this.debugCamera.update(frameDt, this.input, this.keyBinds);
+    }
 
     // ── Variable update ──
     for (const obj of this._rootObjects) obj._update(frameDt);
@@ -365,12 +571,19 @@ export class Engine {
 
     // ── Render ──
     this.physicsDebug?.update();
+    this.levelEditor?.update();
     this.renderer.render(this.scene, this.camera);
 
-    // Consume mouse deltas after all updates
+    // Consume one-frame input after all updates have read it
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
+    this.input.pressed = {};
   };
+
+  _clampMouseEventDelta(delta) {
+    if (!Number.isFinite(delta)) return 0;
+    return Math.max(-this.mouseEventMaxDelta, Math.min(this.mouseEventMaxDelta, delta));
+  }
 
   /** Snapshot every rigid-body transform BEFORE world.step(). */
   _savePrevPhysics() {
@@ -404,8 +617,8 @@ export class Engine {
    *  state so they appear to move at the display refresh rate, not 60 Hz. */
   _interpolatePhysics(alpha) {
     for (const [handle, go] of this.rigidBodyMap) {
-      // Only interpolate dynamic bodies; kinematics (Player) are
-      // driven every frame by their controller, so snapping is fine.
+      // Only interpolate dynamic bodies. The player is kinematic and camera-owned;
+      // interpolating it can fight pointer-look and cause visible jitter.
       if (go.rigidBody.bodyType() !== RAPIER.RigidBodyType.Dynamic) continue;
 
       const prev = this._prevPos.get(handle);

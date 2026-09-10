@@ -31,8 +31,42 @@ export class GameObject {
   scene = null;
   /** @type {RAPIER.World|null} */
   world = null;
+  /** Marker for group nodes (no mesh, no physics, just a container). */
+  isGroup = false;
 
   _started = false;
+
+  /**
+   * Recursively wrap an existing Object3D hierarchy into GameObjects,
+   * reusing every node in place.  The Object3D tree is not cloned — each
+   * GameObject adopts the Object3D it wraps, so transforms, materials and
+   * GPU buffers are untouched.
+   *
+   * Only the GameObject bookkeeping (`parent`, `children[]`) is wired up.
+   * The Three.js scene graph is left alone — the parent-child relationships
+   * in `object3d.children` already exist from the source hierarchy, and
+   * calling `object3d.add()` would splice that array via `removeFromParent()`
+   * even for same-parent re-adds, silently dropping siblings.
+   *
+   * Subclass-aware: `SubClass.fromObject3D(obj)` wraps the root in a
+   * `SubClass` instance (children stay plain GameObjects), which is how
+   * Engine.spawnModel's `type` option hands back a smarter object.
+   *
+   * @param {THREE.Object3D} obj
+   * @returns {GameObject}
+   */
+  static fromObject3D(obj) {
+    const go = new this();
+    go.object3d = obj;
+    go.name = obj.name || 'GameObject';
+    obj.name = go.name;
+    for (const child of obj.children) {
+      const childGO = GameObject.fromObject3D(child);
+      childGO.parent = go;
+      go.children.push(childGO);
+    }
+    return go;
+  }
 
   constructor(name = 'GameObject') {
     this.name = name;
@@ -91,12 +125,58 @@ export class GameObject {
     return null;
   }
 
+  /** Return all descendants (depth-first) including self. */
+  descendants() {
+    const result = [this];
+    for (const c of this.children) {
+      if (typeof c.descendants === 'function') {
+        result.push(...c.descendants());
+      } else {
+        result.push(c);
+      }
+    }
+    return result;
+  }
+
+  /** Convert this node into a group (strip render/physics, keep hierarchy). */
+  makeGroup() {
+    this.isGroup = true;
+    return this;
+  }
+
+  /** Reparent: move this object under a new parent, preserving world transform. */
+  reparentUnder(newParent) {
+    // Capture world position before reparenting
+    const worldPos = new THREE.Vector3();
+    this.object3d.getWorldPosition(worldPos);
+
+    // Remove from current parent
+    if (this.parent) this.parent.removeChild(this);
+
+    // Add to new parent
+    newParent.addChild(this);
+
+    // Recalculate local position so world position is unchanged
+    newParent.object3d.updateWorldMatrix(true, false);
+    const parentWorldInverse = new THREE.Matrix4();
+    parentWorldInverse.copy(newParent.object3d.matrixWorld).invert();
+    const localPos = worldPos.applyMatrix4(parentWorldInverse);
+    this.object3d.position.copy(localPos);
+
+    return this;
+  }
+
   // ── Lifecycle propagation ─────────────────
 
   _init(scene, world) {
     this.scene = scene;
     this.world = world;
-    scene.add(this.object3d);
+    // Only add to the Three.js scene if this object has no GameObject parent.
+    // Children inherit their scene-graph position through the parent's object3d;
+    // calling scene.add() on them would detach them from the parent (Three.js
+    // automatically removes an Object3D from its previous parent on add),
+    // scattering the model's sub-meshes across the origin.
+    if (!this.parent) scene.add(this.object3d);
     for (const c of this.components) c.onAwake();
     for (const ch of this.children) ch._init(scene, world);
   }
@@ -106,17 +186,23 @@ export class GameObject {
       this._started = true;
       for (const c of this.components) c.onStart();
     }
-    for (const c of this.components) c.onUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onUpdate(dt);
+    }
     for (const ch of this.children) ch._update(dt);
   }
 
   _fixedUpdate(dt) {
-    for (const c of this.components) c.onFixedUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onFixedUpdate(dt);
+    }
     for (const ch of this.children) ch._fixedUpdate(dt);
   }
 
   _lateUpdate(dt) {
-    for (const c of this.components) c.onLateUpdate(dt);
+    for (const c of this.components) {
+      if (c.enabled) c.onLateUpdate(dt);
+    }
     for (const ch of this.children) ch._lateUpdate(dt);
   }
 }

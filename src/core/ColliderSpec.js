@@ -99,7 +99,8 @@ export function mergePhysics(base, override) {
  * @param {{size:number[], center:number[]}} [collision.bounds]
  * @param {Float32Array[]} [collision.hulls]  Point clouds from the `UCX_*` meshes.
  * @param {{vertices:Float32Array, indices:Uint32Array}} [collision.mesh]
- * @param {number} [scale=1]       Extra uniform scale applied at spawn time.
+ * @param {number|number[]|{x:number,y:number,z:number}} [scale=1]
+ *        Extra scale applied at spawn time or by the level editor.
  * @returns {{body:string, parts:Object[], friction:number, restitution:number,
  *            sensor:boolean, mass?:number, density?:number} | null}
  *          null when this asset takes no part in physics.
@@ -177,21 +178,21 @@ function boxFromBounds(bounds, scale) {
   return {
     kind: 'cuboid',
     halfExtents: halfExtentsOf(sx, sy, sz, scale),
-    position: [cx * scale, cy * scale, cz * scale],
+    position: scaleXYZ([cx, cy, cz], scale),
     rotation: IDENTITY_QUAT,
   };
 }
 
 /** One hand-written primitive → one Rapier-shaped part. */
 function resolvePart(part, scale) {
-  const position = (part.position ?? [0, 0, 0]).map(v => v * scale);
+  const position = scaleXYZ(part.position ?? [0, 0, 0], scale);
   const rotation = part.rotation ? eulerToQuat(part.rotation) : IDENTITY_QUAT;
-  const radius   = (part.radius ?? 0.5) * scale;
+  const radius   = (part.radius ?? 0.5) * horizontalScale(scale);
 
   // Rapier measures capsules, cylinders and cones by the half-height of the
   // middle segment. For a capsule the two round caps add `radius` on top of
   // that at each end, so the full height the author wrote has to lose them.
-  const halfHeight = ((part.height ?? 1) * scale) / 2;
+  const halfHeight = ((part.height ?? 1) * scaleY(scale)) / 2;
 
   switch (part.type) {
     case 'box': {
@@ -227,10 +228,11 @@ function resolvePart(part, scale) {
 }
 
 function halfExtentsOf(sx, sy, sz, scale) {
+  const [mx, my, mz] = scaleVector(scale);
   return [
-    Math.max((sx / 2) * scale, MIN_HALF_EXTENT),
-    Math.max((sy / 2) * scale, MIN_HALF_EXTENT),
-    Math.max((sz / 2) * scale, MIN_HALF_EXTENT),
+    Math.max(Math.abs((sx / 2) * mx), MIN_HALF_EXTENT),
+    Math.max(Math.abs((sy / 2) * my), MIN_HALF_EXTENT),
+    Math.max(Math.abs((sz / 2) * mz), MIN_HALF_EXTENT),
   ];
 }
 
@@ -244,11 +246,41 @@ function eulerToQuat([x, y, z]) {
   return [_quat.x, _quat.y, _quat.z, _quat.w];
 }
 
-/** Spawn scale for point clouds. Returns the original array when scale is 1 —
- *  the common case shouldn't pay for a copy of every vertex. */
+function scaleVector(scale = 1) {
+  if (Array.isArray(scale)) return [scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1];
+  if (typeof scale === 'object' && scale !== null) return [scale.x ?? 1, scale.y ?? 1, scale.z ?? 1];
+  return [scale, scale, scale];
+}
+
+function scaleXYZ([x, y, z], scale) {
+  const [sx, sy, sz] = scaleVector(scale);
+  return [x * sx, y * sy, z * sz];
+}
+
+function scaleY(scale) {
+  return scaleVector(scale)[1];
+}
+
+function horizontalScale(scale) {
+  const [sx, , sz] = scaleVector(scale);
+  return Math.max(Math.abs(sx), Math.abs(sz));
+}
+
+function isIdentityScale(scale) {
+  const [sx, sy, sz] = scaleVector(scale);
+  return sx === 1 && sy === 1 && sz === 1;
+}
+
+/** Spawn/editor scale for point clouds. Returns the original array when scale is
+ *  1 — the common case shouldn't pay for a copy of every vertex. */
 function scalePoints(points, scale) {
-  if (scale === 1) return points;
+  if (isIdentityScale(scale)) return points;
+  const [sx, sy, sz] = scaleVector(scale);
   const out = new Float32Array(points.length);
-  for (let i = 0; i < points.length; i++) out[i] = points[i] * scale;
+  for (let i = 0; i < points.length; i += 3) {
+    out[i] = points[i] * sx;
+    out[i + 1] = points[i + 1] * sy;
+    out[i + 2] = points[i + 2] * sz;
+  }
   return out;
 }

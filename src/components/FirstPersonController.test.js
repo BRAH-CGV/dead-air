@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import RAPIER from '@dimforge/rapier3d';
 import { FirstPersonController } from './FirstPersonController.js';
 
@@ -23,6 +23,23 @@ function buildController(opts = {}) {
     standCollider: stand, crouchCollider: crouch,
     ...opts,
   });
+}
+
+function buildControllerWithStubs(opts = {}) {
+  const ctrl = {
+    computeColliderMovement: vi.fn(),
+    computedMovement: vi.fn(() => ({ x: 0, y: 0, z: 0 })),
+    computedGrounded: vi.fn(() => false),
+  };
+  const standCollider = { halfHeight: () => 0.5, radius: () => 0.3 };
+  const crouchCollider = { halfHeight: () => 0.025, radius: () => 0.3 };
+  const controller = new FirstPersonController(ctrl, {
+    standCollider,
+    crouchCollider,
+    ...opts,
+  });
+
+  return { controller, ctrl };
 }
 
 describe('FirstPersonController movement math', () => {
@@ -126,5 +143,39 @@ describe('FirstPersonController movement math', () => {
       expect(c._vel.x).toBeGreaterThan(4.8);
       expect(c._vel.x).toBeLessThanOrEqual(5);
     });
+  });
+});
+
+describe('FirstPersonController mouse input', () => {
+  it('clamps one-frame touchpad mouse spikes before applying camera look', () => {
+    const { controller } = buildControllerWithStubs({ maxMouseDelta: 5 });
+    controller.camera = { position: { y: 0 } };
+    controller.gameObject = {
+      components: [controller],
+      scene: {
+        userData: {
+          engine: {
+            input: {
+              locked: true,
+              mouse: { dx: 1000, dy: -1000 },
+              keys: {},
+            },
+            keyBinds: {
+              forward: 'KeyW',
+              back: 'KeyS',
+              left: 'KeyA',
+              right: 'KeyD',
+              jump: 'Space',
+            },
+            isAction: vi.fn(() => false),
+          },
+        },
+      },
+    };
+
+    controller.onUpdate(DT);
+
+    expect(controller.yaw).toBeCloseTo(-0.01, 10);
+    expect(controller.pitch).toBeCloseTo(0.01, 10);
   });
 });

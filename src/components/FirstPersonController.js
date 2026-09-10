@@ -46,10 +46,16 @@ export class FirstPersonController extends Component {
     super();
     this.ctrl = rapierCtrl;
 
-    this.speed       = opts.speed       ?? 5;
-    this.jumpForce   = opts.jumpForce   ?? 4;
-    this.sensitivity = opts.sensitivity ?? 0.002;
-
+    this.speed         = opts.speed         ?? 5;
+    this.jumpForce     = opts.jumpForce     ?? 4;
+    this.sensitivity   = opts.sensitivity   ?? 0.002;
+    // Touchpads can emit rare huge movement deltas; cap one-frame camera jumps.
+    this.maxMouseDelta = opts.maxMouseDelta ?? 32;
+    // Camera smoothing: 0 = instant, 1 = no movement. Lower = more responsive, higher = smoother.
+    this.cameraSmoothing = opts.cameraSmoothing ?? 0.2;
+    this._smoothYaw = 0;
+    this._smoothPitch = 0;
+    
     // ── Source-style horizontal movement ──
     // `accelerate`/`friction` are sv_accelerate/sv_friction in spirit:
     // accelSpeed is capped at accel * wishSpeed * dt, and friction drops a
@@ -75,6 +81,8 @@ export class FirstPersonController extends Component {
 
     this.pitch     = 0;
     this.yaw       = 0;
+    this._smoothYaw = 0;
+    this._smoothPitch = 0;
     this.grounded  = false;
     this.vertVel   = 0;
 
@@ -116,7 +124,22 @@ export class FirstPersonController extends Component {
     this._notOwnCollider =
       (c) => c !== this.standCollider && c !== this.crouchCollider;
   }
-
+  
+  _clearMovementIntent() {
+    this._wish = false;
+    this._wishDir.x = 0;
+    this._wishDir.z = 0;
+    this._wantJump = false;
+    this._vel.x = 0;
+    this._vel.z = 0;
+    this.vertVel = 0;
+  }
+    
+  _clampMouseDelta(delta) {
+    if (!Number.isFinite(delta)) return 0;
+    return Math.max(-this.maxMouseDelta, Math.min(this.maxMouseDelta, delta));
+  }
+    
   // ── Variable timestep: input + mouse look ─────────────
   onUpdate(dt) {
     if (!this.gameObject || !this.camera) return;
@@ -126,17 +149,23 @@ export class FirstPersonController extends Component {
 
     const { input, keyBinds } = engine;
 
-    // ── Mouse look ──
+    // ── Mouse look (accumulate angles, apply in late update) ──
     if (input.locked) {
-      this.yaw   -= input.mouse.dx * this.sensitivity;
-      this.pitch -= input.mouse.dy * this.sensitivity;
+      const dx = this._clampMouseDelta(input.mouse.dx);
+      const dy = this._clampMouseDelta(input.mouse.dy);
+    
+      this.yaw   -= dx * this.sensitivity;
+      this.pitch -= dy * this.sensitivity;
+          
+      // Normalize yaw to [-π, π] to prevent floating point issues
+      while (this.yaw > Math.PI) this.yaw -= 2 * Math.PI;
+      while (this.yaw < -Math.PI) this.yaw += 2 * Math.PI;
+          
+      // Clamp pitch to prevent flipping
       this.pitch  = Math.max(-Math.PI / 2 + 0.01,
                     Math.min( Math.PI / 2 - 0.01, this.pitch));
     }
-
-    // Apply rotation directly to camera (YXZ Euler order set in Engine)
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
-
+    
     // ── Crouch input — the entire input-mode seam ──
     const crouchHeld = engine.isAction('crouch');
     if (this.crouchMode === 'hold') {
@@ -166,12 +195,32 @@ export class FirstPersonController extends Component {
     this.camera.position.y = this._eyeLift;
   }
 
+  // ── Late update: apply camera rotation after all other updates ──
+  onLateUpdate(_dt) {
+    if (!this.camera) return;
+
+    // Smooth camera rotation to reduce jitter
+    const alpha = 1 - this.cameraSmoothing;
+
+    // For yaw, compute the shortest angular path to avoid snapping at ±π
+    let yawDiff = this.yaw - this._smoothYaw;
+    // Wrap to [-π, π]
+    while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
+    while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
+
+    this._smoothYaw = this._smoothYaw + yawDiff * alpha;
+    this._smoothPitch = this._smoothPitch + (this.pitch - this._smoothPitch) * alpha;
+
+    // Apply smoothed rotation to camera (YXZ Euler order set in Engine)
+    this.camera.rotation.set(this._smoothPitch, this._smoothYaw, 0);
+  }
+
   // ── Fixed timestep: physics movement (runs before world.step) ──
   onFixedUpdate(dt) {
     if (!this.gameObject) return;
     const rb = this.gameObject.rigidBody;
     if (!rb) return;
-
+    
     // ── Gravity & jump (crouch-jumping allowed: hiding beats hopping) ──
     this.vertVel -= 9.81 * dt;
     if (this.grounded && this._wantJump) this.vertVel = this.jumpForce;

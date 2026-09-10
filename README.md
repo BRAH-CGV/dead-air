@@ -65,7 +65,9 @@ dead-air/
 │   │   ├── ModelUtils.js   # Per-mesh normalisation, measurement, collision
 │   │   ├── ColliderSpec.js # Manifest physics block → collider shapes
 │   │   ├── Colliders.js    # Collider shapes → Rapier bodies
-│   │   └── PhysicsDebug.js # Collider wireframe overlay
+│   │   ├── PhysicsDebug.js # Collider wireframe overlay
+│   │   ├── DebugCamera.js  # Free-fly noclip camera (V)
+│   │   └── Fullbright.js   # Unlit debug lighting (B)
 │   ├── components/
 │   │   └── FirstPersonController.js  # WASD + mouse look
 │   ├── assets/
@@ -93,6 +95,8 @@ dead-air/
    ```
 
 Asset paths never appear outside the manifest, so there is one place to check before submitting. Anything listed in `PRELOAD` is fetched before the first frame, with progress shown on the loading screen.
+
+Downloaded assets (Sketchfab, Poly Haven, etc.) carry their own licence terms — record every non-original asset in [ATTRIBUTIONS.md](ATTRIBUTIONS.md) when you add it. The course rubric requires a credits screen listing all non-original work, and that file is its source of truth.
 
 Two things worth knowing:
 
@@ -133,6 +137,8 @@ Press **`` ` ``** in game to see every collider drawn over the scene. Use it —
 | **C** | Crouch |
 | **Mouse** | Look around (requires pointer lock — click the canvas) |
 | **`** | Toggle the collider debug overlay |
+| **V** | Toggle the free-fly debug camera (noclip; WASD + mouse, Space/C up/down, Shift boost) |
+| **B** | Toggle fullbright (all lights off, unlit materials) |
 | **Esc** | Release pointer lock |
 
 ## Team
