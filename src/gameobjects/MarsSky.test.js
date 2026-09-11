@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { createMarsSky, directionFromAngles } from './MarsSky.js';
 
@@ -53,21 +53,86 @@ describe('createMarsSky structure', () => {
   });
 });
 
-describe('star sizing', () => {
-  // A star wider than its hash cell is clipped at the boundary and renders as
-  // a hard-edged wedge rather than a dot, which is what a "broken sky" looks
-  // like. The defaults must stay on the right side of that.
-  it('keeps default stars inside their own hash cell', () => {
-    const { uStarSize, uStarDensity } = createMarsSky().skyUniforms;
-    expect(uStarSize.value).toBeLessThanOrEqual(0.25 / uStarDensity.value);
+describe('star field', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+
+  it('builds the requested number of stars as an additive point cloud', () => {
+    const stars = starsOf(createMarsSky({ starCount: 1200 }));
+
+    expect(stars.isPoints).toBe(true);
+    expect(stars.geometry.getAttribute('position').count).toBe(1200);
+    expect(stars.material.blending).toBe(THREE.AdditiveBlending);
+    expect(stars.material.depthWrite).toBe(false);
   });
 
-  it('warns when an override would clip stars at cell edges', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    createMarsSky({ starDensity: 100, starSize: 0.02 });
+  it('carries a twinkle phase and a magnitude per star', () => {
+    const stars = starsOf(createMarsSky({ starCount: 500 }));
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('starSize'));
-    warn.mockRestore();
+    expect(stars.geometry.getAttribute('aPhase').count).toBe(500);
+    expect(stars.geometry.getAttribute('aMagnitude').count).toBe(500);
+  });
+
+  it('places every star on one sphere, beyond the moons', () => {
+    const sky   = createMarsSky({ radius: 400, starCount: 300 });
+    const stars = starsOf(sky);
+    const pos   = stars.geometry.getAttribute('position');
+    const moon  = moonBody(sky, 'Phobos').position.length();
+
+    for (let i = 0; i < pos.count; i++) {
+      const r = new THREE.Vector3().fromBufferAttribute(pos, i).length();
+      expect(r).toBeCloseTo(392, 2);
+      expect(r).toBeGreaterThan(moon);
+    }
+  });
+
+  // The regression this file exists for. The old field hashed a 3D lattice and
+  // rendered concentric rings, because a cell's star only survived when the
+  // cell centre sat at the right radius. Equal-area bands catch that: uniform
+  // dispersion puts a proportional share of stars in each band, and any
+  // latitude-structured artifact skews the counts.
+  it('disperses stars evenly across equal-area latitude bands', () => {
+    const pos   = starsOf(createMarsSky({ starCount: 8000 })).geometry.getAttribute('position');
+    const bands = [0, 0, 0, 0];
+
+    for (let i = 0; i < pos.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+      // Equal height slices are equal area on a sphere, so each band should
+      // hold a quarter of the stars.
+      bands[Math.min(3, Math.floor((v.y / v.length() + 1) * 2))] += 1;
+    }
+
+    // Expect 2000 each; ±20% is roughly 9 sigma, so this fails on structure
+    // rather than on an unlucky seed.
+    for (const count of bands) {
+      expect(count).toBeGreaterThan(1600);
+      expect(count).toBeLessThan(2400);
+    }
+  });
+
+  it('shares uTime with the star material, so SkyFollow drives the twinkle', () => {
+    // skyUniforms is spread from two materials' uniform objects. Spreading
+    // copies references, so this holds — but a stray clone here would leave
+    // the stars frozen with no error anywhere.
+    const sky = createMarsSky();
+    sky.skyUniforms.uTime.value = 12.5;
+
+    expect(starsOf(sky).material.uniforms.uTime.value).toBe(12.5);
+  });
+
+  it('does not bunch stars around the poles', () => {
+    // Sampling the polar ANGLE uniformly instead of the height is the classic
+    // way to get this wrong, and it crowds stars into caps at each pole.
+    const pos = starsOf(createMarsSky({ starCount: 8000 })).geometry.getAttribute('position');
+    let nearPole = 0;
+
+    for (let i = 0; i < pos.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+      if (Math.abs(v.y / v.length()) > 0.9) nearPole += 1;
+    }
+
+    // |y| > 0.9 is 10% of the sphere's area, so ~800 of 8000.
+    expect(nearPole).toBeGreaterThan(600);
+    expect(nearPole).toBeLessThan(1000);
   });
 });
 

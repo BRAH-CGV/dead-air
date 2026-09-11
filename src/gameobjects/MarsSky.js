@@ -35,6 +35,9 @@ const DEFAULT_RADIUS = 400;
 /** Moons sit just inside the dome surface so they always render against it. */
 const MOON_DISTANCE_FRACTION = 0.95;
 
+/** Stars sit beyond the moons, so a moon's disc occludes the stars behind it. */
+const STAR_DISTANCE_FRACTION = 0.98;
+
 /** Exported so scene lighting can aim itself at a moon rather than repeating
  *  its angles — see OfficeScene's MoonLight. */
 export const DEFAULT_MOONS = {
@@ -56,11 +59,10 @@ const GLOW_EXTENT = 5;
  * @param {number} [opts.horizonColor]     Hex colour at the horizon.
  * @param {number} [opts.zenithColor]      Hex colour straight up.
  * @param {number} [opts.horizonExponent]  Higher keeps the rust glow lower.
- * @param {number} [opts.starThreshold]    0..1; higher means fewer stars.
+ * @param {number} [opts.starCount]        Number of stars over the whole sphere.
+ * @param {number} [opts.starSize]         Star sprite size in pixels.
  * @param {number} [opts.starBrightness]
- * @param {number} [opts.starDensity]      Hash cells per unit direction.
- * @param {number} [opts.starSize]         Star radius, in unit-sphere chord
- *                                         units — 0.0035 is roughly 0.2°.
+ * @param {number} [opts.starColor]        Hex tint for the star sprites.
  * @param {Object} [opts.phobos]  `{ azimuth, elevation, size, color, glow }`,
  *                                angles in degrees, `glow` 0 to disable.
  * @param {Object} [opts.deimos]  Same shape.
@@ -72,20 +74,11 @@ export function createMarsSky(opts = {}) {
     horizonColor    = 0x442e24,
     zenithColor     = 0x03040c,
     horizonExponent = 4.5,
-    starThreshold   = 0.988,
+    starCount       = 10000,
+    starSize        = 6,
     starBrightness  = 1.0,
-    starDensity     = 110,
-    starSize        = 0.002,
+    starColor       = 0xdfe6f0,
   } = opts;
-
-  // A star is drawn only from its own hash cell, so one wider than the cell
-  // gets sliced off at the boundary and renders as a hard-edged wedge. Keep
-  // starSize within the margin the jitter leaves: 0.25 / starDensity.
-  if (starSize > 0.25 / starDensity) {
-    console.warn(
-      `[MarsSky] starSize ${starSize} exceeds 0.25/starDensity (${0.25 / starDensity}) — stars will clip at cell edges`,
-    );
-  }
 
   const sky = new GameObject('MarsSky');
   // Marked a group so the level editor treats it as a container: its
@@ -93,21 +86,20 @@ export function createMarsSky(opts = {}) {
   // 800 m box round-trips through save/load as a giant grey placeholder.
   sky.makeGroup();
 
-  const uniforms = {
+  // Shared by reference with the star material, so ticking skyUniforms.uTime
+  // drives both without SkyFollow needing to know there are two materials.
+  const uTime = { value: 0 };
+
+  const domeUniforms = {
     uHorizonColor:    { value: new THREE.Color(horizonColor) },
     uZenithColor:     { value: new THREE.Color(zenithColor) },
     uHorizonExponent: { value: horizonExponent },
-    uStarThreshold:   { value: starThreshold },
-    uStarBrightness:  { value: starBrightness },
-    uStarDensity:     { value: starDensity },
-    uStarSize:        { value: starSize },
-    uTime:            { value: 0 },
   };
 
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 32, 16),
     new THREE.ShaderMaterial({
-      uniforms,
+      uniforms: domeUniforms,
       vertexShader: DOME_VERTEX_SHADER,
       fragmentShader: DOME_FRAGMENT_SHADER,
       side: THREE.BackSide,
@@ -121,13 +113,78 @@ export function createMarsSky(opts = {}) {
   // the same editor reason as makeGroup() above.
   sky.object3d.add(dome);
 
+  const stars = createStarField({
+    count: starCount, radius, size: starSize,
+    brightness: starBrightness, color: starColor, uTime,
+  });
+  sky.object3d.add(stars);
+
   for (const [key, name] of [['phobos', 'Phobos'], ['deimos', 'Deimos']]) {
     const moon = { ...DEFAULT_MOONS[key], ...opts[key] };
     sky.addChild(createMoon(name, moon, radius));
   }
 
-  sky.skyUniforms = uniforms;
+  sky.skyUniforms = { ...domeUniforms, ...stars.material.uniforms };
   return sky;
+}
+
+/**
+ * The star field, as a point cloud rather than anything derived from the dome
+ * shader.
+ *
+ * Stars used to be hashed out of a 3D lattice in the fragment shader, which
+ * produced concentric rings: a fragment only ever tested its own cell, so a
+ * cell's star rendered only when the cell centre happened to sit at the right
+ * radius, and which cells qualified was decided by how a cubic lattice slices
+ * a sphere. Raising the count sharpened the pattern instead of filling it in.
+ * Real points have no lattice to disagree with, so density is a plain number
+ * and dispersion is uniform by construction.
+ */
+function createStarField({ count, radius, size, brightness, color, uTime }) {
+  const positions  = new Float32Array(count * 3);
+  const phases     = new Float32Array(count);
+  const magnitudes = new Float32Array(count);
+  const distance   = radius * STAR_DISTANCE_FRACTION;
+
+  for (let i = 0; i < count; i++) {
+    // Archimedes' hat-box theorem: a uniform height paired with a uniform
+    // longitude covers a sphere evenly. Picking the polar ANGLE uniformly
+    // instead — the obvious way — bunches stars into caps at the poles.
+    const y   = 1 - 2 * Math.random();
+    const r   = Math.sqrt(Math.max(0, 1 - y * y));
+    const phi = Math.random() * Math.PI * 2;
+
+    positions[i * 3]     = Math.cos(phi) * r * distance;
+    positions[i * 3 + 1] = y * distance;
+    positions[i * 3 + 2] = Math.sin(phi) * r * distance;
+
+    phases[i] = Math.random() * Math.PI * 2;
+    // Skewed toward the faint end, so a dense field still reads as a sky with
+    // a few bright stars in it rather than a flat spray of identical dots.
+    magnitudes[i] = Math.pow(Math.random(), 2.5);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  geometry.setAttribute('aMagnitude', new THREE.BufferAttribute(magnitudes, 1));
+
+  const stars = new THREE.Points(geometry, new THREE.ShaderMaterial({
+    uniforms: {
+      uTime,
+      uStarSize:       { value: size },
+      uStarBrightness: { value: brightness },
+      uStarColor:      { value: new THREE.Color(color) },
+    },
+    vertexShader: STAR_VERTEX_SHADER,
+    fragmentShader: STAR_FRAGMENT_SHADER,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    dithering: true,
+  }));
+  stars.name = 'MarsSkyStars';
+  return stars;
 }
 
 /** One moon as its own GameObject, so it shows up in the editor outliner. */
@@ -203,16 +260,6 @@ const DOME_VERTEX_SHADER = /* glsl */`
   }
 `;
 
-// Stars are hashed from the 3D direction rather than from spherical UVs,
-// which would bunch them into a knot at the zenith where the UVs converge.
-//
-// Each grid cell contributes at most one star, and — this is the part that
-// matters — the star is a POINT within that cell, not the cell itself. Cells
-// are cubes slicing through a sphere, so lighting a whole cell paints a big
-// ragged patch rather than a star. Normalising the cell centre puts the star
-// back on the unit sphere, so `distance` measures a real angle and the falloff
-// draws a small round dot.
-//
 // The trailing includes are not optional: a hand-written ShaderMaterial skips
 // the renderer's output stage, so without them the sky misses ACES tone
 // mapping and the linear→sRGB conversion every other material gets, and
@@ -230,46 +277,67 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   uniform vec3  uHorizonColor;
   uniform vec3  uZenithColor;
   uniform float uHorizonExponent;
-  uniform float uStarThreshold;
-  uniform float uStarBrightness;
-  uniform float uStarDensity;
-  uniform float uStarSize;
-  uniform float uTime;
 
   varying vec3 vWorldDir;
 
-  float hash(vec3 cell) {
-    return fract(sin(dot(cell, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-  }
-
   void main() {
-    float height = vWorldDir.y;
-
     vec3 color = mix(
       uHorizonColor,
       uZenithColor,
-      pow(clamp(height, 0.0, 1.0), 1.0 / uHorizonExponent)
+      pow(clamp(vWorldDir.y, 0.0, 1.0), 1.0 / uHorizonExponent)
     );
 
-    vec3  cell     = floor(vWorldDir * uStarDensity);
-    float selected = step(uStarThreshold, hash(cell));
-
-    // Jitter the star off its cell centre so the field doesn't read as a grid.
-    // Capped at a quarter-cell so a star never reaches its cell boundary and
-    // gets sliced in half — see the starSize check in createMarsSky.
-    vec3 jitter = vec3(hash(cell + 11.3), hash(cell + 27.7), hash(cell + 41.9)) - 0.5;
-    vec3 starDir = normalize(cell + 0.5 + jitter * 0.5);
-
-    float dot_ = smoothstep(uStarSize, 0.0, distance(vWorldDir, starDir));
-    // Offsetting the phase by the star's own hash stops them pulsing in unison.
-    float twinkle = 0.6 + 0.4 * sin(uTime * 2.0 + hash(cell) * 62.83);
-    // Starts just under the horizon so the field reaches down into the rust
-    // rather than leaving a bare band above it.
-    float horizonFade = smoothstep(-0.03, 0.09, height);
-
-    color += vec3(selected * dot_ * twinkle * horizonFade * uStarBrightness);
-
     gl_FragColor = vec4(color, 1.0);
+
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <dithering_fragment>
+  }
+`;
+
+// Sizes are in pixels rather than world units, which is stable here because
+// SkyFollow keeps the camera at the field's centre — every star is always the
+// same distance away, so there is no perspective for a size to attenuate over.
+const STAR_VERTEX_SHADER = /* glsl */`
+  attribute float aPhase;
+  attribute float aMagnitude;
+
+  uniform float uTime;
+  uniform float uStarSize;
+
+  varying float vBrightness;
+
+  void main() {
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+
+    // Its own phase, so the field shimmers instead of pulsing in unison.
+    float twinkle = 0.75 + 0.25 * sin(uTime * 2.0 + aPhase);
+    // Fade out just below the horizon, so stars don't sit on top of the rust.
+    float horizonFade = smoothstep(-0.03, 0.09, normalize(position).y);
+
+    vBrightness  = (0.25 + 0.75 * aMagnitude) * twinkle * horizonFade;
+    gl_PointSize = uStarSize * (0.5 + 0.5 * aMagnitude);
+  }
+`;
+
+const STAR_FRAGMENT_SHADER = /* glsl */`
+  #include <common>
+  #include <dithering_pars_fragment>
+
+  uniform vec3  uStarColor;
+  uniform float uStarBrightness;
+
+  varying float vBrightness;
+
+  void main() {
+    // Point sprites are square, so round them off here or the sky fills with
+    // tiny boxes.
+    float d = length(gl_PointCoord - 0.5) * 2.0;
+    float falloff = 1.0 - smoothstep(0.0, 1.0, d);
+    if (falloff <= 0.0) discard;
+
+    float alpha = falloff * falloff * vBrightness * uStarBrightness;
+    gl_FragColor = vec4(uStarColor * alpha, alpha);
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
