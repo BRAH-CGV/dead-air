@@ -7,7 +7,10 @@ vi.mock('@dimforge/rapier3d', () => {
   return {
     default: {
       RigidBodyDesc: { fixed: () => ({ setTranslation: chain }), dynamic: () => ({ setTranslation: chain, setLinvel: chain }) },
-      ColliderDesc: { cuboid: () => ({ setTranslation: chain }) },
+      ColliderDesc: {
+        cuboid: () => ({ setTranslation: chain }),
+        heightfield: () => ({ setTranslation: chain }),
+      },
     },
   };
 });
@@ -130,13 +133,13 @@ describe('OfficeScene hierarchy', () => {
 
     const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
     const outside = sceneRoot.children.find(go => go.name === 'Outside');
-    const ground = outside.descendants().find(go => go.name === 'Ground');
+    const ground = outside.descendants().find(go => go.name === 'MarsTerrain');
 
     // An orphan ground body would survive loadScene() and stack a ghost
     // floor collider on every scene reload.
     expect(ground.rigidBody).toBeDefined();
     expect(ground.colliders.length).toBeGreaterThan(0);
-    expect(ground._originalSize).toEqual([100, 0.2, 100]);
+    expect(ground._originalSize).toEqual([1024, 1, 1024]);
   });
 
   it('static boxes expose their rigid body and collider for editor sync', () => {
@@ -186,5 +189,71 @@ describe('OfficeScene hierarchy', () => {
       expect(Array.isArray(wall._originalSize)).toBe(true);
       expect(wall._originalSize.length).toBe(3);
     }
+  });
+});
+
+describe('OfficeScene ground', () => {
+  let scene;
+  let mockEngine;
+
+  beforeEach(() => {
+    mockEngine = {
+      scene: new THREE.Scene(),
+      world: {
+        createRigidBody: vi.fn(() => ({ handle: Math.random() })),
+        createCollider: vi.fn(() => ({ handle: Math.random() })),
+      },
+      assets: { get: vi.fn(() => null) },
+      spawnModel: vi.fn((key, opts) => new GameObject(opts.name || key)),
+      buildPlayer: vi.fn(),
+      _rootObjects: [],
+      rigidBodyMap: new Map(),
+      _bodyToGO: new Map(),
+    };
+    mockEngine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+    scene = new OfficeScene(mockEngine);
+  });
+
+  function outside() {
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    return sceneRoot.children.find(go => go.name === 'Outside');
+  }
+
+  it('stands the office on the Mars valley rather than a flat pad', () => {
+    scene.build();
+    expect(outside().children.find(go => go.name === 'MarsTerrain')).toBeDefined();
+  });
+
+  it('keeps a textured floor inside the office', () => {
+    scene.build();
+    const sceneRoot = mockEngine._rootObjects.find(go => go.name === 'SceneRoot');
+    const office = sceneRoot.children.find(go => go.name === 'Office');
+    const floor = office.children.find(go => go.name === 'OfficeFloor');
+    expect(floor).toBeDefined();
+    // Just above the terrain's flat pad — co-planar would z-fight.
+    expect(floor.object3d.position.y).toBeGreaterThan(0);
+    expect(floor.object3d.position.y).toBeLessThan(0.05);
+  });
+
+  it('thins the fog so the valley rim is visible at all', () => {
+    // The engine default is opaque by ~150 m; the rim is at 350-500 m.
+    const before = mockEngine.scene.fog.density;
+    scene.build();
+    expect(mockEngine.scene.fog.density).toBeLessThan(before);
+    // Still enough aerial perspective to separate the far hills.
+    expect(mockEngine.scene.fog.density).toBeGreaterThan(0);
+  });
+
+  it('hands the fog back on dispose, so the next scene starts clean', () => {
+    const before = mockEngine.scene.fog.density;
+    scene.build();
+    scene.dispose();
+    expect(mockEngine.scene.fog.density).toBe(before);
+  });
+
+  it('leaves the fog colour alone — that belongs to the sky', () => {
+    const before = mockEngine.scene.fog.color.getHex();
+    scene.build();
+    expect(mockEngine.scene.fog.color.getHex()).toBe(before);
   });
 });
