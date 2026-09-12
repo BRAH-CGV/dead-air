@@ -146,8 +146,9 @@ export class OfficeScene extends Scene {
   _addGround() {
     const { assets, scene } = this.engine;
 
-    // The valley: a flat pad under the office, rising through terraformed
-    // scrub into Mars-red ridges that close the horizon in every direction.
+    // The valley: a flat pad under the office, rising out of the darker,
+    // worked basin soil into Mars-red ridges that close the horizon in
+    // every direction.
     // It brings its own heightfield collider, so nothing else needs a floor.
     this._outside.addChild(createMarsTerrain(this.engine.world));
 

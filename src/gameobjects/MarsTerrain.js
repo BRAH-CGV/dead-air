@@ -7,7 +7,7 @@ import { makeNoise2D, fbm, ridgedFbm } from '../core/Noise.js';
 // MarsTerrain  –  the valley the office sits in
 // ─────────────────────────────────────────────
 // A square kilometre of ground: dead flat under the office, rising through
-// terraformed scrub into a ring of Mars-red ridges that closes the horizon in
+// worked red basin soil into a ring of Mars-red ridges that closes the horizon in
 // every direction, then falling away behind them. Nothing here loads a file —
 // the whole valley falls out of a seeded noise field, so every dimension is a
 // tunable rather than a mesh that has to be re-authored.
@@ -102,11 +102,16 @@ export const TERRAIN = {
 };
 
 // ── Palette ──
-// Two stories in one gradient: a basin that someone has made liveable, and the
-// planet it was carved out of, reclaiming the ground as it gets further away.
-const SCRUB      = 0x4e6144;   // olive vegetation, the terraformed floor
-const SOIL       = 0x55606b;   // blue-grey graded soil, mottled through the scrub
-const TRANSITION = 0x6b4a33;   // rust band where the terraform gives out
+// Red the whole way out — this has to read as Mars at a glance, not as a park
+// someone dropped on it. The terraforming shows only as VALUE: the worked,
+// watered basin is a deeper, damper oxide, and the ground brightens and dusts
+// over as it climbs away from it. One hue, four steps of brightness.
+//
+// Whatever grows here later is red too, so the basin swatches are the ground
+// those plants sit in rather than the plants themselves.
+const BASIN      = 0x67301f;   // damp worked oxide — the terraformed floor
+const DAMP       = 0x5c3230;   // slightly cooler, pooled into the hollows
+const MIDSLOPE   = 0x7a3b23;   // drying out as the ground rises
 const HILL       = 0x8a4326;   // Mars red
 const ROCK       = 0xa8613c;   // pale dust on steep faces and crests
 
@@ -173,19 +178,24 @@ export function terrainHeightAt(x, z, opts = {}) {
  * @param {number} r        distance from the centre
  * @param {number} slope    1 for flat ground, 0 for a vertical face
  * @param {number} wobble   noise in [-1, 1], breaks up the zone boundaries
- * @param {number} mottle   noise in [-1, 1], mixes soil through the scrub
+ * @param {number} mottle   noise in [-1, 1], pools the damp tone into hollows
  * @param {THREE.Color} out
  */
 function groundColor(r, slope, wobble, mottle, out) {
   // Perturb the radius the zones are measured against, so the edge of the
-  // terraform is a ragged front rather than a drawn circle.
-  const rz = r + wobble * 45;
+  // worked ground is a ragged front rather than a drawn circle. It matters
+  // more now than it did with a colour change to hide behind: a soft tonal
+  // gradient on a perfect circle reads as a vignette — a drop shadow under the
+  // office — rather than as ground. The amplitude is deliberately large enough
+  // that the front is lobed, not merely wavy.
+  const rz = r + wobble * 80;
 
-  // Basin: scrub with graded soil showing through.
-  out.copy(_SCRUB).lerp(_SOIL, smoothstep(-0.2, 0.6, mottle) * 0.55);
+  // Basin floor, with the damper tone pooling wherever the ground dips.
+  out.copy(_BASIN).lerp(_DAMP, smoothstep(-0.2, 0.6, mottle) * 0.55);
 
-  out.lerp(_TRANSITION, smoothstep(80, 180, rz));
-  out.lerp(_HILL, smoothstep(180, 300, rz));
+  // Wide, overlapping bands. A short ramp puts a visible ring on the ground.
+  out.lerp(_MIDSLOPE, smoothstep(70, 230, rz));
+  out.lerp(_HILL, smoothstep(200, 340, rz));
 
   // Wind strips the dust off anything steep, and off the crests.
   const exposure = Math.max(
@@ -198,9 +208,9 @@ function groundColor(r, slope, wobble, mottle, out) {
 // Swatches are built once. `new THREE.Color(hex)` converts sRGB → linear,
 // which matters: vertex-colour buffers are read as linear and are NOT colour
 // managed by Three, so feeding raw sRGB bytes washes the whole valley out.
-const _SCRUB      = new THREE.Color(SCRUB);
-const _SOIL       = new THREE.Color(SOIL);
-const _TRANSITION = new THREE.Color(TRANSITION);
+const _BASIN      = new THREE.Color(BASIN);
+const _DAMP       = new THREE.Color(DAMP);
+const _MIDSLOPE   = new THREE.Color(MIDSLOPE);
 const _HILL       = new THREE.Color(HILL);
 const _ROCK       = new THREE.Color(ROCK);
 

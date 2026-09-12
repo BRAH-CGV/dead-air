@@ -182,8 +182,14 @@ describe('createMarsTerrain — mesh', () => {
   });
 });
 
-// ── Requirement 5: terraformed basin, Mars-red hills ──
+// ── Requirement 5: reads as terraformed Mars, red throughout ──
 describe('createMarsTerrain — colour zones', () => {
+  const luminance = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  /** Red chromaticity — how red a colour is regardless of how bright it is.
+   *  A plain r/(g+b) ratio swings wildly between dark and light samples once
+   *  the values are linear, which is what these buffers hold. */
+  const redness = c => c.r / (c.r + c.g + c.b + 1e-6);
+
   function colourAt(mesh, x, z) {
     const pos = mesh.geometry.getAttribute('position');
     const col = mesh.geometry.getAttribute('color');
@@ -196,10 +202,27 @@ describe('createMarsTerrain — colour zones', () => {
     return { r: col.getX(best), g: col.getY(best), b: col.getZ(best) };
   }
 
-  it('paints the basin green — terraformed for living', () => {
+  it('reads as Mars everywhere — the basin is red too, not a green park', () => {
     const mesh = createMarsTerrain(mockWorld()).object3d.getObjectByName('MarsTerrainMesh');
-    const c = colourAt(mesh, 0, 0);
-    expect(c.g).toBeGreaterThan(c.r);
+    for (const [x, z] of [[0, 0], ...ring(20, 8), ...ring(90, 8)]) {
+      const c = colourAt(mesh, x, z);
+      expect(c.r).toBeGreaterThan(c.g);
+      expect(c.r).toBeGreaterThan(c.b);
+    }
+  });
+
+  it('shows the terraforming as darker ground, not as a different colour', () => {
+    const mesh = createMarsTerrain(mockWorld()).object3d.getObjectByName('MarsTerrainMesh');
+    const basin = colourAt(mesh, 0, 0);
+    const hills = ring(400, 8).map(([x, z]) => colourAt(mesh, x, z));
+
+    // Clearly darker, so the worked basin reads at a glance...
+    for (const h of hills) {
+      expect(luminance(basin)).toBeLessThan(luminance(h) * 0.8);
+    }
+    // ...but the same family of red, so it never reads as a separate biome.
+    const spread = hills.map(h => Math.abs(redness(basin) - redness(h)));
+    expect(Math.max(...spread)).toBeLessThan(0.15);
   });
 
   it('paints the far hills Mars red', () => {
