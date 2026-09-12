@@ -160,11 +160,17 @@ describe('moon aiming', () => {
     expect(moon.position.x).toBeCloseTo(0);
   });
 
-  it('keeps both default moons inside the window opening', () => {
-    // The window spans roughly ±41° across. Vertically it depends on where the
-    // player stands: ~14° from mid-room, ~31° up close, so the ceiling here is
-    // "visible from the near half of the room", not "visible from anywhere".
-    for (const name of ['Phobos', 'Deimos']) {
+  it('frames Deimos from mid-room and puts Phobos above it, up the glass', () => {
+    // The window spans roughly ±41° across. Vertically the ceiling depends on
+    // where the player stands: the opening tops out 1.225 m above eye height,
+    // so it is ~14° from mid-room (4.8 m back) and ~31° from 2 m away.
+    //
+    // The two moons straddle that on purpose. Deimos stays inside the mid-room
+    // box, so a moon is always in the window. Phobos sits above it and only
+    // comes into view as the player walks up to the glass.
+    const ceiling = { Phobos: 31, Deimos: 14 };
+
+    for (const [name, limit] of Object.entries(ceiling)) {
       const moon = moonBody(createMarsSky(), name);
       const azimuth   = THREE.MathUtils.radToDeg(Math.atan2(moon.position.x, -moon.position.z));
       const elevation = THREE.MathUtils.radToDeg(
@@ -173,8 +179,13 @@ describe('moon aiming', () => {
 
       expect(Math.abs(azimuth)).toBeLessThan(41);
       expect(elevation).toBeGreaterThan(0);
-      expect(elevation).toBeLessThan(25);
+      expect(elevation).toBeLessThan(limit);
     }
+
+    // And the ordering itself, which is the point of the arrangement.
+    const high = moonBody(createMarsSky(), 'Phobos').position;
+    const low  = moonBody(createMarsSky(), 'Deimos').position;
+    expect(high.y / high.length()).toBeGreaterThan(low.y / low.length());
   });
 });
 

@@ -23,9 +23,19 @@ import { GameObject } from '../core/GameObject.js';
 //
 // From mid-room the window opening covers roughly ±41° horizontally and
 // −13°..+14° vertically (8.5 × 2.35 m opening centred y = 1.65 at z = −4.84,
-// eye ≈1.6 m, ~4.8 m back). Keep both moons inside that box and they stay
-// framed as the player crosses the room. If the office layout moves, redo
-// that arithmetic rather than nudging positions by eye.
+// eye ≈1.6 m, ~4.8 m back). The vertical ceiling is not fixed: the opening
+// tops out 1.225 m above eye height, so it is ~14° from mid-room but ~31° from
+// 2 m away and higher still at the glass.
+//
+// The two moons use that deliberately. Deimos sits at 10°, inside the mid-room
+// box, so there is always a moon in the window wherever the player stands.
+// Phobos sits at 30°, above it — you have to walk up to the glass to find it,
+// which is worth more than having both hang there at once. It also means the
+// MoonLight aimed at Phobos comes in steeper, so the ground outside is lit
+// rather than raked.
+//
+// If the office layout moves, redo that arithmetic rather than nudging
+// positions by eye.
 // ─────────────────────────────────────────────
 
 /** Sphere radius for the dome, in metres. Comfortably inside the camera's
@@ -44,8 +54,8 @@ export const DEFAULT_MOONS = {
   // Still bigger than the real thing (Phobos is ~0.2° wide from Mars, this is
   // ~1.8°) — enough to read as wrong without dominating the window. The two
   // are tinted apart, warm against cool, so they don't read as one moon twice.
-  phobos: { azimuth: -16, elevation: 12, size: 6.0, color: 0xc0a189, glow: 1.0 },
-  deimos: { azimuth:  14, elevation: 16, size: 2.5, color: 0x9aa0aa, glow: 0.8 },
+  phobos: { azimuth: -16, elevation: 30, size: 6.0, color: 0xc0a189, glow: 1.0 },
+  deimos: { azimuth:  14, elevation: 10, size: 2.5, color: 0x9aa0aa, glow: 0.8 },
 };
 
 /** Halo width as a multiple of the moon's radius. */
