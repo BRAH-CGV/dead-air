@@ -89,6 +89,20 @@ const MICRO_AMPLITUDE = 0.6;
 const HILL_FREQUENCY   = 0.009;   // ~110 m ridgelines
 const MICRO_FREQUENCY  = 0.02;    // ~50 m swells
 const BORDER_FREQUENCY = 0.005;   // wobble on the terraform boundary
+const GRAIN_FREQUENCY  = 0.045;   // ~22 m clumps, for normal and albedo grain
+
+/** How far the baked normals are tilted off the true surface, roughly in
+ *  radians at this magnitude. This has to stay WELL under sin(12°) ≈ 0.208,
+ *  the moon's elevation: the light rakes so low that a tilt approaching that
+ *  drives NdotL to zero over whole patches and stamps hard black blotches
+ *  across the valley. 0.16 did exactly that. At 0.06 the same grain reads as
+ *  a gentle ±25% variation in the falloff — texture, not damage. */
+const GRAIN_TILT = 0.06;
+
+/** Albedo variation from the same grain, as a fraction. Dirt is never one
+ *  flat tone under a raking light, and the eye reads the variation as texture
+ *  long before it reads it as noise. */
+const GRAIN_VALUE = 0.09;
 
 /** The valley is generated, not authored, so it must be the same valley on
  *  every reload. Change this to roll a different landscape. */
@@ -179,9 +193,10 @@ export function terrainHeightAt(x, z, opts = {}) {
  * @param {number} slope    1 for flat ground, 0 for a vertical face
  * @param {number} wobble   noise in [-1, 1], breaks up the zone boundaries
  * @param {number} mottle   noise in [-1, 1], pools the damp tone into hollows
+ * @param {number} grain    noise in [-1, 1], fine variation in value
  * @param {THREE.Color} out
  */
-function groundColor(r, slope, wobble, mottle, out) {
+function groundColor(r, slope, wobble, mottle, grain, out) {
   // Perturb the radius the zones are measured against, so the edge of the
   // worked ground is a ragged front rather than a drawn circle. It matters
   // more now than it did with a colour change to hide behind: a soft tonal
@@ -203,6 +218,10 @@ function groundColor(r, slope, wobble, mottle, out) {
     smoothstep(CREST_RADIUS * 0.8, SIZE / 2, r) * 0.45,
   );
   out.lerp(_ROCK, exposure * 0.7);
+
+  // Finally, vary the value so no two neighbouring patches are the same tone.
+  const v = 1 + grain * GRAIN_VALUE;
+  out.setRGB(out.r * v, out.g * v, out.b * v);
 }
 
 // Swatches are built once. `new THREE.Color(hex)` converts sRGB → linear,
@@ -247,8 +266,24 @@ export function createMarsTerrain(world, opts = {}) {
   position.needsUpdate = true;
   geometry.computeVertexNormals();
 
-  // ── Vertex colours ──
+  // ── Break up the normals ──
+  // A 4 m grid gives a surface smooth enough that the moonlight lands on it as
+  // one clean gradient, which reads as polished stone. Tilting each normal by a
+  // few degrees of noise scatters the falloff into patches the size of dirt
+  // clumps. It costs nothing at runtime — the normals are baked here, once.
   const normal = geometry.getAttribute('normal');
+  for (let i = 0; i < normal.count; i++) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const nx = normal.getX(i) + n(x * GRAIN_FREQUENCY, z * GRAIN_FREQUENCY) * GRAIN_TILT;
+    const ny = normal.getY(i);
+    const nz = normal.getZ(i) + n(x * GRAIN_FREQUENCY + 71.3, z * GRAIN_FREQUENCY - 24.7) * GRAIN_TILT;
+    const len = Math.hypot(nx, ny, nz);
+    normal.setXYZ(i, nx / len, ny / len, nz / len);
+  }
+  normal.needsUpdate = true;
+
+  // ── Vertex colours ──
   const colors = new Float32Array(position.count * 3);
   const scratch = new THREE.Color();
   for (let i = 0; i < position.count; i++) {
@@ -259,6 +294,7 @@ export function createMarsTerrain(world, opts = {}) {
       normal.getY(i),
       n(x * BORDER_FREQUENCY, z * BORDER_FREQUENCY),
       fbm(n, x * MICRO_FREQUENCY, z * MICRO_FREQUENCY, { octaves: 3 }),
+      fbm(n, x * GRAIN_FREQUENCY, z * GRAIN_FREQUENCY, { octaves: 2 }),
       scratch,
     );
     colors[i * 3]     = scratch.r;
@@ -267,9 +303,21 @@ export function createMarsTerrain(world, opts = {}) {
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
+  // Lambert, not Standard, and this is the fix for the white sheen rather than
+  // a saving. Phobos sits 12° above the horizon straight out the window, so the
+  // office looks TOWARD the light across a near-flat plain — backlit, with the
+  // view almost along the ground. In that geometry Schlick's Fresnel climbs to
+  // ~0.52 even at roughness 0.96, and Standard lays a pure white specular over
+  // the ground worth 91% of its blue channel: the red washes out to grey
+  // exactly where the player is looking. Lambert has no specular term at all,
+  // which is also what dirt actually looks like — and it is cheaper to shade,
+  // so this costs nothing.
+  //
+  // If a hint of sheen is ever wanted, MeshPhongMaterial with a dark specular
+  // is the knob; do not go back to Standard without re-checking this angle.
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }),
+    new THREE.MeshLambertMaterial({ vertexColors: true }),
   );
   mesh.name = 'MarsTerrainMesh';
   mesh.receiveShadow = true;

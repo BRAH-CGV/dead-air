@@ -180,6 +180,41 @@ describe('createMarsTerrain — mesh', () => {
     const mesh = go.object3d.getObjectByName('MarsTerrainMesh');
     expect(mesh.geometry.getAttribute('normal')).toBeDefined();
   });
+
+  it('uses a material with no specular term', () => {
+    // Phobos sits 12° up, straight out the window, so the office looks toward
+    // the light across a near-flat plain. At that grazing angle Fresnel climbs
+    // to ~0.5 and a Standard material lays white specular over the ground —
+    // 91% of its blue channel — washing the red out to grey exactly where the
+    // player is looking. Lambert has no specular lobe at all.
+    const mesh = createMarsTerrain(mockWorld()).object3d.getObjectByName('MarsTerrainMesh');
+    expect(mesh.material.isMeshLambertMaterial).toBe(true);
+    expect(mesh.material.isMeshStandardMaterial).toBeUndefined();
+  });
+
+  it('breaks the normals up so the moonlight lands in patches, not one gradient', () => {
+    const mesh = createMarsTerrain(mockWorld()).object3d.getObjectByName('MarsTerrainMesh');
+    const pos = mesh.geometry.getAttribute('position');
+    const nrm = mesh.geometry.getAttribute('normal');
+
+    let tilted = 0;
+    for (let i = 0; i < pos.count; i += 97) {
+      const x = nrm.getX(i), y = nrm.getY(i), z = nrm.getZ(i);
+      expect(Math.hypot(x, y, z)).toBeCloseTo(1, 5);   // still unit length
+      expect(y).toBeGreaterThan(0);                    // still faces the sky
+      if (Math.abs(x) > 1e-3 || Math.abs(z) > 1e-3) tilted++;
+    }
+    // The flat pad would be perfectly vertical normals without the grain.
+    expect(tilted).toBeGreaterThan(0);
+
+    const flat = [];
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.hypot(pos.getX(i), pos.getZ(i)) < 30) flat.push(i);
+    }
+    const tilts = flat.map(i => Math.hypot(nrm.getX(i), nrm.getZ(i)));
+    expect(Math.max(...tilts)).toBeGreaterThan(0.02);  // genuinely scattered
+    expect(Math.max(...tilts)).toBeLessThan(0.4);      // not boiling
+  });
 });
 
 // ── Requirement 5: reads as terraformed Mars, red throughout ──
