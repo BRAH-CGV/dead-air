@@ -21,7 +21,8 @@ import { GameObject } from '../../core/GameObject.js';
 // Subclasses override `buildLighting()` and `buildProps()`.
 // ─────────────────────────────────────────────
 
-const SIDES = {
+/** Wall per side. `axis` is the world axis the wall runs along. */
+export const SIDES = {
   back:  { wall: 'BackWall',  axis: 'x', sign: -1 },
   front: { wall: 'FrontWall', axis: 'x', sign:  1 },
   left:  { wall: 'LeftWall',  axis: 'z', sign: -1 },
@@ -76,12 +77,16 @@ export class Room {
     this._openingBySide = new Map();
   }
 
+  /** Prefix of the root group's name — `Room:<name>`. Subclasses that aren't
+   *  rooms in the gameplay sense (corridors) override it. */
+  static kind = 'Room';
+
   /** Build the shell, lighting and props. Returns the root group; the caller
    *  parents it (e.g. under the scene's SceneRoot). */
   build() {
     this._indexOpenings();
 
-    this.root = new GameObject(`Room:${this.name}`).makeGroup();
+    this.root = new GameObject(`${this.constructor.kind}:${this.name}`).makeGroup();
     this.root.object3d.position.set(...this.position);
 
     this._buildShell();
