@@ -322,18 +322,88 @@ describe('Room.containsPoint', () => {
   });
 });
 
+describe('Room._spawnProp', () => {
+  let engine, GameObject;
+
+  beforeEach(async () => {
+    ({ GameObject } = await import('../../core/GameObject.js'));
+    engine = makeEngine();
+    engine._rootObjects = [];
+    engine._bodyToGO = new Map();
+    engine.rigidBodyMap = new Map();
+    let handle = 1000;
+    // Mimics Engine.spawnModel: body at the given (world) position, and the
+    // GameObject registered as a root object.
+    engine.spawnModel = vi.fn((key, opts = {}) => {
+      const go = new GameObject(opts.name ?? key);
+      const [x, y, z] = opts.position ?? [0, 0, 0];
+      go.object3d.position.set(x, y, z);
+      go.rigidBody = engine.world.createRigidBody({ type: 'fixed', t: { x, y, z } });
+      go.rigidBody.handle = handle++;
+      engine._bodyToGO.set(go.rigidBody.handle, go);
+      engine.rigidBodyMap.set(go.rigidBody.handle, go);
+      engine._rootObjects.push(go);
+      return go;
+    });
+  });
+
+  it('spawns at world position (room offset + local) and keeps the prop local under the room', () => {
+    const room = new Room(engine, { ...BASE, position: [10, 0, -2] });
+    room.build();
+    const go = room._spawnProp('model:x', { name: 'Crate', position: [1, 0, 2], rotationY: 0.5, scale: 2 });
+
+    expect(engine.spawnModel).toHaveBeenCalledWith('model:x', expect.objectContaining({
+      name: 'Crate', position: [11, 0, 0], rotationY: 0.5, scale: 2,
+    }));
+    expect(go.parent).toBe(room.root);
+    expect(go.object3d.position.toArray()).toEqual([1, 0, 2]);
+    expect(go.rigidBody.translation()).toEqual({ x: 11, y: 0, z: 0 });
+  });
+
+  it('takes the prop off the root-object list so it is updated once, via the room', () => {
+    const room = new Room(engine, BASE);
+    room.build();
+    const go = room._spawnProp('model:x');
+    expect(engine._rootObjects).not.toContain(go);
+    expect(go.object3d.position.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it('dispose removes prop bodies and forgets their handles', () => {
+    const room = new Room(engine, BASE);
+    room.build();
+    room._spawnProp('model:a');
+    room._spawnProp('model:b');
+    room.dispose();
+    expect(engine.world.bodies.len()).toBe(0);
+    expect(engine._bodyToGO.size).toBe(0);
+    expect(engine.rigidBodyMap.size).toBe(0);
+  });
+});
+
 describe('Room hooks and teardown', () => {
   let engine;
   beforeEach(() => { engine = makeEngine(); });
 
-  it('build calls buildLighting and buildProps on subclasses', () => {
+  it('build calls buildDoors, buildLighting and buildProps on subclasses, after the shell', () => {
     const calls = [];
     class Sub extends Room {
-      buildLighting() { calls.push('lighting'); }
-      buildProps()    { calls.push('props'); }
+      buildDoors()    { calls.push(['doors', !!this.root.find('Floor')]); }
+      buildLighting() { calls.push(['lighting']); }
+      buildProps()    { calls.push(['props']); }
     }
     new Sub(engine, BASE).build();
-    expect(calls).toEqual(['lighting', 'props']);
+    expect(calls).toEqual([['doors', true], ['lighting'], ['props']]);
+  });
+
+  it('_own registers extra resources to free on dispose', () => {
+    const room = new Room(engine, BASE);
+    room.build();
+    const mat = new THREE.MeshStandardMaterial();
+    let disposed = false;
+    mat.addEventListener('dispose', () => { disposed = true; });
+    expect(room._own(mat)).toBe(mat);
+    room.dispose();
+    expect(disposed).toBe(true);
   });
 
   it('uses the given material for every surface', () => {

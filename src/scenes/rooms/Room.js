@@ -19,7 +19,7 @@ import { Door } from '../../gameobjects/Door.js';
 // each body carries the room offset itself; a rotated room would need the
 // same treatment for orientation.
 //
-// Subclasses override `buildLighting()` and `buildProps()`.
+// Subclasses override `buildDoors()`, `buildLighting()` and `buildProps()`.
 // ─────────────────────────────────────────────
 
 /** Wall per side. `axis` is the world axis the wall runs along. */
@@ -63,18 +63,18 @@ export class Room {
     this.position  = position;
     this.openings  = openings;
 
-    this._ownsMaterial = !material;
-    this.material = material ?? new THREE.MeshStandardMaterial({ color: 0x2f3945, roughness: 0.95 });
+    /** GPU resources this room created — the only ones it may free. Props
+     *  spawned from the asset cache share geometry and materials and must
+     *  not be disposed here (AGENTS.md ownership rule). */
+    this._owned = [];
+
+    this.material = material ?? this._own(new THREE.MeshStandardMaterial({ color: 0x2f3945, roughness: 0.95 }));
 
     /** @type {GameObject|null} */
     this.root = null;
     /** @type {Door[]} */
     this.doors = [];
 
-    /** Geometries this room created — the only ones it may free. Props
-     *  spawned from the asset cache share geometry and must not be disposed
-     *  here (AGENTS.md ownership rule). */
-    this._geometries = [];
     this._openingBySide = new Map();
   }
 
@@ -82,8 +82,8 @@ export class Room {
    *  rooms in the gameplay sense (corridors) override it. */
   static kind = 'Room';
 
-  /** Build the shell, lighting and props. Returns the root group; the caller
-   *  parents it (e.g. under the scene's SceneRoot). */
+  /** Build the shell, doors, lighting and props. Returns the root group;
+   *  the caller parents it (e.g. under the scene's SceneRoot). */
   build() {
     this._indexOpenings();
 
@@ -91,10 +91,14 @@ export class Room {
     this.root.object3d.position.set(...this.position);
 
     this._buildShell();
+    this.buildDoors();
     this.buildLighting();
     this.buildProps();
     return this.root;
   }
+
+  /** Override: `addDoor` calls for this room's doorways. */
+  buildDoors() {}
 
   /** Override: room-specific lights. */
   buildLighting() {}
@@ -233,8 +237,59 @@ export class Room {
   }
 
   // ──────────────────────────────────────────
-  // Static geometry
+  // Building blocks for subclasses
   // ──────────────────────────────────────────
+  /** Register a geometry/material this room created, to be freed on
+   *  dispose. Returns it, so it can wrap the constructor call. */
+  _own(resource) {
+    this._owned.push(resource);
+    return resource;
+  }
+
+  /** Empty child GameObject — a holder for lights or a cluster of parts. */
+  _addGroup(name, parent = this.root) {
+    const go = new GameObject(name);
+    parent.addChild(go);
+    return go;
+  }
+
+  /**
+   * Spawn a manifest model inside the room, `position` in room-local
+   * coordinates. Engine.spawnModel places the body where it's told, in
+   * world space, so it gets the room offset; the visual is then re-parented
+   * under the room and put back to its local position.
+   *
+   * spawnModel also registers the model as a root object. Left there, it
+   * would be updated twice per frame — once as a root, once as a room
+   * child — so it is taken off that list.
+   *
+   * Static props only. A dynamic/kinematic body would have its world
+   * transform synced onto a now-local Object3D; spawn those at the scene
+   * root instead.
+   *
+   * @param {string} key  Manifest key
+   * @param {object} [opts]  Engine.spawnModel options, `position` room-local
+   */
+  _spawnProp(key, { position = [0, 0, 0], ...opts } = {}) {
+    const [ox, oy, oz] = this.position;
+    const go = this.engine.spawnModel(key, {
+      ...opts,
+      position: [position[0] + ox, position[1] + oy, position[2] + oz],
+    });
+
+    const roots = this.engine._rootObjects;
+    const i = roots?.indexOf(go) ?? -1;
+    if (i !== -1) roots.splice(i, 1);
+
+    if (go.rigidBody && this.engine.rigidBodyMap?.has(go.rigidBody.handle)) {
+      console.warn(`[Room ${this.name}] '${key}' has a moving body — room props should be static`);
+    }
+
+    this.root.addChild(go);
+    go.object3d.position.set(...position);
+    return go;
+  }
+
   /** Procedural box + matching fixed collider, parented under the room.
    *  Same shape as OfficeScene._addStaticBox so the level editor treats
    *  room surfaces like any other static box. */
@@ -243,9 +298,7 @@ export class Room {
 
     const go = new GameObject(name);
     go.object3d.position.set(...position);
-    const geometry = new THREE.BoxGeometry(...size);
-    this._geometries.push(geometry);
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), material);
     mesh.name = name;
     mesh.castShadow = mesh.receiveShadow = true;
     go.object3d.add(mesh);
@@ -277,10 +330,12 @@ export class Room {
    *  physics world — but night progression or a rebuild does. */
   dispose() {
     if (!this.root) return;
-    const { world } = this.engine;
+    const { world, _bodyToGO, rigidBodyMap } = this.engine;
 
     for (const go of this.root.descendants()) {
       if (!go.rigidBody) continue;
+      _bodyToGO?.delete(go.rigidBody.handle);
+      rigidBodyMap?.delete(go.rigidBody.handle);
       try { world.removeRigidBody(go.rigidBody); } catch (_) { /* world already replaced */ }
       go.rigidBody = null;
       go.collider  = null;
@@ -292,9 +347,8 @@ export class Room {
     if (this.root.parent) this.root.parent.removeChild(this.root);
     this.root.object3d.removeFromParent();
 
-    for (const g of this._geometries) g.dispose();
-    this._geometries.length = 0;
-    if (this._ownsMaterial) this.material.dispose();
+    for (const resource of this._owned) resource.dispose();
+    this._owned.length = 0;
 
     this.doors.length = 0;
   }
