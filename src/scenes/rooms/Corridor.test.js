@@ -149,6 +149,14 @@ describe('Corridor', () => {
     expect(() => new Corridor(engine, { ...X, ends: 'doorway', doorWidth: 2.5 }).build()).toThrow(/does not fit/);
   });
 
+  it('bounds run exactly `length` along the axis, so ends sit flush on room walls', () => {
+    const c = new Corridor(engine, { ...X, position: [8, 0, 3.5] });
+    c.build();
+    const { min, max } = c.bounds();
+    [min.x, min.y, min.z].forEach((v, i) => expect(v).toBeCloseTo([6, -T, 3.5 - 1 - T / 2][i]));
+    [max.x, max.y, max.z].forEach((v, i) => expect(v).toBeCloseTo([10, 3 + T, 3.5 + 1 + T / 2][i]));
+  });
+
   it('dispose removes its children and bodies', () => {
     const c = new Corridor(engine, { ...X, ends: 'doorway' });
     c.build();

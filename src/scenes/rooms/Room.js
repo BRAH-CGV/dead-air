@@ -116,6 +116,22 @@ export class Room {
         && p.y >= oy && p.y <= oy + this.height;
   }
 
+  /** Outer world-space box of the built shell: outer wall faces, floor
+   *  bottom to ceiling top. Read off the floor slab, which spans the full
+   *  footprint in every subclass (a corridor's runs exactly its length).
+   *  @returns {THREE.Box3} */
+  bounds() {
+    const floor = this.root?.find('Floor');
+    if (!floor) throw new Error(`Room ${this.name}: bounds() needs build() first`);
+    const [w, , d] = floor._originalSize;
+    const [ox, oy, oz] = this.position;
+    const t = this.wallThick;
+    return new THREE.Box3(
+      new THREE.Vector3(ox - w / 2, oy - t, oz - d / 2),
+      new THREE.Vector3(ox + w / 2, oy + this.height + t, oz + d / 2),
+    );
+  }
+
   // ──────────────────────────────────────────
   // Shell
   // ──────────────────────────────────────────
@@ -325,14 +341,21 @@ export class Room {
   // ──────────────────────────────────────────
   // Teardown
   // ──────────────────────────────────────────
-  /** Remove the room mid-scene: bodies, children, owned GPU resources.
-   *  A full scene switch doesn't need this — Engine replaces the whole
-   *  physics world — but night progression or a rebuild does. */
-  dispose() {
+  /** Remove the room: children, owned GPU resources and — unless told
+   *  otherwise — its physics bodies.
+   *
+   *  Scene teardown passes `removeBodies: false`: Engine drops the whole
+   *  physics world right after Scene.dispose(), and removing bodies one by
+   *  one there is the fragile path Engine._teardownScene warns about.
+   *  Removing a room mid-scene (a rebuild) keeps the default.
+   *
+   *  @param {object} [opts]
+   *  @param {boolean} [opts.removeBodies=true] */
+  dispose({ removeBodies = true } = {}) {
     if (!this.root) return;
     const { world, _bodyToGO, rigidBodyMap } = this.engine;
 
-    for (const go of this.root.descendants()) {
+    for (const go of removeBodies ? this.root.descendants() : []) {
       if (!go.rigidBody) continue;
       _bodyToGO?.delete(go.rigidBody.handle);
       rigidBodyMap?.delete(go.rigidBody.handle);

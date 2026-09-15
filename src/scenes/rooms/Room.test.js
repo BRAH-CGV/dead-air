@@ -322,6 +322,17 @@ describe('Room.containsPoint', () => {
   });
 });
 
+describe('Room.bounds', () => {
+  it('is the outer world-space box of the shell (floor bottom to ceiling top)', () => {
+    const room = new Room(makeEngine(), { ...BASE, position: [14, 0, -2] });
+    room.build();
+    const { min, max } = room.bounds();
+    const t = BASE.wallThick;
+    [min.x, min.y, min.z].forEach((v, i) => expect(v).toBeCloseTo([14 - 4 - t / 2, -t, -2 - 3 - t / 2][i]));
+    [max.x, max.y, max.z].forEach((v, i) => expect(v).toBeCloseTo([14 + 4 + t / 2, 3 + t, -2 + 3 + t / 2][i]));
+  });
+});
+
 describe('Room._spawnProp', () => {
   let engine, GameObject;
 
@@ -427,6 +438,25 @@ describe('Room hooks and teardown', () => {
     expect(room.root.children.length).toBe(0);
     expect(engine.world.bodies.len()).toBe(0);
     expect(room.doors.length).toBe(0);
+  });
+
+  it('dispose({ removeBodies: false }) frees GPU resources but leaves bodies to the world owner', () => {
+    // Scene teardown: Engine drops the whole physics world right after
+    // Scene.dispose(), and removing bodies one by one there is fragile.
+    const room = new Room(engine, {
+      ...BASE, openings: [{ side: 'front', width: 1, height: 2.2 }],
+    });
+    room.build();
+    room.addDoor('D', 'front', 'Other');
+    const bodies = engine.world.bodies.len();
+    const geom = room.root.find('Floor').object3d.children[0].geometry;
+    let geomDisposed = false;
+    geom.addEventListener('dispose', () => { geomDisposed = true; });
+
+    room.dispose({ removeBodies: false });
+    expect(engine.world.bodies.len()).toBe(bodies);
+    expect(geomDisposed).toBe(true);
+    expect(room.root.children.length).toBe(0);
   });
 
   it('dispose detaches the room from its parent', () => {

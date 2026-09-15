@@ -14,6 +14,7 @@ import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
+import { BaseScene } from '../scenes/BaseScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
 
@@ -210,6 +211,7 @@ export class Engine {
     // ── Build world ──
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
+    this.registerScene('BaseScene', BaseScene);
     this.loadScene(OfficeScene);
 
     // Hidden until ` is pressed, and costs nothing while hidden.
@@ -440,7 +442,7 @@ export class Engine {
   // ──────────────────────────────────────────
   /** Build the player GameObject (camera, controller, interaction).
    *  Called by every scene's `build()` — shared across levels. */
-  buildPlayer() {
+  buildPlayer({ position = [0, 1, 5] } = {}) {
     const player = new GameObject('Player');
 
     // YXZ Euler order — standard for FPS cameras (yaw then pitch)
@@ -449,7 +451,8 @@ export class Engine {
     // Attach camera directly to the player Object3D
     player.object3d.add(this.camera);
 
-    player.object3d.position.set(0, 1, 5);
+    // Capsule centre; scenes pick where the player starts.
+    player.object3d.position.set(...position);
 
     // Rapier kinematic character controller
     const controller = this.world.createCharacterController(0.01);
