@@ -1,0 +1,295 @@
+=== Meeting Transcript ===
+Server: CGV (1542961868912594964) / General (1542961869780680730)
+Date: 2026-09-09T12:01:32.496Z
+Speakers: drax9207, haydnrad, mortalnumbnut, siboneloblessingmaduna, thotslayer666
+Duration: [53:47]
+
+[00:00] mortalnumbnut: Oh, hello. Oh, yeah. Oh, yeah. No, it's pretty cool, man. I like it. Oh, yeah, but that stuff we have to do manually. Oh, we could make it so the like visual mesh can be the collider as well, but then that that will, I don't think performance will like that very much.
+[00:00] haydnrad: I'll record it. Okay. What's up, but we
+[00:01] drax9207: Hi Craig, it would be best to go here. Let's see what we've got to do.
+[00:17] haydnrad: Yes, I did take a brief look at it. It looks very good so far. Yeah, let's see. Let's see
+[00:19] drax9207: I feel like we should run Cipunelo through, or I should, like, like what we're doing, right?
+[00:32] siboneloblessingmaduna: Wait, can't we have maybe our own call, you and I? Because I reckon if I'm questioning certain things, it will take longer. Should we join your live? And I think reduce the LOD. I think the
+[00:43] drax9207: Okay, we'll, okay, sure. Oh, hi Bruno.
+[00:48] thotslayer666: Allah, indeed. Very cool. It's not shitty. I don't remember that.
+[00:50] drax9207: I'll run you through it at the end of the meeting then. Okay, then in that case, do you guys want to see the level editor? Sorry? Is that a yes?
+[01:08] haydnrad: Yes, I checked it out myself a little bit and it looks pretty cool for what I saw
+[01:10] drax9207: Sure, yeah. I just want to make sure we all know how to use it properly. It's not going to replace designing models per se, but you could make like a very, like, like you can build the scene a lot easier with it. It still has some limitations. I'm going to stop doing it now. Does anyone know how to share screen? Oh, here, okay. Let me go here. All right, so here we have dead air. Wow, very cool guys. Very cool as well.
+[02:02] haydnrad: well, I
+[02:03] drax9207: You have the animating, what do you call it? Yeah, so how we access the level editor, we click F2. You have to enable the keys and you click F2. And on the side you have here where you can save the scene as a JSON and .js. Unfortunately, I couldn't get a little, like, loading to work, so you can't load your own file in. You're just going to have to give these, the JSON and the .js as a reference to your AI of choice, and it will literally build the scene for you perfectly. But the whole point is just to, because an AI can't really get the positioning correct, as you can see here. Like, this is wrong. This is really stupid. Why does it look like that? Yeah, so the whole point is to be able to move it. By the way, that was free cam mode that Mr, what do you call him, Hayden put into place. So if you click V, you go into free cam mode. You can also check the colliders with the back tick button, like this. Yeah, very cool. But I'm getting off topic now. So if you want to move something, you select it, and it will show up on this side here. And you just, like, move it with the buttons. It's all in the documents I gave you guys. You can also rotate everything by clicking R, and you can rotate this thing. Very cool, very cool. Oh, and you can also make it glow. So if I make this thing glow now, I turn it on. It takes a while, but yeah, there you go. You can, then it's glowing. It's showing light coming out of it. And you can increase the intensity and the range so that it's only, like, very small or very big. Yeah. And you can hide the object as well, like that, where the collider will still stay there. You can also remove the collider, though. So there's the collider still there, and the light is still there. So we basically made an object that just displays light and nothing else. And we're using a hierarchical system as well on the level editor here. The office includes the walls and everything like that, not just objects on themselves. So if you select the office, you can move the entire office at once. I'll demonstrate that now. So here the whole office is selected, and I'm going to click G, and then I can just move it all at once together. Isn't that cool? So that's basically what I implemented. Yeah, very cool. Oh yeah, by the way, the satellite is dope, man. Did you, did you build yourself? Yeah, okay.
+[05:47] haydnrad: Not the top That part I got online But I built the as you can probably tell the cube that has attached to in the pole
+[06:00] drax9207: That makes sense. Yeah, I'm very happy so far with what we have, and we can finally get started on doing shit. Yeah, that's all I wanted to show you. I'm kind of proud of it. I know it's kind of shitty, but it's cool.
+[06:18] haydnrad: It's pretty good level of detail
+[06:22] drax9207: Oh, and you can add new objects to the scene as well. So these are all the objects that are in the scene already that you can be re-added, can be added into it. It's also primitive, like a cylinder and a torus. You can add a cone. And there's the cone. We have, we still have an issues with, we still have issues with the collision system. It's not in the shape of a cone, so we still have to work on that. And for the desk over here, let me just select the desk again so you can see it again. Yeah, computer desk. We want those, what do you call it, custom collider boxes that you were talking about, Ryan? Yeah, which is unfortunate. Yeah, like this won't really work. Like shit. Yeah, it won't. So then I guess we need to make like a way to abstract the visual mesh or something like that. I forgot what it was called in class.
+[08:03] mortalnumbnut: Wait, what do you think? Oh, yeah, I couldn't find it for so long. I realized it was C instead of control. Oh, okay. Makes sense. Yeah. Yes, yes, very good. Wait, Adrian, do you have problems with the server rack texture? Okay, yeah, it's like freaking out on my side.
+[08:06] drax9207: It was that animation of the monkey vertices,
+[08:06] thotslayer666: Yeah, I like that server rack. It's like I need 10 polys or some shit.
+[08:10] drax9207: like getting really detailed and then abstracted in class. Yeah, yeah, level of detail. But yeah, that's kind of all I really wanted to show. Oh yeah, someone added a crouch functionality, which is cool. Oh, yeah, I know.
+[08:36] haydnrad: Yeah, control can't be like taken because I'm controlled level you close the tab You know, you know
+[08:47] drax9207: And what was it? B is Fulbright, which makes everything more simple.
+[08:50] haydnrad: Also, mainly like if we have lighting in really dark areas, we can just do that and be able to actually see
+[08:52] drax9207: So it's everything runs a lot easier with Fulbright on. Yeah, cool, that's it. And then obviously you just click save all to save the JSON. Oh yeah, and you can also change scenes. So we're going to have more than one scene later on. I've made a test scene here. So if you click this, now we're in a test scene. We're still in, well, that broke. This has broken the free cam. But anyway, here we are. This is another test scene we're in. So you can switch between scenes and edit them and export them. And I hope it just helps us a lot. Yeah, but that's about it.
+[09:47] haydnrad: Sweet mm-hmm
+[09:49] drax9207: Sweet.
+[10:03] haydnrad: Indeed. Yeah, there's some see fighting there
+[10:04] drax9207: Well then, the what? Oh, yes, I do. It is just weird looking, isn't it?
+[10:25] mortalnumbnut: Yeah, put full bright off quick. Yeah. So that side looks fine. But if you look at the left side, okay, it seems fine for you.
+[10:25] drax9207: You seeing this one? Like yeah, it's just flat.
+[10:42] mortalnumbnut: Let me show you what I see. I don't know if you guys can see this. Yeah. I don't know why. Yeah, there might be multiple. Same thing here as well. Oh, no, I was playing around with your editor.
+[10:45] drax9207: Sure.
+[10:48] thotslayer666: That server rack is not complicated.
+[10:53] drax9207: Let me see. Oh, snap. That's horrible. There are multiple objects in the same place. And why is there a box inside the room? Like what?
+[11:19] mortalnumbnut: Don't worry about that. Yeah, but I think there might be multiple things. Let me see if I reload. Yeah, it's still there. And it seems like it's only these two objects that have that. Yeah, weird. Yeah, I think, do you think there might be like multiple of them in this space or something? Wait, wait, we can check.
+[11:20] drax9207: That's the same. Yeah, the complicated ones.
+[11:37] siboneloblessingmaduna: details that we want. Yeah, getting a .md file or agents will just follow the instructions. I think
+[11:40] thotslayer666: I think it's the object that's at least polygon so far. It's literally a box with a picture on it. It's rounded to it.
+[11:51] drax9207: There must be, there must be like three in there.
+[11:56] mortalnumbnut: We can check. Oh, there's only one. Did anyone else have that problem? Was it just me? But then in full bright, it doesn't have that issue. It might be a lighting issue. Yeah. That's why it does matter. We need to pick it so we're all on the same page.
+[11:57] drax9207: Yeah. Oh, I forgot to tell you, you can delete. So if you, if you select it's right, you can select one. And then you click the delete button and it deletes it. So it should, it should tell you they under, so there was just one. Interesting. I wonder what was going on then. Yeah, let me, yeah, we'll have to figure it out.
+[12:26] haydnrad: That's good to me. I mean it looks like they are but I don't know if you want to merge mine first
+[12:27] thotslayer666: But yeah, it feels like doing or coding conventions.
+[12:55] drax9207: Oh yeah. Okay. Okay. Well, what else should we discuss? Do you want to discuss like project methodology and stuff like that? Curtin conventions. The thing is with the AI, the reason why we need curtain conventions is because
+[13:30] thotslayer666: But then we need to put that in like, yeah, agents.empty.
+[13:37] drax9207: for like every conversation, it's style changes, right? So there's this agents.md. We can just add like some conventions in. Huh?
+[13:47] thotslayer666: Let's tell a other pick one. I don't think it matters too much as long as it's consistent.
+[13:51] drax9207: Yeah.
+[13:52] thotslayer666: Yeah, I'm saying put it in agents.empty.
+[13:52] drax9207: Okay. So someone just needs to add that. Yeah. Someone just needs to put that. Yeah. And can we discuss like how do you guys want to do the project? Would you rather be like initiative based or do you want to be assigned tasks? Or. Okay.
+[14:25] siboneloblessingmaduna: I'd prefer being assigned two tasks. Yeah, I kind of suck too. I don't know about that. Or it could be
+[14:29] drax9207: Okay. That's good.
+[14:32] thotslayer666: I don't really mind.
+[14:34] drax9207: Sorry.
+[14:36] thotslayer666: I don't mind either way.
+[14:38] drax9207: Okay. So if you have a task that you want to do, I think then the best thing to do is like go on to, onto GitHub. And I made a, I made a projects, a project there for, for, for a repository. Um, and you can add what do you think needs to be done over there? And, uh, yeah, let's just figure out what tasks we want to do. And then we'll assign tasks to each other and stuff. How does that sound?
+[15:11] thotslayer666: Yeah, I guess we still need to find a bunch more assets. I can do that.
+[15:17] drax9207: Yes.
+[15:18] mortalnumbnut: Try to make sure they're all kind of the theme we're going for. Like if it's retro, stick to retro, if it's more futuristic sci-fi, stick to futuristic sci-fi, I just feel like, yeah, they need to be consistent.
+[15:24] thotslayer666: RetroSaffa. Yeah, I'm trying to stick to RetroSaffa. I'll look for more models.
+[15:38] mortalnumbnut: Is the integration branch finished now? Is that the request? Wait, what? Oh, okay. Okay. Oh, can we, and then you work on the bug in a different one?
+[15:44] drax9207: I'm going to give up on it. Yeah. Oh, there was like one thing I just couldn't get right, which was the, the loading of like previous levels. That's, but like that's so anything. And that's a, that's, that's a bug I, uh, I wrote about in the docs folder. That is the, it is done. You can look through it and merge the PR. Sorry. We're going to different one.
+[16:18] mortalnumbnut: No, I'm saying then, like, if you want to work on the bug, that will be in a separate branch. Okay. But then, Hayden, your two pool requests, are they in that integration, integrated branch?
+[16:25] drax9207: Yeah. Yeah.
+[16:32] mortalnumbnut: Okay. Okay. Yeah. I mean, I was testing the integrated branch now, and it seems like both of those pool requests are in it already, Hayden. Okay, I'll let you guys deal with that, because I feel like you know what's going on with those branches.
+[16:35] drax9207: Yeah.
+[16:38] haydnrad: Anyways, and then Yeah, that's good. No, it's probably be easier for the environment. Yeah, that'd be kind of cool
+[16:40] drax9207: No, I think just merge the integration branch. I tried to make it so that Haydn's branches were in the integration branch. And if you merge those Haydn's branches now, then there will be more conflicts when you merge the integration branch. Yeah. That's what I try to do to, to include both pull requests from Haydn. So. Okay. I'll just close Haydn's branches then, and then, um, someone can merge my PR. And, um, yeah, should we get to tasks setting? I made a project and I put in some tasks last night at like 1am. Um, so basically someone needs to build the scene that'll be like, that'll probably take the most work. It includes bringing in new models and adding that to the attribution guide. I mean, the attribution list or all the new models, which I didn't do. I'm sorry. But I just kind of used Prunos thing.
+[18:45] thotslayer666: I'll find a bunch more.
+[18:47] drax9207: Um, we need a skybox. Sorry.
+[18:53] thotslayer666: Yeah, I'm saying I'll find a bunch more models today. I think we're doing like mods, sci-fi, retro, terraformed, mods.
+[18:57] drax9207: Okay.
+[18:59] mortalnumbnut: Wait, we also need to discuss what the scene is actually going to be. So where are we set? Did we say on Mars somewhere, or is it on Earth, or like some random planet? Yeah.
+[19:03] drax9207: Hmm. Okay.
+[19:17] thotslayer666: Actually, we have like red grass.
+[19:17] drax9207: You're really gross.
+[19:19] mortalnumbnut: Yeah. Okay. So then I think whoever is doing the skybox can also do like the basic terrain, since that's like scenery you want to actually be close to for the most part. Maybe not like, wait, like grass. Okay.
+[19:36] thotslayer666: I think we should have red grass or something. Yeah, it's because we have somewhat terraformed mods.
+[19:40] haydnrad: I think maybe not all the way to maybe not all the way to the sats lights thingy
+[19:45] thotslayer666: Doesn't that the theme? Not like desolate, but currently being terraformed. That style is relatively simple.
+[19:53] mortalnumbnut: Um, and then will the player actually be able to go outside the like office lab area? Yeah. Maybe we can just have a simple fence, stopping them with it, like that acts as a wall that they can't get past. Yeah.
+[20:03] drax9207: I think.
+[20:08] haydnrad: Unless people really wanted to collision things that but Mmm, I don't know. Yeah. Yeah, that should be good. Yes, no one. Oh, it'd be easier. I
+[20:24] drax9207: Yeah. Although we, we do have the capability to make custom collision now with the, with
+[20:30] mortalnumbnut: Yeah. But I mean for or something like the satellite that they'll never be close to it doesn't even need collision box. If you think about it, it just takes more performance than, or maybe it won't, but yeah, if it's not needed.
+[20:30] drax9207: the, uh, the label editor. Yeah. Okay. But then we need more rooms.
+[20:50] mortalnumbnut: Yeah. So I was thinking, um, for the editor, you can sort of like kind of create different scenes, but I don't know if we even need that. We can just have one scene where like doors open to different areas each night.
+[20:55] drax9207: Right.
+[21:10] mortalnumbnut: Oh yeah.
+[21:12] drax9207: I was just doing that for, uh, the different levels. Um, but yeah, you're right.
+[21:15] mortalnumbnut: Okay. And maybe like, so should we just do three rooms? Do you think? Yeah. So maybe like three rooms we start with one on the second night we have two of them open on the third night we have all three and maybe like a small outside area like if there's a generator or something.
+[21:17] drax9207: We don't need more than one scene.
+[21:31] thotslayer666: Yeah, I'm not very confident in my scene-building abilities.
+[21:32] drax9207: Yeah. We'll have the.
+[21:45] mortalnumbnut: I don't know. Depending on what the task is that we're thinking of doing outside.
+[21:48] drax9207: Yeah. I think that works. So three rooms. Okay. Let me add an idea. So, uh, okay. Who's, who's keen to build the scene? Okay. Yeah.
+[22:48] thotslayer666: Multiple people might want to work on that.
+[22:49] mortalnumbnut: I can do the sky. Yeah, we just we just need to figure out how to do that together, you know, without breaking each other's work.
+[22:58] siboneloblessingmaduna: probably maybe two people, not one. Sure. Adrian, what did you say? The voice of the voice.
+[23:04] drax9207: Okay.
+[23:04] thotslayer666: It's like the biggest thing. Yeah, as I said, I'll try to find otherworldly trees.
+[23:12] mortalnumbnut: Um, I can work on the sky box and maybe some basic terrain. And that could include like maybe some trees or things that look like otherworldly trees or something.
+[23:19] drax9207: Okay.
+[23:27] mortalnumbnut: Okay.
+[23:30] thotslayer666: Yeah, I think it's just not right.
+[23:31] drax9207: Hmm. Okay. Satellite other literally trees. I think a wind turbine would be cool. Uh, sure. The skybox, will we only be playing during the nighttime or will we have a day cycle as well? Sure.
+[23:51] thotslayer666: And at least it's hard. Yeah, I think that's a good idea.
+[23:57] drax9207: Will the terrain just be like a flat plane? Like we have now was.
+[24:01] mortalnumbnut: Um, I think it would be cool to almost have it in a valley so they can see the end of the world so they can kind of see the little area surrounded by small hills or something.
+[24:06] drax9207: Yeah.
+[24:14] mortalnumbnut: I'll go for it.
+[24:16] thotslayer666: Maybe the sleep even can spawn in some places in the distance.
+[24:16] drax9207: Yeah. I like that idea. Okay. So the scene is like three rooms. Um, uh, okay. What about the functionality now? So the stamina bar, um, the coffee, we, you like drink a drink a piece of some, some coffee for the two uphold the stamina bar and the sleep demon type thing. Um, who's going to implement the functionality for that? Okay.
+[24:44] haydnrad: Am interested in doing it. Yes I'll assign myself
+[24:48] drax9207: I have written it on the projects there. Let's see what is it.
+[24:54] haydnrad: Unless anyone else really wants to take out. I think that's pretty good
+[24:56] drax9207: Right. Good. Good. Let's discuss what it looks like in that case in then. Um, so for now, you can add more function, like more, uh, Immersibility, but I'm thinking we just have like a stamina bar at the top or something or on the side up to you. And then it'll just go down the time and then you press like, uh, a keyboard input or like a button on screen to drink the coffee for now. And, um, when your stamina gets too low, like the lighting gets very dark. Maybe. Yeah.
+[25:36] mortalnumbnut: Maybe like, guys, do you know what would be funny for that?
+[25:41] drax9207: But we want the sleep demon to feel scary.
+[25:41] thotslayer666: Yeah, I'm saying like it spawns in in a distance.
+[25:43] drax9207: So. Yeah.
+[25:46] mortalnumbnut: It would be funny if, if like as the sleep meter gets what goes up or down depending on whichever we choose.
+[25:46] thotslayer666: Like watch this in your cameras.
+[25:48] drax9207: Yo, it's a good one.
+[25:49] thotslayer666: Yeah, yeah, yeah.
+[25:55] mortalnumbnut: Um, it would be cool to have like yawns as audio cues for that happening. Like if we could have a little yawn and then like as it goes, there are more.
+[26:03] drax9207: Let me add that. Yeah.
+[26:06] mortalnumbnut: We also need to create like a pause menu with settings and stuff.
+[26:11] haydnrad: I mean, I don't think we need to add till we actually like I have the ability to even change graphics
+[26:12] drax9207: I like that. I like that. Yes. I put that down as well.
+[26:29] mortalnumbnut: Oh, yeah. Yeah, and like maybe keybinds. Yeah.
+[26:29] drax9207: We need a pause menu and settings as well for like sensitivity and stuff. I think that'd be cool. All right. And a main menu and level selection and stuff. Yeah. Um, can you guys go to the, the Gita project and just tell me if everything there looks like right. Yeah.
+[27:06] thotslayer666: That doesn't need to be complex.
+[27:10] mortalnumbnut: I just added basic terrain there.
+[27:11] thotslayer666: Unlike the clean mods.
+[27:17] mortalnumbnut: I'm going to leave out the assets though until you find some Bruno for like trees and bushes or something.
+[27:22] drax9207: Okay.
+[27:24] mortalnumbnut: Um, I, I was just looking at voice of the voids menu and I, and I quite like how simple it is.
+[27:31] drax9207: We do like to make the, the pause, uh, the settings and the main menu. Okay. Here you go. We just need a basic one for now. The pausing and stuff and the menus. Can you send a screenshot of that or a picture of that?
+[28:39] mortalnumbnut: Like, yeah, it has the Patreon members there and stuff on the like main menu, but the actual like settings thing looks okay. And I think it suits the style we're going for. Yeah.
+[28:56] drax9207: Thank you.
+[29:01] mortalnumbnut: Give me a sec. Do you think we need to have graphics settings?
+[29:22] drax9207: Okay. Let's see.
+[29:31] mortalnumbnut: Oh, yeah, of course.
+[29:34] thotslayer666: How difficult would it be to put FS on?
+[29:35] drax9207: Maybe.
+[29:41] haydnrad: I don't think we do. I
+[29:42] mortalnumbnut: Oh my God.
+[29:44] drax9207: Yeah. But at some point, I think for now we're just going to have like a render distance and I don't know, sensitivity. What else can we add? Oh, we can add, uh, what?
+[30:00] thotslayer666: Yeah, that might fix our performance a bit if we could.
+[30:01] mortalnumbnut: I don't know, man.
+[30:08] thotslayer666: I don't know how hard it is. FSR. Do you know DLSS? It's basically just some software that graphics cards use.
+[30:18] drax9207: What's that?
+[30:26] thotslayer666: So one is just upscales a lower quality image.
+[30:27] drax9207: Oh, okay.
+[30:31] thotslayer666: The graphics card is actually doing like a 720p image, but it's being upscaled to 1080p. Then you got frame generation,
+[30:38] drax9207: Okay.
+[30:39] thotslayer666: which makes a new frame between like every two frames, which increases the frame rate by a lot. I don't know how easy that's going to be. What happens if you want like a one million polygon model?
+[30:50] mortalnumbnut: I don't know if it's necessary to be honest.
+[30:53] drax9207: No, probably not. That's for like high performance. Well, we're not going to have that.
+[31:01] mortalnumbnut: Um, I really wanted one.
+[31:02] thotslayer666: Let me lay in a copy of it, exactly.
+[31:04] mortalnumbnut: Damn it, guys.
+[31:06] haydnrad: Guess just doing it, right? I'm gonna be doing the functionality for the sleep team. I guess I think it's just me
+[31:09] drax9207: Uh, what's next? Yeah. Okay. So, basically the inspiration for the level select for the main menu and the settings and stuff is just voice of the void. Yeah. I said the inspiration for the main menu and the settings
+[31:31] thotslayer666: Let's be fairly simple, but not to argue.
+[31:44] drax9207: page and that is the voice of the void settings page in main menu. Yeah.
+[31:51] siboneloblessingmaduna: Okay, okay. I barely understand what you're talking about. But yeah, I think we should have our own talk. Yeah, yeah. And yeah, that's all I was like, I don't know what you're talking about. I
+[32:01] drax9207: So basically, um, you said you were, you were okay with doing the pause button and the settings page in the main menu, right? Yeah. So, so that's where you'll get your inspiration from. The voice of the void is a video game.
+[32:23] siboneloblessingmaduna: haven't really played much. But we will have our own talk. And I think we'll catch up on most of the
+[32:25] drax9207: Yeah. We should have gotten up to speed at the start. It's okay. Yeah. Okay.
+[32:35] siboneloblessingmaduna: things. Yeah, let's just discuss after the call. Adrian, yes. I'm okay.
+[32:39] drax9207: So what's, what's left guys? Can everyone like tell, tell, tell us what they are doing?
+[32:50] thotslayer666: If I models.
+[32:56] mortalnumbnut: I'm going to do the skybox and simple terrain.
+[32:57] drax9207: Yeah. Okay.
+[33:02] mortalnumbnut: I'm going to leave a big space in the middle of the terrain for the actual like level scene, I guess. But yeah, I was, I was just looking at photos now in line of like the office area in that game.
+[33:10] drax9207: That's good. Um, Bruno. Okay.
+[33:18] thotslayer666: Yeah, I'm finding the models.
+[33:23] drax9207: Um, and then Sibinello is doing the pause button and the main menu and the settings. No, no, no. Sibinello. Uh, okay. I guess I'll do the, the scene. I'll design the scene. I don't know what it should look like. Um, I'll need some help. We're from like Hayden and whoever has experienced with voice of the void. Uh, yeah, just you.
+[33:58] haydnrad: None for me. We'll find out. I'm sure. Yeah
+[34:03] drax9207: Yeah.
+[34:08] mortalnumbnut: And I think you can draw some inspiration from that. Yeah.
+[34:12] drax9207: No, definitely. I'll actually, I'll work with Bruno because it'll be, it'll be
+[34:14] mortalnumbnut: Yeah.
+[34:16] drax9207: quite a big task.
+[34:18] mortalnumbnut: Yeah.
+[34:18] drax9207: Simeone Bruno will work on the together. How do you, how about that?
+[34:23] thotslayer666: Yeah, I can tell me what models you need. Or if you want, I can try to move models around.
+[34:27] drax9207: Sorry. No, you'll be, you'll be good.
+[34:30] thotslayer666: Yeah, let me know what models you need. If you actually need help editing it. I don't know if I'll be good at editing it, but we'll see. Yeah, we'll have a lot of flicker or something.
+[34:41] drax9207: Don't worry. Okay. Yeah.
+[34:53] mortalnumbnut: Yeah.
+[34:55] drax9207: That's basically it. Um, I like the idea for the sleep demon to like teleport closer to you and everything to get darker. Uh, or the light becomes more concentrated as the stamina bar decreases. Yeah.
+[35:13] thotslayer666: Yeah, that's all. Nothing on the sand.
+[35:13] drax9207: So something just creepy happens. But yeah. Okay. Cool. That's, that's it. Sibinello. What were you doing again? Okay. Sure. Sure, man. I guess that's it then. Let me just make one more check. Anything else guys?
+[35:54] mortalnumbnut: I think that's all. Oh, remember to download the Craig recording.
+[35:57] drax9207: Okay. All right. Then productive meeting.
+[36:05] mortalnumbnut: productive guys.
+[36:08] drax9207: Of course he does.
+[36:11] thotslayer666: Let's create, record the sample. See ya.
+[36:48] haydnrad: She'll see you guys later. Bye guys
+[36:50] drax9207: Okay.
+[36:51] mortalnumbnut: Well,
+[36:51] drax9207: Bye. It was, it was a productive meeting. Okay. Are you okay, boss?
+[37:09] siboneloblessingmaduna: Kind of a bit behind on stuff like you always talk about the voice of the voice. I know absolutely from that. Do you think I should probably just look into what it is and then have a talk with you later? Of the notes. Yeah, I peeped a bit of the notes. I was kind of
+[37:26] drax9207: Yeah. I think just look at like, like screenshots from Google. Basically that's, that's what I'm going to do. Um, yeah. But we sent you that, uh, that screenshot of the notes or Hayden sent that on the group. Did you, did you read that?
+[37:50] siboneloblessingmaduna: preparing for Upstart Mads. I'm writing next week also. Next Wednesday. I have four chapters.
+[37:55] drax9207: When you're writing it?
+[38:03] siboneloblessingmaduna: I need to dig deeper. I need also help besides the project stuff. I need to just sit down with you
+[38:03] drax9207: Okay.
+[38:12] siboneloblessingmaduna: and kind of get up to date with what's going on really. I haven't been managing my time as well as I did last year. Yeah, thank you, man. You're always there, man. You should be that friend.
+[38:24] drax9207: Sure, bro. Yeah, I can help.
+[38:37] siboneloblessingmaduna: When I make it, I should actually put you in the speech there. Yeah, definitely. So, Rachel, now, oh, you're surprised that I didn't one? Yeah, it was kind of a
+[38:44] drax9207: It'll be an honor. Oh, it'll be an honor. But yeah, you can contact me if you need, she needs help with stuff. I'm surprised that you didn't. Hmm. I'm surprised that you didn't find a group until like this week. I thought you had found one already.
+[39:12] siboneloblessingmaduna: thing. I don't know why it's been difficult for me with groups and stuff. I mean, given the SDP one, you had to step in and tell me, oh, does this disease guy need something? Yeah, you've been helping a ton, especially when at home it was kind of bad and I wanted to get out of that space and just come to you. But yeah, I'm here. Things are going well.
+[39:58] drax9207: Good.
+[39:59] siboneloblessingmaduna: And yeah, I just need a bit of more of your assistance. But yeah, I think we need people who
+[39:59] drax9207: Yeah.
+[40:06] siboneloblessingmaduna: always need people. Yeah, I'm appreciating the people at home. But thank you, man. We've done a lot as much as you maybe don't see or think that you did. But yeah, you're godsend, man. I think
+[40:24] drax9207: It doesn't seem like I've done anything actually. I'm just like helping in this. A lot of people. Right. Thanks, bro.
+[40:37] siboneloblessingmaduna: you're godsend. Yeah, should we go through it later on after I've watched Aquilum in immense amount
+[40:40] drax9207: Thanks. Well, do you want to go through the idea for this game and stuff?
+[40:52] siboneloblessingmaduna: of content on this. Yeah, voice of the void. Are you trying to make a dark theme
+[40:55] drax9207: On what? On the voice of the word. Uh, you don't need that much content on it. Just look at the screen, like just look at screenshots and the video, maybe it's not that necessary. We're going to be making something very, very, very stupid in comparison to it. So all you have to worry about. Huh? Yeah.
+[41:24] siboneloblessingmaduna: with a horror kind of game? Among us, I've seen trailers or a flap. Oh, yeah, five nights. Oh,
+[41:28] drax9207: So we want to make like, you know, among us. Hmm. So it's going to be like 3D among us, but FNAF, you know, you know FNAF, right? Five nights at Freddy's. No, like five nights at Freddy's. So we're going to make a five nights at Freddy's.
+[41:52] siboneloblessingmaduna: yeah, at least I know that one. I have a bit of white in me. I feel white right now.
+[42:02] drax9207: No, exactly. So we're going to make like five nights at Freddy's type game. Um, but on like the planet Mars, which we just recently terraformed or something like that. And there's like a monster hunting us down. Yeah.
+[42:19] siboneloblessingmaduna: Oh, yeah, sounds really, really dope. That sounds really, really, really dope.
+[42:21] drax9207: Yeah.
+[42:27] siboneloblessingmaduna: Yeah, I like the whole creativity. I'll have the chemistry too. Yeah, I'll seem like pretty, pretty good friends. Five nights at Freddy's. Yeah, you're trying to have, it's Mars terraformed and
+[42:37] drax9207: I guess so. White people. Yeah.
+[42:48] siboneloblessingmaduna: you just landed on Mars and it's terraformed. And this monster chasing you guys down.
+[42:57] drax9207: Pretty, pretty much. That's, that's.
+[43:00] siboneloblessingmaduna: That's the whole idea. In the mode that you are accessing, you are placing stuff that's
+[43:01] drax9207: Yeah. Yeah. We don't really have like the full story. I couldn't like figure it out, but all we have to do all for now,
+[43:12] siboneloblessingmaduna: create a mode like you are placing the things and you're creating the scenes. It's not like a player mode where you're in game and the game started and whatever. Oh, yeah. Okay. So later on
+[43:26] drax9207: they're like kind of the same thing. But I want to make it so, so your job will be to be able to toggle between those two modes with the pause button. I mean, like in settings, right? So you're going to make the pause button. And then you're going to be able to access like developer settings from there. And then you can use these hotkeys. Like F2 for the editor and stuff. That's, that's what I kind of envisioned for the, the settings and stuff. Yeah.
+[43:58] siboneloblessingmaduna: we discuss more about the settings. I need like a pretty, pretty, pretty well detailed .md file at least on what you want so that as I keep on integrating with my model and I keep testing and I can see, I record maybe the functionality, send you, do you think this is good or what style do you like and then we iteratively, or we have a call where I just display, oh, this is what I have. Should I push this? Should I comment this, you know, would that be okay with
+[44:28] drax9207: Yeah. That'll be okay. But you should. I think we're just running on a lot of initiative right now. I don't know the words initiative, but, um, like, I guess we don't mind if you just, you know, do your own thing sort of and just loosely follow what we have to say or do like the only requirements for you are to make the pause button in the style of voice of the void, um, pause button. Yeah, that's, that's basically it kind of thing.
+[45:05] siboneloblessingmaduna: you? That's basically the idea. I like the how you're giving me this task only.
+[45:06] drax9207: Yeah. There's no other, nothing else that goes with that. Yeah.
+[45:15] siboneloblessingmaduna: Oh my god. Yeah. So the nav system, yeah, I'll look into how the navigation system of the voice
+[45:16] drax9207: Well, it's not just pausing though. You got like, you, you're going to make like the whole admin type of, or you're going to make the logistics for the user kind of thing. That's what you're doing. And then you get things. Yeah.
+[45:37] siboneloblessingmaduna: of the void looks like. Should seem fun. It seems like a fun project. I like what we're doing.
+[45:38] drax9207: Yeah.
+[45:46] siboneloblessingmaduna: I'm glad I'm with you guys. Yeah, sort of the coolest team right now.
+[45:55] drax9207: Thanks.
+[45:57] siboneloblessingmaduna: The last team I had last semester was the girls only. I was only cut. It kind of sucked you.
+[46:01] drax9207: Yo. How'd that feel?
+[46:06] siboneloblessingmaduna: I did almost everything. I did the work. I'm not looking to do so much of the work this
+[46:09] drax9207: So sorry, bro.
+[46:15] siboneloblessingmaduna: semester. Oh my god, because I was traumatized. I think that's when I saw it. I don't want to be a software engineer because what the heck? I do the six man job alone and yeah, that was the worst experience I've ever had. But yeah, I'm glad now there's people who are buffer and like
+[46:38] drax9207: Hey, when you like the thing is, you know, no, it's tough to work with people like that, especially if it's the whole team, and then you have to be like this leader, um, guy that forces them to do things, which you don't want to be, you know, no one wants to be that guy. Yeah.
+[47:03] siboneloblessingmaduna: get up off as well. And you're at least men, at least and I don't need like with the current pressure and everything. I'm not sure if I would have been able to open up all the modules, all the work I work and it's the things needed. Yeah. And on the side, I'm trying to build my company too. So yeah, it's a whole lot of things going on. And yeah, I'll talk to you about it and
+[47:33] drax9207: Oh, man.
+[47:44] siboneloblessingmaduna: how it's supposed to look like and what I'm planning on doing with it. It's a cool idea. I don't know if you'd be keen to look into it too. It's about I'm exploiting the betting markets.
+[48:03] drax9207: What's, what's it about? Oh, yes. Yes. This is the thing you've been working on for a while on your status at least. I see it. You know, you're talking about that.
+[48:18] siboneloblessingmaduna: Oh, and my status is all you've seen, I've been talking about the betting markets.
+[48:21] drax9207: It's like, it's stocks and stuff. And yeah, it's like, isn't the betting not good
+[48:24] siboneloblessingmaduna: Oh, this one is not the financial markets. It's not the stock market. Yeah, the betting
+[48:30] drax9207: gambling? Yeah.
+[48:32] siboneloblessingmaduna: market is gambling. And then there's a stock market, which is you can gamble on, but you're not gambling like a pre-professional but yeah, it's calculated stuff. Well, I wouldn't say it's just
+[48:42] drax9207: It's not made meant to be gambling. Yeah. Isn't it like a really easy exploit for, for the betting, but not only like, if, if there's a leverage betting, then, then there's a kind of easy exploit. Right. I heard.
+[49:01] siboneloblessingmaduna: easy. The things that the execution is not really difficult. The maths part is not difficult. Getting the data is a difficult part. And I'm being consistent. So right now I'm building an API
+[49:15] drax9207: Okay. Oh, wow. Of what, what betting is this on? Is it like NBA betting? What's betting? Or is it like the, the Coliseum?
+[49:30] siboneloblessingmaduna: spot in general, just a betting market in general. I'm not moving to poly markets afterwards.
+[49:31] drax9207: So it's like, I see.
+[49:37] siboneloblessingmaduna: Yeah, I do. I can look at the bookmakers like Carl Shea, the bookmaker. And there are other
+[49:38] drax9207: So it is like Coliseum. No. Okay.
+[49:49] siboneloblessingmaduna: bookmakers other than Carl Shea. Yeah, it's just looking at different bookmakers,
+[49:55] drax9207: Well, it's pretty cool, but it's, it's beyond me, man. I would like, I don't know what's going on with that. You can find some arbitrage somewhere.
+[50:07] siboneloblessingmaduna: how they price things and how I can exploit the way in which they price things.
+[50:15] siboneloblessingmaduna: Yeah, I'm trying to find some price differences such that whenever I place I hedge and I can always make the terms guaranteed, risk-free the terms. Yep. Yeah, I'll watch a bit of it. And yeah, yes, please, please. Yeah, please do send.
+[50:31] drax9207: Yeah. Okay. Well, I guess that's it. Um, you can even call it work, but you're just relaxing because it's just a video game. I can send you some, what do you call it? I can send you the screenshots of the, of the, like, um, settings and main menu and whatever. If you want. We don't really need. Okay.
+[51:09] siboneloblessingmaduna: And yeah, I will do tasks piece by piece. When do you expect me to get these tasks? Just put it there. Wait, before beta, before the 21st of one,
+[51:18] drax9207: Uh, before beta. So beta is, when is that? It's the 28th or something. I can't remember. Before they want us to show the beta. I actually forgot when it is. I'll check now, but there's like, so we, we, we already demonstrated the alpha, which is just our ideas. And the beta is project three. Okay. Okay. Come on. It doesn't say when it is. Yeah. Okay. Beta two weeks off the groups of finalize three weeks in the release of the brief. That's not very helpful.
+[52:15] siboneloblessingmaduna: when it's two weeks after what? Next week, what day? I'll get done by then. I think I'll be done
+[52:22] drax9207: Hmm. Okay. Okay. So the alpha will be, I mean, the beta will be on like, like next, next week. Yeah. I think, I think it'll be a Tuesday. Yeah. Tuesday. Uh, it doesn't really give like a, like a actual fucking date though. I don't know why. Very annoying. It just says, oh, it's going to be two weeks off the, uh, the brief. It's kind of a man. Yeah.
+[53:08] siboneloblessingmaduna: by then. Yeah, yeah, true, true. I'll also be preparing for the AM also. So, yeah.
+[53:10] drax9207: You should be able to do it. I mean, you can vibe code it anyway. So it's not that hard. Yeah. Oh, wait.
+[53:25] siboneloblessingmaduna: Yeah, I think that's just a part of why I'm developing. Just as a gist of my task,
+[53:26] drax9207: No, yeah.
+[53:31] siboneloblessingmaduna: I think we have done it. Yeah. Cheers. Thank you. Thank you. Bye.
+[53:35] drax9207: No, we're done. Cheers. Thanks for the chat. I'll see you in a little. Bye. Bye.
+
+--- 287 entries | 5 speakers | transcribed in 2328.2s ---
