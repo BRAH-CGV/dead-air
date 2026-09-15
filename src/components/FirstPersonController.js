@@ -248,9 +248,12 @@ export class FirstPersonController extends Component {
     // movement for a frame. Instead the swap + shift ride along with this
     // step's setNextKinematicTranslation, and world.step() propagates them
     // atomically.
+    // Sensors (unlocked doorways, trigger zones) never block movement —
+    // explicit rather than trusting the controller's default.
     this.ctrl.computeColliderMovement(
       this.gameObject.collider,
       desired,
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
     );
 
     const corrected = this.ctrl.computedMovement();
@@ -358,7 +361,8 @@ export class FirstPersonController extends Component {
       0,      // targetDistance: rest at exact contact (touching still hits)
       1,      // maxToi: the full sweep (distance = |shapeVel| * 1)
       true,   // stopAtPenetration: a touching/penetrating start hits at toi 0
-      undefined, undefined, undefined,   // flags, groups, excludeCollider
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,  // a doorway sensor isn't a floor
+      undefined, undefined,              // groups, excludeCollider
       this.gameObject.rigidBody,         // exclude our own two capsules
       this._notOwnCollider,
     );
@@ -394,7 +398,8 @@ export class FirstPersonController extends Component {
     this._queryPos.z = t.z + corrected.z;
     return this.world.intersectionWithShape(
       this._queryPos, this._identityRot, this._headroomShape,
-      undefined, undefined, undefined,           // flags, groups, excludeCollider
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,   // standing up inside a doorway
+      undefined, undefined,                      // groups, excludeCollider
       this.gameObject.rigidBody,                 // exclude our own two capsules
       this._notOwnCollider,
     ) === null;

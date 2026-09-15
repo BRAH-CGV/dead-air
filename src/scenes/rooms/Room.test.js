@@ -8,7 +8,11 @@ import * as THREE from 'three';
 // tests can assert on them.
 vi.mock('@dimforge/rapier3d', () => {
   const bodyDesc = type => {
-    const d = { type, t: { x: 0, y: 0, z: 0 }, setTranslation(x, y, z) { d.t = { x, y, z }; return d; } };
+    const d = {
+      type, t: { x: 0, y: 0, z: 0 }, q: { x: 0, y: 0, z: 0, w: 1 },
+      setTranslation(x, y, z) { d.t = { x, y, z }; return d; },
+      setRotation(q) { d.q = { ...q }; return d; },
+    };
     return d;
   };
   return {
@@ -252,6 +256,33 @@ describe('Room doors', () => {
     expect(room.doors).toContain(door);
   });
 
+  it('the door gets a sensor collider at its world position (room offset included)', () => {
+    const room = new Room(engine, {
+      ...BASE, position: [14, 0, 0], openings: [{ side: 'front', width: 1, height: 2.2, offset: 2 }],
+    });
+    room.build();
+    const door = room.addDoor('ToOffice', 'front', 'MainOffice');
+    expect(door.collider.isSensor()).toBe(true);
+    const t = door.rigidBody.translation();
+    expect(t.x).toBeCloseTo(16);
+    expect(t.y).toBeCloseTo(1.1);
+    expect(t.z).toBeCloseTo(BASE.depth / 2);
+    const h = door.collider.halfExtents();
+    expect([h.x * 2, h.y * 2, h.z * 2]).toEqual([1, 2.2, BASE.wallThick]);
+    // Overlap test follows the room group's transform
+    expect(door.containsPoint(new THREE.Vector3(16, 1, BASE.depth / 2))).toBe(true);
+  });
+
+  it('addDoor can create the door locked (solid)', () => {
+    const room = new Room(engine, {
+      ...BASE, openings: [{ side: 'front', width: 1, height: 2.2 }],
+    });
+    room.build();
+    const door = room.addDoor('D', 'front', 'Other', { locked: true });
+    expect(door.locked).toBe(true);
+    expect(door.collider.isSensor()).toBe(false);
+  });
+
   it('addDoor on a side wall is rotated to face along x', () => {
     const room = new Room(engine, {
       ...BASE, openings: [{ side: 'left', width: 1, height: 2.2, offset: -1 }],
@@ -275,6 +306,19 @@ describe('Room doors', () => {
     });
     room.build();
     expect(() => room.addDoor('Nope', 'back', 'X')).toThrow(/window/);
+  });
+});
+
+describe('Room.containsPoint', () => {
+  it('is true inside the footprint, floor to ceiling, and follows the room position', () => {
+    const room = new Room(makeEngine(), { ...BASE, position: [14, 0, -2] });
+    const p = (x, y, z) => new THREE.Vector3(x, y, z);
+    expect(room.containsPoint(p(14, 1, -2))).toBe(true);
+    expect(room.containsPoint(p(14 + 3.9, 1, -2 + 2.9))).toBe(true);
+    expect(room.containsPoint(p(14 + 4.1, 1, -2))).toBe(false);   // past the right wall
+    expect(room.containsPoint(p(14, 1, -2 - 3.1))).toBe(false);   // past the back wall
+    expect(room.containsPoint(p(14, 3.5, -2))).toBe(false);       // above the ceiling
+    expect(room.containsPoint(p(0, 1, 0))).toBe(false);           // the origin isn't this room
   });
 });
 

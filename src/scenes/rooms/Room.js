@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../../core/GameObject.js';
+import { Door } from '../../gameobjects/Door.js';
 
 // ─────────────────────────────────────────────
 // Room  –  Self-contained walled enclosure
@@ -67,7 +68,7 @@ export class Room {
 
     /** @type {GameObject|null} */
     this.root = null;
-    /** @type {GameObject[]} */
+    /** @type {Door[]} */
     this.doors = [];
 
     /** Geometries this room created — the only ones it may free. Props
@@ -100,6 +101,16 @@ export class Room {
 
   /** Override: room-specific models and furniture. */
   buildProps() {}
+
+  /** Is the world-space point inside the room's footprint, floor to ceiling?
+   *  Measured to the wall centre lines. Used to track which room the player
+   *  is in. @param {THREE.Vector3} p */
+  containsPoint(p) {
+    const [ox, oy, oz] = this.position;
+    return Math.abs(p.x - ox) <= this.width / 2
+        && Math.abs(p.z - oz) <= this.depth / 2
+        && p.y >= oy && p.y <= oy + this.height;
+  }
 
   // ──────────────────────────────────────────
   // Shell
@@ -187,33 +198,36 @@ export class Room {
   // Doors
   // ──────────────────────────────────────────
   /**
-   * Place a door in the doorway on `side`. Phase 1 stand-in: a marker
-   * GameObject carrying the door's state — the Door class (visual + sensor
-   * collider) replaces it in Phase 3.
+   * Place a Door in the doorway on `side`: filling the opening, with a
+   * sensor collider (solid while locked) at its world position.
    *
    * @param {string} name        Becomes `Door:<name>`
    * @param {string} side        Wall with a doorway opening
    * @param {string} targetRoom  Name of the room this door leads to
+   * @param {object} [opts]
+   * @param {boolean} [opts.locked=false]
+   * @returns {Door}
    */
-  addDoor(name, side, targetRoom) {
+  addDoor(name, side, targetRoom, { locked = false } = {}) {
     const opening = this._openingBySide.get(side);
     if (!opening) throw new Error(`Room ${this.name}: no opening on ${side} wall for door '${name}'`);
     if ((opening.sill ?? 0) > 0) throw new Error(`Room ${this.name}: ${side} opening is a window, not a doorway`);
 
     const { width, height, offset = 0 } = opening;
     const plane = this._wallPlane(side);
-    const door = new GameObject(`Door:${name}`);
+    const door = new Door(`Door:${name}`, { size: [width, height, this.wallThick], targetRoom, locked });
     if (SIDES[side].axis === 'x') {
       door.object3d.position.set(offset, height / 2, plane);
     } else {
       door.object3d.position.set(plane, height / 2, offset);
       door.object3d.rotation.y = Math.PI / 2;
     }
-    door.targetRoom = targetRoom;
-    door.locked     = false;
-    door.doorSize   = [width, height, this.wallThick];
-
     this.root.addChild(door);
+
+    const [ox, oy, oz] = this.position;
+    const p = door.object3d.position;
+    door.attachCollider(this.engine.world, [p.x + ox, p.y + oy, p.z + oz], door.object3d.rotation.y);
+
     this.doors.push(door);
     return door;
   }
@@ -273,6 +287,7 @@ export class Room {
       go.colliders = [];
     }
 
+    for (const door of this.doors) door.dispose();
     for (const child of [...this.root.children]) this.root.removeChild(child);
     if (this.root.parent) this.root.parent.removeChild(this.root);
     this.root.object3d.removeFromParent();
