@@ -44,7 +44,7 @@ Everything your team needs to know about the in-browser editor, free camera, and
 ├─────────────────────────────────┤
 │  Scene: OfficeScene  *          │  ← Scene name (* = unsaved changes)
 │  Switch: [OfficeScene ▼]       │  ← Scene switcher dropdown
-│  [💾 Save All] [🌳 .json] [📜 .js] [📂 Load] │  ← Save/load buttons
+│  [💾 Save All] [🌳 .json] [📜 .js] │  ← Save buttons
 ├─────────────────────────────────┤
 │  🔀 MOVE MODE (G)               │  ← Current transform mode
 ├─────────────────────────────────┤
@@ -205,31 +205,25 @@ When you select a **group** (folder icon in the tree), the info panel shows the 
 | **💾 Save All** | Both .json + .js | Your go-to save button. Gets everything. |
 | **🌳 .json** | Just the hierarchy JSON | When you want to back up the layout data only |
 | **📜 .js** | Just the JavaScript scene file | When you want the code file only |
-| **📂 Load** | Nothing — it *opens* a file picker | **Rebuild a saved .hierarchy.json in the editor** and keep editing |
+
+> **Note:** There is no Load button. The exported `.json` and `.js` files are
+> **snapshots for reference** — hand edits to the scene source file (with AI
+> assistance if you like) are the supported way to persist changes permanently.
 
 ### How to Use the Saved Files
 
-**📂 Load is the main workflow now.** Save your layout as `.hierarchy.json`, then
-load it back any time to continue where you left off — the editor rebuilds the
-groups, objects, transforms, colliders, glow, colours and hidden state exactly
-as they were. No copy-pasting required.
-
-> ⚠️ **Loading replaces the current editable scene.** Objects the editor can
-> rebuild (groups, editor-added primitives, manifest models) come back fully;
-> hand-coded scene content (procedural walls, `Interactable` wiring, the
-> `Satellite` class) is not part of the JSON — those still live in the scene's
-> source file. Treat Load as "restore my editor work", not "replace the scene".
+**The .hierarchy.json is a snapshot** of every object's name, position,
+rotation, scale, group membership, and editor state (collider, glow, colour,
+hidden). It documents the exact layout at save time.
 
 **The .js file** contains a complete Scene class that mirrors your editor
 layout — useful as a reference or scaffold for new scenes. To use it as a real
 scene, place it in `src/scenes/` and register it with the engine. Don't paste
 it into an existing scene's `build()` method — the imports won't work there.
 
-**The .json file** is the round-trip format. It stores:
-- Every object's name, position, rotation, and scale
-- The group hierarchy (which objects are children of which groups)
-- Editor state per object: collider on/off, glow (colour/intensity/range), object colour, hidden
-- Which objects are dynamic (physics-driven) vs static
+**To make your layout permanent**, either hand-edit the scene source file
+using the JSON as a coordinate reference, or share the JSON with your AI
+coding assistant and ask it to apply the positions to the scene code.
 
 ### The `*` Dirty Indicator
 
@@ -557,7 +551,7 @@ Every transform edit syncs the physics body to match the visuals:
 
 1. Make your changes in the editor
 2. Click **💾 Save All** to download both `.hierarchy.json` and `.js`
-3. Click **📂 Load** anytime to rebuild a saved `.hierarchy.json` in the editor
+3. Use the JSON as a coordinate reference when hand-editing the scene source
 4. The `.js` file is a scaffold for new scenes — place it in `src/scenes/` and register it with the engine
 
 > ⚠️ Don't paste the `.js` export into an existing scene's `build()` method — the `import` statements are module-top-only.
@@ -584,5 +578,5 @@ Every transform edit syncs the physics body to match the visuals:
 - **Moving a group moves everything under it.** This is the most powerful feature — use it to reposition entire rooms instantly.
 - **Dynamic objects (crates) are outside groups** because physics controls their position. You can still select and move them individually.
 - **The tree view mirrors the Three.js scene graph.** If something is nested under a group in the tree, it's a child in the 3D engine too.
-- **Save and reload your layout.** 💾 Save All gives you a `.hierarchy.json` you can 📂 Load straight back into the editor — your edits survive across sessions without touching scene code.
+- **Save snapshots of your layout.** 💾 Save All gives you a `.hierarchy.json` + `.js` snapshot of your work — share it with your AI assistant to apply the positions permanently to scene code.
 - **PageUp/PageDown on a laptop:** You may need to hold **Fn** + arrow key.

@@ -340,12 +340,13 @@ describe('LevelEditor', () => {
       expect(texts.some(t => t.includes('Hierarchy'))).toBe(false);
     });
 
-    it('panel keeps Save All, .json, .js and adds a Load button', () => {
+    it('panel keeps Save All, .json and .js, and has no Load button', () => {
       const texts = [...editor.panel.querySelectorAll('button')].map(b => b.textContent);
       expect(texts.some(t => t.includes('Save All'))).toBe(true);
       expect(texts.some(t => t.includes('.json'))).toBe(true);
       expect(texts.some(t => t.includes('.js'))).toBe(true);
-      expect(texts.some(t => t.includes('Load'))).toBe(true);
+      // Loading was removed — the JSON is a snapshot for reference only
+      expect(texts.some(t => t.includes('Load'))).toBe(false);
     });
 
     it('dead export methods are removed', () => {
@@ -655,6 +656,857 @@ describe('LevelEditor', () => {
       expect(editor._applyHierarchy(data)).toBe(true);
       expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:crate', expect.objectContaining({ name: 'Crate' }));
       expect(crateGO.object3d.position.y).toBe(2);
+    });
+
+    // ── Light serialization ──────────────────────────────────────────
+
+    it('_generateJSON() serializes scene AmbientLight with type, color, and intensity', () => {
+      const lightGO = new GameObject('AmbientLight');
+      lightGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+      editor.sceneRoot.addChild(lightGO);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.light).toBeDefined();
+      expect(entry.light.type).toBe('AmbientLight');
+      expect(entry.light.color).toBe('#435472');
+      expect(entry.light.intensity).toBe(1.0);
+    });
+
+    it('_generateJSON() serializes scene PointLight with range, decay, and castShadow', () => {
+      const lightGO = new GameObject('CeilingLight');
+      const point = new THREE.PointLight(0xffd8a8, 10.0, 24, 1.0);
+      point.castShadow = true;
+      lightGO.object3d.add(point);
+      editor.sceneRoot.addChild(lightGO);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.light).toBeDefined();
+      expect(entry.light.type).toBe('PointLight');
+      expect(entry.light.color).toBe('#ffd8a8');
+      expect(entry.light.intensity).toBe(10.0);
+      expect(entry.light.range).toBe(24);
+      expect(entry.light.decay).toBe(1.0);
+      expect(entry.light.castShadow).toBe(true);
+    });
+
+    it('_generateJSON() serializes DirectionalLight with castShadow', () => {
+      const lightGO = new GameObject('MoonLight');
+      const dir = new THREE.DirectionalLight(0x8fb7ff, 1.8);
+      dir.castShadow = true;
+      lightGO.object3d.add(dir);
+      editor.sceneRoot.addChild(lightGO);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.light).toBeDefined();
+      expect(entry.light.type).toBe('DirectionalLight');
+      expect(entry.light.castShadow).toBe(true);
+    });
+
+    it('_generateJSON() does NOT serialize editor glow lights as scene lights', () => {
+      const go = new GameObject('GlowyBox');
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      go._shapeType = 'box';
+      editor.sceneRoot.addChild(go);
+      editor._setGlow(go, true, '#ff0000', 5, 10);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      // The glow PointLight should NOT appear as a scene light
+      expect(entry.light).toBeUndefined();
+      // But glow state should still be captured
+      expect(entry.glow.enabled).toBe(true);
+    });
+
+    it('_generateJSON() does not double-serialize an untagged scene PointLight as both light and glow', () => {
+      const lightGO = new GameObject('CeilingLight');
+      const point = new THREE.PointLight(0xffd8a8, 10.0, 24, 1.0);
+      lightGO.object3d.add(point);
+      editor.sceneRoot.addChild(lightGO);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      // Should be in light, not in glow
+      expect(entry.light).toBeDefined();
+      expect(entry.glow.enabled).toBe(false);
+    });
+
+    // ── Light deserialization ─────────────────────────────────────────
+
+    it('_applyHierarchy() recreates AmbientLight from serialized light data', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'AmbientLight', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              light: { type: 'AmbientLight', color: '#435472', intensity: 1.0 },
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'AmbientLight');
+      expect(go).toBeDefined();
+
+      // Should have an AmbientLight child
+      let foundLight = null;
+      go.object3d.traverse(c => { if (c.isAmbientLight) foundLight = c; });
+      expect(foundLight).not.toBeNull();
+      expect(foundLight.color.getHexString()).toBe('435472');
+      expect(foundLight.intensity).toBe(1.0);
+
+      // Should NOT have a mesh (light-only GO, no bboxSize)
+      let meshCount = 0;
+      go.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(0);
+    });
+
+    it('_applyHierarchy() recreates PointLight with range, decay, and shadow', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'CeilingLight', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [0, 2.75, 0.4], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              light: { type: 'PointLight', color: '#ffd8a8', intensity: 10.0, range: 24, decay: 1.0, castShadow: true },
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'CeilingLight');
+      expect(go).toBeDefined();
+
+      let foundLight = null;
+      go.object3d.traverse(c => { if (c.isPointLight) foundLight = c; });
+      expect(foundLight).not.toBeNull();
+      expect(foundLight.intensity).toBe(10.0);
+      expect(foundLight.distance).toBe(24);
+      expect(foundLight.decay).toBe(1.0);
+      expect(foundLight.castShadow).toBe(true);
+    });
+
+    it('_applyHierarchy() recreates DirectionalLight from serialized light data', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'MoonLight', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [-6, 8, -10], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              light: { type: 'DirectionalLight', color: '#8fb7ff', intensity: 1.8, castShadow: true },
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'MoonLight');
+      expect(go).toBeDefined();
+
+      let foundLight = null;
+      go.object3d.traverse(c => { if (c.isDirectionalLight) foundLight = c; });
+      expect(foundLight).not.toBeNull();
+      expect(foundLight.intensity).toBe(1.8);
+      expect(foundLight.castShadow).toBe(true);
+    });
+
+    it('_applyHierarchy() creates light AND fixture box when entry has both light and bboxSize', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'CeilingFixture', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [0, 2.75, 0.4], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false },
+              color: '#2a2a2a', hidden: false,
+              bboxSize: [0.7, 0.08, 0.9],
+              light: { type: 'PointLight', color: '#ffd8a8', intensity: 10.0, range: 24, decay: 1.0 },
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'CeilingFixture');
+      expect(go).toBeDefined();
+
+      // Should have a light
+      let foundLight = null;
+      go.object3d.traverse(c => { if (c.isPointLight) foundLight = c; });
+      expect(foundLight).not.toBeNull();
+
+      // Should also have a mesh (fixture box)
+      let meshCount = 0;
+      go.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(1);
+    });
+
+    // ── Material property serialization ───────────────────────────────
+
+    it('_generateJSON() serializes material roughness and metalness for procedural boxes', () => {
+      const wall = new GameObject('Wall');
+      const mat = new THREE.MeshStandardMaterial({ color: 0x2f3945, roughness: 0.95, metalness: 0.1 });
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), mat));
+      editor.sceneRoot.addChild(wall);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.materialProps).toBeDefined();
+      expect(entry.materialProps.roughness).toBeCloseTo(0.95);
+      expect(entry.materialProps.metalness).toBeCloseTo(0.1);
+    });
+
+    it('_applyHierarchy() applies materialProps to rebuilt procedural boxes', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'Wall', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [0, 1.5, -5], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: true, glow: { enabled: false },
+              color: '#2f3945', hidden: false,
+              bboxSize: [4, 3, 0.2],
+              materialProps: { roughness: 0.95, metalness: 0.1 },
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'Wall');
+      expect(go).toBeDefined();
+
+      let foundMat = null;
+      go.object3d.traverse(c => { if (c.isMesh && c.material) foundMat = c.material; });
+      expect(foundMat).toBeDefined();
+      expect(foundMat.roughness).toBeCloseTo(0.95);
+      expect(foundMat.metalness).toBeCloseTo(0.1);
+    });
+
+    // ── Manifest model re-spawn with scale/rotation ───────────────────
+
+    it('_instantiateEntry() passes scale and rotationY to spawnModel for manifest models', () => {
+      const spawnedGO = new GameObject('ComputerDesk');
+      spawnedGO.physicsAssetKey = 'model:retro-computer';
+      spawnedGO.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      mockEngine.spawnModel = vi.fn(() => {
+        mockEngine._rootObjects.push(spawnedGO);
+        return spawnedGO;
+      });
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'ComputerDesk', isGroup: false,
+              assetKey: 'model:retro-computer',
+              position: [0, 0, -2.55], rotation: [0, Math.PI, 0], scale: [0.016, 0.016, 0.016],
+              collider: true, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      editor._applyHierarchy(data);
+      expect(mockEngine.spawnModel).toHaveBeenCalledWith(
+        'model:retro-computer',
+        expect.objectContaining({
+          name: 'ComputerDesk',
+          position: [0, 0, -2.55],
+          rotationY: Math.PI,
+          scale: [0.016, 0.016, 0.016],
+        }),
+      );
+    });
+
+    // ── Old JSON compatibility ────────────────────────────────────────
+
+    it('_applyHierarchy() handles old JSON without light or materialProps fields', () => {
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+          children: [
+            {
+              name: 'OldBox', isGroup: false,
+              assetKey: null, shapeType: null,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false },
+              color: '#808080', hidden: false,
+              // no light, no materialProps, no bboxSize — old format
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchy(data);
+      expect(result).toBe(true);
+
+      const go = editor.sceneRoot.children.find(c => c.name === 'OldBox');
+      expect(go).toBeDefined();
+      // Should still get a placeholder box
+      let meshCount = 0;
+      go.object3d.traverse(c => { if (c.isMesh) meshCount++; });
+      expect(meshCount).toBe(1);
+    });
+
+    // ── Full round-trip ──────────────────────────────────────────────
+
+    it('round-trips a scene with lights, procedural boxes, and manifest models', () => {
+      // Set up a scene with mixed content
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+
+      // Procedural wall
+      const wall = new GameObject('Wall');
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x2f3945, roughness: 0.95 });
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), wallMat));
+      group.addChild(wall);
+
+      // Scene light
+      const lightGO = new GameObject('AmbientLight');
+      lightGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+      editor.sceneRoot.addChild(lightGO);
+
+      // Manifest model
+      const spawnedGO = new GameObject('Desk');
+      spawnedGO.physicsAssetKey = 'model:desk';
+      spawnedGO.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      group.addChild(spawnedGO);
+      mockEngine.assets.has = vi.fn((key) => key === 'model:desk');
+      mockEngine.spawnModel = vi.fn((key, opts) => {
+        mockEngine._rootObjects.push(spawnedGO);
+        return spawnedGO;
+      });
+
+      // Serialize
+      const json = editor._generateJSON();
+      const data = JSON.parse(json);
+
+      // Verify serialized data
+      const wallEntry = data.root.children[0].children[0];
+      expect(wallEntry.materialProps).toBeDefined();
+      expect(wallEntry.materialProps.roughness).toBeCloseTo(0.95);
+
+      const lightEntry = data.root.children[1];
+      expect(lightEntry.light).toBeDefined();
+      expect(lightEntry.light.type).toBe('AmbientLight');
+
+      const deskEntry = data.root.children[0].children[1];
+      expect(deskEntry.assetKey).toBe('model:desk');
+    });
+
+    it('_generateJSON() does not serialize children of imported models', () => {
+      mockEngine.assets.has = vi.fn(() => true); // model is in manifest
+      // Simulate an imported model (like Satellite) with internal child GameObjects
+      const model = new GameObject('Satellite');
+      model.physicsAssetKey = 'model:dish_tower';
+      model.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+
+      // Internal model part that shares the parent's name — this was causing
+      // name collisions and transform bugs on delta load
+      const childPart = new GameObject('Satellite');
+      childPart.object3d.position.set(0, 13, 0);
+      childPart.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial()));
+      model.children.push(childPart);
+      childPart.parent = model;
+
+      editor.sceneRoot.addChild(model);
+
+      const data = JSON.parse(editor._generateJSON());
+      const entry = data.root.children[0];
+
+      expect(entry.name).toBe('Satellite');
+      expect(entry.assetKey).toBe('model:dish_tower');
+      // Internal children should NOT be serialized
+      expect(entry.children).toHaveLength(0);
+    });
+
+    it('_generateJSON() still serializes children of groups', () => {
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+
+      const wall = new GameObject('Wall');
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      group.addChild(wall);
+
+      const data = JSON.parse(editor._generateJSON());
+      const groupEntry = data.root.children[0];
+      expect(groupEntry.children).toHaveLength(1);
+      expect(groupEntry.children[0].name).toBe('Wall');
+    });
+  });
+
+  describe('.js code generator', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+      mockEngine._rootObjects.push(editor.sceneRoot);
+      editor.dynamicObjects = [];
+    });
+
+    it('_generateFullSceneClass() has no duplicate imports', () => {
+      const code = editor._generateFullSceneClass();
+      // Count import lines
+      const importLines = code.split('\n').filter(l => l.trim().startsWith('import '));
+      const uniqueImports = new Set(importLines.map(l => l.trim()));
+      expect(importLines.length).toBe(uniqueImports.size);
+    });
+
+    it('_generateFullSceneClass() produces valid class structure', () => {
+      const code = editor._generateFullSceneClass();
+      expect(code).toContain('export class');
+      expect(code).toContain('extends Scene');
+      expect(code).toContain('build()');
+      expect(code).toContain("import * as THREE from 'three'");
+      expect(code).toContain("import { GameObject } from '../core/GameObject.js'");
+      expect(code).toContain('this.engine.buildPlayer()');
+      // No inline import inside build()
+      const buildBody = code.split('build()')[1];
+      expect(buildBody).not.toContain('import ');
+    });
+
+    it('_generateCode() creates procedural box code for non-manifest objects', () => {
+      const wall = new GameObject('BackWall');
+      wall.object3d.position.set(-5, 1.5, -5);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x2f3945, roughness: 0.95 });
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), mat));
+      editor.sceneRoot.addChild(wall);
+
+      const code = editor._generateCode();
+      expect(code).toContain("new THREE.BoxGeometry(");
+      expect(code).toContain("new THREE.MeshStandardMaterial(");
+      expect(code).toContain("0x2f3945");
+      expect(code).toContain("new GameObject('BackWall')");
+      expect(code).not.toContain("spawnModel('BackWall'");
+    });
+
+    it('_generateCode() creates light code for objects with scene lights', () => {
+      const lightGO = new GameObject('AmbientLight');
+      lightGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+      editor.sceneRoot.addChild(lightGO);
+
+      const code = editor._generateCode();
+      expect(code).toContain('new THREE.AmbientLight(');
+      expect(code).toContain("new GameObject('AmbientLight')");
+      expect(code).not.toContain("spawnModel('AmbientLight'");
+    });
+
+    it('_generateCode() creates spawnModel code for manifest models', () => {
+      mockEngine.assets.has = vi.fn(() => true);
+      const desk = new GameObject('Desk');
+      desk.physicsAssetKey = 'model:desk';
+      desk.object3d.position.set(0, 0, -3);
+      desk.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      editor.sceneRoot.addChild(desk);
+
+      const code = editor._generateCode();
+      expect(code).toContain("spawnModel('model:desk'");
+      expect(code).toContain("name: 'Desk'");
+    });
+
+    it('_generateCode() wires parent-child relationships with addChild', () => {
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+
+      const wall = new GameObject('Wall');
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      group.addChild(wall);
+
+      const code = editor._generateCode();
+      expect(code).toContain('sceneRoot.addChild(Office)');
+      // Procedural boxes use block-scoped `go` variable, parent.addChild(go)
+      expect(code).toContain('Office.addChild(go)');
+    });
+
+    it('_generateCode() handles PointLight with range and decay', () => {
+      const lightGO = new GameObject('CeilingLight');
+      const pl = new THREE.PointLight(0xffd8a8, 10, 24, 1);
+      pl.castShadow = true;
+      lightGO.object3d.add(pl);
+      editor.sceneRoot.addChild(lightGO);
+
+      const code = editor._generateCode();
+      expect(code).toContain('new THREE.PointLight(');
+      expect(code).toContain('light.castShadow = true');
+    });
+
+    it('_generateCode() handles DirectionalLight with shadow', () => {
+      const lightGO = new GameObject('MoonLight');
+      const dl = new THREE.DirectionalLight(0x8fb7ff, 1.8);
+      dl.castShadow = true;
+      lightGO.object3d.add(dl);
+      editor.sceneRoot.addChild(lightGO);
+
+      const code = editor._generateCode();
+      expect(code).toContain('new THREE.DirectionalLight(');
+      expect(code).toContain('light.castShadow = true');
+      expect(code).toContain('light.shadow.mapSize.set(1024, 1024)');
+    });
+
+    it('_generateCode() includes dynamic objects at the end', () => {
+      const crate = new GameObject('Crate_A');
+      crate.object3d.position.set(-2.2, 0.5, -7.3);
+      crate.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x334b63 })));
+      editor.dynamicObjects.push(crate);
+
+      const code = editor._generateCode();
+      expect(code).toContain('// ── Dynamic objects ──');
+      expect(code).toContain("new GameObject('Crate_A')");
+    });
+
+    it('_getManifestKey() returns key only for real manifest models', () => {
+      const desk = new GameObject('Desk');
+      desk.physicsAssetKey = 'model:desk';
+      expect(editor._getManifestKey(desk)).toBe('model:desk');
+
+      const wall = new GameObject('Wall');
+      wall.physicsAssetKey = null;
+      expect(editor._getManifestKey(wall)).toBeNull();
+
+      const fake = new GameObject('Fake');
+      fake.physicsAssetKey = 'model:not_in_manifest';
+      expect(editor._getManifestKey(fake)).toBeNull();
+    });
+  });
+
+  describe('delta hierarchy loading', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+      mockEngine._rootObjects.push(editor.sceneRoot);
+      editor.dynamicObjects = [];
+    });
+
+    it('_applyHierarchyDelta() returns null for invalid data', () => {
+      expect(editor._applyHierarchyDelta(null)).toBeNull();
+      expect(editor._applyHierarchyDelta({})).toBeNull();
+      expect(editor._applyHierarchyDelta({ root: {} })).toBeNull();
+      expect(editor._applyHierarchyDelta({ root: { children: 'not-array' } })).toBeNull();
+    });
+
+    it('_applyHierarchyDelta() applies transforms to matched objects by name', () => {
+      const wall = new GameObject('BackWall_Left');
+      wall.object3d.position.set(0, 0, 0);
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(4, 3, 0.2), new THREE.MeshStandardMaterial()));
+      editor.sceneRoot.addChild(wall);
+      editor._refreshEditableObjects();
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'BackWall_Left', isGroup: false,
+              position: [-5.125, 1.5, -5], rotation: [0, 0.5, 0], scale: [1, 1, 1],
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchyDelta(data);
+      expect(result).toBe(true);
+      expect(wall.object3d.position.x).toBeCloseTo(-5.125);
+      expect(wall.object3d.position.y).toBeCloseTo(1.5);
+      expect(wall.object3d.position.z).toBeCloseTo(-5);
+      expect(wall.object3d.rotation.y).toBeCloseTo(0.5);
+    });
+
+    it('_applyHierarchyDelta() spawns new objects for unmatched entries', () => {
+      const spawnedGO = new GameObject('NewObject');
+      mockEngine.spawnModel = vi.fn(() => spawnedGO);
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'NewObject', isGroup: false,
+              assetKey: 'model:desk',
+              position: [1, 2, 3], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false }, hidden: false,
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchyDelta(data);
+      expect(result).toBe(true);
+      expect(mockEngine.spawnModel).toHaveBeenCalledWith('model:desk', expect.objectContaining({ name: 'NewObject' }));
+    });
+
+    it('_applyHierarchyDelta() recurses into matched groups', () => {
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+
+      const wall = new GameObject('Wall');
+      wall.object3d.position.set(0, 0, 0);
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      group.addChild(wall);
+      editor._refreshEditableObjects();
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'Office', isGroup: true,
+              children: [
+                {
+                  name: 'Wall', isGroup: false,
+                  position: [5, 1, -3], rotation: [0, 0, 0], scale: [1, 1, 1],
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchyDelta(data);
+      expect(result).toBe(true);
+      expect(wall.object3d.position.x).toBeCloseTo(5);
+      expect(wall.object3d.position.y).toBeCloseTo(1);
+      expect(wall.object3d.position.z).toBeCloseTo(-3);
+    });
+
+    it('_applyHierarchyDelta() applies visibility changes', () => {
+      const go = new GameObject('HiddenBox');
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      editor.sceneRoot.addChild(go);
+      editor._refreshEditableObjects();
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'HiddenBox', isGroup: false,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              hidden: true,
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      const result = editor._applyHierarchyDelta(data);
+      expect(result).toBe(true);
+      expect(editor._isHidden(go)).toBe(true);
+    });
+
+    it('_applyHierarchyDelta() handles dynamic objects', () => {
+      const crate = new GameObject('Crate_A');
+      crate.object3d.position.set(0, 0, 0);
+      crate.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      // Give it a rigidBody and register it so _buildHierarchy classifies it as dynamic
+      crate.rigidBody = { handle: 42, setTranslation: vi.fn(), setRotation: vi.fn() };
+      mockEngine.rigidBodyMap.set(42, crate);
+      mockEngine._rootObjects.push(crate);
+      editor._refreshEditableObjects();
+      expect(editor.dynamicObjects).toContain(crate);
+
+      const data = {
+        root: { name: 'SceneRoot', isGroup: true, children: [] },
+        dynamicObjects: [
+          {
+            name: 'Crate_A', isGroup: false,
+            position: [5, 1, -3], rotation: [0, 0.5, 0], scale: [1, 1, 1],
+            children: [],
+          },
+        ],
+      };
+
+      const result = editor._applyHierarchyDelta(data);
+      expect(result).toBe(true);
+      expect(crate.object3d.position.x).toBeCloseTo(5);
+      expect(crate.object3d.position.y).toBeCloseTo(1);
+      expect(crate.object3d.rotation.y).toBeCloseTo(0.5);
+    });
+
+    it('_applyHierarchyDelta() does not reset colors on imported models', () => {
+      const model = new GameObject('Desk');
+      model.physicsAssetKey = 'model:desk';
+      const mat = new THREE.MeshStandardMaterial({ color: 0x336699 });
+      model.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      editor.sceneRoot.addChild(model);
+      editor._refreshEditableObjects();
+
+      // JSON stores default gray — delta should NOT overwrite the model's color
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'Desk', isGroup: false,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              color: '#808080',
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      editor._applyHierarchyDelta(data);
+      // Color should be unchanged — the default gray must not overwrite the model
+      expect(editor._getObjectColor(model)).toBe('#336699');
+    });
+
+    it('_applyHierarchyDelta() does not touch scene light GameObjects', () => {
+      const lightGO = new GameObject('AmbientLight');
+      const ambient = new THREE.AmbientLight(0x435472, 1.0);
+      lightGO.object3d.add(ambient);
+      editor.sceneRoot.addChild(lightGO);
+      editor._refreshEditableObjects();
+
+      const data = {
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [
+            {
+              name: 'AmbientLight', isGroup: false,
+              position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              color: '#808080',
+              children: [],
+            },
+          ],
+        },
+        dynamicObjects: [],
+      };
+
+      editor._applyHierarchyDelta(data);
+      // Light should still be enabled with original intensity
+      expect(ambient.intensity).toBe(1.0);
+      expect(ambient.visible).toBe(true);
+    });
+
+    it('round-trips world-space positions through nested groups', () => {
+      // Object under a group — its local position differs from its world position
+      const group = new GameObject('Office');
+      group.makeGroup();
+      group.object3d.position.set(10, 0, 0); // group offset
+      editor.sceneRoot.addChild(group);
+
+      const wall = new GameObject('Wall');
+      wall.object3d.position.set(5, 2, -3); // local to group
+      wall.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+      group.addChild(wall);
+
+      // Serialize — the JSON should store the WORLD position [15, 2, -3]
+      const json = editor._generateJSON();
+      const data = JSON.parse(json);
+      const wallEntry = data.root.children[0].children[0];
+      expect(wallEntry.position[0]).toBeCloseTo(15);
+      expect(wallEntry.position[1]).toBeCloseTo(2);
+      expect(wallEntry.position[2]).toBeCloseTo(-3);
+
+      // Move the wall elsewhere, then load the JSON back
+      wall.object3d.position.set(0, 0, 0);
+      editor._applyHierarchyDelta(data);
+
+      // World position should be restored to [15, 2, -3]
+      const wp = new THREE.Vector3();
+      wall.object3d.getWorldPosition(wp);
+      expect(wp.x).toBeCloseTo(15);
+      expect(wp.y).toBeCloseTo(2);
+      expect(wp.z).toBeCloseTo(-3);
+    });
+
+    it('_setGlow() does not modify emissive on imported models', () => {
+      const model = new GameObject('Desk');
+      model.physicsAssetKey = 'model:desk';
+      const mat = new THREE.MeshStandardMaterial({ color: 0x336699, emissive: 0x111111, emissiveIntensity: 0.5 });
+      model.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
+      editor.sceneRoot.addChild(model);
+
+      editor._setGlow(model, true, '#ff0000', 5, 10);
+
+      // Emissive should be UNCHANGED — glow on imported models is light-only
+      expect(mat.emissive.getHex()).toBe(0x111111);
+      expect(mat.emissiveIntensity).toBe(0.5);
+      // But a PointLight should have been created
+      let lightCount = 0;
+      model.object3d.traverse(c => { if (c.isPointLight && c._editorGlowLight) lightCount++; });
+      expect(lightCount).toBe(1);
+
+      // Disabling glow should also leave emissive untouched
+      editor._setGlow(model, false);
+      expect(mat.emissive.getHex()).toBe(0x111111);
+      expect(mat.emissiveIntensity).toBe(0.5);
     });
   });
 

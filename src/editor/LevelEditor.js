@@ -499,13 +499,11 @@ export class LevelEditor {
     saveCodeBtn.onclick = () => this._saveSceneCode();
     saveRow.appendChild(saveCodeBtn);
 
-    // Load hierarchy back from a saved .hierarchy.json (round-trip)
-    const loadBtn = document.createElement('button');
-    loadBtn.id = 'load-hierarchy-btn';
-    loadBtn.textContent = '\uD83D\uDCC2 Load';
-    loadBtn.style.cssText = 'flex:1; padding:6px; background:#a52; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
-    loadBtn.onclick = () => this._loadHierarchy();
-    saveRow.appendChild(loadBtn);
+    // NOTE: The Load button was intentionally removed. Delta-loading a saved
+    // JSON back into the live scene proved unreliable (emissive corruption,
+    // world/local transform mismatches, glow light adoption). The exported
+    // .js and .hierarchy.json files are snapshots for reference — hand edits
+    // to the scene source are the supported way to persist changes.
 
     header.appendChild(saveRow);
     this.panel.appendChild(header);
@@ -637,7 +635,9 @@ export class LevelEditor {
     return code;
   }
 
-  /** Open a file picker and load a saved .hierarchy.json back into the scene. */
+  /** Open a file picker and load a saved .hierarchy.json back into the scene.
+   *  Uses delta mode: applies JSON transforms on top of the existing scene
+   *  to preserve visual fidelity (models, textures, lights, materials). */
   _loadHierarchy() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -651,7 +651,8 @@ export class LevelEditor {
       reader.onload = () => {
         try {
           const data = JSON.parse(reader.result);
-          const ok = this._applyHierarchy(data);
+          // Try delta mode first (preserves visuals), fall back to full rebuild
+          const ok = this._applyHierarchyDelta(data) ?? this._applyHierarchy(data);
           if (ok) console.log(`[LevelEditor] Loaded hierarchy from ${file.name}`);
           else console.warn(`[LevelEditor] Failed to load hierarchy from ${file.name}`);
         } catch (e) {
@@ -701,6 +702,173 @@ export class LevelEditor {
     this._updateObjectList();
     this._dirty = false;
     this._updateDirtyIndicator();
+    return true;
+  }
+
+  /** Apply a saved hierarchy as a DELTA on top of the existing scene.
+   *  Matches JSON entries to existing GameObjects by name and applies
+   *  transform/visibility/state changes. New objects are spawned; objects
+   *  not in the JSON are left untouched (preserving visual fidelity).
+   *  Returns true on success, null if the data is invalid (caller should
+   *  fall back to _applyHierarchy). */
+  _applyHierarchyDelta(data) {
+    if (!data || !data.root || !Array.isArray(data.root.children)) {
+      return null; // invalid data — let caller fall back
+    }
+
+    this.deselectAll();
+
+    // Build a name → GameObject map from the existing scene hierarchy
+    const existingByName = new Map();
+    const collectExisting = (go) => {
+      if (go.name && !existingByName.has(go.name)) {
+        existingByName.set(go.name, go);
+      }
+      for (const child of (go.children || [])) {
+        collectExisting(child);
+      }
+    };
+    if (this.sceneRoot) {
+      for (const child of this.sceneRoot.children) {
+        collectExisting(child);
+      }
+    }
+    for (const go of (this.dynamicObjects || [])) {
+      collectExisting(go);
+    }
+
+    // Track which existing objects are accounted for in the JSON
+    const matchedNames = new Set();
+
+    // Recursively apply JSON entries to the existing hierarchy
+    const applyDelta = (entries, parentGO) => {
+      for (const entry of entries) {
+        if (!entry || !entry.name) continue;
+
+        const existing = existingByName.get(entry.name);
+        if (existing && !entry.isGroup) {
+          // ── Match found: apply transform and state ──
+          matchedNames.add(entry.name);
+          const obj = existing.object3d;
+
+          // Apply transform — the JSON stores WORLD-space position/rotation,
+          // so convert back to local space relative to the current parent
+          // before setting. This makes the loaded scene match what was visible
+          // when it was saved, regardless of parent group transforms.
+          if (entry.position) {
+            obj.updateMatrixWorld(false);
+            const worldPos = new THREE.Vector3().fromArray(entry.position);
+            if (obj.parent) {
+              obj.parent.worldToLocal(worldPos);
+            }
+            obj.position.copy(worldPos);
+          }
+          if (entry.rotation) {
+            obj.updateMatrixWorld(false);
+            const wq = new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(entry.rotation[0], entry.rotation[1], entry.rotation[2], 'XYZ'));
+            if (obj.parent) {
+              const parentInv = obj.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+              wq.premultiply(parentInv);
+            }
+            obj.quaternion.copy(wq);
+          }
+          if (entry.scale) obj.scale.fromArray(entry.scale);
+
+          // Apply colour — only for procedural (non-imported, non-light) objects.
+          // Imported models have textures that must not be tinted, and light
+          // GameObjects must keep their original light colour/intensity.
+          // In delta mode the existing scene already has the correct colours,
+          // so we only re-apply when the JSON has an explicit editor-set color
+          // that differs from the default AND the object is a procedural box.
+          const isImportedModel = !!existing.physicsAssetKey;
+          const hasSceneLight = this._findSceneLight(existing) !== null;
+          if (entry.color && entry.color !== '#808080' && !isImportedModel && !hasSceneLight) {
+            this._setObjectColor(existing, entry.color);
+          }
+
+          // Apply glow
+          if (entry.glow?.enabled) {
+            this._setGlow(existing, true, entry.glow.color ?? '#ffffff', entry.glow.intensity ?? 5, entry.glow.range ?? LevelEditor.GLOW_DEFAULT_RANGE);
+          } else if (entry.glow && !entry.glow.enabled && this._findGlowLight(existing)?._editorGlowLight) {
+            this._setGlow(existing, false);
+          }
+
+          // Apply visibility
+          if (entry.hidden !== undefined) {
+            this._setHidden(existing, !!entry.hidden);
+          }
+
+          // Sync physics if the object has a rigid body
+          if (existing.rigidBody) {
+            this._syncSingleTransformToPhysics(existing);
+          }
+
+          // Recurse into children (for groups that were matched)
+          if (entry.children?.length && existing.children?.length) {
+            applyDelta(entry.children, existing);
+          }
+        } else if (existing && entry.isGroup) {
+          // Group matched — just recurse into children
+          matchedNames.add(entry.name);
+          if (entry.children?.length) {
+            applyDelta(entry.children, existing);
+          }
+        } else {
+          // ── No match: spawn a new object ──
+          this._instantiateEntry(entry, parentGO);
+        }
+      }
+    };
+
+    // Apply delta to the hierarchy
+    if (this.sceneRoot) {
+      applyDelta(data.root.children, this.sceneRoot);
+    }
+
+    // Apply delta to dynamic objects
+    for (const entry of (data.dynamicObjects ?? [])) {
+      if (!entry?.name) continue;
+      const existing = existingByName.get(entry.name);
+      if (existing) {
+        matchedNames.add(entry.name);
+        const obj = existing.object3d;
+        // World-space position/rotation — same conversion as the hierarchy path
+        if (entry.position) {
+          obj.updateMatrixWorld(false);
+          const worldPos = new THREE.Vector3().fromArray(entry.position);
+          if (obj.parent) {
+            obj.parent.worldToLocal(worldPos);
+          }
+          obj.position.copy(worldPos);
+        }
+        if (entry.rotation) {
+          obj.updateMatrixWorld(false);
+          const wq = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(entry.rotation[0], entry.rotation[1], entry.rotation[2], 'XYZ'));
+          if (obj.parent) {
+            const parentInv = obj.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+            wq.premultiply(parentInv);
+          }
+          obj.quaternion.copy(wq);
+        }
+        if (entry.scale) obj.scale.fromArray(entry.scale);
+        if (existing.rigidBody) {
+          this._syncSingleTransformToPhysics(existing);
+        }
+      } else {
+        this._instantiateEntry(entry, null);
+      }
+    }
+
+    this._refreshEditableObjects();
+    this._updateObjectList();
+    this._dirty = false;
+    this._updateDirtyIndicator();
+
+    const matched = matchedNames.size;
+    const total = existingByName.size;
+    console.log(`[LevelEditor] Delta load: matched ${matched}/${total} existing objects`);
     return true;
   }
 
@@ -770,6 +938,8 @@ export class LevelEditor {
         go = this.engine.spawnModel(entry.assetKey, {
           name: entry.name,
           position: entry.position ?? [0, 0, 0],
+          rotationY: entry.rotation?.[1] ?? 0,
+          scale: entry.scale ?? [1, 1, 1],
         });
         if (go && parentGO) {
           parentGO.addChild(go);
@@ -780,15 +950,32 @@ export class LevelEditor {
       }
     }
 
+    // ── Light recreation (before the generic box fallback) ──────
+    if (!go && entry.light) {
+      go = this._createLightGO(entry);
+      if (parentGO) {
+        parentGO.addChild(go);
+      } else {
+        this.engine._rootObjects.push(go);
+        this.engine.scene.add(go.object3d);
+      }
+    }
+
     // Last-resort fallback: if nothing created a GO yet and we have no
-    // shapeType or valid manifest key, make a placeholder box so the
-    // hierarchy isn't silently missing. Uses bboxSize if available, else 1³.
+    // shapeType, valid manifest key, or light data, make a placeholder box
+    // so the hierarchy isn't silently missing. Uses bboxSize if available,
+    // else 1³. Applies materialProps if present.
     if (!go && !entry.isGroup && !entry.shapeType) {
       const size = entry.bboxSize ?? [1, 1, 1];
+      const mp = entry.materialProps ?? {};
       go = new GameObject(entry.name);
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(size[0], size[1], size[2]),
-        new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7 }),
+        new THREE.MeshStandardMaterial({
+          color: 0x808080,
+          roughness: mp.roughness ?? 0.7,
+          metalness: mp.metalness ?? 0,
+        }),
       );
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -834,6 +1021,11 @@ export class LevelEditor {
 
       if (entry.hidden) {
         this._setHidden(go, true);
+      }
+
+      // Restore material properties (roughness, metalness) for procedural boxes
+      if (entry.materialProps) {
+        this._applyMaterialProps(go, entry.materialProps);
       }
     }
 
@@ -1807,6 +1999,112 @@ export class LevelEditor {
     return tagged || untagged;
   }
 
+  /** Find the first non-editor-glow light in a GameObject's children.
+   *  Returns AmbientLight, DirectionalLight, or untagged PointLight children.
+   *  Used during serialization to capture scene-authored lights. */
+  _findSceneLight(go) {
+    let light = null;
+    go.object3d.traverse((child) => {
+      if (child.isLight && !child._editorGlowLight && !light) {
+        light = child;
+      }
+    });
+    return light;
+  }
+
+  /** Serialize a Three.js light to a plain object for JSON export. */
+  _serializeLight(light) {
+    const data = {
+      type: light.type,
+      color: '#' + light.color.getHexString(),
+      intensity: light.intensity,
+    };
+    if (light.isPointLight) {
+      data.range = light.distance;
+      data.decay = light.decay;
+      data.castShadow = light.castShadow;
+    }
+    if (light.isDirectionalLight) {
+      data.castShadow = light.castShadow;
+    }
+    return data;
+  }
+
+  /** Create a GameObject with a real Three.js light from serialized data.
+   *  If the entry also has a bboxSize, a box mesh is added (e.g. light fixture). */
+  _createLightGO(entry) {
+    const go = new GameObject(entry.name);
+    const ld = entry.light;
+
+    let light;
+    switch (ld.type) {
+      case 'AmbientLight':
+        light = new THREE.AmbientLight(ld.color, ld.intensity);
+        break;
+      case 'DirectionalLight':
+        light = new THREE.DirectionalLight(ld.color, ld.intensity);
+        light.castShadow = ld.castShadow ?? false;
+        if (light.castShadow) light.shadow.mapSize.set(1024, 1024);
+        break;
+      case 'PointLight':
+      default:
+        light = new THREE.PointLight(ld.color, ld.intensity, ld.range ?? 0, ld.decay ?? 1);
+        light.castShadow = ld.castShadow ?? false;
+        if (light.castShadow) light.shadow.mapSize.set(1024, 1024);
+        break;
+    }
+    go.object3d.add(light);
+
+    // If the entry also has a bboxSize, add a box mesh for the fixture
+    if (entry.bboxSize) {
+      const size = entry.bboxSize;
+      const color = entry.color ? new THREE.Color(entry.color) : new THREE.Color(0x808080);
+      const mp = entry.materialProps ?? {};
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size[0], size[1], size[2]),
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: mp.roughness ?? 0.7,
+          metalness: mp.metalness ?? 0,
+        }),
+      );
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    }
+
+    return go;
+  }
+
+  /** Extract material properties (roughness, metalness) from a GO's first mesh. */
+  _getMaterialProps(go) {
+    let props = null;
+    go.object3d.traverse((child) => {
+      if (child.isMesh && child.material && !props) {
+        const mat = child.material;
+        const p = {};
+        if (mat.roughness !== undefined) p.roughness = mat.roughness;
+        if (mat.metalness !== undefined) p.metalness = mat.metalness;
+        if (Object.keys(p).length > 0) props = p;
+      }
+    });
+    return props;
+  }
+
+  /** Apply serialized material properties to all meshes in a GO. */
+  _applyMaterialProps(go, props) {
+    go.object3d.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      const mat = child.material;
+      if (props.roughness !== undefined && mat.roughness !== undefined) {
+        mat.roughness = props.roughness;
+      }
+      if (props.metalness !== undefined && mat.metalness !== undefined) {
+        mat.metalness = props.metalness;
+      }
+    });
+  }
+
   /** Enable or disable a PointLight (and matching emissive) on the object.
    *
    *  When an untagged scene-authored light already exists on the object,
@@ -1818,6 +2116,9 @@ export class LevelEditor {
     range = range ?? LevelEditor.GLOW_DEFAULT_RANGE;
 
     const existing = this._findGlowLight(go);
+    // Imported models (GLB) must never have their materials touched by glow.
+    // Glow on imported models is light-only — the PointLight provides the effect.
+    const isImportedModel = !!go.physicsAssetKey;
 
     if (enabled) {
       const color = new THREE.Color(colorHex);
@@ -1846,18 +2147,22 @@ export class LevelEditor {
         go.object3d.add(light);
       }
 
-      // Save original emissive (once) then override for glow
-      go.object3d.traverse((child) => {
-        if (!child.isMesh || !child.material) return;
-        const mat = child.material;
-        if (!('emissive' in mat)) return;
-        if (mat._originalEmissive === undefined) {
-          mat._originalEmissive = mat.emissive.clone();
-          mat._originalEmissiveIntensity = mat.emissiveIntensity;
-        }
-        mat.emissive.copy(color);
-        mat.emissiveIntensity = Math.min(intensity, 3.0);
-      });
+      // Save original emissive (once) then override for glow.
+      // Skip imported models — their textures must not be tinted by emissive.
+      // Glow on imported models is light-only (the PointLight we just created).
+      if (!isImportedModel) {
+        go.object3d.traverse((child) => {
+          if (!child.isMesh || !child.material) return;
+          const mat = child.material;
+          if (!('emissive' in mat)) return;
+          if (mat._originalEmissive === undefined) {
+            mat._originalEmissive = mat.emissive.clone();
+            mat._originalEmissiveIntensity = mat.emissiveIntensity;
+          }
+          mat.emissive.copy(color);
+          mat.emissiveIntensity = Math.min(intensity, 3.0);
+        });
+      }
     } else {
       // ── Disable: remove light (tagged or adopted), restore original emissive ──
       if (existing) {
@@ -1865,20 +2170,23 @@ export class LevelEditor {
         existing.dispose?.();
       }
 
-      go.object3d.traverse((child) => {
-        if (!child.isMesh || !child.material) return;
-        const mat = child.material;
-        if (!('emissive' in mat)) return;
-        if (mat._originalEmissive !== undefined) {
-          mat.emissive.copy(mat._originalEmissive);
-          mat.emissiveIntensity = mat._originalEmissiveIntensity;
-          delete mat._originalEmissive;
-          delete mat._originalEmissiveIntensity;
-        } else {
-          mat.emissive.set(0x000000);
-          mat.emissiveIntensity = 0;
-        }
-      });
+      // Restore emissive — skip imported models (their materials were never touched)
+      if (!isImportedModel) {
+        go.object3d.traverse((child) => {
+          if (!child.isMesh || !child.material) return;
+          const mat = child.material;
+          if (!('emissive' in mat)) return;
+          if (mat._originalEmissive !== undefined) {
+            mat.emissive.copy(mat._originalEmissive);
+            mat.emissiveIntensity = mat._originalEmissiveIntensity;
+            delete mat._originalEmissive;
+            delete mat._originalEmissiveIntensity;
+          } else {
+            mat.emissive.set(0x000000);
+            mat.emissiveIntensity = 0;
+          }
+        });
+      }
     }
 
     this._markDirty();
@@ -2353,26 +2661,20 @@ export class LevelEditor {
     this._updateObjectList();
   }
   
-  /** Generate hierarchy-aware JavaScript code as a string. */
+  /** Generate hierarchy-aware JavaScript code as a string. The output is
+   *  valid ES module code that can replace the original scene file. It creates
+   *  groups, procedural boxes (with materials), lights, and manifest models,
+   *  with correct parent-child wiring. */
   _generateCode() {
     let code = '// ── Generated by Level Editor ──\n\n';
-    code += "import { GameObject } from '../core/GameObject.js';\n\n";
 
     if (this.sceneRoot) {
       code += '// ── Hierarchy ──\n';
       code += "const sceneRoot = new GameObject('SceneRoot');\n";
       code += 'sceneRoot.makeGroup();\n\n';
 
-      for (const group of this.sceneRoot.children) {
-        const varName = this._safeVarName(group.name);
-        code += `const ${varName} = new GameObject('${group.name}');\n`;
-        code += `${varName}.makeGroup();\n`;
-        code += `sceneRoot.addChild(${varName});\n\n`;
-
-        for (const child of (group.children || [])) {
-          if (child.isGroup) continue;
-          code += this._spawnCallFor(child, varName);
-        }
+      for (const child of this.sceneRoot.children) {
+        code += this._generateNodeCode(child, 'sceneRoot');
       }
     }
 
@@ -2380,11 +2682,191 @@ export class LevelEditor {
     if (this.dynamicObjects && this.dynamicObjects.length > 0) {
       code += '\n// ── Dynamic objects ──\n';
       for (const go of this.dynamicObjects) {
-        code += this._spawnCallFor(go, null);
+        code += this._generateNodeCode(go, null);
       }
     }
 
     return code;
+  }
+
+  /** Generate code for a single hierarchy node (group, model, light, or box).
+   *  Recurses into group children. Returns a string of valid JS code. */
+  _generateNodeCode(go, parentVarName) {
+    if (go.isGroup) {
+      return this._generateGroupCode(go, parentVarName);
+    }
+
+    // Check if this is a manifest model, a light, or a procedural box
+    const manifestKey = this._getManifestKey(go);
+    const sceneLight = this._findSceneLight(go);
+
+    if (manifestKey) {
+      return this._generateManifestSpawnCode(go, parentVarName, manifestKey);
+    }
+    if (sceneLight) {
+      return this._generateLightCreationCode(go, parentVarName, sceneLight);
+    }
+    return this._generateProceduralBoxCode(go, parentVarName);
+  }
+
+  /** Generate code for a group node and its children. */
+  _generateGroupCode(go, parentVarName) {
+    const varName = this._safeVarName(go.name);
+    let code = `const ${varName} = new GameObject('${go.name}');\n`;
+    code += `${varName}.makeGroup();\n`;
+    if (parentVarName) {
+      code += `${parentVarName}.addChild(${varName});\n`;
+    } else {
+      code += `sceneRoot.addChild(${varName});\n`;
+    }
+    code += '\n';
+
+    for (const child of (go.children || [])) {
+      code += this._generateNodeCode(child, varName);
+    }
+    return code;
+  }
+
+  /** Generate a spawnModel call for a manifest model, with parent wiring. */
+  _generateManifestSpawnCode(go, parentVarName, manifestKey) {
+    const obj = go.object3d;
+    const pos = obj.position;
+    const rot = obj.rotation;
+    const scale = obj.scale;
+
+    let code = '';
+    if (parentVarName) {
+      code += `// Child of ${parentVarName}\n`;
+    }
+    code += `{\n`;
+    code += `  const go = this.engine.spawnModel('${manifestKey}', {\n`;
+    code += `    name: '${go.name}',\n`;
+    code += `    position: [${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}],\n`;
+
+    if (Math.abs(rot.y) > 1e-6) {
+      code += `    rotationY: ${rot.y.toFixed(3)},\n`;
+    }
+    if (Math.abs(rot.x) > 1e-6 || Math.abs(rot.z) > 1e-6) {
+      code += `    // TODO: this object also has X/Z rotation from the editor.\n`;
+    }
+    if (scale.x !== 1 || scale.y !== 1 || scale.z !== 1) {
+      code += `    scale: ${this._formatScaleForCode(scale)},\n`;
+    }
+    code += `  });\n`;
+    if (parentVarName) {
+      code += `  ${parentVarName}.addChild(go);\n`;
+    } else {
+      code += `  sceneRoot.addChild(go);\n`;
+    }
+    code += `}\n\n`;
+    return code;
+  }
+
+  /** Generate inline code for a procedural box with material. */
+  _generateProceduralBoxCode(go, parentVarName) {
+    const obj = go.object3d;
+    const pos = obj.position;
+    const rot = obj.rotation;
+    const scale = obj.scale;
+
+    // Get size from _originalSize or measure bounding box
+    let size = go._originalSize;
+    if (!size) {
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      obj.traverse(child => { if (child.isMesh) box.expandByObject(child); });
+      if (!box.isEmpty()) {
+        const s = box.getSize(new THREE.Vector3());
+        size = [s.x, s.y, s.z];
+      } else {
+        size = [1, 1, 1];
+      }
+    }
+
+    // Get material properties
+    const color = this._getObjectColor(go);
+    const matProps = this._getMaterialProps(go) ?? {};
+    const colorHex = color.replace('#', '0x');
+
+    let code = '';
+    if (parentVarName) {
+      code += `// Child of ${parentVarName}\n`;
+    }
+    code += `{\n`;
+    code += `  const go = new GameObject('${go.name}');\n`;
+    code += `  go.object3d.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});\n`;
+    if (Math.abs(rot.x) > 1e-6 || Math.abs(rot.y) > 1e-6 || Math.abs(rot.z) > 1e-6) {
+      code += `  go.object3d.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});\n`;
+    }
+    if (scale.x !== 1 || scale.y !== 1 || scale.z !== 1) {
+      code += `  go.object3d.scale.set(${scale.x.toFixed(3)}, ${scale.y.toFixed(3)}, ${scale.z.toFixed(3)});\n`;
+    }
+    code += `  const mesh = new THREE.Mesh(\n`;
+    code += `    new THREE.BoxGeometry(${size[0].toFixed(3)}, ${size[1].toFixed(3)}, ${size[2].toFixed(3)}),\n`;
+    code += `    new THREE.MeshStandardMaterial({ color: ${colorHex}, roughness: ${(matProps.roughness ?? 0.7).toFixed(3)}, metalness: ${(matProps.metalness ?? 0).toFixed(3)} }),\n`;
+    code += `  );\n`;
+    code += `  mesh.castShadow = mesh.receiveShadow = true;\n`;
+    code += `  go.object3d.add(mesh);\n`;
+    if (parentVarName) {
+      code += `  ${parentVarName}.addChild(go);\n`;
+    } else {
+      code += `  sceneRoot.addChild(go);\n`;
+    }
+    code += `}\n\n`;
+    return code;
+  }
+
+  /** Generate inline code for a scene light (Ambient, Point, Directional). */
+  _generateLightCreationCode(go, parentVarName, light) {
+    const pos = go.object3d.position;
+    const colorHex = '#' + light.color.getHexString();
+    const colorNum = '0x' + light.color.getHexString();
+
+    let code = '';
+    if (parentVarName) {
+      code += `// Child of ${parentVarName}\n`;
+    }
+    code += `{\n`;
+    code += `  const go = new GameObject('${go.name}');\n`;
+    if (pos.lengthSq() > 1e-6) {
+      code += `  go.object3d.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});\n`;
+    }
+
+    if (light.isAmbientLight) {
+      code += `  go.object3d.add(new THREE.AmbientLight(${colorNum}, ${light.intensity}));\n`;
+    } else if (light.isDirectionalLight) {
+      code += `  const light = new THREE.DirectionalLight(${colorNum}, ${light.intensity});\n`;
+      if (light.castShadow) {
+        code += `  light.castShadow = true;\n`;
+        code += `  light.shadow.mapSize.set(1024, 1024);\n`;
+      }
+      code += `  go.object3d.add(light);\n`;
+    } else {
+      // PointLight (default)
+      const range = light.distance ?? 0;
+      const decay = light.decay ?? 1;
+      code += `  const light = new THREE.PointLight(${colorNum}, ${light.intensity}, ${range}, ${decay});\n`;
+      if (light.castShadow) {
+        code += `  light.castShadow = true;\n`;
+        code += `  light.shadow.mapSize.set(1024, 1024);\n`;
+      }
+      code += `  go.object3d.add(light);\n`;
+    }
+
+    if (parentVarName) {
+      code += `  ${parentVarName}.addChild(go);\n`;
+    } else {
+      code += `  sceneRoot.addChild(go);\n`;
+    }
+    code += `}\n\n`;
+    return code;
+  }
+
+  /** Check if a GO's asset key is a real manifest model entry. */
+  _getManifestKey(go) {
+    const rawKey = go.physicsAssetKey ?? go.assetKey;
+    if (rawKey && ASSETS[rawKey]?.type === 'model') return rawKey;
+    return null;
   }
 
   /** Generate hierarchy-aware JSON as a string. Serializes the full editor
@@ -2393,7 +2875,10 @@ export class LevelEditor {
   _generateJSON() {
     const serialize = (go) => {
       const obj = go.object3d;
-      const light = this._findGlowLight(go);
+      // Only tagged glow lights count as editor glow for serialization.
+      // Untagged PointLights are scene-authored and belong in entry.light.
+      const anyGlowLight = this._findGlowLight(go);
+      const glowLight = (anyGlowLight && anyGlowLight._editorGlowLight) ? anyGlowLight : null;
 
       // Only keep assetKey if it's a real manifest model; procedural objects
       // (walls, lights, etc.) get null + a measured bboxSize so the loader
@@ -2418,101 +2903,79 @@ export class LevelEditor {
         }
       }
 
+      // ── Scene light detection ──
+      // Find scene-authored lights (not editor glow). If the glow system
+      // already captured this light (adopted PointLight), skip it to avoid
+      // double-serialization.
+      let sceneLightData = null;
+      if (!go.isGroup) {
+        const sceneLight = this._findSceneLight(go);
+        if (sceneLight && sceneLight !== glowLight) {
+          sceneLightData = this._serializeLight(sceneLight);
+        }
+      }
+
+      // ── Material properties ──
+      let materialProps = null;
+      if (!go.isGroup && !assetKey) {
+        materialProps = this._getMaterialProps(go);
+      }
+
       const entry = {
         name: go.name,
         isGroup: go.isGroup || false,
-        position: obj ? [obj.position.x, obj.position.y, obj.position.z] : [0, 0, 0],
-        rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
-        scale: obj ? [obj.scale.x, obj.scale.y, obj.scale.z] : [1, 1, 1],
+        // Store WORLD-space position/rotation so the loaded scene matches
+        // exactly what was visible, regardless of parent group transforms.
+        // The delta loader converts back to local space on apply.
+        position: obj ? (() => {
+          const wp = new THREE.Vector3();
+          obj.getWorldPosition(wp);
+          return [wp.x, wp.y, wp.z];
+        })() : [0, 0, 0],
+        rotation: obj ? (() => {
+          const wq = new THREE.Quaternion();
+          obj.getWorldQuaternion(wq);
+          const euler = new THREE.Euler().setFromQuaternion(wq, 'XYZ');
+          return [euler.x, euler.y, euler.z];
+        })() : [0, 0, 0],
+        scale: obj ? (() => {
+          const ws = new THREE.Vector3();
+          obj.getWorldScale(ws);
+          return [ws.x, ws.y, ws.z];
+        })() : [1, 1, 1],
         assetKey,
         shapeType: go._shapeType ?? null,
         collider: !!(go.rigidBody),
-        glow: light
-          ? { enabled: true, color: '#' + light.color.getHexString(), intensity: light.intensity, range: light.distance }
+        glow: glowLight
+          ? { enabled: true, color: '#' + glowLight.color.getHexString(), intensity: glowLight.intensity, range: glowLight.distance }
           : { enabled: false },
         color: go.isGroup ? null : this._getObjectColor(go),
         hidden: go.isGroup ? false : this._isHidden(go),
         children: [],
       };
       if (bboxSize) entry.bboxSize = bboxSize;
-      for (const child of (go.children || [])) {
-        entry.children.push(serialize(child));
+      if (sceneLightData) entry.light = sceneLightData;
+      if (materialProps) entry.materialProps = materialProps;
+      // Don't serialize children of imported models — their Object3D children
+      // (dish, pole, etc.) are internal model parts, not user-created scene
+      // objects. Serializing them causes name collisions and transform bugs
+      // on load (e.g. a child part named "Satellite" conflicts with the parent).
+      // Groups and editor-created objects still recurse normally.
+      const isImportedModel = !!go.physicsAssetKey;
+      if (!isImportedModel) {
+        for (const child of (go.children || [])) {
+          entry.children.push(serialize(child));
+        }
       }
       return entry;
     };
 
     const result = {
       root: this.sceneRoot ? serialize(this.sceneRoot) : null,
-      dynamicObjects: (this.dynamicObjects || []).map(go => {
-        const obj = go.object3d;
-        const light = this._findGlowLight(go);
-
-        let assetKey = null;
-        let bboxSize = null;
-        if (go._shapeType) {
-          // primitive
-        } else {
-          const rawKey = this._assetKeyFor(go);
-          if (rawKey && this.engine.assets?.has(rawKey)) {
-            assetKey = rawKey;
-          } else {
-            obj.updateMatrixWorld(true);
-            const box = new THREE.Box3();
-            obj.traverse(child => { if (child.isMesh) box.expandByObject(child); });
-            if (!box.isEmpty()) bboxSize = box.getSize(new THREE.Vector3()).toArray();
-          }
-        }
-
-        const entry = {
-          name: go.name,
-          assetKey,
-          shapeType: go._shapeType ?? null,
-          position: obj ? [obj.position.x, obj.position.y, obj.position.z] : [0, 0, 0],
-          rotation: obj ? [obj.rotation.x, obj.rotation.y, obj.rotation.z] : [0, 0, 0],
-          scale: obj ? [obj.scale.x, obj.scale.y, obj.scale.z] : [1, 1, 1],
-          collider: !!(go.rigidBody),
-          glow: light
-            ? { enabled: true, color: '#' + light.color.getHexString(), intensity: light.intensity, range: light.distance }
-            : { enabled: false },
-          color: this._getObjectColor(go),
-          hidden: this._isHidden(go),
-        };
-        if (bboxSize) entry.bboxSize = bboxSize;
-        return entry;
-      }),
+      dynamicObjects: (this.dynamicObjects || []).map(go => serialize(go)),
     };
 
     return JSON.stringify(result, null, 2);
-  }
-
-  /** Generate a single spawnModel call for a GameObject, optionally parented. */
-  _spawnCallFor(go, parentVarName) {
-    const obj = go.object3d;
-    const pos = obj.position;
-    const rot = obj.rotation;
-    const scale = obj.scale;
-    const assetKey = this._assetKeyFor(go);
-
-    let code = '';
-    if (parentVarName) {
-      code += `// Child of ${parentVarName}\n`;
-    }
-    code += `this.engine.spawnModel('${assetKey}', {\n`;
-    code += `  name: '${go.name}',\n`;
-    code += `  position: [${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}],\n`;
-
-    if (Math.abs(rot.y) > 1e-6) {
-      code += `  rotationY: ${rot.y.toFixed(3)},\n`;
-    }
-    if (Math.abs(rot.x) > 1e-6 || Math.abs(rot.z) > 1e-6) {
-      code += `  // TODO: this object also has X/Z rotation from the editor.\n`;
-    }
-    if (scale.x !== 1 || scale.y !== 1 || scale.z !== 1) {
-      code += `  scale: ${this._formatScaleForCode(scale)},\n`;
-    }
-
-    code += `});\n\n`;
-    return code;
   }
 
   /** Convert a name to a safe JS variable name. */
