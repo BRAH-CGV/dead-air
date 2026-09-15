@@ -156,6 +156,21 @@ describe('BaseScene', () => {
     }
   });
 
+  it('starts on night 1 with every doorway out of the office locked', () => {
+    expect(scene.nights.currentNight).toBe(1);
+    const doors = Object.values(scene.rooms).flatMap(r => r.doors);
+    for (const d of doors) expect(d.locked, d.name).toBe(true);
+  });
+
+  it('advancing the night unlocks the server room corridor, both ends', () => {
+    scene.nights.advance();
+    const office = scene.rooms.MainOffice.doors;
+    expect(office.find(d => d.targetRoom === 'ServerRoom').locked).toBe(false);
+    expect(scene.rooms.ServerRoom.doors[0].locked).toBe(false);
+    expect(office.find(d => d.targetRoom === 'LivingQuarters').locked).toBe(true);
+    expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
+  });
+
   it('dispose tears down every room and corridor', () => {
     const disposers = [...Object.values(scene.rooms), ...Object.values(scene.corridors)]
       .map(part => vi.spyOn(part, 'dispose'));

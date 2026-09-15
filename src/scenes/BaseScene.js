@@ -4,6 +4,7 @@ import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
+import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
@@ -13,7 +14,7 @@ import { Corridor } from './rooms/Corridor.js';
 // BaseScene  –  the whole base as one continuous scene
 // ─────────────────────────────────────────────
 // Three rooms joined by corridors, plus the small outside area. Nothing is
-// loaded per night: doors lock and unlock instead (night progression).
+// loaded per night: doors lock and unlock instead (NightManager).
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
@@ -24,6 +25,9 @@ import { Corridor } from './rooms/Corridor.js';
 // a doorway re-flows the layout instead of leaving gaps: each corridor runs
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
+//
+// Until gameplay drives the nights, advance from the console:
+//   engine.activeScene.nights.advance()
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -37,6 +41,9 @@ export class BaseScene extends Scene {
   rooms = {};
   /** @type {{OfficeToServer: Corridor, OfficeToQuarters: Corridor}} */
   corridors = {};
+  /** Which rooms are open tonight; re-locks doors on every change.
+   *  @type {NightManager|null} */
+  nights = null;
 
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
@@ -55,6 +62,7 @@ export class BaseScene extends Scene {
 
     this._buildRooms();
     this._buildCorridors();
+    this._setupNights();
     this._addGround();
     this._addLighting();
     this._buildOutside();
@@ -64,6 +72,7 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
+    this._offNightChange?.();
     for (const part of [...Object.values(this.rooms), ...Object.values(this.corridors)]) {
       part.dispose({ removeBodies: false });
     }
@@ -106,6 +115,15 @@ export class BaseScene extends Scene {
       OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
+  }
+
+  // ──────────────────────────────────────────
+  // Night progression
+  // ──────────────────────────────────────────
+  _setupNights() {
+    this.nights = new NightManager();
+    this.nights.applyTo(this.rooms);
+    this._offNightChange = this.nights.onChange(() => this.nights.applyTo(this.rooms));
   }
 
   // ──────────────────────────────────────────
