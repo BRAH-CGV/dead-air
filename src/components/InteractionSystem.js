@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
+import { PromptLabel } from '../ui/PromptLabel.js';
 
 // ─────────────────────────────────────────────
 // InteractionSystem  –  Component (attach to Player)
@@ -14,7 +15,10 @@ import { Interactable } from './Interactable.js';
 //
 // The crosshair DOM element (#crosshair) is automatically toggled
 // between its default and "active" (brighter) state based on whether
-// an interactable is targeted.
+// an interactable is targeted, and the target's `promptLabel` is shown on
+// the same HUD prompt RoomTransitionSystem uses for locked doors (they
+// share the #prompt element — a player is rarely at a locked door and
+// looking at a prop in the same frame, so one line is enough).
 // ─────────────────────────────────────────────
 
 export class InteractionSystem extends Component {
@@ -37,13 +41,18 @@ export class InteractionSystem extends Component {
   _origin = new THREE.Vector3();
   _dir    = new THREE.Vector3();
 
+  /** @param {object} [opts]
+   *  @param {number} [opts.range=5]
+   *  @param {{show:Function, hide:Function}} [opts.prompt]  Defaults to a PromptLabel on start */
   constructor(opts = {}) {
     super();
     this.range = opts.range ?? 5;
+    this.prompt = opts.prompt ?? null;
   }
 
   onStart() {
     this._crosshairEl = document.getElementById('crosshair');
+    this.prompt ??= new PromptLabel();
   }
 
   // ── Every rendered frame ────────────────────────────────────
@@ -105,10 +114,12 @@ export class InteractionSystem extends Component {
       this._crosshairEl.classList.toggle('active', !!this.currentTarget);
     }
 
-    // ── Hover callbacks ──
+    // ── Hover callbacks + HUD prompt ──
     if (this.currentTarget !== this._prevTarget) {
       this._prevTarget?.onHoverEnd();
       this._prevTarget = this.currentTarget;
+      if (this.currentTarget) this.prompt?.show(this.currentTarget.promptLabel);
+      else this.prompt?.hide();
     }
     if (this.currentTarget && this.currentHit) {
       this.currentTarget.onHover(this.currentHit);

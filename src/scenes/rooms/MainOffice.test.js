@@ -26,6 +26,7 @@ vi.mock('@dimforge/rapier3d', () => {
 
 import { MainOffice } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
+import { Interactable } from '../../components/Interactable.js';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -167,6 +168,15 @@ describe('MainOffice', () => {
     expect(ceiling.castShadow).toBe(true);
     expect(desk.position.toArray()).toEqual([0, 1.1, -2.1]);
     expect(desk.color.getHex()).toBe(0x66ccff);
+  });
+
+  it('the computer desk is an Interactable stub for signal collection (phase 10)', () => {
+    const interactable = room.root.find('ComputerDesk').getComponent(Interactable);
+    expect(interactable).not.toBeNull();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    interactable.onInteract({});
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('signal collected'));
+    log.mockRestore();
   });
 
   it('leaves global lights (ambient, moon) to the scene', () => {

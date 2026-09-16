@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Room, SIDES } from './Room.js';
 
 // ─────────────────────────────────────────────
@@ -62,6 +63,29 @@ export class Corridor extends Room {
     this.corridorWidth = width;
     this.axis          = axis;
     this.ends          = ends;
+  }
+
+  /** A single ceiling light at the midpoint, with a visible fixture (same
+   *  disc-on-the-ceiling treatment as the room ceiling lights) — corridors
+   *  have no room lighting of their own otherwise, and doorways at either
+   *  end aren't enough to keep a 4 m passage from reading as pitch black. */
+  buildLighting() {
+    const lightGO = this._addGroup('CorridorLight');
+
+    const light = new THREE.PointLight(0xcfd8e3, 6.0, 8, 1.4);
+    light.position.set(0, this.height - 0.3, 0);
+    lightGO.object3d.add(light);
+
+    const fixture = new THREE.Mesh(
+      this._own(new THREE.CylinderGeometry(0.2, 0.28, 0.06, 20)),
+      this._own(new THREE.MeshStandardMaterial({
+        color: 0x2a2a2a,
+        emissive: 0xcfd8e3,
+        emissiveIntensity: 1.6,
+      })),
+    );
+    fixture.position.copy(light.position);
+    lightGO.object3d.add(fixture);
   }
 
   /** Long walls run along the corridor axis; end walls cross it. */

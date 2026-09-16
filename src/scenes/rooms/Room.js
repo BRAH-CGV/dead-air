@@ -333,6 +333,7 @@ export class Room {
     go.colliders = [collider];
     go.collider  = collider;
     go._originalSize = [...size];
+    this.engine._bodyToGO?.set(body.handle, go);
 
     parent.addChild(go);
     return go;

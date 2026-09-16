@@ -101,6 +101,8 @@ Three toggles, all edge-triggered and free while off:
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
+| `N` | `NightManager` (BaseScene) | Advance to the next night, unlocking its doors; wraps back to night 1 after the last |
+| `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
 **DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
 
@@ -195,22 +197,23 @@ Press **`` ` ``** in game to overlay every collider Rapier knows about. Authorin
 
 ### Worked example: the under-desk gap
 
-The stand-in desk is on tier 1, so its collider is a solid 1.6 × 0.745 × 0.8 m block. That's fine for bumping into, but it means **you cannot crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2).
+`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2). `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `Engine.buildPlayer`).
 
-The fix when the real desk lands is tier 2: add `UCX_` proxies for the top and legs in Blender and the manifest line doesn't change. Or tier 3, using the stand-in's actual measurements:
+Fixed with tier 3, in the manifest (`src/assets/manifest.js`) — after two guesses from the raw mesh data got it wrong (first left 3 of the model's 4 sides open, since it isn't a table on legs; then a U-shaped compound with a full-footprint top slab, which still blocked *walking up to* the desk while standing, since the lid covered the opening too). Third time, measured instead of guessed: box primitives placed in the level editor (F2) against the rendered model, positions/sizes read off their transform panel. That gave three boxes — a solid back region and two solid side walls, all about 0.73 m tall, **no separate top lid** — with the front (the kneehole) having no ceiling at all, so a standing player can walk up to the opening and only needs to crouch further in, toward the back.
+
+Real metres divided by the model's own 1.6 m worth of spawn scale — this model has no manifest-level `scale`, so its measured bounds (and any hand-written `shape`) are in its native ~100-unit-wide space, not metres; every spawn (`MainOffice`, `OfficeScene`) applies `scale: 0.016` on top to land at 1.6 m. The editor gave real-metre, world-space numbers; converting to the manifest's native units means subtracting the desk's spawn position `[0, 0, -2.55]`, undoing its 180° spawn rotation (`x` and `z` each negate), then dividing by 0.016:
 
 ```js
-shape: [
-  { type: 'box', size: [1.60, 0.05, 0.80], position: [ 0.00, 0.720,  0.00 ] },  // top
-  { type: 'box', size: [0.06, 0.72, 0.06], position: [-0.74, 0.360, -0.34 ] },  // legs
-  { type: 'box', size: [0.06, 0.72, 0.06], position: [-0.74, 0.360,  0.34 ] },
-  { type: 'box', size: [0.06, 0.72, 0.06], position: [ 0.74, 0.360, -0.34 ] },
-  { type: 'box', size: [0.06, 0.72, 0.06], position: [ 0.74, 0.360,  0.34 ] },
-  { type: 'box', size: [1.40, 0.35, 0.03], position: [ 0.00, 0.440, -0.34 ] },  // modesty panel
-],
+// real metres, desk-local                                    native units (÷ 0.016)
+{ type: 'box', size: [1.489, 0.730, 0.340], position: [ 0.06, 0.37, -0.23] },  // → size: [93.0625, 45.625, 21.25], position: [3.75, 23.125, -14.375]   back region
+{ type: 'box', size: [0.250, 0.730, 0.800], position: [ 0.67, 0.37,  0.00] },  // → size: [15.625, 45.625, 50],     position: [41.875, 23.125, 0]        right side wall
+{ type: 'box', size: [0.250, 0.730, 0.800], position: [-0.67, 0.37,  0.00] },  // → size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0]       left side wall
+// front (+Z, roughly z > -0.06 m): no part — the kneehole, floor to ceiling.
 ```
 
-Left on tier 1 deliberately: the desk is a placeholder, and hardcoded numbers would silently mismatch the model that replaces it, whereas the auto box re-fits itself.
++Z being the open side was actually right in the previous (second) attempt too — the bug that attempt had wasn't direction, it was the top slab. Worth remembering: a part that covers the *opening* footprint blocks standing approach even if every side wall around it is open.
+
+A model authored in metres and spawned without an extra `scale` wouldn't need the native-units column — write `shape` sizes directly, as the general rule above says. It only shows up here because this particular download needed rescaling. When the real desk model lands (or `UCX_` proxies get added to this one), re-derive this from its actual geometry — it's fitted to the current stand-in's measured bounds, not to any future replacement.
 
 ## Commands
 

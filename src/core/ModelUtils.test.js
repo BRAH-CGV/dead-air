@@ -31,6 +31,31 @@ describe('prepareModel', () => {
     expect(material.side).toBe(THREE.FrontSide);
     expect(material.depthWrite).toBe(true);
   });
+
+  it('can switch off transmission, which costs an extra full-scene render pass', () => {
+    const glass = new THREE.MeshPhysicalMaterial({ transmission: 1 });
+    const plain = new THREE.MeshStandardMaterial();
+    const root = new THREE.Group();
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(), glass));
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(), plain));
+
+    prepareModel(root, { material: { transmission: 0 } });
+
+    expect(glass.transmission).toBe(0);
+    // Materials without the property are left alone, not given a stray field.
+    expect('transmission' in plain).toBe(false);
+  });
+
+  it('can tint a whole model emissive, so it reads as glowing rather than needing a separate lit prop', () => {
+    const material = new THREE.MeshStandardMaterial();
+    const root = new THREE.Group();
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(), material));
+
+    prepareModel(root, { material: { emissive: 0x3a6bff, emissiveIntensity: 0.4 } });
+
+    expect(material.emissive.getHex()).toBe(0x3a6bff);
+    expect(material.emissiveIntensity).toBe(0.4);
+  });
 });
 
 describe('extractColliderMeshes', () => {

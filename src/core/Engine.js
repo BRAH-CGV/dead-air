@@ -7,6 +7,7 @@ import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { Crosshair } from '../ui/Crosshair.js';
+import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
@@ -95,6 +96,8 @@ export class Engine {
     // Debug keys, in the same table so they remap with everything else.
     debugFly:   'KeyV',   // toggle the noclip fly camera
     fullbright: 'KeyB',   // toggle the unlit lighting mode
+    nextNight:  'KeyN',   // BaseScene: advance the night (wraps to night 1)
+    perfStats:  'KeyI',   // toggle the FPS / draw-call readout
   };
 
   /** Returns true while the key mapped to [action] is held down. */
@@ -165,6 +168,7 @@ export class Engine {
     // never arrive before the tool it toggles exists.
     this.debugCamera = new DebugCamera(this.camera, this.scene);
     this.fullbright  = new Fullbright(this.scene, this.renderer);
+    this.perfStats   = new PerfStats();
 
     // ── Debug toggles ──
     // Edge-triggered, so like the collider overlay they get their own
@@ -175,6 +179,14 @@ export class Engine {
       if (e.code === this.keyBinds.debugFly)
         this.debugCamera?.toggle(this.player);
       if (e.code === this.keyBinds.fullbright) this.fullbright?.toggle();
+      if (e.code === this.keyBinds.perfStats)  this.perfStats?.toggle();
+      // Only scenes with night progression (BaseScene) have `nights`.
+      const nights = this.activeScene?.nights;
+      if (e.code === this.keyBinds.nextNight && nights) {
+        if (nights.currentNight >= nights.maxNight) nights.setNight(1);
+        else nights.advance();
+        console.log(`[DEBUG] Night ${nights.currentNight} — open: ${nights.getOpenRooms().join(', ')}`);
+      }
       // F4, not F1: F1 belongs to the browser — Chrome opens help with it
       // and DevTools opens its settings — and those contexts swallow the
       // key before the page ever sees it, preventDefault or not.
@@ -212,7 +224,7 @@ export class Engine {
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
-    this.loadScene(OfficeScene);
+    this.loadScene(BaseScene);
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
@@ -223,6 +235,13 @@ export class Engine {
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+
+    // Compile every material's shader program up front, while the loading
+    // screen is still covering the view. WebGL compiles lazily — the first
+    // frame a material becomes visible pays for its shader — which is what
+    // makes the first look around the base stutter. Paying it here instead
+    // costs a moment of loading screen nobody notices.
+    this.renderer.compile(this.scene, this.camera);
 
     this.loadingScreen.hide();
 
@@ -469,7 +488,7 @@ export class Engine {
 
     const rb = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased()
-        .setTranslation(0, 1, 5)
+        .setTranslation(...position)
         .lockRotations(),
     );
     const standCol  = this.world.createCollider(
@@ -576,6 +595,9 @@ export class Engine {
     this.physicsDebug?.update();
     this.levelEditor?.update();
     this.renderer.render(this.scene, this.camera);
+    // After render: renderer.info now holds this frame's totals, shadow
+    // passes included. No-op while the readout is hidden.
+    this.perfStats?.update(frameDt, this.renderer.info);
 
     // Consume one-frame input after all updates have read it
     this.input.mouse.dx = 0;

@@ -63,13 +63,13 @@ describe('Corridor', () => {
     c.build();
     // Ends stay open so the corridor butts against a room's doorway wall
     // without two coplanar walls z-fighting.
-    expect(names(c)).toEqual(['BackWall', 'Ceiling', 'Floor', 'FrontWall']);
+    expect(names(c)).toEqual(['BackWall', 'Ceiling', 'CorridorLight', 'Floor', 'FrontWall']);
   });
 
   it('a z-axis corridor puts its long walls on the left and right', () => {
     const c = new Corridor(engine, { ...X, axis: 'z' });
     c.build();
-    expect(names(c)).toEqual(['Ceiling', 'Floor', 'LeftWall', 'RightWall']);
+    expect(names(c)).toEqual(['Ceiling', 'CorridorLight', 'Floor', 'LeftWall', 'RightWall']);
   });
 
   it('dimensions match the parameters (x axis)', () => {
@@ -103,7 +103,7 @@ describe('Corridor', () => {
     const c = new Corridor(engine, { ...X, ends: 'doorway' });
     c.build();
     expect(names(c)).toEqual([
-      'BackWall', 'Ceiling', 'Floor', 'FrontWall',
+      'BackWall', 'Ceiling', 'CorridorLight', 'Floor', 'FrontWall',
       'LeftWall_A', 'LeftWall_B', 'LeftWall_Header',
       'RightWall_A', 'RightWall_B', 'RightWall_Header',
     ]);
@@ -126,6 +126,7 @@ describe('Corridor', () => {
     const c = new Corridor(engine, { ...X, ends: 'doorway' });
     c.build();
     for (const go of c.root.children) {
+      if (!go.rigidBody) continue;   // CorridorLight — a light, not a collider
       expect(go.rigidBody.isFixed(), go.name).toBe(true);
       const h = go.collider.halfExtents();
       expect([h.x * 2, h.y * 2, h.z * 2], go.name).toEqual(meshSize(go));
@@ -155,6 +156,28 @@ describe('Corridor', () => {
     const { min, max } = c.bounds();
     [min.x, min.y, min.z].forEach((v, i) => expect(v).toBeCloseTo([6, -T, 3.5 - 1 - T / 2][i]));
     [max.x, max.y, max.z].forEach((v, i) => expect(v).toBeCloseTo([10, 3 + T, 3.5 + 1 + T / 2][i]));
+  });
+
+  it('has a single ceiling light so it does not read as pitch black', () => {
+    const c = new Corridor(engine, X);
+    c.build();
+    let lights = 0;
+    c.root.object3d.traverse(o => { if (o.isPointLight) lights++; });
+    expect(lights).toBe(1);
+    const light = c.root.find('CorridorLight').object3d.children.find(o => o.isPointLight);
+    expect(light.position.y).toBeCloseTo(c.height - 0.3);
+    expect(light.intensity).toBeGreaterThan(3);   // brighter than the first pass
+  });
+
+  it('has a visible fixture mesh at the light, like the room ceiling lights', () => {
+    const c = new Corridor(engine, X);
+    c.build();
+    const group = c.root.find('CorridorLight');
+    const light = group.object3d.children.find(o => o.isPointLight);
+    const fixture = group.object3d.children.find(o => o.isMesh);
+    expect(fixture).toBeTruthy();
+    expect(fixture.position.toArray()).toEqual(light.position.toArray());
+    expect(fixture.material.emissive.getHex()).not.toBe(0);
   });
 
   it('dispose removes its children and bodies', () => {

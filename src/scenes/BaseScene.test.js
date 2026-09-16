@@ -7,6 +7,8 @@ import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { Fullbright } from '../core/Fullbright.js';
+import { Interactable } from '../components/Interactable.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
 const EPS = 1e-6;
@@ -14,6 +16,7 @@ const EPS = 1e-6;
 function makeSceneEngine() {
   const engine = makeEngine();
   engine.scene = new THREE.Scene();
+  engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.assets = { get: vi.fn(() => null) };
   engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
     const player = new GameObject('Player');
@@ -156,6 +159,19 @@ describe('BaseScene', () => {
     }
   });
 
+  it('the generator is a raycastable Interactable stub that toggles power (phase 10)', () => {
+    const generator = sceneRoot.find('Outside').find('Generator');
+    const interactable = generator.getComponent(Interactable);
+    expect(interactable).not.toBeNull();
+    expect(engine._bodyToGO.get(generator.rigidBody.handle)).toBe(generator);
+
+    expect(generator.powerOn).toBe(true);
+    interactable.onInteract({});
+    expect(generator.powerOn).toBe(false);
+    interactable.onInteract({});
+    expect(generator.powerOn).toBe(true);
+  });
+
   it('starts on night 1 with every doorway out of the office locked', () => {
     expect(scene.nights.currentNight).toBe(1);
     const doors = Object.values(scene.rooms).flatMap(r => r.doors);
@@ -171,11 +187,145 @@ describe('BaseScene', () => {
     expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
   });
 
+  it('sets denser fog in the server room and lighter fog in living quarters', () => {
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    const base = engine.scene.fog.density;
+
+    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
+    expect(engine.scene.fog.density).toBeGreaterThan(base);
+
+    sys.onRoomChange(scene.rooms.LivingQuarters, scene.rooms.ServerRoom);
+    expect(engine.scene.fog.density).toBeLessThan(base);
+
+    sys.onRoomChange(scene.rooms.MainOffice, scene.rooms.LivingQuarters);
+    expect(engine.scene.fog.density).toBeCloseTo(base);
+  });
+
+  it('falls back to the default fog density in corridors and outside (room = null)', () => {
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    const base = engine.scene.fog.density;
+
+    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
+    sys.onRoomChange(null, scene.rooms.ServerRoom);
+    expect(engine.scene.fog.density).toBeCloseTo(base);
+  });
+
+  it('Fullbright hides every light and swaps every lit material across all three rooms', () => {
+    const fb = new Fullbright(engine.scene);
+
+    const lightsBefore = [];
+    engine.scene.traverse(o => { if (o.isLight) lightsBefore.push(o); });
+    expect(lightsBefore.length).toBeGreaterThan(0);
+    for (const room of Object.values(scene.rooms)) {
+      let roomLights = 0;
+      room.root.object3d.traverse(o => { if (o.isLight) roomLights++; });
+      expect(roomLights, `${room.name} should contribute a light`).toBeGreaterThan(0);
+    }
+
+    const litMeshesBefore = [];
+    engine.scene.traverse(o => { if (o.isMesh && o.material.isMeshStandardMaterial) litMeshesBefore.push(o); });
+    expect(litMeshesBefore.length).toBeGreaterThan(0);
+
+    fb.enable();
+    for (const light of lightsBefore) expect(light.visible).toBe(false);
+    for (const mesh of litMeshesBefore) expect(mesh.material.isMeshBasicMaterial).toBe(true);
+
+    fb.disable();
+    for (const light of lightsBefore) expect(light.visible).toBe(true);
+    for (const mesh of litMeshesBefore) expect(mesh.material.isMeshStandardMaterial).toBe(true);
+  });
+
   it('dispose tears down every room and corridor', () => {
     const disposers = [...Object.values(scene.rooms), ...Object.values(scene.corridors)]
       .map(part => vi.spyOn(part, 'dispose'));
     scene.dispose();
     for (const spy of disposers) expect(spy).toHaveBeenCalled();
     expect(sceneRoot.children.filter(c => /^(Room|Corridor):/.test(c.name))).toEqual([]);
+  });
+
+  it('door sensors sit in the doorway gap, clear of every wall segment in their room (phase 12)', () => {
+    /** World-space AABB of a door's collider box, rotation-aware (side-wall
+     *  doors are rotated pi/2, which swaps their world width/depth). */
+    function doorBox(door) {
+      const p = worldPos(door);
+      const [w, h, d] = door.doorSize;
+      const rotated = Math.abs(Math.abs(door.object3d.rotation.y) - Math.PI / 2) < 1e-3;
+      const [ex, ez] = rotated ? [d, w] : [w, d];
+      return new THREE.Box3(
+        new THREE.Vector3(p.x - ex / 2, p.y - h / 2, p.z - ez / 2),
+        new THREE.Vector3(p.x + ex / 2, p.y + h / 2, p.z + ez / 2),
+      );
+    }
+
+    /** World-space AABBs of every wall segment mesh under a room. */
+    function wallSegmentBoxes(room) {
+      const [ox, oy, oz] = room.position;
+      return room.root.children
+        .filter(go => /Wall/.test(go.name))
+        .map(go => {
+          const mesh = go.object3d.children.find(c => c.isMesh);
+          const { width, height, depth } = mesh.geometry.parameters;
+          const p = go.object3d.position;
+          return new THREE.Box3(
+            new THREE.Vector3(ox + p.x - width / 2, oy + p.y - height / 2, oz + p.z - depth / 2),
+            new THREE.Vector3(ox + p.x + width / 2, oy + p.y + height / 2, oz + p.z + depth / 2),
+          );
+        });
+    }
+
+    for (const room of Object.values(scene.rooms)) {
+      const walls = wallSegmentBoxes(room);
+      for (const door of room.doors) {
+        const box = doorBox(door);
+        for (let i = 0; i < walls.length; i++) {
+          expect(overlaps(box, walls[i]), `${door.name} × wall segment ${i}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe('BaseScene build instrumentation (phase 12)', () => {
+  it('times the build and logs the body and Object3D counts', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    const timeSpy = vi.spyOn(console, 'time').mockImplementation(() => {});
+    const timeEndSpy = vi.spyOn(console, 'timeEnd').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    scene.build();
+
+    expect(timeSpy).toHaveBeenCalledWith('BaseScene.build');
+    expect(timeEndSpy).toHaveBeenCalledWith('BaseScene.build');
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/\d+ (physics )?bod(y|ies)/i));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/\d+ Object3Ds?/));
+
+    timeSpy.mockRestore();
+    timeEndSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+});
+
+describe('BaseScene repeated build/dispose cycles leave no leak (phase 12)', () => {
+  it('a second build after dispose ends up with the same body and root-object counts as the first', () => {
+    const engine = makeSceneEngine();
+
+    const first = new BaseScene(engine);
+    first.build();
+    const firstBodies = engine.world.bodies.len();
+    const firstRoots = engine._rootObjects.length;
+    first.dispose();
+
+    // Mirrors what Engine._teardownScene does between scenes: drop the whole
+    // physics world and the root-object bookkeeping, keep everything else.
+    engine.world = new (engine.world.constructor)();
+    engine._rootObjects.length = 0;
+    engine._bodyToGO.clear();
+
+    const second = new BaseScene(engine);
+    second.build();
+
+    expect(engine.world.bodies.len()).toBe(firstBodies);
+    expect(engine._rootObjects.length).toBe(firstRoots);
   });
 });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
+import { Interactable } from '../../components/Interactable.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -44,7 +45,7 @@ export class MainOffice extends Room {
 
   buildLighting() {
     const ceilingGO = this._addGroup('CeilingLight');
-    const ceiling = new THREE.PointLight(0xffd8a8, 10.0, 24, 1.0);
+    const ceiling = new THREE.PointLight(0xffd8a8, 14.0, 24, 1.0);
     ceiling.position.set(0, 2.75, 0.4);
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
@@ -62,7 +63,7 @@ export class MainOffice extends Room {
     ceilingGO.object3d.add(fixture);
 
     const deskGO = this._addGroup('DeskGlow');
-    const desk = new THREE.PointLight(0x66ccff, 2.8, 6, 1.6);
+    const desk = new THREE.PointLight(0x66ccff, 4.0, 6, 1.6);
     desk.position.set(0, 1.1, -2.1);
     deskGO.object3d.add(desk);
   }
@@ -70,9 +71,13 @@ export class MainOffice extends Room {
   buildProps() {
     this._buildWindowFrame();
 
-    this._spawnProp('model:retro-computer', {
+    const computerDesk = this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: Math.PI, scale: 0.016,
     });
+    computerDesk.addComponent(new class extends Interactable {
+      promptLabel = '[E] Collect signal';
+      onInteract() { console.log('[MainOffice] signal collected'); }
+    }());
     this._spawnProp('model:server-rack', {
       name: 'ServerRack', position: [4.55, 0, -1.35], rotationY: -Math.PI / 2, scale: 0.333,
     });

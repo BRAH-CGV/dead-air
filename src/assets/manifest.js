@@ -49,8 +49,13 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  * @property {number}  [scale]         Uniform scale baked in once, at load time.
  * @property {boolean} [castShadow]    Default true.
  * @property {boolean} [receiveShadow] Default true.
- * @property {{ side?: 'front'|'back'|'double', depthWrite?: boolean }} [material]
- *           Optional per-model cleanup for GLB material flags.
+ * @property {{ side?: 'front'|'back'|'double', depthWrite?: boolean, transmission?: number,
+ *              emissive?: number, emissiveIntensity?: number }} [material]
+ *           Optional per-model cleanup for GLB material flags. `transmission: 0`
+ *           turns off glass transmission, which otherwise costs a whole extra
+ *           scene render every frame the model is on screen. `emissive`/
+ *           `emissiveIntensity` tint the whole model self-luminous — for a
+ *           model that should read as glowing without a separate lit prop.
  * @property {PhysicsBlock|'static'|'dynamic'|'kinematic'} [physics]
  *           Absent means render-only. The bare string is shorthand for
  *           `{ body: … }`, which is all most entries need.
@@ -93,12 +98,48 @@ export const ASSETS = {
     url: 'assets/models/retro_futuristic_computer.glb',
     // This download marks some surfaces double-sided, which makes the front
     // keyboard/monitor faces visible from behind. Treat it like solid plastic.
-    material: { side: 'front', depthWrite: true },
-    physics: 'static',
+    // Its main material also uses glass transmission, which makes three.js
+    // render the whole scene a second time whenever the desk is on screen
+    // (60 → 30 FPS looking into the office). Not needed — switched off.
+    material: { side: 'front', depthWrite: true, transmission: 0 },
+    // Tier 3 compound: a solid auto box blocks the under-desk hiding
+    // mechanic. The model is a solid cabinet (not a table on 4 open legs),
+    // indented on one face only.
+    //
+    // Measured directly in the level editor (F2, box primitives placed
+    // against the rendered model, positions/sizes read off their transform
+    // and handed back) rather than guessed — two guesses in a row from the
+    // raw mesh data got the shape wrong (open on 3 sides, then a top slab
+    // that still blocked walking up to it while standing). No separate top
+    // lid: the back part is tall enough on its own, and the kneehole (+Z,
+    // roughly the front half of the depth) has no ceiling at all, so a
+    // standing player can walk up to it before needing to crouch further
+    // toward the back/sides.
+    //
+    // This model has no manifest-level `scale`, so its measured bounds are
+    // in its native ~100-wide space, not metres — every spawn (MainOffice,
+    // OfficeScene) applies 0.016 on top to land at the real 1.6 m width.
+    // The editor gave real-metre, world-space numbers; converted here by
+    // subtracting the desk's spawn position [0,0,-2.55], undoing its 180°
+    // spawn rotation (x,z each negate), then dividing by 0.016.
+    physics: {
+      body: 'static',
+      shape: [
+        { type: 'box', size: [93.0625, 45.625, 21.25], position: [3.75, 23.125, -14.375] },  // back region, 1.489×0.730×0.340 m @ local (0.06, 0.37, -0.23)
+        { type: 'box', size: [15.625, 45.625, 50],     position: [41.875, 23.125, 0] },      // right side wall, 0.250×0.730×0.800 m @ local (0.67, 0.37, 0)
+        { type: 'box', size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0] },     // left side wall, 0.250×0.730×0.800 m @ local (-0.67, 0.37, 0)
+        // Front (+Z, roughly z > -0.06 m) is deliberately open — no part — for the kneehole.
+      ],
+    },
   },
   'model:server-rack': {
     type: 'model',
     url: 'assets/models/server.glb',
+    // No material tint — an emissive tint recolours the model itself
+    // (tried it; even at low intensity it reads as "the rack is blue",
+    // not "the rack is glowing"). The rack casting light like a source is
+    // a light, not a material — see ServerRoom.buildProps, one PointLight
+    // per rack, no geometry of its own.
     physics: 'static',
   },
   'model:radar-terminal': {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
+import { Interactable } from '../../components/Interactable.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  break room, open from night 3
@@ -45,7 +46,7 @@ export class LivingQuarters extends Room {
     // No shadows: the office ceiling light already casts them, and
     // shadow-casting lights are the expensive kind.
     const lampGO = this._addGroup('CeilingLamp');
-    const lamp = new THREE.PointLight(0xffc48a, 4, 10, 1.4);
+    const lamp = new THREE.PointLight(0xffc48a, 6, 10, 1.4);
     lamp.position.set(0, 2.7, 0);
     lampGO.object3d.add(lamp);
 
@@ -66,8 +67,15 @@ export class LivingQuarters extends Room {
       [-inX + 0.45, 0.85, -inZ + 1.0], [0.9, 1.7, 2.0], 0x4a5058);
 
     // Against the back wall, right side. Faint glow from the lit front.
-    this._placeholder('VendingMachine', 'vending-machine.glb',
+    const vending = this._placeholder('VendingMachine', 'vending-machine.glb',
       [1.8, 0.95, -inZ + 0.4], [1.0, 1.9, 0.8], 0x6b2a24, { emissive: 0x335577, emissiveIntensity: 0.4 });
+    vending.addComponent(new class extends Interactable {
+      promptLabel = '[E] Get coffee';
+      onInteract() {
+        // TODO: coordinate with Hayden's stamina system.
+        console.log('[LivingQuarters] coffee consumed');
+      }
+    }());
 
     // Row of lockers along the left wall.
     [0.5, 1.02, 1.54].forEach((z, i) => {

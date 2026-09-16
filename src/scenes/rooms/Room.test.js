@@ -30,11 +30,13 @@ vi.mock('@dimforge/rapier3d', () => {
 
 import { Room } from './Room.js';
 
+let nextHandle = 1;
+
 class FakeWorld {
   _bodies = new Set();
   bodies = { len: () => this._bodies.size };
   createRigidBody(desc) {
-    const body = { isFixed: () => desc.type === 'fixed', translation: () => ({ ...desc.t }) };
+    const body = { handle: nextHandle++, isFixed: () => desc.type === 'fixed', translation: () => ({ ...desc.t }) };
     this._bodies.add(body);
     return body;
   }
@@ -306,6 +308,17 @@ describe('Room doors', () => {
     });
     room.build();
     expect(() => room.addDoor('Nope', 'back', 'X')).toThrow(/window/);
+  });
+});
+
+describe('Room._addStaticBox', () => {
+  it('registers each box body in engine._bodyToGO, for raycasts to find (BUG-006)', () => {
+    const engine = makeEngine();
+    engine._bodyToGO = new Map();
+    const room = new Room(engine, BASE);
+    room.build();
+    const floor = room.root.find('Floor');
+    expect(engine._bodyToGO.get(floor.rigidBody.handle)).toBe(floor);
   });
 });
 

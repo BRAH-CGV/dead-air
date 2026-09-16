@@ -4,6 +4,7 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.j
 
 import { LivingQuarters } from './LivingQuarters.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
+import { Interactable } from '../../components/Interactable.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -55,6 +56,18 @@ describe('LivingQuarters', () => {
       expect(go.placeholderFor, name).toBe(file);
       expect(go.rigidBody.isFixed(), name).toBe(true);
     }
+  });
+
+  it('the vending machine is an Interactable stub for coffee/stamina (phase 10)', () => {
+    const vending = room.root.find('VendingMachine');
+    const interactable = vending.getComponent(Interactable);
+    expect(interactable).not.toBeNull();
+    expect(engine._bodyToGO.get(vending.rigidBody.handle)).toBe(vending);   // raycastable
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    interactable.onInteract({});
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('coffee'));
+    log.mockRestore();
   });
 
   it('the vending machine glows faintly (dim internal light)', () => {

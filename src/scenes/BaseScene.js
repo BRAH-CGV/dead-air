@@ -4,6 +4,7 @@ import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
+import { Interactable } from '../components/Interactable.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
@@ -26,15 +27,32 @@ import { Corridor } from './rooms/Corridor.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// Until gameplay drives the nights, advance from the console:
-//   engine.activeScene.nights.advance()
+// Until gameplay drives the nights, press N (Engine keyBinds.nextNight) to
+// advance; it wraps back to night 1 after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
 const CORRIDOR_WIDTH  = 2;
 /** Side rooms' centre z. Their doorways slide to meet the corridor. */
 const SIDE_ROOM_Z = 1;
-const PLAYER_SPAWN = [0, 1, 2];
+/** Capsule centre: the office floor centre, lifted so the capsule starts
+ *  above the floor and settles onto it. */
+const PLAYER_SPAWN = [0, 1, 0];
+
+/** Fog density per room name; matches Engine's base scene fog (0.02) in
+ *  the office, thickens in the server room, thins in living quarters.
+ *  Corridors and outside (room = null) fall back to the base density. */
+// Rooms here are small (6-12 m across), so fog only needs to be a light
+// depth cue, not the "can't see the far wall" effect it's for outdoors —
+// ServerRoom was originally 0.05, which combined with its dim lighting to
+// make it borderline unreadable. Kept subtle now that the racks light
+// themselves (see ServerRoom.buildLighting).
+const ROOM_FOG_DENSITY = {
+  MainOffice: 0.02,
+  ServerRoom: 0.03,
+  LivingQuarters: 0.008,
+};
+const DEFAULT_FOG_DENSITY = 0.02;
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
@@ -49,6 +67,7 @@ export class BaseScene extends Scene {
   _owned = [];
 
   build() {
+    console.time('BaseScene.build');
     const { engine } = this;
 
     const sceneRoot = new GameObject('SceneRoot').makeGroup();
@@ -67,6 +86,19 @@ export class BaseScene extends Scene {
     this._addLighting();
     this._buildOutside();
     this._spawnPlayer();
+
+    console.timeEnd('BaseScene.build');
+    this._logBuildStats();
+  }
+
+  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+   *  physics bodies and Object3Ds one BaseScene build produces. */
+  _logBuildStats() {
+    const { engine } = this;
+    let objectCount = 0;
+    this._sceneRoot.object3d.traverse(() => { objectCount++; });
+    const bodyCount = engine.world?.bodies?.len?.() ?? 0;
+    console.log(`[BaseScene] built: ${bodyCount} physics bodies, ${objectCount} Object3Ds`);
   }
 
   /** Free what the rooms and the scene created. Bodies are left alone:
@@ -225,7 +257,16 @@ export class BaseScene extends Scene {
 
     // Generator stand-in until generator.glb arrives (asset list, P1). Out
     // the office's front door, where the player has to go to cut power.
-    this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
+    const generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
+    generator.powerOn = true;
+    generator.addComponent(new class extends Interactable {
+      promptLabel = '[E] Cut power';
+      onInteract() {
+        generator.powerOn = !generator.powerOn;
+        // TODO: cut every room's lights when powerOn is false (breaker panel).
+        console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
+      }
+    }());
   }
 
   /** Solid box standing in for a model that hasn't been sourced yet. */
@@ -247,6 +288,7 @@ export class BaseScene extends Scene {
     go.colliders = [collider];
     go._originalSize = [...size];
     go.placeholderFor = file;
+    this.engine._bodyToGO?.set(body.handle, go);
 
     this._outside.addChild(go);
     return go;
@@ -258,10 +300,21 @@ export class BaseScene extends Scene {
   _spawnPlayer() {
     const { engine } = this;
     engine.buildPlayer({ position: PLAYER_SPAWN });
-    engine.player.addComponent(new RoomTransitionSystem({
+    const transitions = new RoomTransitionSystem({
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),
-    }));
+    });
+    transitions.onRoomChange = room => this._applyRoomFog(room);
+    engine.player.addComponent(transitions);
+  }
+
+  /** Per-room atmosphere: dense fog in the server room, light in living
+   *  quarters, the scene's base density everywhere else (including
+   *  corridors and outside, where room is null). */
+  _applyRoomFog(room) {
+    const fog = this.engine.scene.fog;
+    if (!fog) return;
+    fog.density = ROOM_FOG_DENSITY[room?.name] ?? DEFAULT_FOG_DENSITY;
   }
 
   // ──────────────────────────────────────────
