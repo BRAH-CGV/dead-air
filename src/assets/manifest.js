@@ -122,6 +122,151 @@ export const ASSETS = {
     physics: 'kinematic',
   },
 
+  // ── Models — Sept 2026 batch (not yet placed in a scene) ──
+  'model:blast-door-closed': {
+    type: 'model',
+    url: 'assets/models/large-door-closed.glb',
+    physics: 'static',
+  },
+  'model:blast-door-open': {
+    type: 'model',
+    url: 'assets/models/large-door-closed-open.glb',
+    physics: 'static',
+  },
+  'model:server-console': {
+    type: 'model',
+    url: 'assets/models/server-console.glb',
+    physics: 'static',
+  },
+  'model:server-rack-tall': {
+    type: 'model',
+    url: 'assets/models/server-rack-tall.glb',
+    physics: 'static',
+  },
+  'model:bunk-bed': {
+    type: 'model',
+    url: 'assets/models/bunk_bed.glb',
+    physics: 'static',
+  },
+  'model:couch': {
+    type: 'model',
+    url: 'assets/models/couch.glb',
+    physics: 'static',
+  },
+  'model:locker': {
+    type: 'model',
+    url: 'assets/models/locker.glb',
+    physics: 'static',
+  },
+  'model:barrel': {
+    type: 'model',
+    url: 'assets/models/barrel.glb',
+    physics: 'static',
+  },
+  'model:shelf': {
+    type: 'model',
+    url: 'assets/models/shelf.glb',
+    physics: 'static',
+  },
+  'model:soap-dispenser': {
+    type: 'model',
+    url: 'assets/models/retro_soap_dispenser2k.glb',
+  },
+  'model:vending-machine': {
+    type: 'model',
+    url: 'assets/models/vending_machine.glb',
+    physics: 'static',
+  },
+  'model:colony-rover': {
+    type: 'model',
+    url: 'assets/models/colony_rover.glb',
+    physics: 'static',
+  },
+  'model:poster': {
+    type: 'model',
+    url: 'assets/models/poster.glb',
+  },
+  'model:tree-birch': {
+    type: 'model',
+    url: 'assets/models/red-tree1.glb',
+    physics: 'static',
+  },
+  'model:tree-pine': {
+    type: 'model',
+    url: 'assets/models/red-tree2.glb',
+    physics: 'static',
+  },
+  'model:tree-fantasy': {
+    type: 'model',
+    url: 'assets/models/dead-tree1.glb',
+    physics: 'static',
+  },
+  'model:tree-dead': {
+    type: 'model',
+    url: 'assets/models/dead_tree1.glb',
+    physics: 'static',
+  },
+  'model:bush': {
+    type: 'model',
+    url: 'assets/models/best-bush.glb',
+  },
+  'model:break-panel': {
+    type: 'model',
+    url: 'assets/models/break-panel.glb',
+    physics: 'static',
+  },
+  'model:chainlink-fence': {
+    type: 'model',
+    url: 'assets/models/chainlink-fence_.glb',
+    physics: 'static',
+  },
+  'model:crate': {
+    type: 'model',
+    url: 'assets/models/crate.glb',
+    physics: 'static',
+  },
+  'model:door-interior': {
+    type: 'model',
+    url: 'assets/models/door-interior.glb',
+    physics: 'static',
+  },
+  'model:fire-extinguisher': {
+    type: 'model',
+    url: 'assets/models/fire-extingusher.glb',
+  },
+  'model:generator': {
+    type: 'model',
+    url: 'assets/models/generator.glb',
+    physics: 'static',
+  },
+  'model:light-ceiling': {
+    type: 'model',
+    url: 'assets/models/light_ceiling.glb',
+  },
+  'model:metal-chair': {
+    type: 'model',
+    url: 'assets/models/metal-chair.glb',
+    physics: 'static',
+  },
+  'model:simple-desk': {
+    type: 'model',
+    url: 'assets/models/simple-desk.glb',
+    physics: 'static',
+  },
+  'model:trash-bin': {
+    type: 'model',
+    url: 'assets/models/trash_bin.glb',
+    physics: 'static',
+  },
+  'model:wall-light': {
+    type: 'model',
+    url: 'assets/models/wall-light.glb',
+  },
+  'model:wall-screen': {
+    type: 'model',
+    url: 'assets/models/wall-screen.glb',
+  },
+
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {
     type: 'texture',
