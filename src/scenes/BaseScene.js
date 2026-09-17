@@ -3,8 +3,11 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
+import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
+import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
@@ -14,8 +17,10 @@ import { Corridor } from './rooms/Corridor.js';
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
 // ─────────────────────────────────────────────
-// Three rooms joined by corridors, plus the small outside area. Nothing is
-// loaded per night: doors lock and unlock instead (NightManager).
+// Three rooms joined by corridors, plus the small outside area — all of it
+// standing on the Mars valley (MarsTerrain), under the procedural night sky
+// and its two moons (MarsSky). Nothing is loaded per night: doors lock and
+// unlock instead (NightManager).
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
@@ -39,20 +44,35 @@ const SIDE_ROOM_Z = 1;
  *  above the floor and settles onto it. */
 const PLAYER_SPAWN = [0, 1, 0];
 
-/** Fog density per room name; matches Engine's base scene fog (0.02) in
- *  the office, thickens in the server room, thins in living quarters.
- *  Corridors and outside (room = null) fall back to the base density. */
-// Rooms here are small (6-12 m across), so fog only needs to be a light
-// depth cue, not the "can't see the far wall" effect it's for outdoors —
-// ServerRoom was originally 0.05, which combined with its dim lighting to
-// make it borderline unreadable. Kept subtle now that the racks light
-// themselves (see ServerRoom.buildLighting).
+/** Fog density for the SEALED rooms — the ones with no sightline out of the
+ *  base, so their density is free to be an atmosphere knob: thicker in the
+ *  server room, thinner in living quarters.
+ *
+ *  Rooms here are small (6-12 m across), so fog only needs to be a light
+ *  depth cue, not the "can't see the far wall" effect it's for outdoors —
+ *  ServerRoom was originally 0.05, which combined with its dim lighting to
+ *  make it borderline unreadable. Kept subtle now that the racks light
+ *  themselves (see ServerRoom.buildLighting). */
 const ROOM_FOG_DENSITY = {
-  MainOffice: 0.02,
   ServerRoom: 0.03,
   LivingQuarters: 0.008,
 };
-const DEFAULT_FOG_DENSITY = 0.02;
+
+/** Density everywhere the valley is visible: the main office (whose back wall
+ *  is an 8.5 m window), the corridors, and outside.
+ *
+ *  This is the one number the two halves of this scene had to agree on, and
+ *  they did not. The engine's base fog (0.02) is opaque by ~150 m, and
+ *  MarsTerrain's ridge line sits at 350-500 m — at 0.02 the office window
+ *  shows flat fog colour and the valley may as well not exist. 0.0022 is the
+ *  terrain's own figure: thin enough to see the rim, thick enough to keep
+ *  aerial perspective between the near hills and the far ones.
+ *
+ *  Indoors it costs almost nothing, which is why the office can give up its
+ *  own density without losing anything. FogExp2 extinction across a 10 m
+ *  office is ~4% at 0.02 and ~0.05% at 0.0022: the office fog was never doing
+ *  visible work, and the view out of the window is worth far more. */
+const OUTDOOR_FOG_DENSITY = 0.0022;
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
@@ -82,6 +102,7 @@ export class BaseScene extends Scene {
     this._buildRooms();
     this._buildCorridors();
     this._setupNights();
+    this._addSky();
     this._addGround();
     this._addLighting();
     this._buildOutside();
@@ -105,6 +126,15 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this._offNightChange?.();
+    // Scene teardown never resets scene.fog, so hand back what _addSky
+    // borrowed — otherwise the Mars horizon tint and this scene's long
+    // outdoor sightlines follow us into whatever loads next.
+    if (this._prevFogColor !== undefined) {
+      this.engine.scene.fog?.color.setHex(this._prevFogColor);
+    }
+    if (this._prevFogDensity !== undefined && this.engine.scene.fog) {
+      this.engine.scene.fog.density = this._prevFogDensity;
+    }
     for (const part of [...Object.values(this.rooms), ...Object.values(this.corridors)]) {
       part.dispose({ removeBodies: false });
     }
@@ -159,39 +189,53 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
-  // Ground (shared by the whole base)
+  // Sky (procedural Mars night dome and moons)
+  // ──────────────────────────────────────────
+  _addSky() {
+    const skyGroup = this._group('Sky');
+
+    const sky = createMarsSky();
+    // The dome has a finite radius, so without this the player walks out
+    // through it — it rides the camera and only ever looks infinite.
+    sky.addComponent(new SkyFollow());
+    skyGroup.addChild(sky);
+    this._ownResourcesOf(sky);
+
+    // Remember the fog we were handed before touching it. Scene teardown
+    // never resets scene.fog, and both halves of the pair are ours now: the
+    // colour here, the density in _applyRoomFog.
+    this._prevFogColor   = this.engine.scene.fog?.color.getHex();
+    this._prevFogDensity = this.engine.scene.fog?.density;
+
+    // Match the fog to the dome's horizon band. Fog fades the terrain to its
+    // own colour long before the dome starts, so the engine's blue-grey
+    // default draws a visible seam where the ground meets the rust sky.
+    this.engine.scene.fog?.color.set(0x3a2820);
+
+    // Start the scene at the outdoor density. RoomTransitionSystem only
+    // reports a room on its first update, and the player spawns in the office
+    // facing the window — without this the first frame is drawn at whatever
+    // density the engine happened to leave in scene.fog.
+    if (this.engine.scene.fog) this.engine.scene.fog.density = OUTDOOR_FOG_DENSITY;
+  }
+
+  // ──────────────────────────────────────────
+  // Ground (the Mars valley the whole base sits in)
   // ──────────────────────────────────────────
   _addGround() {
-    const { world, assets } = this.engine;
-
-    const ground = new GameObject('Ground');
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.PlaneGeometry(100, 100)),
-      this._own(new THREE.MeshStandardMaterial({
-        color: 0x8890a0,
-        roughness: 0.9,
-        map: assets.get('tex:floor-basecolor'),
-        normalMap: assets.get('tex:floor-normal'),
-        normalScale: new THREE.Vector2(0.8, 0.8),
-      })),
-    );
-    mesh.rotation.x = -Math.PI / 2;
-    // A hair below the room and corridor floors, whose tops sit at y = 0 —
-    // coplanar faces would z-fight. The collider stays flush, so walking
-    // out the front door is step-free.
-    mesh.position.y = -0.01;
-    mesh.receiveShadow = true;
-    ground.object3d.add(mesh);
-    this._outside.addChild(ground);
-
-    // On the GameObject so teardown finds it — an orphan body would leak a
-    // ghost floor on every reload.
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.1, 0));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(50, 0.1, 50), body);
-    ground.rigidBody = body;
-    ground.collider  = collider;
-    ground.colliders = [collider];
-    ground._originalSize = [100, 0.2, 100];
+    // The valley brings its own heightfield collider, sampled from the same
+    // height function as its mesh, so it replaces the flat plane outright.
+    // Its pad is flat out to a 40 m radius and the base spans ~33 m, so every
+    // room, corridor, the generator and the satellite stand on level ground.
+    const terrain = createMarsTerrain(this.engine.world);
+    // The pad is exactly y = 0 and the room and corridor floor slabs top out
+    // at y = 0 too, so the faces are coplanar and would z-fight across every
+    // floor in the base. Drop the MESH a centimetre and leave the collider
+    // flush — the same trick the flat ground used, and it keeps walking out
+    // of the front door step-free.
+    terrain.object3d.position.y = -0.01;
+    this._outside.addChild(terrain);
+    this._ownResourcesOf(terrain);
   }
 
   // ──────────────────────────────────────────
@@ -209,8 +253,16 @@ export class BaseScene extends Scene {
     })) + 2;
 
     const moonGO = new GameObject('MoonLight');
-    const moon = new THREE.DirectionalLight(0x8fb7ff, 1.8);
-    moon.position.set(-6, 8, -10);
+    // Colour and intensity are MarsSky's tuned pair, so this base is lit the
+    // same way OfficeScene is — one moon, one look across both scenes.
+    const moon = new THREE.DirectionalLight(0xd4d4d4, 1.1);
+    // Aimed along Phobos' own angles rather than a hand-picked vector, so the
+    // shadows and the moon you can actually see in the sky cannot drift apart
+    // when either is retuned. Its elevation is 30 degrees, so the light rakes
+    // long across the valley. 30 m out keeps the whole base inside the shadow
+    // camera's near/far below.
+    const { azimuth, elevation } = DEFAULT_MOONS.phobos;
+    moon.position.copy(directionFromAngles(azimuth, elevation)).multiplyScalar(30);
     moon.castShadow = true;
     moon.shadow.mapSize.set(2048, 2048);
     moon.shadow.camera.near   = 0.5;
@@ -222,21 +274,10 @@ export class BaseScene extends Scene {
     moonGO.object3d.add(moon);
     this._lighting.addChild(moonGO);
 
-    const visibleMoonGO = new GameObject('VisibleMoon');
-    const visibleMoon = new THREE.Mesh(
-      this._own(new THREE.SphereGeometry(0.85, 32, 16)),
-      this._own(new THREE.MeshBasicMaterial({ color: 0xffe1a3 })),
-    );
-    visibleMoon.name = 'VisibleMoon';
-    visibleMoon.position.set(-2.4, 5.3, -15);
-    visibleMoonGO.object3d.add(visibleMoon);
-    this._lighting.addChild(visibleMoonGO);
-
-    const moonGlowGO = new GameObject('MoonGlow');
-    const moonGlow = new THREE.PointLight(0xffe1a3, 5.0, 32, 1.4);
-    moonGlow.position.copy(visibleMoon.position);
-    moonGlowGO.object3d.add(moonGlow);
-    this._lighting.addChild(moonGlowGO);
+    // No hand-placed moon prop or its point light here any more. MarsSky
+    // hangs the real Phobos and Deimos at sky distance with their own halos;
+    // the old 0.85 m sphere sat 15 m out, which read fine against a blank
+    // backdrop and would read as a glowing ball hovering over the valley.
   }
 
   // ──────────────────────────────────────────
@@ -308,13 +349,27 @@ export class BaseScene extends Scene {
     engine.player.addComponent(transitions);
   }
 
-  /** Per-room atmosphere: dense fog in the server room, light in living
-   *  quarters, the scene's base density everywhere else (including
-   *  corridors and outside, where room is null). */
+  /** Per-room atmosphere: dense fog in the sealed server room, light in the
+   *  sealed living quarters, the outdoor density everywhere the valley is in
+   *  view (the main office, the corridors, and outside). */
   _applyRoomFog(room) {
     const fog = this.engine.scene.fog;
     if (!fog) return;
-    fog.density = ROOM_FOG_DENSITY[room?.name] ?? DEFAULT_FOG_DENSITY;
+    fog.density = this._fogDensityFor(room);
+  }
+
+  /** A room that can see the valley takes the outdoor density whatever else
+   *  it would like; only sealed rooms get a mood of their own. Corridors and
+   *  outside arrive here as room = null.
+   *
+   *  "Can see the valley" is read off the room's own openings — a sill above
+   *  the floor is a window, per Room's opening schema — rather than from a
+   *  list of room names kept in step by hand. Give a room a window and its
+   *  fog follows; nobody has to remember this function exists. */
+  _fogDensityFor(room) {
+    if (!room) return OUTDOOR_FOG_DENSITY;
+    if (room.openings?.some(o => (o.sill ?? 0) > 0)) return OUTDOOR_FOG_DENSITY;
+    return ROOM_FOG_DENSITY[room.name] ?? OUTDOOR_FOG_DENSITY;
   }
 
   // ──────────────────────────────────────────
@@ -324,6 +379,18 @@ export class BaseScene extends Scene {
     const go = new GameObject(name).makeGroup();
     this._sceneRoot.addChild(go);
     return go;
+  }
+
+  /** Track every geometry and material under a generated object so dispose()
+   *  frees them. MarsSky and MarsTerrain build fresh GPU resources per call
+   *  instead of sharing cached ones, so this scene owns them — unlike props
+   *  pulled from the asset cache, which it must never dispose (AGENTS.md). */
+  _ownResourcesOf(go) {
+    go.object3d.traverse(o => {
+      if (o.geometry) this._own(o.geometry);
+      if (Array.isArray(o.material)) o.material.forEach(m => this._own(m));
+      else if (o.material) this._own(o.material);
+    });
   }
 
   /** Parent a spawned model under `parent` and drop it from the root list. */

@@ -9,6 +9,7 @@ import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Satellite } from '../gameobjects/Satellite.js';
 import { Fullbright } from '../core/Fullbright.js';
 import { Interactable } from '../components/Interactable.js';
+import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
 const EPS = 1e-6;
@@ -117,16 +118,43 @@ describe('BaseScene', () => {
     expect(sys.rooms).toEqual(expect.arrayContaining(Object.values(scene.rooms)));
   });
 
-  it('builds one shared ground with a collider flush at y = 0 and the mesh just below', () => {
-    const ground = sceneRoot.find('Ground');
-    expect(ground.rigidBody).toBeTruthy();
-    const h = ground.collider.halfExtents();
-    expect(ground.rigidBody.translation().y + h.y).toBeCloseTo(0);
-    const mesh = ground.object3d.children.find(o => o.isMesh);
-    const y = mesh.position.y + ground.object3d.position.y;
-    // Below the room floors (so they never z-fight), but imperceptibly.
-    expect(y).toBeLessThan(0);
-    expect(y).toBeGreaterThan(-0.05);
+  it('stands the whole base on the Mars valley, one terrain for the scene', () => {
+    const terrain = sceneRoot.find('MarsTerrain');
+    expect(terrain).toBeTruthy();
+    // The flat plane it replaced is gone, not left underneath it.
+    expect(sceneRoot.find('Ground')).toBeFalsy();
+
+    // Its collider is a heightfield sampled on the mesh's own grid, so what
+    // you walk on is what you see. Rapier wants an (nrows+1) x (ncols+1)
+    // matrix and traps on an unreachable if the count is off.
+    const hf = terrain.collider.heightfield;
+    expect(hf).toBeTruthy();
+    expect(hf.heights.length).toBe((hf.nrows + 1) * (hf.ncols + 1));
+    // Far wider than the base's ~33 m footprint, so nobody walks off an edge.
+    expect(hf.scale.x).toBeGreaterThan(200);
+    expect(hf.scale.z).toBeGreaterThan(200);
+  });
+
+  it('keeps the valley collider flush with the room floors and dips only the mesh', () => {
+    const terrain = sceneRoot.find('MarsTerrain');
+    // The body stays at y = 0 with the floor slabs, so walking out of the
+    // front door is step-free...
+    expect(terrain.rigidBody.translation().y).toBeCloseTo(0);
+    // ...while the mesh sits imperceptibly below them, because coplanar faces
+    // z-fight across every floor in the base.
+    expect(terrain.object3d.position.y).toBeLessThan(0);
+    expect(terrain.object3d.position.y).toBeGreaterThan(-0.05);
+  });
+
+  it('hangs a sky that rides the camera and tints the fog to its horizon', () => {
+    const sky = sceneRoot.find('MarsSky');
+    expect(sky).toBeTruthy();
+    // The dome has a finite radius, so it has to follow the camera or the
+    // player walks out through it.
+    expect(sky.getComponent(SkyFollow)).toBeTruthy();
+    // Fog fades the terrain to its own colour long before the dome starts;
+    // a mismatch draws a seam along the horizon.
+    expect(engine.scene.fog.color.getHex()).toBe(0x3a2820);
   });
 
   it('adds global ambient and moon light', () => {
@@ -187,27 +215,61 @@ describe('BaseScene', () => {
     expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
   });
 
-  it('sets denser fog in the server room and lighter fog in living quarters', () => {
-    const sys = engine.player.getComponent(RoomTransitionSystem);
-    const base = engine.scene.fog.density;
-
-    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
-    expect(engine.scene.fog.density).toBeGreaterThan(base);
-
-    sys.onRoomChange(scene.rooms.LivingQuarters, scene.rooms.ServerRoom);
-    expect(engine.scene.fog.density).toBeLessThan(base);
-
-    sys.onRoomChange(scene.rooms.MainOffice, scene.rooms.LivingQuarters);
-    expect(engine.scene.fog.density).toBeCloseTo(base);
+  it('starts at the outdoor fog density, thin enough to see the valley rim', () => {
+    // RoomTransitionSystem only reports a room on its first update, and the
+    // player spawns facing the office window — the scene cannot be left on
+    // whatever density the engine happened to hand it.
+    expect(engine.scene.fog.density).toBeLessThan(0.005);
   });
 
-  it('falls back to the default fog density in corridors and outside (room = null)', () => {
+  it('thickens the fog in the sealed rooms, server room densest', () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
-    const base = engine.scene.fog.density;
+    const outdoor = engine.scene.fog.density;
+
+    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
+    const server = engine.scene.fog.density;
+
+    sys.onRoomChange(scene.rooms.LivingQuarters, scene.rooms.ServerRoom);
+    const quarters = engine.scene.fog.density;
+
+    // Both are sealed, so both are free to be thick for mood; the server room
+    // is the thicker of the two.
+    expect(server).toBeGreaterThan(quarters);
+    expect(quarters).toBeGreaterThan(outdoor);
+  });
+
+  it('gives any room with a window the outdoor density, whatever its name', () => {
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    const outdoor = engine.scene.fog.density;
+
+    // The office's back wall is an 8.5 m window onto the valley, whose ridge
+    // line is 350-500 m out. Indoor fog would erase it.
+    expect(scene.rooms.MainOffice.openings.some(o => (o.sill ?? 0) > 0)).toBe(true);
+    sys.onRoomChange(scene.rooms.ServerRoom, null);
+    sys.onRoomChange(scene.rooms.MainOffice, scene.rooms.ServerRoom);
+    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
+
+    // Read off the openings, not a name list: give a sealed room a window and
+    // its fog follows without anyone editing BaseScene.
+    scene.rooms.ServerRoom.openings.push({ side: 'back', width: 2, height: 1.2, sill: 1 });
+    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
+    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
+  });
+
+  it('uses the outdoor density in corridors and outside (room = null)', () => {
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    const outdoor = engine.scene.fog.density;
 
     sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
     sys.onRoomChange(null, scene.rooms.ServerRoom);
-    expect(engine.scene.fog.density).toBeCloseTo(base);
+    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
+  });
+
+  it('hands the fog back on dispose so it does not follow us into the next scene', () => {
+    scene.dispose();
+    // What makeSceneEngine handed the scene, untouched.
+    expect(engine.scene.fog.color.getHex()).toBe(0x1a1a2e);
+    expect(engine.scene.fog.density).toBeCloseTo(0.02);
   });
 
   it('Fullbright hides every light and swaps every lit material across all three rooms', () => {

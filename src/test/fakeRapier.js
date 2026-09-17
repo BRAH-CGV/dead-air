@@ -37,6 +37,17 @@ export function rapierModule() {
           const d = { half: { x, y, z }, sensor: false, setSensor(s) { d.sensor = s; return d; } };
           return d;
         },
+        // MarsTerrain's ground. Records its shape so tests can check the grid
+        // and the footprint without a real physics world; the heights array is
+        // kept by reference rather than copied, since it is 257 x 257 floats.
+        heightfield: (nrows, ncols, heights, scale) => {
+          const d = {
+            heightfield: { nrows, ncols, heights, scale },
+            sensor: false,
+            setSensor(v) { d.sensor = v; return d; },
+          };
+          return d;
+        },
       },
     },
   };
@@ -62,7 +73,10 @@ export class FakeWorld {
   createCollider(desc) {
     let sensor = desc.sensor;
     return {
+      // Only meaningful for cuboids; a heightfield collider reports its shape
+      // through `heightfield` instead, the way the real API splits them.
       halfExtents: () => ({ ...desc.half }),
+      heightfield: desc.heightfield,
       isSensor: () => sensor,
       setSensor: s => { sensor = s; },
     };
