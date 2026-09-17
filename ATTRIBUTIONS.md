@@ -52,6 +52,246 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **Used for** | Server rack in the office |
 | **Modifications** | None recorded |
 
+### Blast door — closed
+
+"Space Ship Blast Door (Closed)"
+(https://sketchfab.com/3d-models/space-ship-blast-door-closed-d652b30770574419bbc37b7024cffd22)
+by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/large-door-closed.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Large sliding blast door — closed state |
+| **Modifications** | None recorded |
+
+### Blast door — open
+
+"Space Ship Blast Door (Open)"
+(https://sketchfab.com/3d-models/space-ship-blast-door-open-f28fa7e29155478a9238c349959a72d6)
+by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/large-door-closed-open.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Large sliding blast door — open state |
+| **Modifications** | None recorded |
+
+### Server console (terminal)
+
+"console03b"
+(https://sketchfab.com/3d-models/console03b-a7301efe05454ed38c257524137b0045)
+by ~Drift~ (QuickDriftVR) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/server-console.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Server room console/terminal prop |
+| **Modifications** | None recorded |
+
+### Server rack (tall)
+
+"Server Rack - Low Poly"
+(https://sketchfab.com/3d-models/server-rack-low-poly-458b456d8a064517bd7f1fcdeba78304)
+by PolyDavid is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/server-rack-tall.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Tall server rack prop |
+| **Modifications** | None recorded |
+
+### Bunk bed
+
+"bunk bed" (https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
+by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bunk_bed.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Crew quarters bunk bed |
+| **Modifications** | None recorded |
+
+### Couch
+
+"Old Couch" (https://sketchfab.com/3d-models/old-couch-443d9bb95e944afe8ebc4ff489e2886c)
+by oisougabo is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/couch.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Break room / lounge couch |
+| **Modifications** | None recorded |
+
+### Locker
+
+"Metal Painted Rusty Wardrobe Lockers"
+(https://sketchfab.com/3d-models/metal-painted-rusty-wardrobe-lockers-f2a7e2593f884ae4bb6aa59c575b2dc4)
+by Ottto3d is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/locker.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Metal storage locker prop |
+| **Modifications** | None recorded |
+
+### Metal barrel
+
+"Metal Barrel" (https://sketchfab.com/3d-models/metal-barrel-7b1c5c67999d43c6a4f489859ed9883f)
+by usedm is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/barrel.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Metal barrel prop |
+| **Modifications** | None recorded |
+
+### Shelf
+
+"Metal Shelf - 5MB"
+(https://sketchfab.com/3d-models/metal-shelf-5mb-1621362eb54d4571a49323ceb74f80fb)
+by Mehdi Shahsavan (ahmagh2e) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/shelf.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Metal shelving unit prop |
+| **Modifications** | None recorded |
+
+### Soap dispenser — ⚠ non-commercial license
+
+"Retro Soap Dispenser(2K)"
+(https://sketchfab.com/3d-models/retro-soap-dispenser2k-8945615518324c5dbdca911f0545edd9)
+by Minh Nguyen (Minh_Nguyen_2004) is licensed under **Creative Commons
+Attribution-NonCommercial**
+(http://creativecommons.org/licenses/by-nc/4.0/) — **not** the standard CC BY
+used everywhere else in this file. Commercial use is not permitted under this
+licence; flag before shipping if the game will be sold or monetised.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/retro_soap_dispenser2k.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Bathroom / break room soap dispenser prop |
+| **Modifications** | None recorded |
+
+### Vending machine
+
+"(Retro) - Vending Machine"
+(https://sketchfab.com/3d-models/retro-vending-machine-8864bbc0957649c7b17f9147e9b58910)
+by Kasujin is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/vending_machine.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Break room vending machine |
+| **Modifications** | None recorded |
+
+### Mars rover
+
+"Colony Rover" (https://sketchfab.com/3d-models/colony-rover-1ba1bf4753c1409a865c8a7b2d37ea3a)
+by Aleksey Basinskiy (rakorian) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/colony_rover.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Mars colony rover exterior prop |
+| **Modifications** | None recorded |
+
+### Poster — ⚠ non-commercial, no-derivatives license
+
+"Mars Poster" (https://sketchfab.com/3d-models/mars-poster-fe37ea9b8bdd4debab6605facd087bc4)
+by Whystler is licensed under **Creative Commons
+Attribution-NonCommercial-NoDerivs**
+(http://creativecommons.org/licenses/by-nc-nd/4.0/) — **not** the standard CC
+BY used everywhere else in this file. This licence forbids commercial use
+*and* modified/derivative versions of the asset. Needs a decision before
+shipping: replace with a differently-licensed poster, or confirm the game
+stays non-commercial and the asset is used unmodified.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/poster.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Wall poster decoration |
+| **Modifications** | None recorded |
+
+### Birch tree
+
+"Birch Tree - Proto Series - Free"
+(https://sketchfab.com/3d-models/birch-tree-proto-series-free-f0203eb84beb4d638d148e2116f5dbf7)
+by BitGem is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/red-tree1.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Exterior foliage |
+| **Modifications** | None recorded |
+
+### Pine tree
+
+"Pine Tree - Proto Series - Free"
+(https://sketchfab.com/3d-models/pine-tree-proto-series-free-08014e92a59244c992884091218230b8)
+by BitGem is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/red-tree2.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Exterior foliage |
+| **Modifications** | None recorded |
+
+### Fantasy tree
+
+"fantasy tree 1" (https://sketchfab.com/3d-models/fantasy-tree-1-fee2b59583084ae1a755a1b02133a42c)
+by DJMaesen (bumstrum) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/dead-tree1.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Dead / exterior tree foliage |
+| **Modifications** | None recorded |
+
+### Low poly dead tree
+
+"Low Poly: Dead Tree"
+(https://sketchfab.com/3d-models/low-poly-dead-tree-addc2aef9e534a93a8798320fea440ef)
+by ClintonAbbott.Art is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/dead_tree1.glb` |
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+| **Used for** | Dead / exterior tree foliage |
+| **Modifications** | None recorded |
+
 ### Radar terminal — TODO: resolve
 
 Which of these was downloaded as `industrial_terminal.glb`? One entry, drop
