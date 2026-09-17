@@ -3,7 +3,10 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
+import { SkyFollow } from '../components/SkyFollow.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
+import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -37,6 +40,7 @@ export class OfficeScene extends Scene {
     this._lighting = lighting;
 
     this._addLighting();
+    this._addSky();
     this._addGround();
     this._addWalls();
     this._addWindow();
@@ -64,6 +68,16 @@ export class OfficeScene extends Scene {
   }
   
   dispose() {
+    // Scene teardown never resets scene.fog, so hand back the colour _addSky
+    // borrowed or the Mars horizon tint follows us into the next scene.
+    if (this._prevFogColor !== undefined) {
+      this.engine.scene.fog?.color.setHex(this._prevFogColor);
+    }
+    // Scene teardown never resets scene.fog, so hand back the density
+    // _addGround borrowed or the whole next level inherits our long sightlines.
+    if (this._prevFogDensity !== undefined) {
+      this.engine.scene.fog.density = this._prevFogDensity;
+    }
     // Future: dispose level-specific GPU resources (lights, ground geom, etc.)
   }
 
@@ -78,8 +92,12 @@ export class OfficeScene extends Scene {
     this._lighting.addChild(ambientGO);
           
     const moonGO = new GameObject('MoonLight');
-    const moon = new THREE.DirectionalLight(0x8fb7ff, 1.8);
-    moon.position.set(-6, 8, -10);
+    // Aimed at Phobos, derived from the moon's own angles so the two cannot
+    // drift apart. That elevation is genuinely low, so shadows rake long across
+    // the floor — that is the moon you can see through the window.
+    const moon = new THREE.DirectionalLight(0xd4d4d4, 1.1);
+    const { azimuth, elevation } = DEFAULT_MOONS.phobos;
+    moon.position.copy(directionFromAngles(azimuth, elevation)).multiplyScalar(12);
     moon.castShadow = true;
     moon.shadow.mapSize.set(1024, 1024);
     moon.shadow.camera.near   =  0.5;
@@ -134,15 +152,33 @@ export class OfficeScene extends Scene {
     this._lighting.addChild(moonGlowGO);
   }
   
-  // ─────────────────────────────────────────
-  // Ground (visual plane + static collider)
+  // ──────────────────────────────────────────
+  // Ground (Mars valley + office floor)
   // ──────────────────────────────────────────
   _addGround() {
-    const { world, assets } = this.engine;
+    const { assets, scene } = this.engine;
 
-    const groundGO = new GameObject('Ground');
-    const groundMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(100, 100),
+    // The valley: a flat pad under the office, rising out of the darker,
+    // worked basin soil into Mars-red ridges that close the horizon in
+    // every direction.
+    // It brings its own heightfield collider, so nothing else needs a floor.
+    this._outside.addChild(createMarsTerrain(this.engine.world));
+
+    // The engine's default fog is opaque by ~150 m — it would swallow the rim
+    // at 350-500 m entirely. Thin it enough to see the valley, keeping enough
+    // aerial perspective to separate the far hills from the near ones.
+    //
+    // DENSITY ONLY, never colour: the sky work owns the fog colour, and
+    // keeping to disjoint properties is what keeps the two branches mergeable.
+    this._prevFogDensity = scene.fog?.density;
+    if (scene.fog) scene.fog.density = 0.0022;
+
+    // Office floor. The terrain is flat and solid underneath it, so this is
+    // purely the interior surface — no collider of its own, and lifted a
+    // centimetre clear of the pad because co-planar faces z-fight.
+    const floorGO = new GameObject('OfficeFloor');
+    const floorMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 10),
       new THREE.MeshStandardMaterial({
         color: 0x8890a0,
         roughness: 0.9,
@@ -151,25 +187,11 @@ export class OfficeScene extends Scene {
         normalScale: new THREE.Vector2(0.8, 0.8),
       }),
     );
-    groundMesh.rotation.x    = -Math.PI / 2;
-    groundMesh.receiveShadow = true;
-    groundGO.object3d.add(groundMesh);
-    this._outside.addChild(groundGO);
-
-    // Ground collider — attached to the GameObject so scene teardown can
-    // find and remove it. An orphan body would leak a ghost floor on every
-    // scene reload.
-    const groundBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0),
-    );
-    const groundCollider = world.createCollider(
-      RAPIER.ColliderDesc.cuboid(50, 0.1, 50).setTranslation(0, -0.1, 0),
-      groundBody,
-    );
-    groundGO.rigidBody = groundBody;
-    groundGO.colliders = [groundCollider];
-    groundGO.collider  = groundCollider;
-    groundGO._originalSize = [100, 0.2, 100];
+    floorMesh.rotation.x    = -Math.PI / 2;
+    floorMesh.receiveShadow = true;
+    floorGO.object3d.add(floorMesh);
+    floorGO.object3d.position.y = 0.01;
+    this._office.addChild(floorGO);
   }
 
   // ──────────────────────────────────────────
@@ -389,5 +411,24 @@ export class OfficeScene extends Scene {
 
     this.engine._rootObjects.push(go);
     return go;
+  }
+
+  // ──────────────────────────────────────────
+  // Sky (procedural Mars night dome + moons)
+  // ──────────────────────────────────────────
+  _addSky() {
+    const skyGroup = new GameObject('Sky');
+    skyGroup.makeGroup();
+    this._sceneRoot.addChild(skyGroup);
+
+    const sky = createMarsSky();
+    sky.addComponent(new SkyFollow());
+    skyGroup.addChild(sky);
+
+    // Match the fog to the dome's horizon. FogExp2 washes the ground plane out
+    // to the fog colour by ~100 m, well inside the dome, so the engine default
+    // shows up as a seam where the faded ground meets the rust horizon.
+    this._prevFogColor = this.engine.scene.fog?.color.getHex();
+    this.engine.scene.fog?.color.set(0x3a2820);
   }
 }
