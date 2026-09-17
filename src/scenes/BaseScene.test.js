@@ -176,7 +176,7 @@ describe('BaseScene', () => {
 
   it('builds the outside area: satellite and generator stand-in, outside every room', () => {
     const outside = sceneRoot.find('Outside');
-    const satCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:dish_tower');
+    const satCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:dish-tower');
     expect(satCall[1].type).toBe(Satellite);
     expect(outside.find('Satellite')).not.toBeNull();
 

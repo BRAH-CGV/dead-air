@@ -1540,6 +1540,17 @@ export class LevelEditor {
       return null;
     }
 
+    // The browser lists every manifest key, but only PLACED ones are in the
+    // cache. Fetch a library model first, then come back and spawn it —
+    // spawnModel is synchronous and would throw on a key it cannot read.
+    const assets = this.engine.assets;
+    if (assets && typeof assets.load === 'function' && !assets.has(key)) {
+      assets.load(key)
+        .then(() => this._addManifestModel(key, name))
+        .catch(err => console.error(`[LevelEditor] ${err.message}`));
+      return null;
+    }
+
     const go = this.engine.spawnModel(key, {
       name: name,
       position: [0, 0, 0],

@@ -289,7 +289,7 @@ export class BaseScene extends Scene {
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
     // left in both it would slew at double speed.
-    this.satellite = engine.spawnModel('model:dish_tower', {
+    this.satellite = engine.spawnModel('model:dish-tower', {
       name: 'Satellite', position: [0, 0, -25], scale: 0.137, type: Satellite,
     });
     this._adopt(this._outside, this.satellite);

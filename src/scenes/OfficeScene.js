@@ -51,7 +51,7 @@ export class OfficeScene extends Scene {
     // The dish tower spawns as a Satellite (GameObject subclass): its neck
     // slews toward targetYaw and its dish tilts toward targetPitch, never
     // faster than maxRotationSpeed — steering instead of spinning forever.
-    this.satellite = this.engine.spawnModel('model:dish_tower', {
+    this.satellite = this.engine.spawnModel('model:dish-tower', {
       name: 'Satellite',
       position: [0, 0, -25],
       scale: 0.137,

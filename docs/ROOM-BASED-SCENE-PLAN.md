@@ -333,7 +333,7 @@ rounds:**
 See `docs/MODEL-ASSET-LIST.md`. For the rooms, the priority models are:
 - `door-interior.glb` (currently a procedural panel);
 - `generator.glb` and `breaker-panel.glb` (outside);
-- `bed-bunk.glb`, `vending-machine.glb` and `locker.glb` (LivingQuarters);
+- `bunk-bed.glb`, `vending-machine.glb` and `locker.glb` (LivingQuarters);
 - `server-console.glb` (the ServerRoom currently uses the radar terminal).
 
 The Generator Bay-only items are no longer needed as a separate room, but the generator and breaker panel still are.

@@ -47,7 +47,7 @@ describe('LivingQuarters', () => {
 
   it('stand-ins record which model they are waiting for, and are solid', () => {
     const expected = {
-      Bunk: 'bed-bunk.glb',
+      Bunk: 'bunk-bed.glb',
       VendingMachine: 'vending-machine.glb',
       Locker_1: 'locker.glb',
     };

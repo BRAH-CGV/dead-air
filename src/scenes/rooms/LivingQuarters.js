@@ -63,7 +63,7 @@ export class LivingQuarters extends Room {
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
     // Back-left corner.
-    this._placeholder('Bunk', 'bed-bunk.glb',
+    this._placeholder('Bunk', 'bunk-bed.glb',
       [-inX + 0.45, 0.85, -inZ + 1.0], [0.9, 1.7, 2.0], 0x4a5058);
 
     // Against the back wall, right side. Faint glow from the lit front.

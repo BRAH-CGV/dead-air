@@ -17,6 +17,24 @@ function pointInBox(point, part) {
 }
 
 describe('manifest', () => {
+  it('names every file after its key, so either one gives you the other', () => {
+    for (const [key, entry] of Object.entries(ASSETS)) {
+      const base = entry.url.split('/').pop().replace(/\.[a-z0-9]+$/i, '');
+      expect(base, key).toBe(key.slice(key.indexOf(':') + 1));
+    }
+  });
+
+  it('catches a filename that drifts from its key', () => {
+    // The rule is only worth having if it fails loudly.
+    expect(validateManifest({
+      'model:crate': { type: 'model', url: 'assets/models/crate_v2.glb' },
+    })).toContainEqual(expect.stringContaining('filename should match the key'));
+
+    expect(validateManifest({
+      'model:trash_bin': { type: 'model', url: 'assets/models/trash_bin.glb' },
+    })).toContainEqual(expect.stringContaining('lowercase and hyphen-separated'));
+  });
+
   it('has no validation problems', () => {
     expect(validateManifest(ASSETS)).toEqual([]);
   });

@@ -3,7 +3,7 @@ import { GameObject } from '../core/GameObject.js';
 // ─────────────────────────────────────────────
 // Satellite  –  steerable dish tower
 // ─────────────────────────────────────────────
-// A GameObject subclass for the 'model:dish_tower' asset. Two sub-parts
+// A GameObject subclass for the 'model:dish-tower' asset. Two sub-parts
 // move: the neck ('Neck_block') slews around Y — yaw — and the dish ('Dish')
 // tilts around X — pitch. Each eases toward its target angle and never turns
 // faster than `maxRotationSpeed`, so the tower steers like a real dish
@@ -11,7 +11,7 @@ import { GameObject } from '../core/GameObject.js';
 //
 // Spawn through the engine, which handles physics and registration:
 //
-//   const dish = engine.spawnModel('model:dish_tower', {
+//   const dish = engine.spawnModel('model:dish-tower', {
 //     name: 'Satellite', position: [0, 0, -25], scale: 0.5, type: Satellite,
 //   });
 //   dish.targetYaw = Math.PI / 4;   // steer at any time, from any system
@@ -42,7 +42,7 @@ export class Satellite extends GameObject {
     sat.neck = sat.find('Neck_block');
     sat.dish = sat.find('Dish');
     if (!sat.neck || !sat.dish) {
-      console.warn("[Satellite] dish_tower is missing its 'Neck_block' or 'Dish' sub-node — it will not move");
+      console.warn("[Satellite] dish-tower is missing its 'Neck_block' or 'Dish' sub-node — it will not move");
     }
     // Hold the pose the model shipped with until something sets a target,
     // so spawning alone doesn't jerk the tower back to zero.
