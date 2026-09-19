@@ -339,11 +339,11 @@ export class OfficeScene extends Scene {
   }
   
   _addOfficeFurniture() {
-    // Retro computer with built-in desk: central focal point facing into the room.
+    // Retro computer with built-in desk: facing the window.
     const computer = this.engine.spawnModel('model:retro-computer', { 
       name: 'ComputerDesk', 
       position: [0, 0, -2.55],
-      rotationY: Math.PI,
+      rotationY: 0,
       scale: 0.016,
     });
     this._office.addChild(computer);

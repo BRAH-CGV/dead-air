@@ -73,7 +73,7 @@ describe('ComputerTerminal', () => {
 
   // ── IDLE → RADAR ──
 
-  it('enter transitions from idle to radar and freezes player', () => {
+  it('enter transitions from idle to radar', () => {
     term.enter();
     expect(term.state).toBe('radar');
     expect(radar.show).toHaveBeenCalled();

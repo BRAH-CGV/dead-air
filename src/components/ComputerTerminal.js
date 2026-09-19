@@ -1,6 +1,5 @@
 import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
-import { FirstPersonController } from './FirstPersonController.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -10,8 +9,7 @@ import { FirstPersonController } from './FirstPersonController.js';
 // State machine:
 //   IDLE → RADAR → AIMING → SCANNING → REVIEW → RADAR → …
 //
-// While active, the player's movement is frozen (FirstPersonController
-// disabled) and WASD steers the satellite dish instead.
+// While active, WASD steers the satellite dish. The player can still move.
 //
 // External references (set by OfficeScene during wiring):
 //   satellite, signalManager, hud, radar, reviewPanel
@@ -62,7 +60,7 @@ export class ComputerTerminal extends Component {
     this._enterRadar();
   }
 
-  /** Exit the terminal back to IDLE (Escape / E). */
+  /** Exit the terminal back to IDLE (Q key). */
   exit() {
     if (this.state === 'idle') return;
     // If in review without a choice, leave signal scanned but unresolved.
@@ -152,7 +150,6 @@ export class ComputerTerminal extends Component {
     this.state = 'idle';
     this._selectedId = null;
     this.signalManager?.selectSignal(null);
-    this._freezePlayer(false);
     this.radar?.hide();
     this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
@@ -161,9 +158,8 @@ export class ComputerTerminal extends Component {
 
   _enterRadar() {
     this.state = 'radar';
-    this._freezePlayer(true);
     this.radar?.show();
-    this.radar?.setHint('Tab: cycle signals  |  1-5: select  |  ESC: exit');
+    this.radar?.setHint('Tab: cycle signals  |  1-5: select  |  Q: exit');
     this.radar?.setInfo('');
     this._selectedId = null;
     this.signalManager?.selectSignal(null);
@@ -186,7 +182,7 @@ export class ComputerTerminal extends Component {
     this.satellite.isScanning = false;
 
     this.radar?.setInfo(`Signal #${sig.id} — aim the dish toward the blip`);
-    this.radar?.setHint('A/D: sweep | W/S: elevate | ESC: exit');
+    this.radar?.setHint('A/D: sweep | W/S: elevate | Q: exit');
     this.hud?.setScanProgress(0);
   }
 
@@ -232,19 +228,6 @@ export class ComputerTerminal extends Component {
   }
 
   // ──────────────────────────────────────────────────────────
-  // Player freeze (same pattern as DebugCamera)
-  // ──────────────────────────────────────────────────────────
-
-  _freezePlayer(frozen) {
-    if (!this.gameObject?.scene) return;
-    const engine = this.gameObject.scene.userData?.engine;
-    if (!engine?.player) return;
-
-    const ctrl = engine.player.getComponent(FirstPersonController);
-    if (ctrl) ctrl.enabled = !frozen;
-  }
-
-  // ──────────────────────────────────────────────────────────
   // Per-frame update
   // ──────────────────────────────────────────────────────────
 
@@ -255,8 +238,8 @@ export class ComputerTerminal extends Component {
     // ── IDLE: handled by the Interactable component (onInteract hook) ──
     if (this.state === 'idle') return;
 
-    // ── Global: ESC exits from any state ──
-    if (engine.input.keys['Escape']) {
+    // ── Global: Q exits from any state ──
+    if (engine.input.keys['KeyQ']) {
       this.exit();
       return;
     }
