@@ -136,18 +136,6 @@ describe('SignalManager', () => {
     }
   });
 
-  it('selectSignal sets and clears the active target', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
-    mgr.startNight(1);
-
-    expect(mgr.active).toBeNull();
-    mgr.selectSignal(2);
-    expect(mgr.active).toBe(mgr.signals[1]);
-
-    mgr.selectSignal(null);
-    expect(mgr.active).toBeNull();
-  });
-
   it('resets state on startNight', () => {
     const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
     mgr.startNight(1);
@@ -156,7 +144,6 @@ describe('SignalManager', () => {
 
     mgr.startNight(2);
     expect(mgr.saved).toBe(0);
-    expect(mgr.active).toBeNull();
   });
 
   it('ignores save/delete for unknown IDs', () => {

@@ -8,25 +8,23 @@ import { FirstPersonController } from './FirstPersonController.js';
 // Drives the signal-collection gameplay from the computer desk.
 //
 // State machine:
-//   IDLE → RADAR → AIMING → SCANNING → REVIEW → RADAR → …
+//   IDLE → RADAR → SCANNING → REVIEW → RADAR → …
 //
 // While active, the player's input is locked (no mouse look or WASD) but
-// physics still applies — gravity and momentum continue. WASD steers the
-// satellite dish instead.
+// physics still applies — gravity and momentum continue. WASD moves a
+// cursor that the satellite dish "chases" with momentum.
 //
 // External references (set by OfficeScene during wiring):
 //   satellite, signalManager, hud, radar, reviewPanel
 // ─────────────────────────────────────────────
 
 /** @readonly */
-// Matches Satellite.maxRotationSpeed so the steered target never outruns
-// the dish — held keys move both in sync, taps give fine control inside
-// the scan tolerance.
-const STEER_RATE = Math.PI / 8;  // rad/s — dish steering speed from keyboard
+// Cursor movement rate in Cartesian units per second (unit-circle space).
+const CURSOR_RATE = 1 / 4;  // unit/s — full radius in 4 seconds
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
-  /** 'idle' | 'radar' | 'aiming' | 'scanning' | 'review' */
+  /** 'idle' | 'radar' | 'scanning' | 'review' */
   state = 'idle';
 
   // ── External references (set before first use) ──
@@ -41,13 +39,19 @@ export class ComputerTerminal extends Component {
   /** @type {import('../ui/HUD.js').SignalReviewPanel|null} */
   reviewPanel = null;
 
-  /** @type {number|null} ID of the currently selected signal */
-  _selectedId = null;
+  /** @type {number|null} ID of the currently hovered signal */
+  _hoveredSignal = null;
+
+  /** Cursor position in Cartesian unit-circle coords.
+   *  x: -1..+1 (left..right = yaw), y: -1..+1 (bottom..top = horizon..zenith).
+   *  Clamped to the unit circle so the cursor stays in the radar disc. */
+  _cursorX = 0;
+  _cursorY = 0;
 
   /** Edge-trigger for the interact key (prevent re-entry while held). */
   _interactHeld = false;
-  /** Edge-trigger for Tab. */
-  _tabHeld = false;
+  /** Edge-trigger for Enter key (scan initiation). */
+  _enterHeld = false;
 
   // ── Prompt label for the Interactable ──
   promptLabel = '[E] Use Computer';
@@ -74,64 +78,70 @@ export class ComputerTerminal extends Component {
     this._enterIdle();
   }
 
-  /** Cycle to the next unresolved signal. */
-  selectNextSignal() {
-    if (this.state !== 'radar' && this.state !== 'aiming') return;
-    const mgr = this.signalManager;
-    if (!mgr) return;
-
-    const unresolved = mgr.signals.filter(s => !s.resolved);
-    if (unresolved.length === 0) {
-      this._selectedId = null;
-      mgr.selectSignal(null);
-      return;
+  /** Move the cursor in Cartesian unit-circle space. WASD maps directly
+   *  to x/y, clamped to the unit circle. No speed correction needed —
+   *  the cursor moves at a uniform rate regardless of position. */
+  moveCursor(dir, dt) {
+    const step = CURSOR_RATE * dt;
+    if (dir.left)  this._cursorX -= step;
+    if (dir.right) this._cursorX += step;
+    if (dir.down)  this._cursorY -= step;
+    if (dir.up)    this._cursorY += step;
+    // Clamp to unit circle
+    const r = Math.sqrt(this._cursorX * this._cursorX + this._cursorY * this._cursorY);
+    if (r > 1) {
+      this._cursorX /= r;
+      this._cursorY /= r;
     }
-
-    // Find the next unresolved signal after the current selection.
-    const curIdx = unresolved.findIndex(s => s.id === this._selectedId);
-    const nextIdx = (curIdx + 1) % unresolved.length;
-    const next = unresolved[nextIdx];
-
-    this._selectedId = next.id;
-    mgr.selectSignal(next.id);
-    this._enterAiming();
+    // Convert to sky coords and update satellite target
+    const sky = this._cursorToSky();
+    if (this.satellite) {
+      this.satellite.targetYaw = sky.yaw;
+      this.satellite.targetPitch = sky.pitch;
+    }
   }
 
-  /** Select a specific signal by ID (e.g. from number key 1-5). */
-  selectSignalById(id) {
-    if (this.state !== 'radar' && this.state !== 'aiming') return;
-    const mgr = this.signalManager;
-    if (!mgr) return;
-
-    const sig = mgr.signals.find(s => s.id === id && !s.resolved);
-    if (!sig) return;
-
-    this._selectedId = sig.id;
-    mgr.selectSignal(sig.id);
-    this._enterAiming();
+  /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
+   *  Centre of radar (y=1) = zenith (pitch=-π/2), rim (y=0) = horizon. */
+  _cursorToSky() {
+    const r = Math.sqrt(this._cursorX * this._cursorX + this._cursorY * this._cursorY);
+    const theta = Math.atan2(this._cursorX, this._cursorY);
+    const elev = r * (Math.PI / 2);   // 0 at centre (zenith), π/2 at rim (horizon)
+    return {
+      yaw: theta,
+      pitch: -(Math.PI / 2) + elev,   // -π/2 at zenith, 0 at horizon
+    };
   }
 
-  /** Steer the dish in a direction. Called each frame in AIMING.
-   *  Pitch clamps to the sky hemisphere: horizon (0) to zenith (-π/2).
-   *  @param {{ left: boolean, right: boolean, up: boolean, down: boolean }} dir
-   *  @param {number} dt  seconds */
-  steerDish(dir, dt) {
-    if (!this.satellite) return;
-    const step = STEER_RATE * dt;
-    if (dir.left)  this.satellite.targetYaw -= step;
-    if (dir.right) this.satellite.targetYaw += step;
-    if (dir.up)    this.satellite.targetPitch -= step;
-    if (dir.down)  this.satellite.targetPitch += step;
-    this.satellite.targetPitch = Math.min(0, Math.max(-Math.PI / 2, this.satellite.targetPitch));
+  /** Check if cursor is hovering over any unresolved signal. */
+  _updateHover() {
+    if (!this.signalManager) return;
+    const sky = this._cursorToSky();
+    const signals = this.signalManager.signals;
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const sig of signals) {
+      if (sig.resolved) continue;
+      // Compute angular distance from cursor (in sky coords) to signal
+      const dyaw = sig.yaw - sky.yaw;
+      const dpitch = sig.pitch - sky.pitch;
+      const dist = Math.sqrt(dyaw * dyaw + dpitch * dpitch);
+      if (dist <= sig.tolerance && dist < closestDist) {
+        closest = sig;
+        closestDist = dist;
+      }
+    }
+    this._hoveredSignal = closest;
   }
 
   /** Save the currently reviewed signal. */
   saveSignal() {
     if (this.state !== 'review') return;
     const mgr = this.signalManager;
-    if (!mgr || !this._selectedId) return;
+    if (!mgr || !this._hoveredSignal) return;
 
-    mgr.saveSignal(this._selectedId);
+    mgr.saveSignal(this._hoveredSignal.id);
     this._onSignalResolved();
   }
 
@@ -139,9 +149,9 @@ export class ComputerTerminal extends Component {
   deleteSignal() {
     if (this.state !== 'review') return;
     const mgr = this.signalManager;
-    if (!mgr || !this._selectedId) return;
+    if (!mgr || !this._hoveredSignal) return;
 
-    mgr.deleteSignal(this._selectedId);
+    mgr.deleteSignal(this._hoveredSignal.id);
     this._onSignalResolved();
   }
 
@@ -163,8 +173,7 @@ export class ComputerTerminal extends Component {
 
   _enterIdle() {
     this.state = 'idle';
-    this._selectedId = null;
-    this.signalManager?.selectSignal(null);
+    this._hoveredSignal = null;
     this._setInputLocked(false);
     this.radar?.hide();
     this.reviewPanel?.hide();
@@ -176,37 +185,27 @@ export class ComputerTerminal extends Component {
     this.state = 'radar';
     this._setInputLocked(true);
     this.radar?.show();
-    this.radar?.setHint('Tab: cycle signals  |  1-5: select  |  Q: exit');
+    this.radar?.setHint('WASD: move cursor | Enter: scan (when dish aimed) | Q: exit');
     this.radar?.setInfo('');
-    this._selectedId = null;
-    this.signalManager?.selectSignal(null);
-    // Reset scan state on the satellite.
-    if (this.satellite) {
-      this.satellite.scanProgress = 0;
-      this.satellite.scanTarget = null;
-      this.satellite.isScanning = false;
+    this._hoveredSignal = null;
+    // Check if a scan completed while terminal was closed
+    if (this.satellite?._scanComplete) {
+      this._enterReview();
     }
-  }
-
-  _enterAiming() {
-    this.state = 'aiming';
-    const sig = this.signalManager?.active;
-    if (!sig || !this.satellite) return;
-
-    // Reset scan progress for this new target.
-    this.satellite.scanProgress = 0;
-    this.satellite.scanTarget = sig;
-    this.satellite.isScanning = false;
-
-    this.radar?.setInfo(`Signal #${sig.id} — aim the dish toward the blip`);
-    this.radar?.setHint('A/D: sweep | W/S: elevate | Q: exit');
-    this.hud?.setScanProgress(0);
   }
 
   _enterScanning() {
     this.state = 'scanning';
-    if (this.satellite) this.satellite.isScanning = true;
-    this.radar?.setInfo('Scanning… keep the dish aimed!');
+    if (this.satellite && this._hoveredSignal) {
+      // Only reset progress if this is a different target than what we had
+      if (this.satellite.scanTarget !== this._hoveredSignal) {
+        this.satellite.scanProgress = 0;
+      }
+      this.satellite.scanTarget = this._hoveredSignal;
+      this.satellite.isScanning = true;
+      this.satellite._scanComplete = false;
+    }
+    this.radar?.setInfo('Scanning… keep dish aimed!');
   }
 
   _enterReview() {
@@ -215,11 +214,12 @@ export class ComputerTerminal extends Component {
       this.satellite.isScanning = false;
       this.satellite.scanTarget = null;
       this.satellite.scanProgress = 0;
+      this.satellite._scanComplete = false;
     }
     this.radar?.hide();
     this.hud?.setScanProgress(-1);
 
-    const sig = this.signalManager?.active;
+    const sig = this._hoveredSignal;
     if (sig) {
       this.signalManager?.markScanned(sig.id);
       this.reviewPanel?.show(sig.payloadUrl);
@@ -230,8 +230,7 @@ export class ComputerTerminal extends Component {
   /** Called after save or delete in REVIEW — return to RADAR. */
   _onSignalResolved() {
     this.reviewPanel?.hide();
-    this._selectedId = null;
-    this.signalManager?.selectSignal(null);
+    this._hoveredSignal = null;
     this._enterRadar();
   }
 
@@ -261,74 +260,59 @@ export class ComputerTerminal extends Component {
       return;
     }
 
-    // ── RADAR: signal selection ──
+    // ── RADAR: cursor movement + hover detection + Enter to scan ──
     if (this.state === 'radar') {
-      // Tab cycles signals
-      const tabDown = !!engine.input.keys['Tab'];
-      if (tabDown && !this._tabHeld) {
-        this.selectNextSignal();
-      }
-      this._tabHeld = tabDown;
-
-      // Number keys 1-9 select specific signals
-      for (let i = 1; i <= 9; i++) {
-        if (engine.input.keys[`Digit${i}`]) {
-          this.selectSignalById(i);
-          break;
-        }
-      }
-
-      // Update radar display
-      this._updateRadarDisplay();
-      return;
-    }
-
-    // ── AIMING: dish steering + scan check ──
-    if (this.state === 'aiming') {
       const keys = engine.input.keys;
       const kb = engine.keyBinds;
 
-      // WASD steers the dish (A/D yaw, W/S pitch). Space/C as alternative
-      // vertical.  Single steerDish call so no axis is double-counted.
-      this.steerDish({
+      // WASD moves the cursor
+      this.moveCursor({
         left:  !!keys[kb.left],
         right: !!keys[kb.right],
         up:    !!keys[kb.forward] || !!keys[kb.jump],
         down:  !!keys[kb.back]    || !!keys[kb.crouch],
       }, dt);
 
-      // Check if aimed at the active signal
-      const sig = this.signalManager?.active;
-      if (sig && this.satellite) {
+      // Update hover detection
+      this._updateHover();
+
+      // Enter key starts scanning if hovering and dish is aimed
+      const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
+      if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
+        const sig = this._hoveredSignal;
         const aimed = this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance);
         if (aimed) {
           this._enterScanning();
+        } else {
+          this.radar?.setInfo('Dish not aimed — wait for it to settle');
         }
       }
+      this._enterHeld = enterDown;
 
+      // Update radar display
       this._updateRadarDisplay();
       return;
     }
 
-    // ── SCANNING: progress accumulation ──
+    // ── SCANNING: background scan on Satellite, just check for completion ──
     if (this.state === 'scanning') {
-      const sig = this.signalManager?.active;
-      if (sig && this.satellite) {
-        const aimed = this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance);
-        if (aimed) {
-          this.satellite.scanProgress += dt;
-          this.hud?.setScanProgress(this.satellite.scanProgress / sig.scanTime);
+      // Scan accumulation happens in Satellite._update (background)
+      // Just check if scan completed
+      if (this.satellite?._scanComplete) {
+        this._enterReview();
+        return;
+      }
 
-          if (this.satellite.scanProgress >= sig.scanTime) {
-            this._enterReview();
-            return;
-          }
-        } else {
-          // Dish drifted — pause scanning (don't reset)
-          this.satellite.isScanning = false;
-          this.state = 'aiming';
-          this.radar?.setInfo('Signal lost — re-aim the dish!');
-        }
+      // Update HUD with scan progress
+      if (this.satellite?.scanTarget) {
+        const progress = this.satellite.scanProgress / this.satellite.scanTarget.scanTime;
+        this.hud?.setScanProgress(progress);
+      }
+
+      // If satellite stopped scanning (dish drifted), go back to radar
+      if (this.satellite && !this.satellite.isScanning && this.satellite.scanProgress < this.satellite.scanTarget?.scanTime) {
+        this.state = 'radar';
+        this.radar?.setInfo('Signal lost — re-aim the dish!');
       }
 
       this._updateRadarDisplay();
@@ -343,15 +327,21 @@ export class ComputerTerminal extends Component {
     if (!this.radar || !this.signalManager || !this.satellite) return;
     const dishYaw   = this.satellite.neck?.object3d?.rotation?.y ?? 0;
     const dishPitch = this.satellite.dish?.object3d?.rotation?.x ?? 0;
-    // The slew target rides along so the radar can show where the dish is
-    // heading while it lags behind steering.
+
+    // Compute scan progress for the ring display
+    let scanProgress = -1;
+    if (this.satellite.isScanning && this.satellite.scanTarget) {
+      scanProgress = this.satellite.scanProgress / this.satellite.scanTarget.scanTime;
+    }
+
     this.radar.update(
       this.signalManager.signals,
       dishYaw,
       dishPitch,
-      this._selectedId,
-      this.satellite.targetYaw,
-      this.satellite.targetPitch,
+      this._cursorX,
+      this._cursorY,
+      this._hoveredSignal,
+      scanProgress,
     );
   }
 }

@@ -20,14 +20,24 @@ import { GameObject } from '../core/GameObject.js';
 
 export class Satellite extends GameObject {
 
-  /** Slew limit shared by both axes, radians per second (π/8 ≈ 22.5°/s —
-   *  a full yaw revolution takes 16 s). */
-  maxRotationSpeed = Math.PI / 8;
+  /** Slew limit shared by both axes, radians per second (π/64 ≈ 2.8°/s —
+   *  a full yaw revolution takes ~128 s). */
+  maxRotationSpeed = Math.PI / 64;
 
   /** Angle the neck is slewing toward, radians around Y. */
   targetYaw = 0;
   /** Angle the dish is tilting toward, radians around X. */
   targetPitch = 0;
+
+  // ── Momentum physics (spring-damper) ──
+  /** Angular velocity around Y (rad/s). */
+  velYaw = 0;
+  /** Angular velocity around X (rad/s). */
+  velPitch = 0;
+  /** How fast the dish accelerates toward target (rad/s^2). */
+  angularAccel = 2.0;
+  /** Velocity damping factor (higher = less overshoot). */
+  angularDamping = 4.0;
 
   /** The slewing base of the tower. @type {GameObject|null} */
   neck = null;
@@ -59,20 +69,47 @@ export class Satellite extends GameObject {
     return sat;
   }
 
-  /** Slew both axes one `maxRotationSpeed`-bounded step toward their
-   *  targets. super first, so components and children tick before we
-   *  re-aim them. */
+  /** Slew both axes with spring-damper momentum physics. The dish
+   *  accelerates toward its target, decelerates as it approaches, and
+   *  never exceeds maxRotationSpeed. super first, so components and
+   *  children tick before we re-aim them. */
   _update(dt) {
     super._update(dt);
-    if (this.neck) {
-      this.neck.object3d.rotation.y = approachAngle(
-        this.neck.object3d.rotation.y, this.targetYaw, this.maxRotationSpeed * dt,
-      );
+
+    // Scan logic (runs regardless of terminal state)
+    if (this.isScanning && this.scanTarget) {
+      const aimed = this.isAimedAt(this.scanTarget.yaw, this.scanTarget.pitch, this.scanTarget.tolerance);
+      if (aimed) {
+        this.scanProgress += dt;
+        if (this.scanProgress >= this.scanTarget.scanTime) {
+          this.scanTarget.scanned = true;
+          this.isScanning = false;
+          this._scanComplete = true;
+        }
+      } else {
+        // Dish drifted — pause (don't reset progress)
+        this.isScanning = false;
+      }
     }
+
+    // Yaw axis: spring-damper physics
+    if (this.neck) {
+      const err = angleDelta(this.neck.object3d.rotation.y, this.targetYaw);
+      const accel = err * this.angularAccel;
+      this.velYaw -= this.velYaw * this.angularDamping * dt;
+      this.velYaw += accel * dt;
+      this.velYaw = Math.max(-this.maxRotationSpeed, Math.min(this.maxRotationSpeed, this.velYaw));
+      this.neck.object3d.rotation.y += this.velYaw * dt;
+    }
+
+    // Pitch axis: spring-damper physics
     if (this.dish) {
-      this.dish.object3d.rotation.x = approachAngle(
-        this.dish.object3d.rotation.x, this.targetPitch, this.maxRotationSpeed * dt,
-      );
+      const err = angleDelta(this.dish.object3d.rotation.x, this.targetPitch);
+      const accel = err * this.angularAccel;
+      this.velPitch -= this.velPitch * this.angularDamping * dt;
+      this.velPitch += accel * dt;
+      this.velPitch = Math.max(-this.maxRotationSpeed, Math.min(this.maxRotationSpeed, this.velPitch));
+      this.dish.object3d.rotation.x += this.velPitch * dt;
     }
   }
 
@@ -116,10 +153,10 @@ export class Satellite extends GameObject {
   }
 }
 
-/** Remaining error below which an axis counts as settled, in radians. The
- *  slew lands exactly on its target, so this only absorbs float noise from
- *  targets set to values computed elsewhere. */
-const SETTLED_EPSILON = 1e-6;
+/** Remaining error below which an axis counts as settled, in radians. With
+ *  momentum physics, the dish oscillates slightly around the target, so we
+ *  use a more generous threshold than the old constant-rate slew. */
+const SETTLED_EPSILON = 0.05;  // ~3 degrees
 
 /** Shortest signed difference from `angle` to `target`, wrapped into ±π —
  *  the distance and direction around the circle. */

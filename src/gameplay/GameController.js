@@ -119,11 +119,10 @@ export class GameController extends Component {
       this.hud.setSignals(progress.saved, progress.required);
     }
 
-    // Scan bar
-    if (this.satellite?.isScanning && this.signalManager?.active) {
-      const sig = this.signalManager.active;
-      this.hud.setScanProgress(this.satellite.scanProgress / sig.scanTime);
-    } else {
+    // Scan bar — driven by satellite state (works even when terminal is closed)
+    if (this.satellite?.isScanning && this.satellite?.scanTarget) {
+      this.hud.setScanProgress(this.satellite.scanProgress / this.satellite.scanTarget.scanTime);
+    } else if (!this.satellite?.isScanning) {
       this.hud.setScanProgress(-1);
     }
   }

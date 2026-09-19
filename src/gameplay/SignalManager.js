@@ -10,7 +10,6 @@ import { SignalTarget } from './SignalTarget.js';
 // Usage:
 //   const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: urls });
 //   mgr.startNight(1);
-//   mgr.selectSignal(2);
 //   mgr.markScanned(2);
 //   mgr.saveSignal(2);        // counts toward quota
 //   mgr.deleteSignal(3);      // discarded
@@ -34,9 +33,6 @@ export class SignalManager {
   /** Minimum saved signals needed to pass the night. */
   required = 0;
 
-  /** Currently selected signal (set by selectSignal). @type {SignalTarget|null} */
-  active = null;
-
   /** @type {number} */
   signalsPerNight;
 
@@ -57,7 +53,6 @@ export class SignalManager {
   startNight(nightNumber) {
     this.signals = [];
     this.saved = 0;
-    this.active = null;
     this.required = Math.min(
       this.signalsPerNight,
       BASE_REQUIRED + (nightNumber - 1),
@@ -85,12 +80,6 @@ export class SignalManager {
         payloadUrl,
       }));
     }
-  }
-
-  /** Set the active signal by ID, or null to clear. */
-  selectSignal(id) {
-    if (id == null) { this.active = null; return; }
-    this.active = this.signals.find(s => s.id === id) ?? null;
   }
 
   /** Mark a signal as scanned (scan complete, awaiting save/delete). */

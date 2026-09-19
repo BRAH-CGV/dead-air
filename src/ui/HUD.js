@@ -101,18 +101,19 @@ export class RadarOverlay {
     };
   }
 
-  /** Redraw the radar with current signal data and dish direction.
-   *  Blips and the dish indicator share one sky mapping: azimuth (yaw)
-   *  sweeps around the circle, elevation (-pitch) sets the radial distance
-   *  — horizon on the rim, zenith at the centre. Parking the dish dot on
-   *  a blip visually matches the aim the scan checks.
+  /** Redraw the radar with current signal data, dish direction, cursor,
+   *  and scan state. Blips and indicators share one sky mapping: azimuth
+   *  (yaw) sweeps around the circle, elevation (-pitch) sets the radial
+   *  distance — horizon on the rim, zenith at the centre. The cursor is
+   *  in Cartesian unit-circle coords, drawn directly without projection.
    *  @param {import('../gameplay/SignalTarget.js').SignalTarget[]} signals
    *  @param {number} dishYaw   Current neck rotation Y
    *  @param {number} dishPitch Current dish rotation X
-   *  @param {number|null} selectedId  Currently selected signal ID
-   *  @param {number} [dishTargetYaw]   Where the dish is slewing toward (Y)
-   *  @param {number} [dishTargetPitch] Where the dish is slewing toward (X) */
-  update(signals, dishYaw, dishPitch, selectedId, dishTargetYaw, dishTargetPitch) {
+   *  @param {number} cursorX   Cursor x in unit circle (-1..+1)
+   *  @param {number} cursorY   Cursor y in unit circle (-1..+1, +1=zenith)
+   *  @param {import('../gameplay/SignalTarget.js').SignalTarget|null} hoveredSignal
+   *  @param {number} scanProgress 0..1 while scanning, -1 when not */
+  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress) {
     const ctx = this._ctx;
     if (!ctx) return;
 
@@ -147,9 +148,52 @@ export class RadarOverlay {
     ctx.strokeStyle = 'rgba(0, 200, 180, 0.12)';
     ctx.stroke();
 
-    // Dish direction line + dot — same mapping as the blips, so aiming is
-    // just "put the dot on the blip". Elevation (W/S) moves the dot
-    // radially; azimuth (A/D) sweeps it around the circle.
+    // Signal blips — shared _skyToCanvas mapping
+    for (const sig of signals) {
+      const pos = this._skyToCanvas(sig.yaw, sig.pitch);
+      const sx = pos.x;
+      const sy = pos.y;
+
+      let color;
+      let dotR = 5;
+      if (sig.saved) {
+        color = 'rgba(80, 200, 80, 0.5)';      // dim green
+      } else if (sig.deleted) {
+        color = 'rgba(200, 60, 60, 0.5)';       // dim red
+      } else if (sig.scanned) {
+        color = 'rgba(180, 180, 60, 0.7)';       // scanned but unresolved
+      } else {
+        color = 'rgba(0, 220, 200, 0.8)';        // unscanned cyan
+      }
+
+      ctx.beginPath();
+      ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // Hover highlight — pulsing glow around the hovered signal
+    if (hoveredSignal && !hoveredSignal.resolved) {
+      const hPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
+      ctx.beginPath();
+      ctx.arc(hPos.x, hPos.y, 10 + pulse * 3, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0, 255, 230, ${0.3 + pulse * 0.3})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Scan progress ring — arc around the hovered/scanning signal
+    if (scanProgress >= 0 && hoveredSignal) {
+      const sPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
+      ctx.beginPath();
+      ctx.arc(sPos.x, sPos.y, 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * scanProgress);
+      ctx.strokeStyle = 'rgba(0, 255, 200, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // Dish direction line + dot — same mapping as the blips
     const dish = this._skyToCanvas(dishYaw, dishPitch);
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -163,54 +207,23 @@ export class RadarOverlay {
     ctx.fillStyle = 'rgba(255, 200, 60, 0.9)';
     ctx.fill();
 
-    // Where the dish is slewing TOWARD (the target), as a faint cross —
-    // the dish lags behind steering at maxRotationSpeed, so this shows
-    // where it will settle while the dot catches up.
-    if (dishTargetYaw !== undefined && dishTargetYaw !== null) {
-      const t = this._skyToCanvas(dishTargetYaw, dishTargetPitch);
-      ctx.beginPath();
-      ctx.moveTo(t.x - 5, t.y); ctx.lineTo(t.x + 5, t.y);
-      ctx.moveTo(t.x, t.y - 5); ctx.lineTo(t.x, t.y + 5);
-      ctx.strokeStyle = 'rgba(255, 200, 60, 0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
+    // Cursor indicator — crosshair at the Cartesian cursor position
+    const maxR = this._radius * 0.85;
+    const curX = this._cx + cursorX * maxR;
+    const curY = this._cy - cursorY * maxR;
+    const cSize = 8;
+    ctx.beginPath();
+    ctx.moveTo(curX - cSize, curY); ctx.lineTo(curX + cSize, curY);
+    ctx.moveTo(curX, curY - cSize); ctx.lineTo(curX, curY + cSize);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-    // Signal blips — the same _skyToCanvas mapping the dish indicator uses
-    for (const sig of signals) {
-      const pos = this._skyToCanvas(sig.yaw, sig.pitch);
-      const sx = pos.x;
-      const sy = pos.y;
-
-      let color;
-      let dotR = 5;
-      if (sig.saved) {
-        color = 'rgba(80, 200, 80, 0.5)';      // dim green
-      } else if (sig.deleted) {
-        color = 'rgba(200, 60, 60, 0.5)';       // dim red
-      } else if (sig.id === selectedId) {
-        color = 'rgba(0, 255, 230, 1.0)';       // bright pulsing
-        dotR = 7;
-      } else if (sig.scanned) {
-        color = 'rgba(180, 180, 60, 0.7)';       // scanned but unresolved
-      } else {
-        color = 'rgba(0, 220, 200, 0.8)';        // unscanned cyan
-      }
-
-      ctx.beginPath();
-      ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      // Selected glow
-      if (sig.id === selectedId) {
-        ctx.beginPath();
-        ctx.arc(sx, sy, dotR + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0, 255, 230, 0.4)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-    }
+    ctx.beginPath();
+    ctx.arc(curX, curY, 3, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 }
 

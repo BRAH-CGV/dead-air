@@ -139,8 +139,9 @@ describe('GameController', () => {
 
   it('shows scan progress when satellite is scanning', () => {
     gc.startNight(1);
-    mgr.selectSignal(1);
+    const sig = mgr.signals[0];
     sat.isScanning = true;
+    sat.scanTarget = sig;
     sat.scanProgress = 1.5;
 
     gc.onUpdate(0.016);
