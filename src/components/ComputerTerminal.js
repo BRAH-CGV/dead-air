@@ -1,5 +1,6 @@
 import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
+import { FirstPersonController } from './FirstPersonController.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -9,7 +10,9 @@ import { Interactable } from './Interactable.js';
 // State machine:
 //   IDLE → RADAR → AIMING → SCANNING → REVIEW → RADAR → …
 //
-// While active, WASD steers the satellite dish. The player can still move.
+// While active, the player's input is locked (no mouse look or WASD) but
+// physics still applies — gravity and momentum continue. WASD steers the
+// satellite dish instead.
 //
 // External references (set by OfficeScene during wiring):
 //   satellite, signalManager, hud, radar, reviewPanel
@@ -146,10 +149,23 @@ export class ComputerTerminal extends Component {
   // State transitions (private, but exposed for testability)
   // ──────────────────────────────────────────────────────────
 
+  /**
+   * Lock or unlock player input. When locked, the player can't look around
+   * or move, but physics (gravity, momentum) still applies.
+   */
+  _setInputLocked(locked) {
+    if (!this.gameObject?.scene) return;
+    const engine = this.gameObject.scene.userData?.engine;
+    if (!engine?.player) return;
+    const ctrl = engine.player.getComponent(FirstPersonController);
+    if (ctrl) ctrl.inputLocked = locked;
+  }
+
   _enterIdle() {
     this.state = 'idle';
     this._selectedId = null;
     this.signalManager?.selectSignal(null);
+    this._setInputLocked(false);
     this.radar?.hide();
     this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
@@ -158,6 +174,7 @@ export class ComputerTerminal extends Component {
 
   _enterRadar() {
     this.state = 'radar';
+    this._setInputLocked(true);
     this.radar?.show();
     this.radar?.setHint('Tab: cycle signals  |  1-5: select  |  Q: exit');
     this.radar?.setInfo('');
