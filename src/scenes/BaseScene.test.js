@@ -189,6 +189,29 @@ describe('BaseScene', () => {
     }
   });
 
+  it('clears the scenery yard from the rooms themselves, not a guessed radius', () => {
+    // The whole point of measuring: move a room and the cleared ground moves
+    // with it. A hard-coded radius would silently plant rocks in a wall.
+    const footprint = scene._baseFootprint();
+    let halfX = 0;
+    let halfZ = 0;
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      const b = part.bounds();
+      halfX = Math.max(halfX, Math.abs(b.min.x), Math.abs(b.max.x));
+      halfZ = Math.max(halfZ, Math.abs(b.min.z), Math.abs(b.max.z));
+    }
+    expect(footprint.halfX).toBeCloseTo(halfX);
+    expect(footprint.halfZ).toBeCloseTo(halfZ);
+    // The base is far wider than it is deep, which is why a circle was wrong.
+    expect(footprint.halfX).toBeGreaterThan(footprint.halfZ * 2);
+  });
+
+  it('stands the rock field outside, clear of the base', () => {
+    const rocks = sceneRoot.find('Outside').find('MarsRocks');
+    expect(rocks).not.toBeNull();
+    expect(rocks.isGroup).toBe(true);
+  });
+
   it('the generator is a raycastable Interactable stub that toggles power (phase 10)', () => {
     const generator = sceneRoot.find('Outside').find('Generator');
     const interactable = generator.getComponent(Interactable);

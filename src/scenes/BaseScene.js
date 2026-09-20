@@ -5,6 +5,7 @@ import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
+import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -375,6 +376,14 @@ export class BaseScene extends Scene {
   _buildOutside() {
     const { engine } = this;
 
+    // Scenery clears a yard shaped to the base's own outline rather than a
+    // circle at the origin — the rooms run 33 m east to west but only 10 m
+    // deep, so a circle wide enough for the wings sits twenty metres off the
+    // back wall. Bounds are read off the rooms themselves, so moving a room
+    // moves the cleared ground with it.
+    const footprint = this._baseFootprint();
+    this._outside.addChild(createMarsRocks({ footprint }));
+
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
     // left in both it would slew at double speed.
@@ -397,6 +406,17 @@ export class BaseScene extends Scene {
         console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
       }
     }());
+  }
+
+  /** Half extents of the built base on the ground, for the scenery to clear.
+   *  Measured off the rooms and corridors so it cannot drift from the layout. */
+  _baseFootprint() {
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    const bounds = parts.map(part => part.bounds());
+    return {
+      halfX: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.x), Math.abs(b.max.x)))),
+      halfZ: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.z), Math.abs(b.max.z)))),
+    };
   }
 
   /** Solid box standing in for a model that hasn't been sourced yet. */
