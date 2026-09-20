@@ -188,6 +188,24 @@ describe('the belt', () => {
     expect(grouped.length).toBeLessThan(trees.length);
   });
 
+  it('crowds the treeline right up against the walls', () => {
+    // The other half of the contract, and the one that carries the mood: the
+    // belt has to CLOSE on the base, not just stay out of the yard. Widen the
+    // margin and you get a lawn, which is the opposite of the intent — the
+    // treeline standing just past arm's reach is what makes leaving cost
+    // something.
+    const veg = createMarsVegetation({ assets: mockAssets() });
+    const zones = makeYard({ margin: VEGETATION.yardMargin });
+
+    let closest = Infinity;
+    for (const { position } of instances(grassOf(veg))) {
+      closest = Math.min(closest, yardDistance(position.x, position.z, zones));
+    }
+    // Growth starts within a metre of where it is allowed to.
+    expect(closest).toBeLessThan(1);
+    expect(VEGETATION.yardMargin).toBeLessThanOrEqual(6);
+  });
+
   it('keeps every plant out of the yard and anything else asked for', () => {
     // The yard is a promise to the branch extending the building: the margin
     // off every wall, the parking apron and the dish track all stay bare.

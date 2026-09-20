@@ -45,9 +45,11 @@ export const YARD = {
   shellRound: 6,
   /** The working side. The only exterior door is on the front (+Z) wall at
    *  x = 2, and the generator stands out at (7, 9), so this is where anyone
-   *  living here would walk, unload and park. It reaches from the front wall
-   *  out to z = 21. */
-  parking: { x: 6, z: 14, halfX: 10, halfZ: 7, round: 4 },
+   *  living here would walk, unload and park. Sized to the generator and the
+   *  turning space around it and no further — it runs from the front wall out
+   *  to z = 14, so the treeline closes on the door the way it does on every
+   *  other wall. Widening it is the one thing that reopens this side. */
+  parking: { x: 5, z: 9.5, halfX: 8, halfZ: 4.5, round: 3 },
   /** The ground between the back window and the dish, kept open so the tower
    *  is always the thing you see through the glass. */
   dishTrack: { x: 0, z: -16, halfX: 6, halfZ: 12, round: 3 },

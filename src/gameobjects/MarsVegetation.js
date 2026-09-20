@@ -46,11 +46,14 @@ export const VEGETATION = {
   seed: 20260957,
   /** Metres of clear ground off every wall of the base. Measured off the
    *  walls, not from the origin, so the belt follows the building's shape —
-   *  see BaseYard. Ten leaves room for another room off any wall and still
-   *  brings the planting to within about fifteen metres of the window. Rocks
-   *  clear a wider yard: someone living here would get stone off the ground by
-   *  the door long before they stopped planting in it. */
-  yardMargin: 10,
+   *  see BaseYard. Five is deliberately claustrophobic: the treeline stands
+   *  just beyond arm's reach of the walls, so stepping away from the base
+   *  means stepping into it. That is the point — it should cost something to
+   *  leave. It also gives up the room an extra wing would have needed, so
+   *  widen this before building outward rather than felling trees by hand.
+   *  Rocks clear a wider yard: someone living here would get stone off the
+   *  ground by the door long before they stopped planting in it. */
+  yardMargin: 5,
   /** Nothing was planted far from the base. Someone terraforming a site this
    *  small works outward from the door and stops where the walk gets long. */
   outerRadius: 150,

@@ -71,8 +71,11 @@ describe('the yard', () => {
     // the generator stands out at (7, 9). Both have to be on cleared ground,
     // or the way out of the building is planted shut.
     expect(inside(2, 6)).toBe(true);
+    expect(inside(2, 8)).toBe(true);
     expect(inside(7, 9)).toBe(true);
-    expect(inside(6, 20)).toBe(true);
+    // Sized to the generator and no further: the apron is a working yard, not
+    // an open field, so the treeline closes on this side too.
+    expect(inside(6, 20)).toBe(false);
   });
 
   it('holds the window-to-dish sightline open', () => {
