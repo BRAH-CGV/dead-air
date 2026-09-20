@@ -206,10 +206,15 @@ describe('BaseScene', () => {
     expect(footprint.halfX).toBeGreaterThan(footprint.halfZ * 2);
   });
 
-  it('stands the rock field outside, clear of the base', () => {
-    const rocks = sceneRoot.find('Outside').find('MarsRocks');
-    expect(rocks).not.toBeNull();
-    expect(rocks.isGroup).toBe(true);
+  it('stands the rock field and vegetation belt outside, clear of the base', () => {
+    const outside = sceneRoot.find('Outside');
+    for (const name of ['MarsRocks', 'MarsVegetation']) {
+      const field = outside.find(name);
+      expect(field, name).not.toBeNull();
+      // Groups, so the editor neither lists every blade nor measures a
+      // bounding box the size of the valley.
+      expect(field.isGroup, name).toBe(true);
+    }
   });
 
   it('the generator is a raycastable Interactable stub that toggles power (phase 10)', () => {

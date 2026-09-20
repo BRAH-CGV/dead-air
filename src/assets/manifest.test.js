@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ASSETS, validateManifest } from './manifest.js';
+import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
 
 /** Full spawn scale used for 'model:retro-computer' in MainOffice/OfficeScene
@@ -21,6 +21,15 @@ describe('manifest', () => {
     for (const [key, entry] of Object.entries(ASSETS)) {
       const base = entry.url.split('/').pop().replace(/\.[a-z0-9]+$/i, '');
       expect(base, key).toBe(key.slice(key.indexOf(':') + 1));
+    }
+  });
+
+  it('preloads the models the vegetation belt draws on every load', () => {
+    // These lived in LIBRARY, which is fetched on demand — so assets.get()
+    // came back empty during build and the belt grew grass and no trees at
+    // all. Nothing failed loudly; the trees were simply absent.
+    for (const key of ['model:tree-birch', 'model:tree-pine', 'model:tree-fantasy', 'model:tree-dead']) {
+      expect(PRELOAD, key).toContain(key);
     }
   });
 

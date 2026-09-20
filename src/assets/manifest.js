@@ -95,6 +95,30 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  */
 const PLACED = {
   // ── Models ──────────────────────────────────
+  // The vegetation belt instances these across the valley on every load, so
+  // they are drawn, not optional — see MarsVegetation. It copies the meshes
+  // directly rather than spawning them, so `physics` here only applies to a
+  // tree placed by hand from the level editor.
+  'model:tree-birch': {
+    type: 'model',
+    url: 'assets/models/tree-birch.glb',
+    physics: 'static',
+  },
+  'model:tree-pine': {
+    type: 'model',
+    url: 'assets/models/tree-pine.glb',
+    physics: 'static',
+  },
+  'model:tree-fantasy': {
+    type: 'model',
+    url: 'assets/models/tree-fantasy.glb',
+    physics: 'static',
+  },
+  'model:tree-dead': {
+    type: 'model',
+    url: 'assets/models/tree-dead.glb',
+    physics: 'static',
+  },
   'model:desk': {
     type: 'model',
     url: 'assets/models/desk.glb',
@@ -258,26 +282,6 @@ const LIBRARY = {
   'model:poster': {
     type: 'model',
     url: 'assets/models/poster.glb',
-  },
-  'model:tree-birch': {
-    type: 'model',
-    url: 'assets/models/tree-birch.glb',
-    physics: 'static',
-  },
-  'model:tree-pine': {
-    type: 'model',
-    url: 'assets/models/tree-pine.glb',
-    physics: 'static',
-  },
-  'model:tree-fantasy': {
-    type: 'model',
-    url: 'assets/models/tree-fantasy.glb',
-    physics: 'static',
-  },
-  'model:tree-dead': {
-    type: 'model',
-    url: 'assets/models/tree-dead.glb',
-    physics: 'static',
   },
   'model:bush': {
     type: 'model',

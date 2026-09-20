@@ -6,6 +6,7 @@ import { Satellite } from '../gameobjects/Satellite.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
+import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -383,6 +384,13 @@ export class BaseScene extends Scene {
     // moves the cleared ground with it.
     const footprint = this._baseFootprint();
     this._outside.addChild(createMarsRocks({ footprint }));
+    this._outside.addChild(createMarsVegetation({
+      footprint,
+      assets: engine.assets,
+      // The belt closes the horizon all round, so the way out to the dish has
+      // to be one of the lanes through it, not just a clearing at its feet.
+      lanes: [Math.atan2(-25, 0)],
+    }));
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
