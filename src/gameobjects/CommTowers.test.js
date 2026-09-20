@@ -180,10 +180,11 @@ describe('the beacons', () => {
     });
   });
 
-  it('flashes, and never goes completely dark between flashes', () => {
+  it('sits dark and punches a short flash, the way a real beacon does', () => {
     const towers = createCommTowers();
     const { lamps } = partsOf(towers);
     const flash = towers.components[0];
+    const { period } = COMM_TOWERS.beacon;
 
     const brightness = () => {
       const c = new THREE.Color();
@@ -191,16 +192,23 @@ describe('the beacons', () => {
       return c.r;
     };
 
+    // Walk one whole cycle at a fine step.
+    const steps = 400;
     const seen = [];
-    for (let step = 0; step < 60; step++) {
-      flash.onUpdate(COMM_TOWERS.beacon.period / 60);
+    for (let i = 0; i < steps; i++) {
+      flash.onUpdate(period / steps);
       seen.push(brightness());
     }
 
-    // It actually varies — a constant lamp is not a beacon.
-    expect(Math.max(...seen)).toBeGreaterThan(Math.min(...seen) * 2);
-    // And a true zero between flashes reads as a glitch, not a light.
-    expect(Math.min(...seen)).toBeGreaterThan(0);
+    // It flashes at all.
+    expect(Math.max(...seen)).toBeGreaterThan(0.5);
+    // And it genuinely goes out — a lamp that only dims reads as a pulsing
+    // decoration rather than a machine ticking over on its own.
+    expect(Math.min(...seen)).toBe(0);
+    // Dark for the great majority of the cycle: the gap is the effect.
+    const lit = seen.filter(v => v > 0.01).length / steps;
+    expect(lit).toBeLessThan(0.12);
+    expect(lit).toBeGreaterThan(0.01);
   });
 
   it('flashes the towers out of step with each other', () => {

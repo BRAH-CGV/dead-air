@@ -46,7 +46,10 @@ import { TERRAIN, terrainHeightAt } from './MarsTerrain.js';
 
 export const COMM_TOWERS = {
   seed: 20260922,
-  count: 5,
+  /** One per clearing. The belt cuts five lanes, but the one running out to
+   *  the dish is left alone — the dish is what you are meant to see down it,
+   *  and a mast there would stand directly behind the tower it belongs to. */
+  count: 4,
   /** Along the crest itself, give or take — the ridge is not a perfect circle
    *  and neither should the line of masts be. */
   radius: TERRAIN.CREST_RADIUS,
@@ -64,15 +67,21 @@ export const COMM_TOWERS = {
   siteSpread: 26,
   siteSamples: 24,
   beacon: {
-    /** The lamp itself. Small — the sprite is what you actually see. */
-    radius: 1.2,
+    /** The lamp housing. Deliberately tiny: at this range it is barely more
+     *  than a point, and it is meant to be — the glow sprite is what you
+     *  actually see, and a large sphere reads as a ball stuck on a pole. */
+    radius: 0.55,
     color: 0xff2a18,
-    /** Seconds per flash, and the fraction of that the lamp is lit. */
-    period: 2.4,
-    duty: 0.22,
-    /** The lamp never goes fully dark: a dim red point between flashes reads
-     *  as a light that is still there, where a true zero reads as a glitch. */
-    floor: 0.12,
+    /** Seconds per flash, and the fraction of that the lamp is lit. A real
+     *  obstruction beacon sits dark and punches a short flash — fifteen a
+     *  minute here, about a fifth of a second each, so the lamp is off for
+     *  94% of the cycle and the gap between flashes is long enough that you
+     *  notice it. The
+     *  darkness is the effect: a light that is merely pulsing reads as a
+     *  decoration, where one that vanishes and snaps back reads as a machine
+     *  running out there on its own. */
+    period: 4.0,
+    duty: 0.055,
     /** Sprite width in metres. Twenty-odd metres at 400 m is about two
      *  degrees, which is a legible point of light rather than a dead pixel. */
     glowSize: 22,
@@ -87,12 +96,17 @@ export const COMM_TOWERS = {
  * @param {number} [opts.count]
  * @param {(x: number, z: number) => number} [opts.heightAt]
  *        ground height; pass the same one the terrain uses
+ * @param {number[]} [opts.alignTo]
+ *        lane bearings, atan2(z, x) in radians. Each mast is swung onto one of
+ *        them, nearest first and one apiece, so every clearing ends on a tower
+ *        instead of on bare ridge. Also sets the default count: one per lane.
  * @returns {GameObject} a group carrying the masts, arms, lamps and glows
  */
 export function createCommTowers(opts = {}) {
   const {
     seed     = COMM_TOWERS.seed,
-    count    = COMM_TOWERS.count,
+    alignTo,
+    count    = alignTo?.length ?? COMM_TOWERS.count,
     heightAt = terrainHeightAt,
   } = opts;
 
@@ -102,7 +116,7 @@ export function createCommTowers(opts = {}) {
   // the width of the whole valley.
   towers.makeGroup();
 
-  const sites = layOutTowers(rand, count, heightAt);
+  const sites = layOutTowers(rand, count, heightAt, alignTo);
   towers.sites = sites;
   if (sites.length === 0) return towers;
 
@@ -136,6 +150,8 @@ export function createCommTowers(opts = {}) {
 
   const matrix = new THREE.Matrix4();
   const glows = [];
+  // One texture for every beacon — it is the same soft dot five times over.
+  const glowTexture = makeGlowTexture();
 
   sites.forEach((site, i) => {
     const { x, z, ground, height } = site;
@@ -159,8 +175,11 @@ export function createCommTowers(opts = {}) {
     lamps.setColorAt(i, new THREE.Color(COMM_TOWERS.beacon.color));
 
     // The glow. Additive and unfogged, so it reads as light scattering in the
-    // haze rather than as a disc hanging in it.
+    // haze rather than as a disc hanging in it. The texture is what makes it a
+    // light: an untextured sprite is a flat quad, and additive blending draws
+    // that as a hard-edged square that pulses.
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture,
       color: COMM_TOWERS.beacon.color,
       blending: THREE.AdditiveBlending,
       transparent: true,
@@ -185,6 +204,44 @@ export function createCommTowers(opts = {}) {
   return towers;
 }
 
+/**
+ * A soft round dot, as raw pixels.
+ *
+ * The same falloff MarsSky uses for the moon halos, and for the same reason:
+ * a quad with no falloff shows its corners, so the "light" reads as a square.
+ * Built as a DataTexture rather than drawn on a canvas so it costs nothing at
+ * startup and works headless, where there is no 2D context to draw into.
+ */
+function makeGlowTexture(size = 64) {
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // 0 at the centre, 1 at the inscribed circle. Past that it is zero, so
+      // the corners of the quad never show.
+      const dx = (x + 0.5) / size - 0.5;
+      const dy = (y + 0.5) / size - 0.5;
+      const d = Math.min(1, Math.hypot(dx, dy) * 2);
+
+      const smooth = d * d * (3 - 2 * d);
+      const falloff = Math.pow(1 - smooth, 2.5);
+      const value = Math.round(falloff * 255);
+
+      const i = (y * size + x) * 4;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = value;
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /** Drives the beacons. One component for the whole field rather than one per
  *  tower: it is a handful of numbers a frame, and the scene only has to add
  *  the group. */
@@ -201,7 +258,7 @@ class BeaconFlash extends Component {
 
   onUpdate(dt) {
     this.time += dt;
-    const { period, duty, floor } = COMM_TOWERS.beacon;
+    const { period, duty } = COMM_TOWERS.beacon;
 
     for (let i = 0; i < this.sites.length; i++) {
       // Phase-offset per tower. Real beacons on one installation are often
@@ -209,17 +266,18 @@ class BeaconFlash extends Component {
       // in lockstep reads as one mechanism, and five out of step reads as five
       // separate things out there.
       const t = (this.time / period + this.sites[i].phase) % 1;
-      // A smooth hump over the lit window rather than a square wave, which at
-      // this size would alias into a harsh strobe.
+      // A hump over the lit window rather than a square edge. The window is
+      // short enough to read as a snap, and the ramp keeps it from aliasing
+      // into a hard strobe at this size.
       const lit = t < duty ? Math.sin((Math.PI * t) / duty) : 0;
-      const level = floor + (1 - floor) * lit;
 
-      this._color.copy(this._base).multiplyScalar(level);
+      this._color.copy(this._base).multiplyScalar(lit);
       this.lamps.setColorAt(i, this._color);
 
       const glow = this.glows[i];
-      glow.material.opacity = 0.15 + 0.85 * lit;
-      glow.scale.setScalar(COMM_TOWERS.beacon.glowSize * (0.7 + 0.45 * lit));
+      // Dark between flashes, not merely dim.
+      glow.material.opacity = lit;
+      glow.scale.setScalar(COMM_TOWERS.beacon.glowSize * (0.72 + 0.4 * lit));
     }
 
     if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true;
@@ -228,7 +286,7 @@ class BeaconFlash extends Component {
 
 /** Space the masts around the rim, then walk each one onto the high ground
  *  near its bearing. */
-function layOutTowers(rand, count, heightAt) {
+function layOutTowers(rand, count, heightAt, alignTo) {
   const { radius, radiusJitter, height, siteSpread, siteSamples } = COMM_TOWERS;
   const sites = [];
 
@@ -257,5 +315,50 @@ function layOutTowers(rand, count, heightAt) {
     });
   }
 
+  if (alignTo?.length) swingOntoBearings(sites, alignTo, heightAt);
   return sites;
 }
+
+/**
+ * Swing each mast around onto a lane bearing, one lane apiece.
+ *
+ * Nearest pair first, so no mast is dragged across the rim past another that
+ * wanted the same lane — that would cross two towers over and undo the even
+ * spacing the stratification gave them.
+ *
+ * Done after the fact rather than by seeding the bearings differently: picking
+ * them up front would shift every later draw from the same generator and move
+ * the whole line, including the masts that were already where they should be.
+ */
+function swingOntoBearings(sites, bearings, heightAt) {
+  const pairs = [];
+  sites.forEach((site, s) => {
+    bearings.forEach((bearing, b) => {
+      pairs.push({ s, b, gap: angleBetween(Math.atan2(site.z, site.x), bearing) });
+    });
+  });
+  pairs.sort((a, b) => a.gap - b.gap);
+
+  const takenSite = new Set();
+  const takenLane = new Set();
+  for (const { s, b } of pairs) {
+    if (takenSite.has(s) || takenLane.has(b)) continue;
+    takenSite.add(s);
+    takenLane.add(b);
+
+    const site = sites[s];
+    const r = Math.hypot(site.x, site.z);
+    site.x = Math.cos(bearings[b]) * r;
+    site.z = Math.sin(bearings[b]) * r;
+    // It has moved, so it is standing on different ground.
+    site.ground = heightAt(site.x, site.z);
+    site.lane = bearings[b];
+  }
+}
+
+/** Smallest angle between two bearings, either way round the circle. */
+function angleBetween(a, b) {
+  const gap = Math.abs(a - b) % (Math.PI * 2);
+  return gap > Math.PI ? Math.PI * 2 - gap : gap;
+}
+

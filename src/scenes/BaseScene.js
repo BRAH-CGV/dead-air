@@ -82,6 +82,10 @@ const ROOM_FOG_DENSITY = {
  *  visible work, and the view out of the window is worth far more. */
 const OUTDOOR_FOG_DENSITY = 0.0022;
 
+/** Bearing of the lane kept open between the back window and the dish, which
+ *  stands at (0, -25). The masts skip this one. */
+const DISH_LANE = Math.atan2(-25, 0);
+
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
   rooms = {};
@@ -395,11 +399,17 @@ export class BaseScene extends Scene {
       assets: engine.assets,
       // The belt closes the horizon all round, so the way out to the dish has
       // to be one of the lanes through it, not just a clearing at its feet.
-      lanes: [Math.atan2(-25, 0)],
+      lanes: [DISH_LANE],
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
-    // what is left to look at in the distance.
-    const towers = createCommTowers();
+    // what is left to look at in the distance — and standing one at the end of
+    // each clearing is what makes the clearings read as roads to somewhere
+    // rather than as gaps. The dish road is left out: the dish is what you are
+    // meant to see down that one.
+    const roads = belt.lanes
+      .map(lane => lane.bearing)
+      .filter(bearing => bearing !== DISH_LANE);
+    const towers = createCommTowers({ alignTo: roads });
     for (const field of [rocks, belt, towers]) {
       this._outside.addChild(field);
       // Every field builds its own geometry and materials, so dispose() has to
