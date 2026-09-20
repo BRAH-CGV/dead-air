@@ -13,6 +13,11 @@ import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Corridor } from './rooms/Corridor.js';
+import { NightClock } from '../gameplay/NightClock.js';
+import { SignalManager } from '../gameplay/SignalManager.js';
+import { GameController } from '../gameplay/GameController.js';
+import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -107,6 +112,7 @@ export class BaseScene extends Scene {
     this._addLighting();
     this._buildOutside();
     this._spawnPlayer();
+    this._addGameplaySystems();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -126,6 +132,7 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this._offNightChange?.();
+    this._offNightStart?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
     // borrowed — otherwise the Mars horizon tint and this scene's long
     // outdoor sightlines follow us into whatever loads next.
@@ -140,6 +147,12 @@ export class BaseScene extends Scene {
     }
     for (const resource of this._owned) resource.dispose();
     this._owned.length = 0;
+    // The HUD, radar and review panel are DOM overlays living in index.html,
+    // outside the scene graph — nothing tears them down for us, so a scene
+    // swap would leave last night's numbers floating over the next level.
+    this.hud?.hide();
+    this.radarOverlay?.hide();
+    this.reviewPanel?.hide();
   }
 
   // ──────────────────────────────────────────
@@ -186,6 +199,82 @@ export class BaseScene extends Scene {
     this.nights = new NightManager();
     this.nights.applyTo(this.rooms);
     this._offNightChange = this.nights.onChange(() => this.nights.applyTo(this.rooms));
+  }
+
+  // ──────────────────────────────────────────
+  // Gameplay loop (signal collection)
+  // ──────────────────────────────────────────
+  /** Wire the night clock, signal manager, computer terminal and game
+   *  controller together, and hang them off the pieces of the base that
+   *  they drive: the office's computer desk and the satellite outside.
+   *
+   *  Built after the rooms, the outside area and the player, because it
+   *  reaches into all three. */
+  _addGameplaySystems() {
+    this.nightClock = new NightClock({ nightDuration: 300 });
+
+    // Payload URLs are direct paths to the placeholder images, not manifest
+    // keys — they are displayed through an HTML <img>, not a Three.js
+    // texture. Relative, like every other path that has to survive the
+    // upload to a LAMP subdirectory.
+    const payloadPool = Array.from({ length: 8 }, (_, i) =>
+      `assets/signals/signal-${i + 1}.png`,
+    );
+    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+
+    // UI wrappers over the markup in index.html. With no DOM (tests) each
+    // falls back to a null root and every call is a no-op.
+    this.hud          = new HUD();
+    this.radarOverlay = new RadarOverlay();
+    this.reviewPanel  = new SignalReviewPanel();
+
+    this.terminal = new ComputerTerminal();
+    this.terminal.satellite     = this.satellite;
+    this.terminal.signalManager = this.signalManager;
+    this.terminal.hud           = this.hud;
+    this.terminal.radar         = this.radarOverlay;
+    this.terminal.reviewPanel   = this.reviewPanel;
+
+    // The desk is a room prop, so it is found through the room rather than
+    // the scene root. MainOffice deliberately leaves it without an
+    // Interactable of its own — InteractionSystem takes the first one it
+    // finds, and that has to be the terminal's.
+    const computer = this.rooms.MainOffice.root.find('ComputerDesk');
+    if (computer) {
+      computer.addComponent(this.terminal);
+      computer.addComponent(createComputerInteractable(this.terminal));
+    } else {
+      console.warn('[BaseScene] no ComputerDesk in MainOffice — terminal not attached');
+    }
+
+    const gameplayGO = new GameObject('GameplaySystems').makeGroup();
+    this._sceneRoot.addChild(gameplayGO);
+
+    this.gameController = new GameController();
+    this.gameController.nightClock    = this.nightClock;
+    this.gameController.signalManager = this.signalManager;
+    this.gameController.satellite     = this.satellite;
+    this.gameController.terminal      = this.terminal;
+    this.gameController.hud           = this.hud;
+    gameplayGO.addComponent(this.gameController);
+
+    this.reviewPanel.onSave(() => {
+      this.terminal.saveSignal();
+      this.gameController.onSignalSaved();
+    });
+    this.reviewPanel.onDelete(() => {
+      this.terminal.deleteSignal();
+      this.gameController.onSignalDeleted();
+    });
+
+    // One night number across the scene. NightManager already owns which
+    // rooms are unlocked tonight; the controller's quota, clock and HUD now
+    // follow it instead of counting on their own — otherwise pressing N
+    // would open night 2's doors while the HUD still read "Night 1".
+    // autoStart is off for the same reason: it hardcodes night 1.
+    this.gameController.autoStart = false;
+    this.gameController.startNight(this.nights.currentNight);
+    this._offNightStart = this.nights.onChange(night => this.gameController.startNight(night));
   }
 
   // ──────────────────────────────────────────

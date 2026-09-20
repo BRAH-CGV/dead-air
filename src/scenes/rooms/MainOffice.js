@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
-import { Interactable } from '../../components/Interactable.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -71,13 +70,18 @@ export class MainOffice extends Room {
   buildProps() {
     this._buildWindowFrame();
 
-    const computerDesk = this._spawnProp('model:retro-computer', {
-      name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: Math.PI, scale: 0.016,
+    // rotationY 0 seats the desk facing the back window — the dish tower is
+    // out there, and the terminal's whole job is aiming it. The kneehole
+    // (the manifest collider's open +Z side) ends up facing the door, which
+    // is where the player crouches in from.
+    //
+    // No Interactable here: BaseScene attaches the ComputerTerminal and its
+    // own Interactable to this desk. InteractionSystem resolves
+    // getComponent(Interactable) — the first match wins — so a stub of our
+    // own would silently shadow the terminal.
+    this._spawnProp('model:retro-computer', {
+      name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
-    computerDesk.addComponent(new class extends Interactable {
-      promptLabel = '[E] Collect signal';
-      onInteract() { console.log('[MainOffice] signal collected'); }
-    }());
     this._spawnProp('model:server-rack', {
       name: 'ServerRack', position: [4.55, 0, -1.35], rotationY: -Math.PI / 2, scale: 0.333,
     });

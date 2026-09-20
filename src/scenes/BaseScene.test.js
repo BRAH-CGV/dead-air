@@ -11,6 +11,8 @@ import { Fullbright } from '../core/Fullbright.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
+import { GameController } from '../gameplay/GameController.js';
+import { ComputerTerminal } from '../components/ComputerTerminal.js';
 
 const EPS = 1e-6;
 
@@ -389,5 +391,103 @@ describe('BaseScene repeated build/dispose cycles leave no leak (phase 12)', () 
 
     expect(engine.world.bodies.len()).toBe(firstBodies);
     expect(engine._rootObjects.length).toBe(firstRoots);
+  });
+});
+
+// ─────────────────────────────────────────────
+// Gameplay loop wiring
+// ─────────────────────────────────────────────
+// The signal-collection loop was built against OfficeScene, which the base
+// replaced as the loaded scene. These pin it to BaseScene so it cannot be
+// orphaned by the next scene swap.
+
+describe('BaseScene gameplay loop', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  it('builds the night clock, signal manager and game controller', () => {
+    expect(scene.nightClock).toBeDefined();
+    expect(scene.signalManager).toBeDefined();
+    expect(scene.gameController).toBeInstanceOf(GameController);
+  });
+
+  it('draws signal payloads from a pool of relative image paths', () => {
+    for (const url of scene.signalManager.payloadPool) {
+      expect(url.startsWith('/')).toBe(false);
+      expect(url).toMatch(/^assets\/signals\/signal-\d+\.png$/);
+    }
+  });
+
+  it('attaches the terminal to the office computer desk', () => {
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    expect(desk.getComponent(ComputerTerminal)).toBe(scene.terminal);
+  });
+
+  it('gives the desk one Interactable, and it opens the terminal', () => {
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    const interactables = desk.components.filter(c => c instanceof Interactable);
+    expect(interactables.length).toBe(1);
+
+    interactables[0].onInteract({});
+    expect(scene.terminal.state).toBe('radar');
+  });
+
+  it('wires the terminal to the satellite, signals and UI', () => {
+    expect(scene.terminal.satellite).toBe(scene.satellite);
+    expect(scene.terminal.signalManager).toBe(scene.signalManager);
+    expect(scene.terminal.hud).toBe(scene.hud);
+    expect(scene.terminal.radar).toBe(scene.radarOverlay);
+    expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
+  });
+
+  it('runs the game controller as a component under SceneRoot, so it ticks', () => {
+    const sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
+    const gameplay = sceneRoot.find('GameplaySystems');
+    expect(gameplay).not.toBeNull();
+    expect(gameplay.getComponent(GameController)).toBe(scene.gameController);
+
+    expect(scene.gameController.nightClock).toBe(scene.nightClock);
+    expect(scene.gameController.signalManager).toBe(scene.signalManager);
+    expect(scene.gameController.satellite).toBe(scene.satellite);
+    expect(scene.gameController.terminal).toBe(scene.terminal);
+    expect(scene.gameController.hud).toBe(scene.hud);
+  });
+
+  it('routes the review panel buttons through the terminal and the controller', () => {
+    const saved = vi.spyOn(scene.terminal, 'saveSignal').mockImplementation(() => {});
+    const deleted = vi.spyOn(scene.terminal, 'deleteSignal').mockImplementation(() => {});
+    const onSaved = vi.spyOn(scene.gameController, 'onSignalSaved').mockImplementation(() => {});
+    const onDeleted = vi.spyOn(scene.gameController, 'onSignalDeleted').mockImplementation(() => {});
+
+    scene.reviewPanel._saveCb();
+    expect(saved).toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalled();
+
+    scene.reviewPanel._deleteCb();
+    expect(deleted).toHaveBeenCalled();
+    expect(onDeleted).toHaveBeenCalled();
+  });
+
+  it('starts the controller on the night the NightManager is actually on', () => {
+    expect(scene.gameController.autoStart).toBe(false);
+    expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
+    expect(scene.gameController.state).toBe('playing');
+  });
+
+  it('follows the NightManager when the night advances, so there is one night number', () => {
+    scene.nights.advance();
+    expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
+  });
+
+  it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {
+    const hidden = [scene.hud, scene.radarOverlay, scene.reviewPanel]
+      .map(ui => vi.spyOn(ui, 'hide'));
+    scene.dispose();
+    for (const spy of hidden) expect(spy).toHaveBeenCalled();
   });
 });
