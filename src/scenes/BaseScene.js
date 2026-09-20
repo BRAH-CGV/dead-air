@@ -334,7 +334,10 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _addLighting() {
     const ambientGO = new GameObject('AmbientLight');
-    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+    // Down from 1.0: the valley was reading as dusk rather than night once
+    // there was scenery out there to light. The rooms carry their own lamps,
+    // so this is the fill the windows look out on.
+    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 0.72));
     this._lighting.addChild(ambientGO);
 
     // Shadow frustum sized to the whole base, not just the office.
@@ -346,7 +349,9 @@ export class BaseScene extends Scene {
     const moonGO = new GameObject('MoonLight');
     // Colour and intensity are MarsSky's tuned pair, so this base is lit the
     // same way OfficeScene is — one moon, one look across both scenes.
-    const moon = new THREE.DirectionalLight(0xd4d4d4, 1.1);
+    // Down from 1.1 for the same reason — this rakes the terrain and the
+    // belt, not just the office floor.
+    const moon = new THREE.DirectionalLight(0xd4d4d4, 0.8);
     // Aimed along Phobos' own angles rather than a hand-picked vector, so the
     // shadows and the moon you can actually see in the sky cannot drift apart
     // when either is retuned. Its elevation is 30 degrees, so the light rakes
