@@ -23,8 +23,8 @@ licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/dish_test.glb` |
-| **Manifest key** | `model:dish_tower` |
+| **File** | `public/assets/models/dish-tower.glb` |
+| **Manifest key** | `model:dish-tower` |
 | **Used for** | The satellite dish outside the office |
 | **Modifications** | Created a base that the dish sits on and moves with |
 
@@ -47,7 +47,7 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/models/server.glb` |
+| **File** | `public/assets/models/server-rack.glb` |
 | **Manifest key** | `model:server-rack` |
 | **Used for** | Server rack in the office |
 | **Modifications** | None recorded |
@@ -61,7 +61,7 @@ by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/large-door-closed.glb` |
+| **File** | `public/assets/models/blast-door-closed.glb` |
 | **Manifest key** | `model:blast-door-closed` |
 | **Used for** | Large sliding blast door — closed state |
 | **Modifications** | None recorded |
@@ -75,7 +75,7 @@ by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/large-door-closed-open.glb` |
+| **File** | `public/assets/models/blast-door-open.glb` |
 | **Manifest key** | `model:blast-door-open` |
 | **Used for** | Large sliding blast door — open state |
 | **Modifications** | None recorded |
@@ -116,7 +116,7 @@ by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/bunk_bed.glb` |
+| **File** | `public/assets/models/bunk-bed.glb` |
 | **Manifest key** | `model:bunk-bed` |
 | **Used for** | Crew quarters bunk bed |
 | **Modifications** | None recorded |
@@ -183,11 +183,15 @@ by Minh Nguyen (Minh_Nguyen_2004) is licensed under **Creative Commons
 Attribution-NonCommercial**
 (http://creativecommons.org/licenses/by-nc/4.0/) — **not** the standard CC BY
 used everywhere else in this file. Commercial use is not permitted under this
-licence; flag before shipping if the game will be sold or monetised.
+licence.
+
+**Decided (Sept 2026): keep it.** Dead Air is a non-commercial university
+project. Unlike the poster this licence carries no ND clause, so the asset may
+be modified. It has to be replaced if the game is ever sold or monetised.
 
 | | |
 |---|---|
-| **File** | `public/assets/models/retro_soap_dispenser2k.glb` |
+| **File** | `public/assets/models/soap-dispenser.glb` |
 | **Manifest key** | `model:soap-dispenser` |
 | **Used for** | Bathroom / break room soap dispenser prop |
 | **Modifications** | None recorded |
@@ -201,7 +205,7 @@ by Kasujin is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/vending_machine.glb` |
+| **File** | `public/assets/models/vending-machine.glb` |
 | **Manifest key** | `model:vending-machine` |
 | **Used for** | Break room vending machine |
 | **Modifications** | None recorded |
@@ -214,7 +218,7 @@ by Aleksey Basinskiy (rakorian) is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/colony_rover.glb` |
+| **File** | `public/assets/models/colony-rover.glb` |
 | **Manifest key** | `model:colony-rover` |
 | **Used for** | Mars colony rover exterior prop |
 | **Modifications** | None recorded |
@@ -226,9 +230,19 @@ by Whystler is licensed under **Creative Commons
 Attribution-NonCommercial-NoDerivs**
 (http://creativecommons.org/licenses/by-nc-nd/4.0/) — **not** the standard CC
 BY used everywhere else in this file. This licence forbids commercial use
-*and* modified/derivative versions of the asset. Needs a decision before
-shipping: replace with a differently-licensed poster, or confirm the game
-stays non-commercial and the asset is used unmodified.
+*and* modified/derivative versions of the asset.
+
+**Decided (Sept 2026): keep it.** Dead Air is a non-commercial university
+project, which satisfies NC, and the poster ships exactly as downloaded, which
+satisfies ND. Renaming a file is not a modification of the work, and CC 4.0
+§2(a)(4) puts format conversion outside "Adapted Material" as well. Two
+standing conditions come with that decision:
+
+- **Never modify this asset.** No retexturing, no mesh edits, and no
+  `material:` override on `model:poster` in the manifest — each of those
+  would ship a derivative, which ND forbids.
+- **If Dead Air is ever sold or monetised, this and the soap dispenser have to
+  be replaced.** Both are NonCommercial.
 
 | | |
 |---|---|
@@ -246,7 +260,7 @@ by BitGem is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/red-tree1.glb` |
+| **File** | `public/assets/models/tree-birch.glb` |
 | **Manifest key** | `model:tree-birch` |
 | **Used for** | Exterior foliage |
 | **Modifications** | None recorded |
@@ -260,7 +274,7 @@ by BitGem is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/red-tree2.glb` |
+| **File** | `public/assets/models/tree-pine.glb` |
 | **Manifest key** | `model:tree-pine` |
 | **Used for** | Exterior foliage |
 | **Modifications** | None recorded |
@@ -273,7 +287,7 @@ by DJMaesen (bumstrum) is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/dead-tree1.glb` |
+| **File** | `public/assets/models/tree-fantasy.glb` |
 | **Manifest key** | `model:tree-fantasy` |
 | **Used for** | Dead / exterior tree foliage |
 | **Modifications** | None recorded |
@@ -287,7 +301,7 @@ by ClintonAbbott.Art is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/dead_tree1.glb` |
+| **File** | `public/assets/models/tree-dead.glb` |
 | **Manifest key** | `model:tree-dead` |
 | **Used for** | Dead / exterior tree foliage |
 | **Modifications** | None recorded |
@@ -300,7 +314,7 @@ by wasabicats is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/fire-extingusher.glb` |
+| **File** | `public/assets/models/fire-extinguisher.glb` |
 | **Manifest key** | `model:fire-extinguisher` |
 | **Used for** | Wall-mounted fire extinguisher prop |
 | **Modifications** | None recorded |
@@ -313,7 +327,7 @@ by ConhuirParker is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/light_ceiling.glb` |
+| **File** | `public/assets/models/light-ceiling.glb` |
 | **Manifest key** | `model:light-ceiling` |
 | **Used for** | Ceiling-mounted light fixture |
 | **Modifications** | None recorded |
@@ -341,7 +355,7 @@ by Gamedirection is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/chainlink-fence_.glb` |
+| **File** | `public/assets/models/chainlink-fence.glb` |
 | **Manifest key** | `model:chainlink-fence` |
 | **Used for** | Exterior fencing |
 | **Modifications** | None recorded |
@@ -394,7 +408,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/trash_bin.glb` |
+| **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
 | **Modifications** | None recorded |
@@ -441,28 +455,29 @@ Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 ### Radar terminal — TODO: resolve
 
-Which of these was downloaded as `industrial_terminal.glb`? One entry, drop
-the loser.
+Which of these was downloaded as `industrial_terminal.glb` (now
+`radar-terminal.glb`)? One entry, drop the loser.
 
 - https://skfb.ly/oNDNS
 - https://skfb.ly/pISt8 (noted: poly count on the higher side)
 
 | | |
 |---|---|
-| **File** | `public/assets/models/industrial_terminal.glb` |
+| **File** | `public/assets/models/radar-terminal.glb` |
 | **Manifest key** | `model:radar-terminal` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
 ### Desk with computer — TODO: resolve
 
-Which of these was downloaded as `retro_futuristic_computer.glb`?
+Which of these was downloaded as `retro_futuristic_computer.glb` (now
+`retro-computer.glb`)?
 
 - https://skfb.ly/ozTNu
 - https://skfb.ly/oTuU9
 
 | | |
 |---|---|
-| **File** | `public/assets/models/retro_futuristic_computer.glb` |
+| **File** | `public/assets/models/retro-computer.glb` |
 | **Manifest key** | `model:retro-computer` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
@@ -472,7 +487,7 @@ Which of these was downloaded as `retro_futuristic_computer.glb`?
 
 | | |
 |---|---|
-| **File** | `public/assets/models/security_camera.glb` |
+| **File** | `public/assets/models/security-camera.glb` |
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
@@ -482,7 +497,9 @@ These files sit in `public/assets/models/` with no source link on record.
 If any is downloaded rather than made by us, it needs a full entry above
 before submission (the credits screen must list all non-original work):
 
-- `switchboard_ussr.glb` (`model:switchboard`)
+- `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
+- `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
+- `break-panel.glb` (`model:break-panel`)
 - `office-scene.glb` (not in the manifest)
 - `retro_command_console_aged.glb` (not in the manifest)
 - `ragno_monster.glb` (not in the manifest)

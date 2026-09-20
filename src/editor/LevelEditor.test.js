@@ -2160,7 +2160,43 @@ describe('LevelEditor', () => {
         promptSpy.mockRestore();
       });
 
-      it('prompts the user for a name when adding a manifest model', () => {
+      it('fetches a library model before spawning it, then spawns it', async () => {
+      // Most of the manifest is not preloaded, so the browser lists keys the
+      // cache has never seen. Spawning one has to wait for the fetch.
+      mockEngine.spawnModel = vi.fn(() => null);
+      let resolveLoad;
+      const load = vi.fn(() => new Promise(r => { resolveLoad = r; }));
+      let cached = false;
+      mockEngine.assets = { has: vi.fn(() => cached), load };
+
+      const immediate = editor._addManifestModel('model:trash-bin', 'Bin');
+      expect(immediate).toBeNull();                  // nothing to add yet
+      expect(load).toHaveBeenCalledWith('model:trash-bin');
+      expect(mockEngine.spawnModel).not.toHaveBeenCalled();
+
+      cached = true;
+      resolveLoad();
+      await vi.waitFor(() => expect(mockEngine.spawnModel).toHaveBeenCalled());
+      expect(mockEngine.spawnModel.mock.calls[0][0]).toBe('model:trash-bin');
+      expect(load).toHaveBeenCalledTimes(1);          // no second fetch
+    });
+
+    it('reports a model it cannot fetch instead of throwing at the user', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockEngine.spawnModel = vi.fn(() => null);
+      mockEngine.assets = {
+        has: vi.fn(() => false),
+        load: vi.fn(() => Promise.reject(new Error('404 on trash-bin.glb'))),
+      };
+
+      expect(editor._addManifestModel('model:trash-bin', 'Bin')).toBeNull();
+      await vi.waitFor(() => expect(err).toHaveBeenCalled());
+      expect(err.mock.calls[0][0]).toContain('404 on trash-bin.glb');
+      expect(mockEngine.spawnModel).not.toHaveBeenCalled();
+      err.mockRestore();
+    });
+
+    it('prompts the user for a name when adding a manifest model', () => {
         const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('MyCustomDesk');
         const spawnedGO = new GameObject('MyCustomDesk');
         mockEngine.spawnModel = vi.fn(() => spawnedGO);

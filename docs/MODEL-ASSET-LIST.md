@@ -32,7 +32,7 @@
 | Model | Description | Where it's used | Notes |
 |---|---|---|---|
 | `generator.glb` | Industrial generator / power generator. Large, central piece. Diesel or turbine style. | GeneratorBay room, centre or against a wall | This is a hero prop — the player has to physically go to it to cut power. Make it feel heavy and important. Think backup generator for a building, not a portable camping one. |
-| `breaker-panel.glb` | Electrical breaker panel / switchboard box. Wall-mounted, with switches/levers. | GeneratorBay room, on a wall | Already have `switchboard_ussr.glb` which could work for this. Check if it fits the aesthetic. If yes, reuse it. If not, find a separate breaker panel. |
+| `breaker-panel.glb` | Electrical breaker panel / switchboard box. Wall-mounted, with switches/levers. | GeneratorBay room, on a wall | Already have `switchboard.glb` which could work for this. Check if it fits the aesthetic. If yes, reuse it. If not, find a separate breaker panel. |
 
 ---
 
@@ -49,7 +49,7 @@
 
 | Model | Description | Where it's used | Notes |
 |---|---|---|---|
-| `bed-bunk.glb` | Bunk bed. Metal frame, 2-3 tiers. Military/dormitory style. | LivingQuarters room | 100 hits to destroy with a crowbar (per VotV). Doesn't need to be breakable for us, but should look sturdy and institutional. |
+| `bunk-bed.glb` | Bunk bed. Metal frame, 2-3 tiers. Military/dormitory style. | LivingQuarters room | 100 hits to destroy with a crowbar (per VotV). Doesn't need to be breakable for us, but should look sturdy and institutional. |
 | `vending-machine.glb` | Snack/drink vending machine. Retro style. | BreakRoom or LivingQuarters, against a wall | Think 1970s vending machine, not a modern touchscreen one. Buttons, glass front, dim internal light. Could dispense coffee (gameplay item for stamina). |
 | `couch.glb` | Worn couch / sofa. Fabric, slightly dirty/stained. | BreakRoom | Doesn't need to be interactive. Just atmosphere. |
 | `locker.glb` | Metal wall locker / storage locker. Steel, maybe with a vent grille. | LivingQuarters or corridor walls, row of 3-4 | Institutional style. Gym locker or military locker. |
@@ -94,10 +94,10 @@ These models already exist in `public/assets/models/` and might be reusable:
 | Existing file | Could serve as | Action |
 |---|---|---|
 | `server.glb` | Server rack in ServerRoom | Check if it looks right for the server room. If yes, just spawn more copies. |
-| `switchboard_ussr.glb` | Breaker panel in GeneratorBay | Check if it looks like a breaker panel. Could be repurposed. |
-| `retro_futuristic_computer.glb` | Server console in ServerRoom | Could be reused as the server room terminal, or keep in MainOffice only. |
-| `industrial_terminal.glb` | Secondary terminal | Could be repurposed. |
-| `security_camera.glb` | Already used | Keep as-is. |
+| `switchboard.glb` | Breaker panel in GeneratorBay | Check if it looks like a breaker panel. Could be repurposed. |
+| `retro-computer.glb` | Server console in ServerRoom | Could be reused as the server room terminal, or keep in MainOffice only. |
+| `radar-terminal.glb` | Secondary terminal | Could be repurposed. |
+| `security-camera.glb` | Already used | Keep as-is. |
 | `desk.glb` | Simple desk | Check if it fits the living quarters aesthetic. |
 
 ---
@@ -127,7 +127,7 @@ public/assets/models/
 ├── breaker-panel.glb
 ├── server-rack-tall.glb
 ├── server-console.glb
-├── bed-bunk.glb
+├── bunk-bed.glb
 ├── vending-machine.glb
 ├── couch.glb
 ├── locker.glb

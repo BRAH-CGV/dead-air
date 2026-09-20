@@ -18,8 +18,11 @@ import * as THREE from 'three';
  * @param {boolean} [opts.castShadow=true]
  * @param {boolean} [opts.receiveShadow=true]
  * @param {number}  [opts.anisotropy=1]     Usually renderer.capabilities.getMaxAnisotropy().
- * @param {{ side?: 'front'|'back'|'double', depthWrite?: boolean }} [opts.material]
+ * @param {{ side?: 'front'|'back'|'double', depthWrite?: boolean, transmission?: number,
+ *           emissive?: number, emissiveIntensity?: number }} [opts.material]
  *        Optional per-asset material cleanup for imported models with bad GLB flags.
+ *        `transmission: 0` switches off glass transmission (an extra scene render per frame).
+ *        `emissive`/`emissiveIntensity` tint the whole model self-luminous.
  */
 export function prepareModel(root, opts = {}) {
   const {
@@ -61,6 +64,25 @@ function applyMaterialOptions(material, opts) {
 
   if (opts.depthWrite !== undefined) {
     material.depthWrite = opts.depthWrite;
+  }
+
+  // Any transmission > 0 makes three.js render the whole scene again, every
+  // frame the mesh is visible, so the glass has something to refract. Only
+  // physical materials have the property; don't bolt it onto the others.
+  if (opts.transmission !== undefined && 'transmission' in material) {
+    material.transmission = opts.transmission;
+    material.needsUpdate = true;
+  }
+
+  // Tints the whole model self-luminous, independent of scene lighting —
+  // for a downloaded model that should read as glowing without needing a
+  // separate lit prop bolted on beside it.
+  if (opts.emissive !== undefined && 'emissive' in material) {
+    material.emissive.set(opts.emissive);
+    material.needsUpdate = true;
+  }
+  if (opts.emissiveIntensity !== undefined && 'emissiveIntensity' in material) {
+    material.emissiveIntensity = opts.emissiveIntensity;
   }
 }
 
