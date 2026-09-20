@@ -297,9 +297,9 @@ export class BaseScene extends Scene {
     this._prevFogDensity = this.engine.scene.fog?.density;
 
     // Match the fog to the dome's horizon band. Fog fades the terrain to its
-    // own colour long before the dome starts, so the engine's blue-grey
-    // default draws a visible seam where the ground meets the rust sky.
-    this.engine.scene.fog?.color.set(0x3a2820);
+    // own colour long before the dome starts, so a mismatch draws a visible
+    // seam where the ground meets the sky.
+    this.engine.scene.fog?.color.set(0x1f2a38);
 
     // Start the scene at the outdoor density. RoomTransitionSystem only
     // reports a room on its first update, and the player spawns in the office

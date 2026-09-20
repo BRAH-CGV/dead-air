@@ -156,7 +156,7 @@ describe('BaseScene', () => {
     expect(sky.getComponent(SkyFollow)).toBeTruthy();
     // Fog fades the terrain to its own colour long before the dome starts;
     // a mismatch draws a seam along the horizon.
-    expect(engine.scene.fog.color.getHex()).toBe(0x3a2820);
+    expect(engine.scene.fog.color.getHex()).toBe(0x1f2a38);
   });
 
   it('adds global ambient and moon light', () => {
