@@ -79,6 +79,14 @@ export class FirstPersonController extends Component {
     /** Public: true while standing is desired but headroom refuses it. */
     this.standBlocked = false;
 
+    /**
+     * Public: when true, input (mouse look, WASD, jump, crouch) is ignored
+     * but physics (gravity, momentum) still applies. Use this for menus,
+     * cutscenes, or terminal screens where the player shouldn't move but
+     * should still fall if off a ledge.
+     */
+    this.inputLocked = false;
+
     this.pitch     = 0;
     this.yaw       = 0;
     this._smoothYaw = 0;
@@ -143,6 +151,10 @@ export class FirstPersonController extends Component {
   // ── Variable timestep: input + mouse look ─────────────
   onUpdate(dt) {
     if (!this.gameObject || !this.camera) return;
+
+    // Input locked: skip mouse look and key sampling, but let onFixedUpdate
+    // continue applying gravity and momentum.
+    if (this.inputLocked) return;
 
     const engine = this.gameObject.scene?.userData.engine;
     if (!engine) return;
