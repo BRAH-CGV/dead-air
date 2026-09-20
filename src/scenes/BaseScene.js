@@ -7,6 +7,7 @@ import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobject
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
+import { createCommTowers } from '../gameobjects/CommTowers.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -388,14 +389,23 @@ export class BaseScene extends Scene {
     // back wall. Bounds are read off the rooms themselves, so moving a room
     // moves the cleared ground with it.
     const footprint = this._baseFootprint();
-    this._outside.addChild(createMarsRocks({ footprint }));
-    this._outside.addChild(createMarsVegetation({
+    const rocks = createMarsRocks({ footprint });
+    const belt = createMarsVegetation({
       footprint,
       assets: engine.assets,
       // The belt closes the horizon all round, so the way out to the dish has
       // to be one of the lanes through it, not just a clearing at its feet.
       lanes: [Math.atan2(-25, 0)],
-    }));
+    });
+    // Masts on the rim, blinking. The belt closed the horizon, so these are
+    // what is left to look at in the distance.
+    const towers = createCommTowers();
+    for (const field of [rocks, belt, towers]) {
+      this._outside.addChild(field);
+      // Every field builds its own geometry and materials, so dispose() has to
+      // know about them or they survive a scene reload.
+      this._ownResourcesOf(field);
+    }
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
