@@ -4,6 +4,7 @@ import { Component } from '../core/Component.js';
 import { makeNoise2D, fbm } from '../core/Noise.js';
 import { makeRandom, randRange, randPower, randPick } from '../core/Random.js';
 import { terrainHeightAt } from './MarsTerrain.js';
+import { flattenModelParts, dimmedMaterial } from '../core/ModelUtils.js';
 import { makeYard, yardDistance, makeYardRadiusLookup } from './BaseYard.js';
 
 // ─────────────────────────────────────────────
@@ -561,7 +562,7 @@ function buildTrees(trees, assets, rand) {
   const tint = new THREE.Color();
 
   for (const [key, placements] of byKey) {
-    const parts = modelParts(key, assets);
+    const parts = flattenModelParts(key, assets);
     if (parts.length === 0) continue;
 
     // Normalise by the model's own height, so mixing models of wildly
@@ -572,7 +573,7 @@ function buildTrees(trees, assets, rand) {
     for (const part of parts) {
       const mesh = new THREE.InstancedMesh(
         part.geometry,
-        tintedMaterial(part.material),
+        dimmedMaterial(part.material),
         placements.length,
       );
       mesh.name = `MarsTree_${key.replace('model:', '')}_${meshes.length}`;
@@ -600,33 +601,6 @@ function buildTrees(trees, assets, rand) {
 }
 
 /** Every mesh inside a cached model, with its transform relative to the root. */
-function modelParts(key, assets) {
-  let scene;
-  try {
-    scene = assets.get(key)?.scene;
-  } catch {
-    // Not loaded — the vegetation is worth having without this species.
-    return [];
-  }
-  if (!scene) return [];
-
-  scene.updateMatrixWorld(true);
-  const parts = [];
-  scene.traverse((node) => {
-    if (node.isMesh) parts.push({ geometry: node.geometry, material: node.material, matrix: node.matrixWorld.clone() });
-  });
-  return parts;
-}
-
-function tintedMaterial(source) {
-  const material = Array.isArray(source) ? source[0].clone() : source.clone();
-  // Trees are lit by a moon, so nothing about them should be bright. The
-  // per-instance colour does the actual tinting on top of this.
-  material.color?.multiplyScalar(0.8);
-  if ('roughness' in material) material.roughness = Math.min(1, (material.roughness ?? 1) + 0.2);
-  if ('metalness' in material) material.metalness = 0;
-  return material;
-}
 
 /** Ground normal by finite differences. No seed is passed: the height
  *  function owns the valley's seed. */

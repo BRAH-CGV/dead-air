@@ -8,6 +8,8 @@ import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
+import { createPerimeterFence, FENCE } from '../gameobjects/PerimeterFence.js';
+import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -85,6 +87,11 @@ const OUTDOOR_FOG_DENSITY = 0.0022;
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */
 const DISH_LANE = Math.atan2(-25, 0);
+
+/** The colony rover is 3.4 x 3.3 x 6.6 m as downloaded. The base's exterior
+ *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
+ *  it and the building. Three quarters puts the roof just above the lintel. */
+const BUGGY_SCALE = 0.75;
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
@@ -410,7 +417,24 @@ export class BaseScene extends Scene {
       .map(lane => lane.bearing)
       .filter(bearing => bearing !== DISH_LANE);
     const towers = createCommTowers({ alignTo: roads });
-    for (const field of [rocks, belt, towers]) {
+
+    // Chain-link round the compound, opening wherever a lane crosses it — so
+    // the paths through the belt and the gaps in the wire are the same five
+    // ways out, not two unrelated sets of gaps. The dish lane's own width
+    // left a gap of a few metres between its gate and the next lane's, on the
+    // side toward the western wing — too narrow for a real gate, but wide
+    // enough for the tiler to stand one isolated panel in it, right in front
+    // of the dish. Widened past that neighbour's edge so the two merge into
+    // one gate instead of leaving a stray panel between them.
+    const fenceLanes = belt.lanes.map(lane =>
+      lane.bearing !== DISH_LANE ? lane : { ...lane, halfWidth: 9 });
+    const fence = createPerimeterFence({
+      lanes: fenceLanes,
+      assets: engine.assets,
+      world: engine.world,
+    });
+
+    for (const field of [rocks, belt, towers, fence]) {
       this._outside.addChild(field);
       // Every field builds its own geometry and materials, so dispose() has to
       // know about them or they survive a scene reload.
@@ -426,6 +450,19 @@ export class BaseScene extends Scene {
     this._adopt(this._outside, this.satellite);
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+
+    // Lit concrete under the dish. Positioned off the satellite's own
+    // transform rather than a second copy of its coordinates.
+    const dishPad = createDishPad({ position: this.satellite.object3d.position });
+    this._outside.addChild(dishPad);
+    this._ownResourcesOf(dishPad);
+
+    // The buggy, parked in the open ground to the right as you step out the
+    // door. Scaled against the doorway it stands next to: the model is 3.3 m
+    // tall as downloaded, which beside a 2.2 m door reads as a machine that
+    // could not get through it. BUGGY_SCALE brings the roof to just over the
+    // lintel. Position and heading placed by hand in the level editor (F2).
+    this._addBuggy([-7.79, 10.01], THREE.MathUtils.degToRad(95.7), 1.237);
 
     // Generator stand-in until generator.glb arrives (asset list, P1). Out
     // the office's front door, where the player has to go to cut power.
@@ -450,6 +487,33 @@ export class BaseScene extends Scene {
       halfX: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.x), Math.abs(b.max.x)))),
       halfZ: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.z), Math.abs(b.max.z)))),
     };
+  }
+
+  /**
+   * Park the colony buggy.
+   *
+   * `y` defaults to the computed lift — the download's origin sits inside the
+   * body rather than on the floor, so dropped at y = 0 the wheels end up
+   * buried, and this is measured off the model's own bounds so swapping it
+   * cannot quietly sink it again. Passing `y` explicitly overrides that with
+   * a value read straight from the level editor (F2): easier to trust than
+   * the computed one once someone has actually looked at where the wheels
+   * land, and the fix if that ever needs revisiting.
+   */
+  _addBuggy([x, z], rotationY = 0, y) {
+    const key = 'model:colony-rover';
+    const bounds = this.engine.assets.getCollision?.(key)?.bounds;
+    // center.y - size.y/2 is the model's lowest point, relative to its origin.
+    const floorOffset = bounds ? bounds.center[1] - bounds.size[1] / 2 : 0;
+
+    const buggy = this.engine.spawnModel(key, {
+      name: 'Buggy',
+      position: [x, y ?? -floorOffset * BUGGY_SCALE, z],
+      rotationY,
+      scale: BUGGY_SCALE,
+    });
+    this._adopt(this._outside, buggy);
+    return buggy;
   }
 
   /** Solid box standing in for a model that hasn't been sourced yet. */

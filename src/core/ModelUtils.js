@@ -99,6 +99,55 @@ export function materialsOf(mesh) {
   return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 }
 
+/**
+ * Flatten a loaded model's meshes into instanceable parts: geometry, material
+ * and the node's baked world matrix. Used to draw hundreds of copies of a
+ * download as InstancedMeshes instead of spawning a GameObject per copy — see
+ * MarsVegetation (trees) and PerimeterFence (fence panels).
+ *
+ * @param {string} key
+ * @param {import('./AssetManager.js').AssetManager} assets
+ * @returns {Array<{geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4}>}
+ */
+export function flattenModelParts(key, assets) {
+  let scene;
+  try {
+    scene = assets.get(key)?.scene;
+  } catch {
+    // Not loaded — the field is worth having without this one model.
+    return [];
+  }
+  if (!scene) return [];
+
+  scene.updateMatrixWorld(true);
+  const parts = [];
+  scene.traverse((node) => {
+    if (node.isMesh) {
+      parts.push({
+        name: node.name,
+        geometry: node.geometry,
+        material: node.material,
+        matrix: node.matrixWorld.clone(),
+      });
+    }
+  });
+  return parts;
+}
+
+/**
+ * A clone of a mesh's material, dimmed for outdoor moonlight rather than the
+ * bright, even light it was probably rendered under on a marketplace preview.
+ * Cloned so per-instance colour (a tint, a per-object shade) never mutates the
+ * shared cache material every other instance still points at.
+ */
+export function dimmedMaterial(source) {
+  const material = Array.isArray(source) ? source[0].clone() : source.clone();
+  material.color?.multiplyScalar(0.8);
+  if ('roughness' in material) material.roughness = Math.min(1, (material.roughness ?? 1) + 0.2);
+  if ('metalness' in material) material.metalness = 0;
+  return material;
+}
+
 /** Every texture currently assigned to a material, whatever the slot. */
 export function texturesOf(material) {
   const out = [];

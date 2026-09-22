@@ -34,7 +34,14 @@ export function rapierModule() {
       RigidBodyDesc: { fixed: () => bodyDesc('fixed') },
       ColliderDesc: {
         cuboid: (x, y, z) => {
-          const d = { half: { x, y, z }, sensor: false, setSensor(s) { d.sensor = s; return d; } };
+          const d = {
+            half: { x, y, z }, t: { x: 0, y: 0, z: 0 }, sensor: false,
+            setSensor(s) { d.sensor = s; return d; },
+            // Real Rapier supports positioning a collider independently of
+            // its body — a fixed body carrying several colliders at their
+            // own offsets, the pattern the rock field and the fence both use.
+            setTranslation(tx, ty, tz) { d.t = { x: tx, y: ty, z: tz }; return d; },
+          };
           return d;
         },
         // MarsTerrain's ground. Records its shape so tests can check the grid
