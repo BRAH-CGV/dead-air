@@ -170,13 +170,15 @@ describe('MainOffice', () => {
     expect(desk.color.getHex()).toBe(0x66ccff);
   });
 
-  it('the computer desk is an Interactable stub for signal collection (phase 10)', () => {
-    const interactable = room.root.find('ComputerDesk').getComponent(Interactable);
-    expect(interactable).not.toBeNull();
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    interactable.onInteract({});
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('signal collected'));
-    log.mockRestore();
+  it('turns the computer desk to face the window, so the seat looks out at the dish', () => {
+    const [, opts] = engine.spawnModel.mock.calls.find(([key]) => key === 'model:retro-computer');
+    expect(opts.rotationY).toBe(0);
+  });
+
+  it('leaves the computer desk without an Interactable — the scene wires the terminal onto it', () => {
+    // A second Interactable would shadow the terminal's: InteractionSystem
+    // resolves getComponent(Interactable), which returns the first match.
+    expect(room.root.find('ComputerDesk').getComponent(Interactable)).toBeNull();
   });
 
   it('leaves global lights (ambient, moon) to the scene', () => {

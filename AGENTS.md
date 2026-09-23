@@ -201,7 +201,7 @@ Press **`` ` ``** in game to overlay every collider Rapier knows about. Authorin
 
 Fixed with tier 3, in the manifest (`src/assets/manifest.js`) — after two guesses from the raw mesh data got it wrong (first left 3 of the model's 4 sides open, since it isn't a table on legs; then a U-shaped compound with a full-footprint top slab, which still blocked *walking up to* the desk while standing, since the lid covered the opening too). Third time, measured instead of guessed: box primitives placed in the level editor (F2) against the rendered model, positions/sizes read off their transform panel. That gave three boxes — a solid back region and two solid side walls, all about 0.73 m tall, **no separate top lid** — with the front (the kneehole) having no ceiling at all, so a standing player can walk up to the opening and only needs to crouch further in, toward the back.
 
-Real metres divided by the model's own 1.6 m worth of spawn scale — this model has no manifest-level `scale`, so its measured bounds (and any hand-written `shape`) are in its native ~100-unit-wide space, not metres; every spawn (`MainOffice`, `OfficeScene`) applies `scale: 0.016` on top to land at 1.6 m. The editor gave real-metre, world-space numbers; converting to the manifest's native units means subtracting the desk's spawn position `[0, 0, -2.55]`, undoing its 180° spawn rotation (`x` and `z` each negate), then dividing by 0.016:
+Real metres divided by the model's own 1.6 m worth of spawn scale — this model has no manifest-level `scale`, so its measured bounds (and any hand-written `shape`) are in its native ~100-unit-wide space, not metres; every spawn (`MainOffice`, `OfficeScene`) applies `scale: 0.016` on top to land at 1.6 m. The editor gave real-metre, world-space numbers; converting to the manifest's native units means subtracting the desk's spawn position `[0, 0, -2.55]`, undoing the 180° spawn rotation the desk carried **at the time this was measured** (`x` and `z` each negate), then dividing by 0.016:
 
 ```js
 // real metres, desk-local                                    native units (÷ 0.016)
@@ -210,6 +210,8 @@ Real metres divided by the model's own 1.6 m worth of spawn scale — this model
 { type: 'box', size: [0.250, 0.730, 0.800], position: [-0.67, 0.37,  0.00] },  // → size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0]       left side wall
 // front (+Z, roughly z > -0.06 m): no part — the kneehole, floor to ceiling.
 ```
+
+The `shape` above is model-local, so it rides the spawn rotation and the numbers still hold — but the desk no longer spawns at 180°. `MainOffice` seats it at `rotationY: 0` so the chair looks out of the back window at the dish tower, which is what the computer terminal aims; the kneehole (local +Z) therefore opens toward the front door, and that is the side you crouch in from. Re-measuring in the editor means undoing whatever rotation the spawn currently applies, not the 180° above.
 
 +Z being the open side was actually right in the previous (second) attempt too — the bug that attempt had wasn't direction, it was the top slab. Worth remembering: a part that covers the *opening* footprint blocks standing approach even if every side wall around it is open.
 
