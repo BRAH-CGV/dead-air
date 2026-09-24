@@ -5,6 +5,11 @@ import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
+import { createMarsRocks } from '../gameobjects/MarsRocks.js';
+import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
+import { createCommTowers } from '../gameobjects/CommTowers.js';
+import { createPerimeterFence, FENCE } from '../gameobjects/PerimeterFence.js';
+import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -78,6 +83,15 @@ const ROOM_FOG_DENSITY = {
  *  office is ~4% at 0.02 and ~0.05% at 0.0022: the office fog was never doing
  *  visible work, and the view out of the window is worth far more. */
 const OUTDOOR_FOG_DENSITY = 0.0022;
+
+/** Bearing of the lane kept open between the back window and the dish, which
+ *  stands at (0, -25). The masts skip this one. */
+const DISH_LANE = Math.atan2(-25, 0);
+
+/** The colony rover is 3.4 x 3.3 x 6.6 m as downloaded. The base's exterior
+ *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
+ *  it and the building. Three quarters puts the roof just above the lintel. */
+const BUGGY_SCALE = 0.75;
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
@@ -297,9 +311,9 @@ export class BaseScene extends Scene {
     this._prevFogDensity = this.engine.scene.fog?.density;
 
     // Match the fog to the dome's horizon band. Fog fades the terrain to its
-    // own colour long before the dome starts, so the engine's blue-grey
-    // default draws a visible seam where the ground meets the rust sky.
-    this.engine.scene.fog?.color.set(0x3a2820);
+    // own colour long before the dome starts, so a mismatch draws a visible
+    // seam where the ground meets the sky.
+    this.engine.scene.fog?.color.set(0x1f2a38);
 
     // Start the scene at the outdoor density. RoomTransitionSystem only
     // reports a room on its first update, and the player spawns in the office
@@ -332,7 +346,10 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _addLighting() {
     const ambientGO = new GameObject('AmbientLight');
-    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 1.0));
+    // Down from 1.0: the valley was reading as dusk rather than night once
+    // there was scenery out there to light. The rooms carry their own lamps,
+    // so this is the fill the windows look out on.
+    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 0.72));
     this._lighting.addChild(ambientGO);
 
     // Shadow frustum sized to the whole base, not just the office.
@@ -344,7 +361,9 @@ export class BaseScene extends Scene {
     const moonGO = new GameObject('MoonLight');
     // Colour and intensity are MarsSky's tuned pair, so this base is lit the
     // same way OfficeScene is — one moon, one look across both scenes.
-    const moon = new THREE.DirectionalLight(0xd4d4d4, 1.1);
+    // Down from 1.1 for the same reason — this rakes the terrain and the
+    // belt, not just the office floor.
+    const moon = new THREE.DirectionalLight(0xd4d4d4, 0.8);
     // Aimed along Phobos' own angles rather than a hand-picked vector, so the
     // shadows and the moon you can actually see in the sky cannot drift apart
     // when either is retuned. Its elevation is 30 degrees, so the light rakes
@@ -375,6 +394,53 @@ export class BaseScene extends Scene {
   _buildOutside() {
     const { engine } = this;
 
+    // Scenery clears a yard shaped to the base's own outline rather than a
+    // circle at the origin — the rooms run 33 m east to west but only 10 m
+    // deep, so a circle wide enough for the wings sits twenty metres off the
+    // back wall. Bounds are read off the rooms themselves, so moving a room
+    // moves the cleared ground with it.
+    const footprint = this._baseFootprint();
+    const rocks = createMarsRocks({ footprint });
+    const belt = createMarsVegetation({
+      footprint,
+      assets: engine.assets,
+      // The belt closes the horizon all round, so the way out to the dish has
+      // to be one of the lanes through it, not just a clearing at its feet.
+      lanes: [DISH_LANE],
+    });
+    // Masts on the rim, blinking. The belt closed the horizon, so these are
+    // what is left to look at in the distance — and standing one at the end of
+    // each clearing is what makes the clearings read as roads to somewhere
+    // rather than as gaps. The dish road is left out: the dish is what you are
+    // meant to see down that one.
+    const roads = belt.lanes
+      .map(lane => lane.bearing)
+      .filter(bearing => bearing !== DISH_LANE);
+    const towers = createCommTowers({ alignTo: roads });
+
+    // Chain-link round the compound, opening wherever a lane crosses it — so
+    // the paths through the belt and the gaps in the wire are the same five
+    // ways out, not two unrelated sets of gaps. The dish lane's own width
+    // left a gap of a few metres between its gate and the next lane's, on the
+    // side toward the western wing — too narrow for a real gate, but wide
+    // enough for the tiler to stand one isolated panel in it, right in front
+    // of the dish. Widened past that neighbour's edge so the two merge into
+    // one gate instead of leaving a stray panel between them.
+    const fenceLanes = belt.lanes.map(lane =>
+      lane.bearing !== DISH_LANE ? lane : { ...lane, halfWidth: 9 });
+    const fence = createPerimeterFence({
+      lanes: fenceLanes,
+      assets: engine.assets,
+      world: engine.world,
+    });
+
+    for (const field of [rocks, belt, towers, fence]) {
+      this._outside.addChild(field);
+      // Every field builds its own geometry and materials, so dispose() has to
+      // know about them or they survive a scene reload.
+      this._ownResourcesOf(field);
+    }
+
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
     // left in both it would slew at double speed.
@@ -384,6 +450,19 @@ export class BaseScene extends Scene {
     this._adopt(this._outside, this.satellite);
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+
+    // Lit concrete under the dish. Positioned off the satellite's own
+    // transform rather than a second copy of its coordinates.
+    const dishPad = createDishPad({ position: this.satellite.object3d.position });
+    this._outside.addChild(dishPad);
+    this._ownResourcesOf(dishPad);
+
+    // The buggy, parked in the open ground to the right as you step out the
+    // door. Scaled against the doorway it stands next to: the model is 3.3 m
+    // tall as downloaded, which beside a 2.2 m door reads as a machine that
+    // could not get through it. BUGGY_SCALE brings the roof to just over the
+    // lintel. Position and heading placed by hand in the level editor (F2).
+    this._addBuggy([-7.79, 10.01], THREE.MathUtils.degToRad(95.7), 1.237);
 
     // Generator stand-in until generator.glb arrives (asset list, P1). Out
     // the office's front door, where the player has to go to cut power.
@@ -397,6 +476,44 @@ export class BaseScene extends Scene {
         console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
       }
     }());
+  }
+
+  /** Half extents of the built base on the ground, for the scenery to clear.
+   *  Measured off the rooms and corridors so it cannot drift from the layout. */
+  _baseFootprint() {
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    const bounds = parts.map(part => part.bounds());
+    return {
+      halfX: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.x), Math.abs(b.max.x)))),
+      halfZ: Math.max(...bounds.map(b => Math.max(Math.abs(b.min.z), Math.abs(b.max.z)))),
+    };
+  }
+
+  /**
+   * Park the colony buggy.
+   *
+   * `y` defaults to the computed lift — the download's origin sits inside the
+   * body rather than on the floor, so dropped at y = 0 the wheels end up
+   * buried, and this is measured off the model's own bounds so swapping it
+   * cannot quietly sink it again. Passing `y` explicitly overrides that with
+   * a value read straight from the level editor (F2): easier to trust than
+   * the computed one once someone has actually looked at where the wheels
+   * land, and the fix if that ever needs revisiting.
+   */
+  _addBuggy([x, z], rotationY = 0, y) {
+    const key = 'model:colony-rover';
+    const bounds = this.engine.assets.getCollision?.(key)?.bounds;
+    // center.y - size.y/2 is the model's lowest point, relative to its origin.
+    const floorOffset = bounds ? bounds.center[1] - bounds.size[1] / 2 : 0;
+
+    const buggy = this.engine.spawnModel(key, {
+      name: 'Buggy',
+      position: [x, y ?? -floorOffset * BUGGY_SCALE, z],
+      rotationY,
+      scale: BUGGY_SCALE,
+    });
+    this._adopt(this._outside, buggy);
+    return buggy;
   }
 
   /** Solid box standing in for a model that hasn't been sourced yet. */

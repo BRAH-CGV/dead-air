@@ -156,7 +156,7 @@ describe('BaseScene', () => {
     expect(sky.getComponent(SkyFollow)).toBeTruthy();
     // Fog fades the terrain to its own colour long before the dome starts;
     // a mismatch draws a seam along the horizon.
-    expect(engine.scene.fog.color.getHex()).toBe(0x3a2820);
+    expect(engine.scene.fog.color.getHex()).toBe(0x1f2a38);
   });
 
   it('adds global ambient and moon light', () => {
@@ -186,6 +186,34 @@ describe('BaseScene', () => {
     expect(generator.placeholderFor).toBe('generator.glb');
     for (const room of Object.values(scene.rooms)) {
       expect(room.containsPoint(worldPos(generator)), room.name).toBe(false);
+    }
+  });
+
+  it('clears the scenery yard from the rooms themselves, not a guessed radius', () => {
+    // The whole point of measuring: move a room and the cleared ground moves
+    // with it. A hard-coded radius would silently plant rocks in a wall.
+    const footprint = scene._baseFootprint();
+    let halfX = 0;
+    let halfZ = 0;
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      const b = part.bounds();
+      halfX = Math.max(halfX, Math.abs(b.min.x), Math.abs(b.max.x));
+      halfZ = Math.max(halfZ, Math.abs(b.min.z), Math.abs(b.max.z));
+    }
+    expect(footprint.halfX).toBeCloseTo(halfX);
+    expect(footprint.halfZ).toBeCloseTo(halfZ);
+    // The base is far wider than it is deep, which is why a circle was wrong.
+    expect(footprint.halfX).toBeGreaterThan(footprint.halfZ * 2);
+  });
+
+  it('stands the rock field and vegetation belt outside, clear of the base', () => {
+    const outside = sceneRoot.find('Outside');
+    for (const name of ['MarsRocks', 'MarsVegetation']) {
+      const field = outside.find(name);
+      expect(field, name).not.toBeNull();
+      // Groups, so the editor neither lists every blade nor measures a
+      // bounding box the size of the valley.
+      expect(field.isGroup, name).toBe(true);
     }
   });
 

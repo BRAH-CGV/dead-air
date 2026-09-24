@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { createMarsSky, directionFromAngles } from './MarsSky.js';
+import { createMarsSky, directionFromAngles, milkyWayFrame } from './MarsSky.js';
 
 // ─────────────────────────────────────────────
 // MarsSky  –  procedural night sky
@@ -90,8 +90,12 @@ describe('star field', () => {
   // cell centre sat at the right radius. Equal-area bands catch that: uniform
   // dispersion puts a proportional share of stars in each band, and any
   // latitude-structured artifact skews the counts.
+  //
+  // The Milky Way is switched off for this and the pole test. It concentrates
+  // stars on purpose, so these check the uniform background sampler alone.
   it('disperses stars evenly across equal-area latitude bands', () => {
-    const pos   = starsOf(createMarsSky({ starCount: 8000 })).geometry.getAttribute('position');
+    const pos   = starsOf(createMarsSky({ starCount: 8000, milkyWay: { starFraction: 0 } }))
+      .geometry.getAttribute('position');
     const bands = [0, 0, 0, 0];
 
     for (let i = 0; i < pos.count; i++) {
@@ -122,7 +126,8 @@ describe('star field', () => {
   it('does not bunch stars around the poles', () => {
     // Sampling the polar ANGLE uniformly instead of the height is the classic
     // way to get this wrong, and it crowds stars into caps at each pole.
-    const pos = starsOf(createMarsSky({ starCount: 8000 })).geometry.getAttribute('position');
+    const pos = starsOf(createMarsSky({ starCount: 8000, milkyWay: { starFraction: 0 } }))
+      .geometry.getAttribute('position');
     let nearPole = 0;
 
     for (let i = 0; i < pos.count; i++) {
@@ -133,6 +138,79 @@ describe('star field', () => {
     // |y| > 0.9 is 10% of the sphere's area, so ~800 of 8000.
     expect(nearPole).toBeGreaterThan(600);
     expect(nearPole).toBeLessThan(1000);
+  });
+});
+
+describe('Milky Way', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+
+  /** Share of stars within ~8.6° of the band's plane. */
+  const shareNearBand = (sky) => {
+    const pos    = starsOf(sky).geometry.getAttribute('position');
+    const normal = sky.skyUniforms.uBandNormal.value;
+    let near = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i).normalize();
+      if (Math.abs(v.dot(normal)) < 0.15) near += 1;
+    }
+    return near / pos.count;
+  };
+
+  it('builds an orthonormal frame whose circle passes through the pinned point', () => {
+    const { center, tangent, normal } = milkyWayFrame(-5, 9, -20);
+
+    for (const v of [center, tangent, normal]) expect(v.length()).toBeCloseTo(1);
+    expect(center.dot(tangent)).toBeCloseTo(0);
+    expect(center.dot(normal)).toBeCloseTo(0);
+    expect(tangent.dot(normal)).toBeCloseTo(0);
+  });
+
+  it('reads tilt as the slope where the band crosses its pinned point', () => {
+    // Flat: runs straight across, rightward. Upright: runs straight up.
+    const flat = milkyWayFrame(0, 10, 0).tangent;
+    expect(flat.x).toBeCloseTo(1);
+    expect(flat.y).toBeCloseTo(0);
+
+    const upright = milkyWayFrame(0, 10, 90).tangent;
+    expect(upright.x).toBeCloseTo(0);
+    expect(upright.y).toBeGreaterThan(0.9);
+
+    // Negative tilt falls to the right.
+    const falling = milkyWayFrame(0, 10, -20).tangent;
+    expect(falling.x).toBeGreaterThan(0);
+    expect(falling.y).toBeLessThan(0);
+  });
+
+  it('crosses the window from mid-room by default', () => {
+    // Same box the moons are framed against: ±41° across, 0–14° up.
+    const { center } = milkyWayFrame(-5, 9, -20);
+    const normal = createMarsSky().skyUniforms.uBandNormal.value;
+
+    expect(normal.dot(center)).toBeCloseTo(0);
+    const azimuth   = THREE.MathUtils.radToDeg(Math.atan2(center.x, -center.z));
+    const elevation = THREE.MathUtils.radToDeg(Math.asin(center.y));
+    expect(Math.abs(azimuth)).toBeLessThan(41);
+    expect(elevation).toBeGreaterThan(0);
+    expect(elevation).toBeLessThan(14);
+  });
+
+  it('concentrates stars along the band', () => {
+    // |dot| < 0.15 is 15% of the sphere's area, so a uniform field puts ~15%
+    // of its stars there. The band should roughly double that.
+    const withBand    = shareNearBand(createMarsSky({ starCount: 10000 }));
+    const withoutBand = shareNearBand(createMarsSky({ starCount: 10000, milkyWay: { starFraction: 0 } }));
+
+    expect(withBand).toBeGreaterThan(0.3);
+    expect(withoutBand).toBeLessThan(0.2);
+  });
+
+  it('passes band options through to the dome', () => {
+    const sky = createMarsSky({ milkyWay: { intensity: 0, color: 0x445566 } });
+
+    expect(sky.skyUniforms.uBandIntensity.value).toBe(0);
+    expect(sky.skyUniforms.uBandColor.value.getHex()).toBe(0x445566);
+    // Unspecified fields keep their defaults rather than going undefined.
+    expect(sky.skyUniforms.uBandWidth.value).toBeGreaterThan(0);
   });
 });
 

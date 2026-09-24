@@ -95,6 +95,44 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  */
 const PLACED = {
   // ── Models ──────────────────────────────────
+  'model:colony-rover': {
+    type: 'model',
+    url: 'assets/models/colony-rover.glb',
+    physics: 'static',
+  },
+  'model:chainlink-fence': {
+    type: 'model',
+    url: 'assets/models/chainlink-fence.glb',
+    physics: 'static',
+    // Raw model measures 17 m tall — an FBX/Sketchfab export in the wrong
+    // units, not an actual 5-storey fence. Scaled to read as a real 2.4 m
+    // chain-link run: scale = 2.4 / 17.
+    scale: 2.4 / 17,
+  },
+  // The vegetation belt instances these across the valley on every load, so
+  // they are drawn, not optional — see MarsVegetation. It copies the meshes
+  // directly rather than spawning them, so `physics` here only applies to a
+  // tree placed by hand from the level editor.
+  'model:tree-birch': {
+    type: 'model',
+    url: 'assets/models/tree-birch.glb',
+    physics: 'static',
+  },
+  'model:tree-pine': {
+    type: 'model',
+    url: 'assets/models/tree-pine.glb',
+    physics: 'static',
+  },
+  'model:tree-fantasy': {
+    type: 'model',
+    url: 'assets/models/tree-fantasy.glb',
+    physics: 'static',
+  },
+  'model:tree-dead': {
+    type: 'model',
+    url: 'assets/models/tree-dead.glb',
+    physics: 'static',
+  },
   'model:desk': {
     type: 'model',
     url: 'assets/models/desk.glb',
@@ -250,34 +288,9 @@ const LIBRARY = {
     url: 'assets/models/vending-machine.glb',
     physics: 'static',
   },
-  'model:colony-rover': {
-    type: 'model',
-    url: 'assets/models/colony-rover.glb',
-    physics: 'static',
-  },
   'model:poster': {
     type: 'model',
     url: 'assets/models/poster.glb',
-  },
-  'model:tree-birch': {
-    type: 'model',
-    url: 'assets/models/tree-birch.glb',
-    physics: 'static',
-  },
-  'model:tree-pine': {
-    type: 'model',
-    url: 'assets/models/tree-pine.glb',
-    physics: 'static',
-  },
-  'model:tree-fantasy': {
-    type: 'model',
-    url: 'assets/models/tree-fantasy.glb',
-    physics: 'static',
-  },
-  'model:tree-dead': {
-    type: 'model',
-    url: 'assets/models/tree-dead.glb',
-    physics: 'static',
   },
   'model:bush': {
     type: 'model',
@@ -286,11 +299,6 @@ const LIBRARY = {
   'model:break-panel': {
     type: 'model',
     url: 'assets/models/break-panel.glb',
-    physics: 'static',
-  },
-  'model:chainlink-fence': {
-    type: 'model',
-    url: 'assets/models/chainlink-fence.glb',
     physics: 'static',
   },
   'model:crate': {
