@@ -109,8 +109,28 @@ describe('ComputerTerminal', () => {
     // Satellite target is derived via _cursorToSky
     expect(sat.targetYaw).toBe(term._cursorToSky().yaw);
 
+    const leftmost = term._cursorX;
     term.moveCursor({ left: false, right: true, up: false, down: false }, 0.5);
-    expect(term._cursorX).toBeGreaterThan(-0.25); // moved back right
+    expect(term._cursorX).toBeGreaterThan(leftmost); // moved back right
+  });
+
+  it('holding a direction carries the cursor from centre to rim in about a second', () => {
+    term.enter();
+    let t = 0;
+    while (Math.hypot(term._cursorX, term._cursorY) < 1 && t < 10) {
+      term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
+      t += 1 / 60;
+    }
+    expect(t).toBeLessThanOrEqual(1.3);
+  });
+
+  it('moves finely enough per frame to stop inside a signal', () => {
+    term.enter();
+    const before = term._cursorToSky().pitch;
+    term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
+    const stepAngle = Math.abs(term._cursorToSky().pitch - before);
+    // At least four frames to cross a signal's acceptance radius.
+    expect(stepAngle).toBeLessThan(mgr.signals[0].tolerance / 4);
   });
 
   it('moveCursor y moves up and down', () => {
