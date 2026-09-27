@@ -12,7 +12,7 @@ vi.mock('@dimforge/rapier3d', () => ({
 }));
 
 const { FirstPersonController } = await import('./FirstPersonController.js');
-const { playerBody } = await import('./PlayerBody.js');
+const { PLAYER_BODY, playerBody } = await import('./PlayerBody.js');
 
 const DT = 1 / 60;
 const body = playerBody();
@@ -72,7 +72,7 @@ describe('FirstPersonController eye height', () => {
     ctrl.onUpdate(DT);
     ctrl._enterCrouch();
     for (let i = 0; i < 60; i++) ctrl.onUpdate(DT);
-    expect(eyeAboveFeet(ctrl, crouchCentre)).toBeCloseTo(0.55);
+    expect(eyeAboveFeet(ctrl, crouchCentre)).toBeCloseTo(PLAYER_BODY.crouchEyeHeight);
   });
 
   it('eases back up to the standing eye height after standing', () => {
@@ -83,10 +83,10 @@ describe('FirstPersonController eye height', () => {
     const swapDrop = standCentre - crouchCentre;
     ctrl._exitCrouch(swapDrop);   // grounded stand-up: feet stay planted
     ctrl._applyEye();
-    expect(eyeAboveFeet(ctrl, standCentre)).toBeCloseTo(0.55);   // no pop on the swap frame
+    expect(eyeAboveFeet(ctrl, standCentre)).toBeCloseTo(PLAYER_BODY.crouchEyeHeight);   // no pop on the swap frame
 
     for (let i = 0; i < 60; i++) ctrl.onUpdate(DT);
-    expect(eyeAboveFeet(ctrl, standCentre)).toBeCloseTo(1.65);
+    expect(eyeAboveFeet(ctrl, standCentre)).toBeCloseTo(PLAYER_BODY.standEyeHeight);
   });
 
   it('holds the view through a mid-air crouch (legs tuck, head stays)', () => {

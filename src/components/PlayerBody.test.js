@@ -9,13 +9,13 @@ const DOORWAY_HEIGHT = 2.2;
 describe('PlayerBody', () => {
   const body = playerBody();
 
-  it('stands 1.8 m tall tip to tip', () => {
-    expect(2 * (body.standHalf + body.radius)).toBeCloseTo(1.8);
+  it('stands 1.35 m tall tip to tip', () => {
+    expect(2 * (body.standHalf + body.radius)).toBeCloseTo(1.35);
   });
 
-  it('puts the standing eye 1.65 m above the feet', () => {
+  it('puts the standing eye 1.24 m above the feet', () => {
     const centre = body.standHalf + body.radius;
-    expect(centre + body.standEyeOffset).toBeCloseTo(1.65);
+    expect(centre + body.standEyeOffset).toBeCloseTo(1.24);
   });
 
   it('puts the crouched eye 0.55 m above the feet', () => {
@@ -24,7 +24,7 @@ describe('PlayerBody', () => {
   });
 
   it('measures eye offsets from each capsule centre', () => {
-    expect(body.standEyeOffset).toBeCloseTo(0.75);
+    expect(body.standEyeOffset).toBeCloseTo(0.565);
     expect(body.crouchEyeOffset).toBeCloseTo(0.225);
   });
 

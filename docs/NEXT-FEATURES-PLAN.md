@@ -72,12 +72,16 @@ almost at eye level, which is why everything reads as oversized.
 the 2.2 m doorways. What makes you feel tall is where the eyes are, not how
 big the collider is.
 
-| | Before | After |
-|---|---|---|
-| Standing capsule | 1.6 m | 1.8 m |
-| Standing eye height | 0.8 m | **1.65 m** (+106%) |
-| Crouch capsule | 0.65 m | 0.65 m (unchanged: must clear the desk's 0.72 m gap) |
-| Crouched eye height | 0.33 m | 0.55 m |
+| | Before | First pass | Now |
+|---|---|---|---|
+| Standing capsule | 1.6 m | 1.8 m | 1.35 m |
+| Standing eye height | 0.8 m | 1.65 m | **1.24 m** (+55%) |
+| Crouch capsule | 0.65 m | 0.65 m | 0.65 m (unchanged: must clear the desk's 0.72 m gap) |
+| Crouched eye height | 0.33 m | 0.55 m | 0.55 m |
+
+**Revised after play-testing.** The first pass felt far too tall, so
+standing is now 3/4 of it. The crouch stays, because it's fitted to the
+desk rather than to the player's height.
 
 **Design.** A pure module, `src/components/PlayerBody.js`, holds the numbers
 and derives the capsule half-heights and camera offsets from them. This
@@ -89,9 +93,9 @@ across crouch swaps, so crouching glides down instead of snapping.
 
 **Tests first**
 - `PlayerBody.test.js`
-  - standing capsule is 1.8 m tip to tip; eye is 1.65 m above the feet
+  - standing capsule is 1.35 m tip to tip; eye is 1.24 m above the feet
   - crouch capsule is below the desk's 0.72 m gap
-  - eye offsets are measured from each capsule's centre (stand: 0.75, crouch: 0.225)
+  - eye offsets are measured from each capsule's centre (stand: 0.565, crouch: 0.225)
   - the standing player fits under a 2.2 m doorway
 - `FirstPersonController.eye.test.js` (mocked Rapier)
   - at rest standing, `camera.position.y` is the standing eye offset

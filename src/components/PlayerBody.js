@@ -10,12 +10,16 @@
 // Constraints the numbers are chosen against:
 //   • standHeight  < 2.2 m  — the base's doorway height
 //   • crouchHeight < 0.72 m — the desk's under-top gap (hiding, night 2)
+//
+// Standing is 3/4 of the first eye-height pass (1.8 m, eye 1.65 m), which
+// play-testing found far too tall. The crouch is fitted to the desk, not to
+// the player's stature, so it didn't shrink with it.
 // ─────────────────────────────────────────────
 
 export const PLAYER_BODY = Object.freeze({
   radius: 0.3,
-  standHeight: 1.8,
-  standEyeHeight: 1.65,
+  standHeight: 1.35,
+  standEyeHeight: 1.24,
   crouchHeight: 0.65,
   crouchEyeHeight: 0.55,
 });
