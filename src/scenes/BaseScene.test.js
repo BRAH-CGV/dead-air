@@ -13,6 +13,14 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { EVASuit } from '../components/EVASuit.js';
+import { PRELOAD } from '../assets/manifest.js';
+
+// A full base build takes several seconds under jsdom (8–16 s when the
+// suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
+// Those timeouts were failing tests that pass on their own, so this file
+// gets a longer budget.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const EPS = 1e-6;
 
@@ -52,11 +60,47 @@ describe('BaseScene', () => {
     sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
   });
 
-  it('creates all three rooms under SceneRoot', () => {
+  it('creates all four rooms under SceneRoot', () => {
     expect(sceneRoot).toBeDefined();
     const names = sceneRoot.children.map(c => c.name);
-    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters']));
-    expect(Object.keys(scene.rooms).sort()).toEqual(['LivingQuarters', 'MainOffice', 'ServerRoom']);
+    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters', 'Room:Airlock']));
+    expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
+  });
+
+  it('butts the airlock flush on the office front wall, lined up with its front doorway', () => {
+    const office = scene.rooms.MainOffice;
+    const airlock = scene.rooms.Airlock;
+    expect(airlock.bounds().min.z).toBeCloseTo(office.bounds().max.z);
+
+    const door = office.doors.find(d => d.targetRoom === 'Airlock');
+    expect(door).toBeDefined();
+    expect(worldPos(door).x).toBeCloseTo(airlock.position[0]);
+    expect(worldPos(airlock.hatch).x).toBeCloseTo(airlock.position[0]);
+    expect(door.doorSize[0]).toBeLessThan(airlock.corridorWidth - airlock.wallThick);
+  });
+
+  it('the airlock hatch is the only way outside, and it opens for the player in the EVA suit', () => {
+    const outward = Object.values(scene.rooms).flatMap(r => r.doors).filter(d => d.targetRoom === 'Outside');
+    expect(outward).toEqual([scene.rooms.Airlock.hatch]);
+
+    expect(scene.suit).toBeInstanceOf(EVASuit);
+    expect(engine.player.getComponent(EVASuit)).toBe(scene.suit);
+
+    const { hatch } = scene.rooms.Airlock;
+    expect(hatch.locked).toBe(true);
+    scene.suit.putOn();
+    expect(hatch.locked).toBe(false);
+    scene.suit.takeOff();
+    expect(hatch.locked).toBe(true);
+  });
+
+  it('spawns only preloaded models, so nothing is fetched mid-build', () => {
+    // The real AssetManager throws on a model that isn't in the cache, and
+    // the cache only holds PRELOAD. A key left in the manifest's LIBRARY
+    // passes these tests (spawnModel is faked) and breaks the game at boot.
+    const spawned = new Set(engine.spawnModel.mock.calls.map(([key]) => key));
+    const missing = [...spawned].filter(key => !PRELOAD.includes(key));
+    expect(missing).toEqual([]);
   });
 
   it('keeps the office at the origin', () => {
@@ -115,7 +159,7 @@ describe('BaseScene', () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
     expect(sys).not.toBeNull();
     const allDoors = Object.values(scene.rooms).flatMap(r => r.doors);
-    expect(allDoors.length).toBe(5);
+    expect(allDoors.length).toBe(6);
     expect(sys.doors).toEqual(expect.arrayContaining(allDoors));
     expect(sys.rooms).toEqual(expect.arrayContaining(Object.values(scene.rooms)));
   });
@@ -230,19 +274,18 @@ describe('BaseScene', () => {
     expect(generator.powerOn).toBe(true);
   });
 
-  it('starts on night 1 with every doorway out of the office locked', () => {
-    expect(scene.nights.currentNight).toBe(1);
-    const doors = Object.values(scene.rooms).flatMap(r => r.doors);
-    for (const d of doors) expect(d.locked, d.name).toBe(true);
-  });
+  it('opens every interior door from night 1, and keeps them open every night', () => {
+    // Nights bring threats, not keys: the base is walkable from the start.
+    // Only a door onto the surface may be shut, and not by the calendar.
+    const interior = Object.values(scene.rooms).flatMap(r => r.doors)
+      .filter(d => d.targetRoom !== 'Outside');
+    expect(interior.length).toBeGreaterThan(0);
 
-  it('advancing the night unlocks the server room corridor, both ends', () => {
-    scene.nights.advance();
-    const office = scene.rooms.MainOffice.doors;
-    expect(office.find(d => d.targetRoom === 'ServerRoom').locked).toBe(false);
-    expect(scene.rooms.ServerRoom.doors[0].locked).toBe(false);
-    expect(office.find(d => d.targetRoom === 'LivingQuarters').locked).toBe(true);
-    expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
+    expect(scene.nights.currentNight).toBe(1);
+    for (const night of [1, 2, 3]) {
+      scene.nights.setNight(night);
+      for (const d of interior) expect(d.locked, `${d.name} on night ${night}`).toBe(false);
+    }
   });
 
   it('starts at the outdoor fog density, thin enough to see the valley rim', () => {
@@ -510,6 +553,20 @@ describe('BaseScene gameplay loop', () => {
   it('follows the NightManager when the night advances, so there is one night number', () => {
     scene.nights.advance();
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
+  });
+
+  it('shows the EVA suit on the HUD while the player wears it', () => {
+    const setSuit = vi.spyOn(scene.hud, 'setSuit');
+    scene.suit.putOn();
+    expect(setSuit).toHaveBeenLastCalledWith(true);
+    scene.suit.takeOff();
+    expect(setSuit).toHaveBeenLastCalledWith(false);
+
+    // And lets go of the suit on dispose.
+    scene.dispose();
+    setSuit.mockClear();
+    scene.suit.putOn();
+    expect(setSuit).not.toHaveBeenCalled();
   });
 
   it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {

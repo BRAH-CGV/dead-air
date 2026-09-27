@@ -3,7 +3,8 @@
 // ─────────────────────────────────────────────
 // Three classes wrapping DOM elements defined in index.html:
 //
-//   HUD              – clock, signal counter, night label, scan bar, prompt
+//   HUD              – clock, signal counter, night label, scan bar, prompt,
+//                      EVA suit indicator
 //   RadarOverlay     – 2D canvas radar display with signal blips
 //   SignalReviewPanel– modal for save/delete after scanning a signal
 //
@@ -22,6 +23,7 @@ export class HUD {
     this._night     = root?.querySelector('#hud-night')     ?? null;
     this._scanBar   = root?.querySelector('#hud-scan-bar')  ?? null;
     this._prompt    = root?.querySelector('#hud-prompt')    ?? null;
+    this._suit      = root?.querySelector('#hud-suit')      ?? null;
   }
 
   show() { if (this.root) this.root.style.display = 'block'; }
@@ -52,6 +54,13 @@ export class HUD {
 
   setPrompt(text) {
     if (this._prompt) this._prompt.textContent = text || '';
+  }
+
+  /** Show the EVA suit indicator while the suit is on; hidden otherwise. */
+  setSuit(worn) {
+    if (!this._suit) return;
+    this._suit.textContent = 'EVA suit on';
+    this._suit.style.display = worn ? 'block' : 'none';
   }
 }
 

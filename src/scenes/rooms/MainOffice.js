@@ -9,9 +9,10 @@ import { Room } from './Room.js';
 // security cameras, warm ceiling light and cool desk glow. Scene-wide
 // lighting (ambient, moon) belongs to the scene, not the room.
 //
-// Doorways: front (the original door) → Outside, right → ServerRoom,
-// left → LivingQuarters. The side doorways sit toward the front so they
-// clear the server rack, switchboard and radar along those walls.
+// Doorways: front (the original door) → Airlock, and through its hatch to
+// Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
+// The side doorways sit toward the front so they clear the server rack,
+// switchboard and radar along those walls.
 // ─────────────────────────────────────────────
 
 export class MainOffice extends Room {
@@ -37,7 +38,7 @@ export class MainOffice extends Room {
   }
 
   buildDoors() {
-    this.addDoor('ToOutside',        'front', 'Outside');
+    this.addDoor('ToAirlock',        'front', 'Airlock');
     this.addDoor('ToServerRoom',     'right', 'ServerRoom');
     this.addDoor('ToLivingQuarters', 'left',  'LivingQuarters');
   }

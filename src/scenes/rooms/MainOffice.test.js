@@ -141,9 +141,13 @@ describe('MainOffice', () => {
     expect(childNames(room)).toEqual(expect.arrayContaining(['LeftWall_A', 'LeftWall_B', 'LeftWall_Header']));
   });
 
-  it('keeps the original front door, leading outside', () => {
-    const front = room.doors.find(d => d.targetRoom === 'Outside');
-    expect(front.name).toBe('Door:ToOutside');
+  it('keeps the original front door, now leading into the airlock', () => {
+    // Never straight outside: this is Mars. The airlock's hatch is the door
+    // onto the surface.
+    expect(room.doors.some(d => d.targetRoom === 'Outside')).toBe(false);
+    const front = room.doors.find(d => d.targetRoom === 'Airlock');
+    expect(front.name).toBe('Door:ToAirlock');
+    expect(front.locked).toBe(false);
     expect(front.object3d.position.x).toBeCloseTo(2);
     expect(front.object3d.position.z).toBeCloseTo(5);
   });
@@ -151,7 +155,7 @@ describe('MainOffice', () => {
   it('doorways do not collide with the furniture along the side walls', () => {
     // Server rack sits against the right wall around z = -1.35, the
     // switchboard around z = 1.25; the radar against the left at z = -0.55.
-    for (const door of room.doors.filter(d => d.targetRoom !== 'Outside')) {
+    for (const door of room.doors.filter(d => d.targetRoom !== 'Airlock')) {
       const [w] = door.doorSize;
       const z = door.object3d.position.z;
       expect(z - w / 2).toBeGreaterThan(2);

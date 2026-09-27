@@ -3,7 +3,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Same recording Rapier fake as Room.test.js — see the note there.
 vi.mock('@dimforge/rapier3d', () => {
   const bodyDesc = type => {
-    const d = { type, t: { x: 0, y: 0, z: 0 }, setTranslation(x, y, z) { d.t = { x, y, z }; return d; } };
+    const d = {
+      type, t: { x: 0, y: 0, z: 0 },
+      setTranslation(x, y, z) { d.t = { x, y, z }; return d; },
+      setRotation() { return d; },   // doors carry a yaw
+    };
     return d;
   };
   return {
@@ -120,6 +124,40 @@ describe('Corridor', () => {
     // End wall spans the inside width only (width − wallThick)
     expect(a.object3d.position.z - meshSize(a)[2] / 2).toBeCloseTo(-(2 - T) / 2);
     expect(meshSize(c.root.find('RightWall_Header'))[1]).toBeCloseTo(3 - 2.2);
+  });
+
+  it('ends can be set per end: [first, second] along the axis', () => {
+    // An airlock: open where it butts against the office wall, a doorway at
+    // the far end. Along z, "first" is back (−Z) and "second" is front (+Z).
+    const c = new Corridor(engine, { ...X, axis: 'z', ends: ['open', 'doorway'] });
+    c.build();
+    expect(names(c)).toEqual([
+      'Ceiling', 'CorridorLight', 'Floor',
+      'FrontWall_A', 'FrontWall_B', 'FrontWall_Header',
+      'LeftWall', 'RightWall',
+    ]);
+    expect(c.openings.map(o => o.side)).toEqual(['front']);
+  });
+
+  it('per-end ends work along x too: [left, right]', () => {
+    const c = new Corridor(engine, { ...X, ends: ['doorway', 'open'] });
+    c.build();
+    expect(names(c).filter(n => /^(Left|Right)Wall/.test(n)))
+      .toEqual(['LeftWall_A', 'LeftWall_B', 'LeftWall_Header']);
+  });
+
+  it('a doorway end can take a door', () => {
+    const c = new Corridor(engine, { ...X, axis: 'z', ends: ['open', 'doorway'], doorWidth: 1.1 });
+    c.build();
+    const door = c.addDoor('Hatch', 'front', 'Outside');
+    expect(door.doorSize[0]).toBeCloseTo(1.1);
+    expect(door.object3d.position.z).toBeCloseTo(X.length / 2);
+    expect(() => c.addDoor('Nope', 'back', 'Office')).toThrow(/no opening/);
+  });
+
+  it('rejects a per-end ends list that is not two known modes', () => {
+    expect(() => new Corridor(engine, { ...X, ends: ['open'] })).toThrow(/ends/);
+    expect(() => new Corridor(engine, { ...X, ends: ['open', 'arch'] })).toThrow(/ends/);
   });
 
   it('every collider is on a fixed (static) body', () => {

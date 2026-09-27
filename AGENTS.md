@@ -53,7 +53,13 @@ src/
 │   └── Fullbright.js    # Unlit debug lighting (B to toggle)
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
-│   └── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
+│   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
+│   └── EVASuit.js       # On the player: worn or not, with change listeners
+├── scenes/
+│   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
+│   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
+├── systems/
+│   └── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
@@ -84,6 +90,22 @@ Crates (dynamic rigidBodies, box colliders)
 Desk (imported .glb, static auto-fitted box collider)
 ```
 
+### Base layout and doors
+
+`BaseScene` builds the whole base as one scene — nothing loads per night:
+
+```
+LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
+                                  │ front door
+                               Airlock (suit locker)
+                                  │ hatch — EVA suit on
+                               Outside (generator, dish)
+```
+
+Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the red/green hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it. An Interactable whose `promptLabel` changes while you look at it (the locker's Put on / Take off) is re-shown by `InteractionSystem` — update the label as a data field, since the base class field shadows a getter.
+
+The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
+
 ### Input system
 
 Centralized on `Engine.input`:
@@ -102,7 +124,7 @@ Three toggles, all edge-triggered and free while off:
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
-| `N` | `NightManager` (BaseScene) | Advance to the next night, unlocking its doors; wraps back to night 1 after the last |
+| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
 **DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.

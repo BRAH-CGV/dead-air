@@ -207,6 +207,12 @@ const PLACED = {
     url: 'assets/models/dish-tower.glb',
     physics: 'kinematic',
   },
+  // The airlock's suit locker.
+  'model:locker': {
+    type: 'model',
+    url: 'assets/models/locker.glb',
+    physics: 'static',
+  },
 
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {
@@ -262,11 +268,6 @@ const LIBRARY = {
   'model:couch': {
     type: 'model',
     url: 'assets/models/couch.glb',
-    physics: 'static',
-  },
-  'model:locker': {
-    type: 'model',
-    url: 'assets/models/locker.glb',
     physics: 'static',
   },
   'model:barrel': {
