@@ -20,9 +20,11 @@ import { FirstPersonController } from './FirstPersonController.js';
 
 /** @readonly */
 // Cursor movement rate in Cartesian units per second (unit-circle space).
-// Quick enough to cross the radar in a breath; one 60 fps frame still moves
-// only ~1.2° of sky, so a tap can stop inside a signal's 12° acceptance.
-const CURSOR_RATE = 1 / 1.25;  // unit/s — full radius in 1.25 seconds
+// Paced to the dish: the radius is 90° of sky (zenith to horizon), so 1/2
+// unit/s is 45°/s — Satellite.maxRotationSpeed. Any faster and the dish
+// falls further behind the longer a key is held. One 60 fps frame moves
+// 0.75° of sky, so a tap can stop inside a signal's 12° acceptance.
+const CURSOR_RATE = 1 / 2;  // unit/s — full radius in 2 seconds
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────

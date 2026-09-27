@@ -115,17 +115,24 @@ cross the radar.
 |---|---|---|
 | `Satellite.maxRotationSpeed` | π/64 (2.8°/s) | π/5 (36°/s) |
 | `Satellite.angularAccel` | 2 | raised with the damping so the dish still settles without oscillating |
-| `CURSOR_RATE` (radar radius per s) | 1/4 | 1/1.25 |
+| `CURSOR_RATE` (radar radius per s) | 1/4 | 1/2 (first pass: 1/1.25) |
 | `SignalTarget` default `scanTime` | 3 s | 2.5 s |
 
 **Target:** any signal on the radar is aimed at and scanned in under ~8 s.
+
+**Revised after play-testing.** At 1/1.25 the cursor swept 72°/s of sky
+while the dish turns at most 45°/s, so the dish fell further behind the
+longer a key was held. The cursor now crosses the 90° radius in 2 s, the
+dish's own pace: it trails by a steady ~18° while moving and is on target
+about 0.3 s after you let go.
 
 **Tests first**
 - `Satellite.test.js`: a 180° yaw slew settles within 6 s of simulated
   time; the dish comes to rest within the default signal tolerance without
   swinging back out of it (no oscillation).
 - `ComputerTerminal.test.js`: holding a direction moves the cursor from the
-  centre to the rim in ≤ 1.3 s.
+  centre to the rim in 2 s; after that sweep the real dish is on target
+  within 0.5 s of letting go.
 - `SignalTarget`/`SignalManager` test: default scan time is 2.5 s.
 
 ---

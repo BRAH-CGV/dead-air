@@ -6,8 +6,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // module is enough to let this file run.
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 
+import * as THREE from 'three';
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { Satellite } from '../gameobjects/Satellite.js';
 
 // ── Helper: convert sky coords to Cartesian cursor position ──
 function skyToCursor(yaw, pitch) {
@@ -17,6 +19,18 @@ function skyToCursor(yaw, pitch) {
 }
 
 // ── Minimal test doubles ──────────────────────────────────
+
+/** The real dish, on a bare Base → Neck_block → Dish rig, parked at the
+ *  zenith where a fresh terminal's cursor starts. */
+function makeRealDish() {
+  const root = new THREE.Object3D(); root.name = 'Base';
+  const neck = new THREE.Object3D(); neck.name = 'Neck_block';
+  const dish = new THREE.Object3D(); dish.name = 'Dish';
+  neck.add(dish);
+  root.add(neck);
+  dish.rotation.x = -Math.PI / 2;
+  return Satellite.fromObject3D(root);
+}
 
 function makeSatellite() {
   return {
@@ -114,14 +128,37 @@ describe('ComputerTerminal', () => {
     expect(term._cursorX).toBeGreaterThan(leftmost); // moved back right
   });
 
-  it('holding a direction carries the cursor from centre to rim in about a second', () => {
+  it('holding a direction carries the cursor from centre to rim in two seconds', () => {
     term.enter();
     let t = 0;
     while (Math.hypot(term._cursorX, term._cursorY) < 1 && t < 10) {
       term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
       t += 1 / 60;
     }
-    expect(t).toBeLessThanOrEqual(1.3);
+    expect(t).toBeCloseTo(2, 1);
+  });
+
+  it('keeps the dish close behind the cursor: on target within half a second of a full sweep', () => {
+    const dish = makeRealDish();
+    term.satellite = dish;
+    term.enter();
+    const dt = 1 / 60;
+    const up = { left: false, right: false, up: true, down: false };
+
+    // Zenith to horizon, the dish chasing every frame.
+    while (Math.hypot(term._cursorX, term._cursorY) < 1) {
+      term.moveCursor(up, dt);
+      dish._update(dt);
+    }
+
+    // Let go: how long until the dish could scan where the cursor stopped?
+    const goal = term._cursorToSky();
+    let t = 0;
+    while (!dish.isAimedAt(goal.yaw, goal.pitch, mgr.signals[0].tolerance) && t < 5) {
+      dish._update(dt);
+      t += dt;
+    }
+    expect(t).toBeLessThanOrEqual(0.5);
   });
 
   it('moves finely enough per frame to stop inside a signal', () => {
