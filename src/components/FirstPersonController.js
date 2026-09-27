@@ -28,6 +28,12 @@ import { Component } from '../core/Component.js';
 // headroom check) can refuse a stand-up. Jumping while crouched is allowed.
 // Everything below the input seam reads only `_wantCrouch`/`crouched`,
 // never input — which is what makes switching crouchMode a one-word change.
+//
+// Eye height: the camera hangs off the body's origin, which is the capsule
+// centre, so each capsule carries an eye offset above its centre
+// (`standEyeOffset`/`crouchEyeOffset`, from PlayerBody). A swap moves the
+// centre and changes which offset applies in the same step; `_eyeLift`
+// absorbs both so the camera's world height doesn't jump, then eases away.
 // ─────────────────────────────────────────────
 
 // A resting capsule's lowest point touches the floor exactly, and
@@ -73,6 +79,10 @@ export class FirstPersonController extends Component {
     this.crouchSpeed          = opts.crouchSpeed          ?? 2.5;
     this.crouchTransitionTime = opts.crouchTransitionTime ?? 0.2;
     this.crouchMode           = opts.crouchMode           ?? 'toggle';  // 'toggle' | 'hold'
+    // Camera height above each capsule's centre. 0 leaves the eye at the
+    // centre, which is how the controller behaved before PlayerBody.
+    this.standEyeOffset  = opts.standEyeOffset  ?? 0;
+    this.crouchEyeOffset = opts.crouchEyeOffset ?? 0;
 
     /** Public: gameplay reads this (hide-under-desk mechanic). */
     this.crouched = false;
@@ -114,6 +124,10 @@ export class FirstPersonController extends Component {
     const standH  = this.standCollider.halfHeight()  + this.standCollider.radius();
     const crouchH = this.crouchCollider.halfHeight() + this.crouchCollider.radius();
     this._swapDrop = standH - crouchH;
+    // How far the eye sits lower on the crouch capsule than on the standing
+    // one, measured from each centre — the part of a swap the centre shift
+    // alone doesn't cover.
+    this._eyeDrop = this.standEyeOffset - this.crouchEyeOffset;
 
     // Scratch vectors for input direction — nothing allocated per frame.
     this._dir = new THREE.Vector3();
@@ -151,6 +165,10 @@ export class FirstPersonController extends Component {
   // ── Variable timestep: input + mouse look ─────────────
   onUpdate(dt) {
     if (!this.gameObject || !this.camera) return;
+
+    // Before any input gate: a swap can land while input is locked (falling
+    // off a ledge at the terminal), and the eye still has to follow it.
+    this._easeEye(dt);
 
     // Input locked: skip mouse look and key sampling, but let onFixedUpdate
     // continue applying gravity and momentum.
@@ -198,13 +216,23 @@ export class FirstPersonController extends Component {
       this._wishDir.z = this._dir.z;
     }
     this._wantJump = !!input.keys[keyBinds.jump];
+  }
 
-    // ── Ease the camera to the new eye height after a swap ──
-    // The physics shift lands in one step; _eyeLift holds the camera at the
-    // old eye height for an instant, then decays to the new one.
-    const liftStep = (this._swapDrop / this.crouchTransitionTime) * dt;
+  // ── Eye height ─────────────────────────────
+
+  /** Ease the camera to the new eye height after a swap. The physics shift
+   *  lands in one step; _eyeLift holds the camera at the old eye height for
+   *  an instant, then decays to the new one at a full-crouch's pace. */
+  _easeEye(dt) {
+    const liftStep = ((this._swapDrop + this._eyeDrop) / this.crouchTransitionTime) * dt;
     this._eyeLift -= Math.sign(this._eyeLift) * Math.min(liftStep, Math.abs(this._eyeLift));
-    this.camera.position.y = this._eyeLift;
+    this._applyEye();
+  }
+
+  /** Place the camera: the current capsule's eye offset plus any lift. */
+  _applyEye() {
+    const eye = this.crouched ? this.crouchEyeOffset : this.standEyeOffset;
+    this.camera.position.y = eye + this._eyeLift;
   }
 
   // ── Late update: apply camera rotation after all other updates ──
@@ -331,18 +359,22 @@ export class FirstPersonController extends Component {
     this.standCollider.setEnabled(false);
     this.crouchCollider.setEnabled(true);
     this.gameObject.collider = this.crouchCollider;
-    this._eyeLift += this._swapDrop;   // camera world position unchanged this frame
+    // Camera world position unchanged this frame: the centre drops by
+    // _swapDrop and the eye drops by _eyeDrop relative to it.
+    this._eyeLift += this._swapDrop + this._eyeDrop;
     this.crouched = true;
     return -this._swapDrop;            // feet stay planted
   }
 
   /** Mid-air: shrink the capsule around its centre — the body stays put and
-   *  the legs tuck up (the Source crouch-jump leg-lift). The view holds too,
-   *  so there is no eye compensation. Returns the shift (0). */
+   *  the legs tuck up (the Source crouch-jump leg-lift). The centre doesn't
+   *  move, so only the eye-offset change needs compensating; the view then
+   *  eases down to crouch height. Returns the shift (0). */
   _enterCrouchAir() {
     this.standCollider.setEnabled(false);
     this.crouchCollider.setEnabled(true);
     this.gameObject.collider = this.crouchCollider;
+    this._eyeLift += this._eyeDrop;    // camera world position unchanged this frame
     this.crouched = true;
     return 0;
   }
@@ -394,7 +426,9 @@ export class FirstPersonController extends Component {
     this.crouchCollider.setEnabled(false);
     this.standCollider.setEnabled(true);
     this.gameObject.collider = this.standCollider;
-    this._eyeLift -= shiftY;           // camera world position unchanged this frame
+    // Camera world position unchanged this frame: the centre rises by
+    // shiftY and the eye rises by _eyeDrop relative to it.
+    this._eyeLift -= shiftY + this._eyeDrop;
     this.crouched = false;
     return shiftY;
   }

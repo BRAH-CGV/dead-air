@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { playerBody } from '../components/PlayerBody.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
@@ -478,13 +479,9 @@ export class Engine {
     controller.setApplyImpulsesToDynamicBodies(true);
     controller.enableSnapToGround(0.5);
 
-    const capsuleHalf = 0.5;
-    const capsuleR    = 0.3;
-
-    // Crouch clearance: the desk's under-top gap is 0.72 m (AGENTS.md worked
-    // example), so 0.65 is the tallest capsule that still fits under it.
-    const crouchHeight = 0.65;
-    const crouchHalf   = crouchHeight / 2 - capsuleR;
+    // Heights, eye offsets and the doorway / desk-gap limits they're chosen
+    // against all live in PlayerBody.
+    const body = playerBody();
 
     const rb = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased()
@@ -492,13 +489,13 @@ export class Engine {
         .lockRotations(),
     );
     const standCol  = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(capsuleHalf, capsuleR),
+      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius),
       rb,
     );
     // The crouch capsule shares the body; exactly one of the two is enabled
     // at a time and the controller swaps them (see FirstPersonController).
     const crouchCol = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(crouchHalf, capsuleR),
+      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius),
       rb,
     );
     crouchCol.setEnabled(false);
@@ -519,6 +516,8 @@ export class Engine {
       friction: 6,     // ground friction
       standCollider:  standCol,
       crouchCollider: crouchCol,
+      standEyeOffset:  body.standEyeOffset,
+      crouchEyeOffset: body.crouchEyeOffset,
       crouchSpeed: 2.5,
       crouchMode: 'toggle',   // flip to 'hold' for hold-to-crouch — nothing else changes
     });
