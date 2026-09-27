@@ -57,6 +57,25 @@ describe('prepareModel', () => {
     expect(material.emissiveIntensity).toBe(0.4);
   });
 
+  it('bakes the scale in below the root, so a spawn scale multiplies it rather than replacing it', () => {
+    const root = new THREE.Group();
+    const turned = new THREE.Group();
+    turned.rotation.x = -Math.PI / 2;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.position.set(2, 0, 0);
+    turned.add(mesh);
+    root.add(turned);
+
+    prepareModel(root, { scale: 3 });
+    expect(root.scale.toArray()).toEqual([1, 1, 1]);
+
+    root.scale.setScalar(2);   // what spawnModel does with `scale: 2`
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    expect(box.getSize(new THREE.Vector3()).x).toBeCloseTo(6);     // 1 m × 3 × 2
+    expect(box.getCenter(new THREE.Vector3()).x).toBeCloseTo(12);  // 2 m × 3 × 2
+  });
+
   describe("origin: 'floor'", () => {
     // A Sketchfab-style export: the art sits somewhere off in space, under a
     // root node turned -90° about X (their Z-up → Y-up fix).
@@ -100,8 +119,7 @@ describe('prepareModel', () => {
       expect(box.min.y).toBeCloseTo(0);
       expect(box.max.y).toBeCloseTo(2);
       expect(box.getCenter(new THREE.Vector3()).x).toBeCloseTo(0);
-      expect(root.scale.x).toBe(0.01);   // the root stays free for spawnModel to place
-      expect(root.position.toArray()).toEqual([0, 0, 0]);
+      expect(root.position.toArray()).toEqual([0, 0, 0]);   // the root stays free for spawnModel
     });
 
     it('leaves the origin where the file put it unless asked', () => {
