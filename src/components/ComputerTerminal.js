@@ -20,7 +20,9 @@ import { FirstPersonController } from './FirstPersonController.js';
 
 /** @readonly */
 // Cursor movement rate in Cartesian units per second (unit-circle space).
-const CURSOR_RATE = 1 / 4;  // unit/s — full radius in 4 seconds
+// Quick enough to cross the radar in a breath; one 60 fps frame still moves
+// only ~1.2° of sky, so a tap can stop inside a signal's 12° acceptance.
+const CURSOR_RATE = 1 / 1.25;  // unit/s — full radius in 1.25 seconds
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
