@@ -115,12 +115,19 @@ export class InteractionSystem extends Component {
     }
 
     // ── Hover callbacks + HUD prompt ──
+    // Re-shown on a new target, or when the same target changes its label
+    // (a toggle like the suit locker's "Put on" / "Take off") — never every
+    // frame for an unchanged prompt.
+    const label = this.currentTarget?.promptLabel ?? null;
     if (this.currentTarget !== this._prevTarget) {
       this._prevTarget?.onHoverEnd();
       this._prevTarget = this.currentTarget;
-      if (this.currentTarget) this.prompt?.show(this.currentTarget.promptLabel);
+      if (this.currentTarget) this.prompt?.show(label);
       else this.prompt?.hide();
+    } else if (this.currentTarget && label !== this._prevLabel) {
+      this.prompt?.show(label);
     }
+    this._prevLabel = label;
     if (this.currentTarget && this.currentHit) {
       this.currentTarget.onHover(this.currentHit);
     }

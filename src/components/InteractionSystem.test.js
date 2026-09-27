@@ -84,4 +84,26 @@ describe('InteractionSystem prompt', () => {
 
     expect(prompt.show).toHaveBeenCalledTimes(1);
   });
+
+  it('re-shows the prompt when the hovered target changes its label (a toggle)', () => {
+    // The suit locker flips between "Put on" and "Take off" while the player
+    // is still looking at it — the prompt must not keep the stale verb.
+    const target = new GameObject('Locker');
+    const interactable = target.addComponent(new class extends Interactable {
+      promptLabel = '[E] Put on EVA suit';
+    }());
+    const collider = { parent: () => ({ handle: 1 }) };
+
+    const { sys, engine, prompt } = makePlayer({
+      hit: { collider, timeOfImpact: 1 },
+    });
+    engine._bodyToGO.set(1, target);
+
+    sys.onUpdate(0);
+    interactable.promptLabel = '[E] Take off EVA suit';
+    sys.onUpdate(0);
+    sys.onUpdate(0);
+
+    expect(prompt.show.mock.calls).toEqual([['[E] Put on EVA suit'], ['[E] Take off EVA suit']]);
+  });
 });
