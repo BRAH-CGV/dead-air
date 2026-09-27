@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
+import { Bed } from '../../components/Bed.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  break room, open from night 3
@@ -13,12 +14,18 @@ import { Interactable } from '../../components/Interactable.js';
 // in `placeholderFor`, so swapping one is: add the model to the manifest,
 // replace the _placeholder call with a _spawnProp.
 //
+// The bunk is the bed: its Bed interactable (`room.bed`) is how the player
+// sleeps through the day. The scene wires the controller and fade into it.
+//
 // The doorway is in the right wall, leading back toward the office.
 // `doorOffset` slides it along the wall so BaseScene can line it up with
 // the corridor.
 // ─────────────────────────────────────────────
 
 export class LivingQuarters extends Room {
+  /** On the bunk, from buildProps(). @type {Bed|null} */
+  bed = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -63,8 +70,9 @@ export class LivingQuarters extends Room {
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
     // Back-left corner.
-    this._placeholder('Bunk', 'bunk-bed.glb',
+    const bunk = this._placeholder('Bunk', 'bunk-bed.glb',
       [-inX + 0.45, 0.85, -inZ + 1.0], [0.9, 1.7, 2.0], 0x4a5058);
+    this.bed = bunk.addComponent(new Bed());
 
     // Against the back wall, right side. Faint glow from the lit front.
     const vending = this._placeholder('VendingMachine', 'vending-machine.glb',

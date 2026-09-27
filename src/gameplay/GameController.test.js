@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GameController } from './GameController.js';
 import { NightClock } from './NightClock.js';
 import { SignalManager } from './SignalManager.js';
+import { NightManager } from '../systems/NightManager.js';
 
 function makeHUD() {
   return {
@@ -33,6 +34,19 @@ describe('GameController', () => {
     gc.satellite     = sat;
     gc.autoStart     = false;  // manual control for tests
   });
+
+  /** Save the current night's whole quota through the controller. */
+  function meetQuota() {
+    for (let id = 1; id <= mgr.required; id++) mgr.saveSignal(id);
+    gc.onSignalSaved();
+  }
+
+  /** Give the controller the engine a scene would, so it can read keys. */
+  function attachEngine() {
+    const engine = { input: { keys: {}, pressed: {} }, keyBinds: { interact: 'KeyE' } };
+    gc.gameObject = { scene: { userData: { engine } } };
+    return engine;
+  }
 
   it('starts in idle state', () => {
     expect(gc.state).toBe('idle');
@@ -78,23 +92,36 @@ describe('GameController', () => {
     expect(hud.setPrompt).toHaveBeenCalledWith('Night failed. [E] to retry');
   });
 
-  it('triggers nightComplete when quota is met before night ends', () => {
+  it('meeting the quota early keeps the shift running until 6 AM', () => {
     gc.startNight(1);  // required = 3
-    mgr.saveSignal(1);
-    mgr.saveSignal(2);
-    mgr.saveSignal(3);
+    meetQuota();
 
-    gc.onSignalSaved();  // third save triggers completion check
-    expect(gc.state).toBe('nightComplete');
+    expect(gc.state).toBe('playing');
+    expect(clock.paused).toBe(false);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+
+    gc.onUpdate(50);
+    expect(clock.currentTime).toBeCloseTo(1.0);
   });
 
-  it('does not trigger nightComplete if quota not met', () => {
+  it('does not announce the quota before it is met', () => {
     gc.startNight(1);
     mgr.saveSignal(1);
     mgr.saveSignal(2);
 
     gc.onSignalSaved();
     expect(gc.state).toBe('playing');
+    expect(hud.setPrompt).not.toHaveBeenCalledWith(expect.stringMatching(/Quota met/));
+  });
+
+  it('turns to morning at 6 AM when the quota was met, and tells the player to sleep', () => {
+    gc.startNight(1);
+    meetQuota();
+    gc.onUpdate(999);
+
+    expect(gc.state).toBe('morning');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Shift over — get some sleep (bedroom)');
+    expect(hud.setTime).toHaveBeenLastCalledWith('6:00 AM');
   });
 
   it('retryNight restarts the same night from gameOver', () => {
@@ -106,15 +133,7 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');
     expect(gc.nightNumber).toBe(2);  // same night
     expect(clock.elapsed).toBe(0);
-  });
-
-  it('nextNight advances from nightComplete', () => {
-    gc.startNight(1);
-    gc.state = 'nightComplete';
-
-    gc.nextNight();
-    expect(gc.state).toBe('playing');
-    expect(gc.nightNumber).toBe(2);
+    expect(mgr.getProgress().saved).toBe(0);
   });
 
   it('retryNight does nothing if not in gameOver', () => {
@@ -123,10 +142,100 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');  // unchanged
   });
 
-  it('nextNight does nothing if not in nightComplete', () => {
+  it('the interact key retries a failed night, as the prompt promises', () => {
+    const engine = attachEngine();
+    gc.startNight(2);
+    gc.onUpdate(999);
+    expect(gc.state).toBe('gameOver');
+
+    gc.onUpdate(0.016);                 // no key: stays failed
+    expect(gc.state).toBe('gameOver');
+
+    engine.input.pressed.KeyE = true;   // one-frame press
+    gc.onUpdate(0.016);
+    expect(gc.state).toBe('playing');
+    expect(gc.nightNumber).toBe(2);
+    expect(clock.elapsed).toBe(0);
+  });
+
+  it('the interact key does not restart a night that is still running', () => {
+    const engine = attachEngine();
     gc.startNight(1);
-    gc.nextNight();
-    expect(gc.state).toBe('playing');  // unchanged
+    gc.onUpdate(100);
+    engine.input.pressed.KeyE = true;
+    gc.onUpdate(0.016);
+    expect(clock.elapsed).toBeGreaterThan(100);
+  });
+
+  describe('sleeping through the day', () => {
+    let nights;
+
+    beforeEach(() => {
+      nights = new NightManager({ maxNight: 3 });
+      gc.bindNights(nights);
+    });
+
+    it('bindNights starts the night the NightManager is on, and follows it', () => {
+      expect(gc.state).toBe('playing');
+      expect(gc.nightNumber).toBe(1);
+
+      nights.setNight(3);
+      expect(gc.nightNumber).toBe(3);
+      expect(hud.setNight).toHaveBeenLastCalledWith(3);
+    });
+
+    it('bindNights returns an unsubscribe', () => {
+      const other = new GameController();
+      other.autoStart = false;
+      const off = other.bindNights(nights);
+      off();
+      nights.setNight(2);
+      expect(other.nightNumber).toBe(1);
+    });
+
+    it('sleep does nothing while the shift is running', () => {
+      expect(gc.sleep()).toBe(false);
+      expect(gc.state).toBe('playing');
+      expect(nights.currentNight).toBe(1);
+    });
+
+    it('sleep does nothing after a failed night', () => {
+      gc.onUpdate(999);
+      expect(gc.sleep()).toBe(false);
+      expect(gc.state).toBe('gameOver');
+      expect(nights.currentNight).toBe(1);
+    });
+
+    it('sleep in the morning advances the night and starts it at 12:00 AM', () => {
+      meetQuota();
+      gc.onUpdate(999);
+      expect(gc.state).toBe('morning');
+
+      expect(gc.sleep()).toBe(true);
+      expect(nights.currentNight).toBe(2);
+      expect(gc.nightNumber).toBe(2);
+      expect(gc.state).toBe('playing');
+      expect(clock.currentTime).toBe(0);
+      expect(clock.timeString).toBe('12:00 AM');
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 4);  // night 2's quota
+    });
+
+    it('sleeping after the last night finishes the run', () => {
+      nights.setNight(3);
+      meetQuota();
+      gc.onUpdate(999);
+      expect(gc.state).toBe('morning');
+
+      expect(gc.sleep()).toBe(true);
+      expect(gc.state).toBe('finished');
+      expect(nights.currentNight).toBe(3);
+      expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/every shift/i));
+
+      // Nothing restarts from here.
+      expect(gc.sleep()).toBe(false);
+      gc.onUpdate(999);
+      expect(gc.state).toBe('finished');
+    });
   });
 
   it('updates HUD time and signals each frame', () => {
@@ -167,13 +276,14 @@ describe('GameController', () => {
     expect(hud.setSignals).toHaveBeenCalled();
   });
 
-  it('clock does not advance while in nightComplete', () => {
+  it('the clock holds at 6:00 AM all morning', () => {
     gc.startNight(1);
-    gc.state = 'nightComplete';
-    clock.pause();
+    meetQuota();
+    gc.onUpdate(999);
 
     const before = clock.elapsed;
     gc.onUpdate(10);
     expect(clock.elapsed).toBe(before);
+    expect(clock.timeString).toBe('6:00 AM');
   });
 });

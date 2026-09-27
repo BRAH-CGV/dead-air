@@ -15,6 +15,8 @@ import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { PRELOAD } from '../assets/manifest.js';
+import { Daylight } from '../components/Daylight.js';
+import { ScreenFade } from '../ui/ScreenFade.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -553,6 +555,66 @@ describe('BaseScene gameplay loop', () => {
   it('follows the NightManager when the night advances, so there is one night number', () => {
     scene.nights.advance();
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
+  });
+
+  /** Save the night's whole quota and run the clock out: it is morning. */
+  function workTheShift() {
+    const { signalManager, gameController } = scene;
+    for (let id = 1; id <= signalManager.required; id++) signalManager.saveSignal(id);
+    gameController.onSignalSaved();
+    gameController.onUpdate(999);
+    expect(gameController.state).toBe('morning');
+  }
+
+  it('the bunk sleeps through the day to the next night, in step across NightManager, controller and HUD', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    expect(bed.controller).toBe(scene.gameController);
+    expect(bed.fade).toBeInstanceOf(ScreenFade);
+    const setNight = vi.spyOn(scene.hud, 'setNight');
+
+    workTheShift();
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toBe('[E] Sleep');
+
+    bed.onInteract({});                  // no DOM: the fade goes black at once
+    expect(scene.nights.currentNight).toBe(2);
+    expect(scene.gameController.nightNumber).toBe(2);
+    expect(scene.gameController.state).toBe('playing');
+    expect(setNight).toHaveBeenLastCalledWith(2);
+    expect(scene.nightClock.timeString).toBe('12:00 AM');
+  });
+
+  it('hangs the night clock on the office wall', () => {
+    expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
+  });
+
+  it('turns the night to day and back with the controller — sky, lights and fog', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const daylight = gameplay.getComponent(Daylight);
+    expect(daylight).not.toBeNull();
+    // Updated after the controller in the same frame, so it never lags a state.
+    expect(gameplay.components.indexOf(daylight))
+      .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
+
+    const uDawn = scene.sky.skyUniforms.uDawn;
+    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
+                    fog: engine.scene.fog.color.getHex() };
+
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(0);
+
+    workTheShift();
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(1);
+    expect(scene.ambientLight.intensity).toBeGreaterThan(night.ambient);
+    expect(scene.moonLight.intensity).toBeGreaterThan(night.sun);
+    expect(engine.scene.fog.color.getHex()).not.toBe(night.fog);
+
+    scene.rooms.LivingQuarters.bed.onInteract({});
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(0);
+    expect(scene.ambientLight.intensity).toBe(night.ambient);
+    expect(engine.scene.fog.color.getHex()).toBe(night.fog);
   });
 
   it('shows the EVA suit on the HUD while the player wears it', () => {

@@ -27,6 +27,7 @@ vi.mock('@dimforge/rapier3d', () => {
 import { MainOffice } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
+import { WallClock } from '../../gameobjects/WallClock.js';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -185,6 +186,20 @@ describe('MainOffice', () => {
     expect(room.root.find('ComputerDesk').getComponent(Interactable)).toBeNull();
   });
 
+  it('hangs a wall clock on the back wall beside the window, facing into the room', () => {
+    const clock = room.root.find('WallClock');
+    expect(clock).toBeInstanceOf(WallClock);
+    expect(room.wallClock).toBe(clock);             // the scene hands it the NightClock
+
+    const box = new THREE.Box3().setFromObject(clock.object3d);
+    expect(clock.object3d.position.z).toBeCloseTo(-4.9);   // flush on the wall's inner face
+    expect(box.min.z).toBeGreaterThan(-4.9 - 1e-6);        // not sunk into it
+    expect(box.min.x).toBeGreaterThan(4.43);               // clear of the window frame
+    expect(box.max.x).toBeLessThan(5.9);                   // clear of the right wall
+    expect(box.min.y).toBeGreaterThan(1.5);                // above the desk, readable
+    expect(box.max.y).toBeLessThan(2.9);                   // below the ceiling
+  });
+
   it('leaves global lights (ambient, moon) to the scene', () => {
     let globals = 0;
     room.root.object3d.traverse(o => { if (o.isAmbientLight || o.isDirectionalLight) globals++; });
@@ -227,6 +242,16 @@ describe('MainOffice placement', () => {
     room.dispose();
     expect(geom).toBe(true);
     expect(mat).toBe(true);
+  });
+});
+
+describe('MainOffice wall clock teardown', () => {
+  it('dispose frees the wall clock with the rest of the room', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const dispose = vi.spyOn(room.wallClock, 'dispose');
+    room.dispose();
+    expect(dispose).toHaveBeenCalled();
   });
 });
 

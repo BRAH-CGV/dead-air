@@ -54,7 +54,15 @@ src/
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
-│   └── EVASuit.js       # On the player: worn or not, with change listeners
+│   ├── EVASuit.js       # On the player: worn or not, with change listeners
+│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog
+│   └── Bed.js           # Interactable: sleep in the morning → next night
+├── gameobjects/
+│   ├── MarsSky.js       # Night/day sky dome shader, stars, moons
+│   └── WallClock.js     # Analogue clock driven by the NightClock
+├── gameplay/
+│   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
+│   └── GameController.js # playing → morning → sleep → next night
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
@@ -63,7 +71,8 @@ src/
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
-│   └── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
+│   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
+│   └── ScreenFade.js    # Fade to black and back (#fade in index.html)
 └── main.js              # Entry point: creates Engine, awaits init()
 ```
 
@@ -105,6 +114,27 @@ LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRo
 Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the red/green hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it. An Interactable whose `promptLabel` changes while you look at it (the locker's Put on / Take off) is re-shown by `InteractionSystem` — update the label as a data field, since the base class field shadows a getter.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
+
+### Shift and day
+
+A night is a shift: `NightClock` runs 12:00 → 6:00 AM, shown on the HUD and on the office's `WallClock`. `GameController` owns the state:
+
+```
+playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
+   │                            └──sleep() on the last night──▶ finished
+   └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
+```
+
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+
+- **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Dawn.** `dawnFactor(hour, state)` is 0 all night, smoothsteps to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to:
+  - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
+  - the ambient and moon lights (the moon light is the morning sun).
+  - the fog colour.
+
+  Night values are captured when `Daylight` is built, so the scene's lighting code stays the one place that defines the night.
 
 ### Input system
 

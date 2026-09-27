@@ -4,16 +4,33 @@ import { Component } from '../core/Component.js';
 // GameController  –  Top-level game state machine (Component)
 // ─────────────────────────────────────────────
 // Orchestrates the signal-collection gameplay loop. Drives the night
-// clock, updates the HUD, and manages night transitions.
+// clock, updates the HUD, and runs the day around the shift:
 //
-// State: 'idle' | 'playing' | 'nightComplete' | 'gameOver'
+//   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
+//      │                            └──sleep() on the last night──▶ finished
+//      └──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
 //
-// External references (set by OfficeScene during wiring):
+// Meeting the quota early doesn't end the shift: the player still has to
+// hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
+// signals and heats up the dust storms — so nothing happens in the morning
+// until the player goes to bed.
+//
+// State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
+//
+// External references (set by the scene during wiring):
 //   nightClock, signalManager, satellite, terminal, hud
+// and the night counter through bindNights(nights).
 // ─────────────────────────────────────────────
 
+const PROMPT = {
+  quotaMet: 'Quota met — hold out until 6:00 AM',
+  morning:  'Shift over — get some sleep (bedroom)',
+  failed:   'Night failed. [E] to retry',
+  finished: 'You made it through every shift.',
+};
+
 export class GameController extends Component {
-  /** @type {'idle'|'playing'|'nightComplete'|'gameOver'} */
+  /** @type {'idle'|'playing'|'morning'|'gameOver'|'finished'} */
   state = 'idle';
 
   /** Current night number (1-based). */
@@ -30,6 +47,9 @@ export class GameController extends Component {
   terminal = null;
   /** @type {import('../ui/HUD.js').HUD|null} */
   hud = null;
+  /** Which night it is — set through bindNights().
+   *  @type {import('../systems/NightManager.js').NightManager|null} */
+  nights = null;
 
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
@@ -54,11 +74,27 @@ export class GameController extends Component {
     this.hud?.setPrompt('');
   }
 
+  /** Follow a NightManager: start the night it is on now, and every night
+   *  it moves to after — sleeping, or the debug key. One night number for
+   *  the whole scene.
+   *  @param {import('../systems/NightManager.js').NightManager} nights
+   *  @returns {() => void} unsubscribe */
+  bindNights(nights) {
+    this._offNights?.();
+    this.nights = nights;
+    this._offNights = nights.onChange(night => this.startNight(night));
+    this.startNight(nights.currentNight);
+    return () => {
+      this._offNights?.();
+      this._offNights = null;
+    };
+  }
+
   /** Called when a signal is saved by the terminal. */
   onSignalSaved() {
     this._updateHUD();
-    if (this.signalManager?.isComplete()) {
-      this._nightComplete();
+    if (this.state === 'playing' && this.signalManager?.isComplete()) {
+      this.hud?.setPrompt(PROMPT.quotaMet);
     }
   }
 
@@ -73,10 +109,19 @@ export class GameController extends Component {
     this.startNight(this.nightNumber);
   }
 
-  /** Advance to the next night (from nightComplete). */
-  nextNight() {
-    if (this.state !== 'nightComplete') return;
-    this.startNight(this.nightNumber + 1);
+  /** Go to bed. Only the morning after a successful shift: moves to the next
+   *  night, or ends the run after the last one.
+   *  @returns {boolean} whether the player slept */
+  sleep() {
+    if (this.state !== 'morning') return false;
+    if (this.nights?.isLastNight()) {
+      this._finish();
+    } else if (this.nights) {
+      this.nights.advance();              // the bound listener starts the night
+    } else {
+      this.startNight(this.nightNumber + 1);
+    }
+    return true;
   }
 
   // ──────────────────────────────────────────────────────────
@@ -90,25 +135,41 @@ export class GameController extends Component {
       return;
     }
 
+    if (this.state === 'gameOver' && this._interactPressed()) {
+      this.retryNight();
+      return;
+    }
+
     if (this.state !== 'playing') return;
 
     // Advance the clock
     this.nightClock?.update(dt);
 
-    // Check night end
-    if (this.nightClock?.finished) {
-      if (!this.signalManager?.isComplete()) {
-        this._gameOver();
-      }
-    }
-
     // Update HUD every frame
     this._updateHUD();
+
+    // Check shift end
+    if (this.nightClock?.finished) {
+      if (this.signalManager?.isComplete()) this._morning();
+      else this._gameOver();
+    }
+  }
+
+  onDestroy() {
+    this._offNights?.();
+    this._offNights = null;
   }
 
   // ──────────────────────────────────────────────────────────
   // Private
   // ──────────────────────────────────────────────────────────
+
+  /** The interact key's one-frame press, if a scene engine is reachable. */
+  _interactPressed() {
+    const engine = this.scene?.userData?.engine;
+    if (!engine) return false;
+    return !!engine.input?.pressed?.[engine.keyBinds?.interact];
+  }
 
   _updateHUD() {
     if (!this.hud) return;
@@ -127,17 +188,14 @@ export class GameController extends Component {
     }
   }
 
-  _nightComplete() {
-    this.state = 'nightComplete';
+  _endShift(state, prompt) {
+    this.state = state;
     this.nightClock?.pause();
-    this.hud?.setPrompt(`Night ${this.nightNumber} complete! [E] to continue`);
+    this.hud?.setPrompt(prompt);
     this.hud?.setScanProgress(-1);
   }
 
-  _gameOver() {
-    this.state = 'gameOver';
-    this.nightClock?.pause();
-    this.hud?.setPrompt('Night failed. [E] to retry');
-    this.hud?.setScanProgress(-1);
-  }
+  _morning()  { this._endShift('morning',  PROMPT.morning); }
+  _gameOver() { this._endShift('gameOver', PROMPT.failed); }
+  _finish()   { this._endShift('finished', PROMPT.finished); }
 }
