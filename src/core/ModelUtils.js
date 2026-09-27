@@ -14,7 +14,12 @@ import * as THREE from 'three';
  * One-time cleanup applied to a freshly loaded model, before it is cached.
  * @param {THREE.Object3D} root
  * @param {Object} [opts]
- * @param {number}  [opts.scale]            Uniform scale baked into the root.
+ * @param {number}  [opts.scale]            Uniform scale baked into the model, below
+ *        the root: spawnModel sets the root's scale for a spawn, and a scale
+ *        on the root itself would be overwritten.
+ * @param {'floor'} [opts.origin]           'floor' moves the pivot to the middle of
+ *        the model's base, for a download modelled off in space or sunk into
+ *        its ground plane. Omitted, the pivot stays where the file put it.
  * @param {boolean} [opts.castShadow=true]
  * @param {boolean} [opts.receiveShadow=true]
  * @param {number}  [opts.anisotropy=1]     Usually renderer.capabilities.getMaxAnisotropy().
@@ -31,9 +36,11 @@ export function prepareModel(root, opts = {}) {
     receiveShadow = true,
     anisotropy = 1,
     material: materialOpts,
+    origin,
   } = opts;
 
-  if (scale !== undefined) root.scale.setScalar(scale);
+  if (scale !== undefined) scaleBelowRoot(root, scale);
+  if (origin === 'floor') moveOriginToFloor(root);
 
   root.traverse((child) => {
     if (!child.isMesh) return;
@@ -52,6 +59,32 @@ export function prepareModel(root, opts = {}) {
 
   root.updateMatrixWorld(true);
   return root;
+}
+
+/** Scale every child about the root's origin. For a uniform `s`, scaling a
+ *  child's position and scale is the same as scaling the root, since
+ *  uniform scale commutes with the child's rotation. */
+function scaleBelowRoot(root, s) {
+  for (const child of root.children) {
+    child.position.multiplyScalar(s);
+    child.scale.multiplyScalar(s);
+  }
+}
+
+/** Shift a model's contents so the middle of its base sits on the root's
+ *  origin. The children move, so the root's transform stays free for
+ *  spawnModel. Runs before collider extraction, so UCX_ proxies count
+ *  toward the base. */
+function moveOriginToFloor(root) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+
+  const base = new THREE.Vector3(
+    (box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2,
+  );
+  root.worldToLocal(base);
+  for (const child of root.children) child.position.sub(base);
 }
 
 function applyMaterialOptions(material, opts) {

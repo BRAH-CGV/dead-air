@@ -227,6 +227,19 @@ and the collider overlay (`` ` ``).
 - `LivingQuarters.test.js`: the bed is the real model with the sleep
   interactable; no vending machine; no placeholder boxes left.
 
+**As built** (where it differs from the above)
+- The ration dispenser is procedural: `vending-machine.glb` turned out to be
+  a broken 5 cm fragment. It is a box with a lit screen, a button and a
+  hatch, and an `[E] Take a food ration` stub for the stamina system.
+- No `wall-screen` in the office: the model is a 2 × 2 bank of monitors,
+  not a wall screen.
+- The bedroom desk is the existing `model:desk` (11 KB, already
+  preloaded), not `simple-desk` (2 MB).
+- Two engine fixes came with it. A manifest `scale` used to be dropped by
+  `spawnModel`; it is now baked in below the model root. There is also a
+  new manifest `origin: 'floor'` for downloads modelled off-centre (see
+  AGENTS.md → Assets).
+
 ---
 
 ## Later (not this round)

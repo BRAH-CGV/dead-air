@@ -6,10 +6,38 @@ import { LivingQuarters } from './LivingQuarters.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Bed } from '../../components/Bed.js';
+import { PRELOAD } from '../../assets/manifest.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
 }
+
+/** Real floor size [x, z] of each model, unrotated, and where its footprint
+ *  centre sits relative to its origin: the .glb's measured bounds times the
+ *  manifest and spawn scale. The fake spawnModel loads no mesh to measure.
+ *  locker.glb's origin is 0.274 m off-centre along its width (× 0.9). */
+const MODEL = {
+  Bunk:      { size: [1.08, 2.0] },
+  Lockers:   { size: [1.31, 0.44], centre: [0.246, 0.018] },
+  Desk:      { size: [1.6, 0.8] },
+  DeskChair: { size: [0.44, 0.51] },
+};
+const FURNITURE = Object.keys(MODEL);
+
+/** Floor footprint {x0, x1, z0, z1} of a spawned model, room-local, turned
+ *  by its yaw. */
+function footprint(go) {
+  const { size: [w, d], centre: [cx, cz] = [0, 0] } = MODEL[go.name];
+  const yaw = go.object3d.rotation.y;
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  const x = go.object3d.position.x + cx * cos + cz * sin;
+  const z = go.object3d.position.z - cx * sin + cz * cos;
+  const hx = (Math.abs(cos) * w + Math.abs(sin) * d) / 2;
+  const hz = (Math.abs(sin) * w + Math.abs(cos) * d) / 2;
+  return { x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz };
+}
+
+const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1;
 
 describe('LivingQuarters', () => {
   let engine, room;
@@ -40,35 +68,29 @@ describe('LivingQuarters', () => {
     expect(shifted.doors[0].object3d.position.z).toBeCloseTo(2);
   });
 
-  it('has a bunk, a vending machine and a row of lockers', () => {
-    expect(room.root.find('Bunk')).not.toBeNull();
-    expect(room.root.find('VendingMachine')).not.toBeNull();
-    expect(childNames(room).filter(n => n.startsWith('Locker_')).length).toBe(3);
-  });
-
-  it('stand-ins record which model they are waiting for, and are solid', () => {
+  it('is furnished with real models: bunk, lockers, desk and chair', () => {
     const expected = {
-      Bunk: 'bunk-bed.glb',
-      VendingMachine: 'vending-machine.glb',
-      Locker_1: 'locker.glb',
+      Bunk: 'model:bunk-bed',
+      Lockers: 'model:locker',
+      Desk: 'model:desk',
+      DeskChair: 'model:metal-chair',
     };
-    for (const [name, file] of Object.entries(expected)) {
+    for (const [name, key] of Object.entries(expected)) {
       const go = room.root.find(name);
-      expect(go.placeholderFor, name).toBe(file);
-      expect(go.rigidBody.isFixed(), name).toBe(true);
+      expect(go?.physicsAssetKey, name).toBe(key);
+      expect(go.parent, name).toBe(room.root);
+      expect(engine._rootObjects, name).not.toContain(go);          // updated once, as a room child
     }
   });
 
-  it('the vending machine is an Interactable stub for coffee/stamina (phase 10)', () => {
-    const vending = room.root.find('VendingMachine');
-    const interactable = vending.getComponent(Interactable);
-    expect(interactable).not.toBeNull();
-    expect(engine._bodyToGO.get(vending.rigidBody.handle)).toBe(vending);   // raycastable
+  it('spawns only models the scene preloads', () => {
+    const keys = engine.spawnModel.mock.calls.map(([key]) => key);
+    expect(PRELOAD).toEqual(expect.arrayContaining(keys));
+  });
 
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    interactable.onInteract({});
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('coffee'));
-    log.mockRestore();
+  it('has no vending machine and no stand-in boxes left', () => {
+    expect(room.root.find('VendingMachine')).toBeNull();
+    expect(room.root.descendants().filter(go => go.placeholderFor)).toEqual([]);
   });
 
   it('the bunk is the bed: it carries the sleep interactable, exposed for the scene to wire', () => {
@@ -79,23 +101,31 @@ describe('LivingQuarters', () => {
     expect(engine._bodyToGO.get(bunk.rigidBody.handle)).toBe(bunk);   // raycastable
   });
 
-  it('the vending machine glows faintly (dim internal light)', () => {
-    const mesh = room.root.find('VendingMachine').object3d.children.find(o => o.isMesh);
-    expect(mesh.material.emissive.getHex()).not.toBe(0);
+  it('keeps the furniture inside the room', () => {
+    const inX = room.width / 2 - room.wallThick / 2;
+    const inZ = room.depth / 2 - room.wallThick / 2;
+    for (const name of FURNITURE) {
+      const f = footprint(room.root.find(name));
+      expect(f.x0, name).toBeGreaterThan(-inX - 1e-6);
+      expect(f.x1, name).toBeLessThan(inX + 1e-6);
+      expect(f.z0, name).toBeGreaterThan(-inZ - 1e-6);
+      expect(f.z1, name).toBeLessThan(inZ + 1e-6);
+    }
   });
 
-  it('spawns the desk model', () => {
-    expect(room.root.find('Desk')).not.toBeNull();
-    expect(engine.spawnModel).toHaveBeenCalledWith('model:desk', expect.anything());
-    expect(engine._rootObjects).not.toContain(room.root.find('Desk'));
+  it('keeps a clear metre along the right wall, so the doorway works wherever doorOffset puts it', () => {
+    const inX = room.width / 2 - room.wallThick / 2;
+    for (const name of FURNITURE) {
+      expect(footprint(room.root.find(name)).x1, name).toBeLessThan(inX - 1);
+    }
   });
 
-  it('keeps furniture clear of the doorway', () => {
-    // Doorway on the right wall (x = +3) at z = 0: nothing within 1.2 m of it.
-    for (const go of room.root.children) {
-      if (!/^(Bunk|VendingMachine|Locker_|Desk)/.test(go.name)) continue;
-      const { x, z } = go.object3d.position;
-      expect(Math.hypot(x - 3, z), go.name).toBeGreaterThan(1.2);
+  it('stands the furniture apart, nothing overlapping', () => {
+    const prints = FURNITURE.map(name => [name, footprint(room.root.find(name))]);
+    for (const [i, [a, fa]] of prints.entries()) {
+      for (const [b, fb] of prints.slice(i + 1)) {
+        expect(overlaps(fa, fb), `${a} overlaps ${b}`).toBe(false);
+      }
     }
   });
 
@@ -110,12 +140,9 @@ describe('LivingQuarters', () => {
     expect(globals).toBe(0);
   });
 
-  it('dispose frees the stand-in materials it created', () => {
-    const mesh = room.root.find('VendingMachine').object3d.children.find(o => o.isMesh);
-    let disposed = false;
-    mesh.material.addEventListener('dispose', () => { disposed = true; });
+  it('dispose removes every body, the furniture included', () => {
+    expect(engine._bodyToGO.get(room.bed.gameObject.rigidBody.handle)).toBe(room.bed.gameObject);
     room.dispose();
-    expect(disposed).toBe(true);
     expect(engine.world.bodies.len()).toBe(0);
   });
 });

@@ -56,6 +56,78 @@ describe('prepareModel', () => {
     expect(material.emissive.getHex()).toBe(0x3a6bff);
     expect(material.emissiveIntensity).toBe(0.4);
   });
+
+  it('bakes the scale in below the root, so a spawn scale multiplies it rather than replacing it', () => {
+    const root = new THREE.Group();
+    const turned = new THREE.Group();
+    turned.rotation.x = -Math.PI / 2;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    mesh.position.set(2, 0, 0);
+    turned.add(mesh);
+    root.add(turned);
+
+    prepareModel(root, { scale: 3 });
+    expect(root.scale.toArray()).toEqual([1, 1, 1]);
+
+    root.scale.setScalar(2);   // what spawnModel does with `scale: 2`
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    expect(box.getSize(new THREE.Vector3()).x).toBeCloseTo(6);     // 1 m × 3 × 2
+    expect(box.getCenter(new THREE.Vector3()).x).toBeCloseTo(12);  // 2 m × 3 × 2
+  });
+
+  describe("origin: 'floor'", () => {
+    // A Sketchfab-style export: the art sits somewhere off in space, under a
+    // root node turned -90° about X (their Z-up → Y-up fix).
+    function offCentreModel(size, centre) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size));
+      const turned = new THREE.Group();
+      turned.rotation.x = -Math.PI / 2;
+      // In the turned node's frame, world (x, y, z) is local (x, -z, y).
+      mesh.position.set(centre[0], -centre[2], centre[1]);
+      mesh.rotation.x = Math.PI / 2;
+      turned.add(mesh);
+      const root = new THREE.Group();
+      root.add(turned);
+      return root;
+    }
+
+    const boundsOf = root => {
+      root.updateMatrixWorld(true);
+      return new THREE.Box3().setFromObject(root);
+    };
+
+    it('moves the origin to the middle of the base, so position means "stands here"', () => {
+      const root = offCentreModel([2, 4, 6], [10, 5, -20]);   // base at y 3, far off-centre
+
+      prepareModel(root, { origin: 'floor' });
+
+      const box = boundsOf(root);
+      expect(box.min.y).toBeCloseTo(0);
+      expect((box.min.x + box.max.x) / 2).toBeCloseTo(0);
+      expect((box.min.z + box.max.z) / 2).toBeCloseTo(0);
+      const size = box.getSize(new THREE.Vector3());
+      [2, 4, 6].forEach((v, i) => expect(size.getComponent(i)).toBeCloseTo(v));   // moved, not resized
+    });
+
+    it("works in the model's own units, so the manifest scale still applies on top", () => {
+      const root = offCentreModel([100, 200, 100], [300, 50, 0]);   // centimetres, sunk 50 cm
+
+      prepareModel(root, { scale: 0.01, origin: 'floor' });
+
+      const box = boundsOf(root);
+      expect(box.min.y).toBeCloseTo(0);
+      expect(box.max.y).toBeCloseTo(2);
+      expect(box.getCenter(new THREE.Vector3()).x).toBeCloseTo(0);
+      expect(root.position.toArray()).toEqual([0, 0, 0]);   // the root stays free for spawnModel
+    });
+
+    it('leaves the origin where the file put it unless asked', () => {
+      const root = offCentreModel([2, 4, 6], [10, 5, -20]);
+      prepareModel(root);
+      expect(boundsOf(root).getCenter(new THREE.Vector3()).x).toBeCloseTo(10);
+    });
+  });
 });
 
 describe('extractColliderMeshes', () => {
