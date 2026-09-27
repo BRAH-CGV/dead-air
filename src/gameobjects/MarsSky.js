@@ -52,6 +52,16 @@ import { GameObject } from '../core/GameObject.js';
 // horizontal, rising to the right; negative falls to the right). The defaults
 // bring it in across the top-left of the window and set it into the horizon on
 // the right, just under Deimos. Its brightest stretch is at the pinned point.
+//
+// ── Dawn ──
+// `skyUniforms.uDawn` runs 0 (night) → 1 (day) and is the one knob the game
+// turns — Daylight sets it from the clock. Both shaders read it: the dome
+// blends the night gradient (Milky Way included) into the butterscotch day
+// gradient, and the stars fade out. On top, a blue glow gathers round the
+// Sun on the horizon: Martian dust scatters blue light forward, so the sky
+// is blue around the Sun at sunrise — the reverse of Earth. The Sun rises
+// inside the office window (sunAzimuth, same convention as the moons), so the
+// dawn is seen from the desk.
 // ─────────────────────────────────────────────
 
 /** Sphere radius for the dome, in metres. Comfortably inside the camera's
@@ -93,6 +103,16 @@ const DEFAULT_MILKY_WAY = {
   starFraction: 0.35,
 };
 
+const DEFAULT_DAY = {
+  // Sunlit dust: pale butterscotch at the horizon, deeper and browner overhead.
+  horizonColor: 0xd9b48a,
+  zenithColor:  0xa8764f,
+  // The blue that gathers round the rising Sun.
+  sunriseColor: 0x5b8fd6,
+  // Left of centre in the window, clear of both moons.
+  sunAzimuth:   -35,
+};
+
 const UP = new THREE.Vector3(0, 1, 0);
 
 /**
@@ -103,6 +123,10 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {number} [opts.horizonColor]     Hex colour at the horizon.
  * @param {number} [opts.zenithColor]      Hex colour straight up.
  * @param {number} [opts.horizonExponent]  Higher keeps the horizon haze lower.
+ * @param {number} [opts.dayHorizonColor]  Hex horizon colour at full day.
+ * @param {number} [opts.dayZenithColor]   Hex zenith colour at full day.
+ * @param {number} [opts.sunriseColor]     Hex colour of the glow round the Sun.
+ * @param {number} [opts.sunAzimuth]       Where the Sun rises, in degrees.
  * @param {number} [opts.starCount]        Number of stars over the whole sphere.
  * @param {number} [opts.starSize]         Star sprite size in pixels.
  * @param {number} [opts.starBrightness]
@@ -126,6 +150,10 @@ export function createMarsSky(opts = {}) {
     starSize        = 6,
     starBrightness  = 1.0,
     starColor       = 0xdfe6f0,
+    dayHorizonColor = DEFAULT_DAY.horizonColor,
+    dayZenithColor  = DEFAULT_DAY.zenithColor,
+    sunriseColor    = DEFAULT_DAY.sunriseColor,
+    sunAzimuth      = DEFAULT_DAY.sunAzimuth,
   } = opts;
 
   const milkyWay = { ...DEFAULT_MILKY_WAY, ...opts.milkyWay };
@@ -139,7 +167,9 @@ export function createMarsSky(opts = {}) {
 
   // Shared by reference with the star material, so ticking skyUniforms.uTime
   // drives both without SkyFollow needing to know there are two materials.
+  // uDawn is shared the same way, for Daylight.
   const uTime = { value: 0 };
+  const uDawn = { value: 0 };
 
   const domeUniforms = {
     uHorizonColor:    { value: new THREE.Color(horizonColor) },
@@ -150,6 +180,11 @@ export function createMarsSky(opts = {}) {
     uBandWidth:       { value: milkyWay.width },
     uBandIntensity:   { value: milkyWay.intensity },
     uBandColor:       { value: new THREE.Color(milkyWay.color) },
+    uDawn,
+    uDayHorizonColor: { value: new THREE.Color(dayHorizonColor) },
+    uDayZenithColor:  { value: new THREE.Color(dayZenithColor) },
+    uSunriseColor:    { value: new THREE.Color(sunriseColor) },
+    uSunDir:          { value: directionFromAngles(sunAzimuth, 0) },
   };
 
   const dome = new THREE.Mesh(
@@ -171,7 +206,7 @@ export function createMarsSky(opts = {}) {
 
   const stars = createStarField({
     count: starCount, radius, size: starSize,
-    brightness: starBrightness, color: starColor, uTime,
+    brightness: starBrightness, color: starColor, uTime, uDawn,
     // Stars hug the plane more tightly than the glow does, so the band reads
     // as a dense stream of stars sitting inside a softer haze.
     band: { ...band, fraction: milkyWay.starFraction, spread: milkyWay.width * 0.7 },
@@ -199,7 +234,7 @@ export function createMarsSky(opts = {}) {
  * Real points have no lattice to disagree with, so density is a plain number
  * and dispersion is uniform by construction.
  */
-function createStarField({ count, radius, size, brightness, color, uTime, band }) {
+function createStarField({ count, radius, size, brightness, color, uTime, uDawn, band }) {
   const positions  = new Float32Array(count * 3);
   const phases     = new Float32Array(count);
   const magnitudes = new Float32Array(count);
@@ -245,6 +280,7 @@ function createStarField({ count, radius, size, brightness, color, uTime, band }
   const stars = new THREE.Points(geometry, new THREE.ShaderMaterial({
     uniforms: {
       uTime,
+      uDawn,
       uStarSize:       { value: size },
       uStarBrightness: { value: brightness },
       uStarColor:      { value: new THREE.Color(color) },
@@ -379,6 +415,12 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   uniform float uBandIntensity;
   uniform vec3  uBandColor;
 
+  uniform float uDawn;
+  uniform vec3  uDayHorizonColor;
+  uniform vec3  uDayZenithColor;
+  uniform vec3  uSunriseColor;
+  uniform vec3  uSunDir;
+
   varying vec3 vWorldDir;
 
   float hash13(vec3 p) {
@@ -439,12 +481,18 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
     // the band's plane and core distances would pick up as drift.
     vec3 dir = normalize(vWorldDir);
 
-    vec3 color = mix(
-      uHorizonColor,
-      uZenithColor,
-      pow(clamp(dir.y, 0.0, 1.0), 1.0 / uHorizonExponent)
-    );
-    color += milkyWay(dir);
+    float height = pow(clamp(dir.y, 0.0, 1.0), 1.0 / uHorizonExponent);
+
+    vec3 night = mix(uHorizonColor, uZenithColor, height) + milkyWay(dir);
+    vec3 day   = mix(uDayHorizonColor, uDayZenithColor, height);
+    vec3 color = mix(night, day, uDawn);
+
+    // Blue round the Sun, hugging the horizon. It builds with the dawn, peaks
+    // just before full day, and settles to half in the morning while the Sun
+    // is still low: uDawn * (1.5 - uDawn) is 0 → 0.56 at 0.75 → 0.5 at 1.
+    float nearSun = pow(max(dot(dir, uSunDir), 0.0), 6.0);
+    float lowSky  = 1.0 - smoothstep(0.0, 0.4, dir.y);
+    color += uSunriseColor * nearSun * lowSky * uDawn * (1.5 - uDawn);
 
     gl_FragColor = vec4(color, 1.0);
 
@@ -485,6 +533,7 @@ const STAR_FRAGMENT_SHADER = /* glsl */`
 
   uniform vec3  uStarColor;
   uniform float uStarBrightness;
+  uniform float uDawn;
 
   varying float vBrightness;
 
@@ -495,7 +544,8 @@ const STAR_FRAGMENT_SHADER = /* glsl */`
     float falloff = 1.0 - smoothstep(0.0, 1.0, d);
     if (falloff <= 0.0) discard;
 
-    float alpha = falloff * falloff * vBrightness * uStarBrightness;
+    // Daylight drowns the stars.
+    float alpha = falloff * falloff * vBrightness * uStarBrightness * (1.0 - uDawn);
     gl_FragColor = vec4(uStarColor * alpha, alpha);
 
     #include <tonemapping_fragment>

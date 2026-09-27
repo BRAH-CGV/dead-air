@@ -319,3 +319,60 @@ describe('moon glow', () => {
     expect(moonBody(sky, 'Deimos')).toBeDefined();
   });
 });
+
+// ─────────────────────────────────────────────
+// Dawn — the state-driven uniform
+// ─────────────────────────────────────────────
+// uDawn runs 0 (night) → 1 (day). Daylight sets it from the game clock; the
+// shaders do the blending. What they paint is checked in the browser — here,
+// only that the uniform exists, is shared and is actually read.
+
+describe('dawn uniform', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+  const domeOf  = (sky) => findMesh(sky, 'MarsSkyDome');
+
+  it('starts at night', () => {
+    expect(createMarsSky().skyUniforms.uDawn.value).toBe(0);
+  });
+
+  it('is one uniform shared by the dome and the stars, so one write drives both', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.skyUniforms.uDawn.value = 0.4;
+
+    expect(domeOf(sky).material.uniforms.uDawn.value).toBe(0.4);
+    expect(starsOf(sky).material.uniforms.uDawn.value).toBe(0.4);
+  });
+
+  it('is read by both fragment shaders', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    expect(domeOf(sky).material.fragmentShader).toMatch(/uniform float uDawn;/);
+    expect(starsOf(sky).material.fragmentShader).toMatch(/uniform float uDawn;/);
+  });
+
+  it('carries a butterscotch day gradient, tunable like the night one', () => {
+    const sky = createMarsSky({ dayHorizonColor: 0x112233, dayZenithColor: 0x445566 });
+    expect(sky.skyUniforms.uDayHorizonColor.value.getHex()).toBe(0x112233);
+    expect(sky.skyUniforms.uDayZenithColor.value.getHex()).toBe(0x445566);
+
+    // Default day: warm — more red than blue, at the horizon and overhead.
+    const day = createMarsSky().skyUniforms;
+    for (const key of ['uDayHorizonColor', 'uDayZenithColor']) {
+      const { r, b } = day[key].value;
+      expect(r).toBeGreaterThan(b);
+    }
+  });
+
+  it('glows blue around the rising Sun — Martian twilight is blue', () => {
+    const { uSunriseColor } = createMarsSky().skyUniforms;
+    const { r, b } = uSunriseColor.value;
+    expect(b).toBeGreaterThan(r);
+  });
+
+  it('rises on the horizon inside the office window, so the dawn is seen from the desk', () => {
+    const dir = createMarsSky().skyUniforms.uSunDir.value;
+    expect(dir.length()).toBeCloseTo(1);
+    expect(Math.abs(dir.y)).toBeLessThan(0.05);               // on the horizon
+    const azimuth = THREE.MathUtils.radToDeg(Math.atan2(dir.x, -dir.z));
+    expect(Math.abs(azimuth)).toBeLessThan(41);                // window: ±41°
+  });
+});
