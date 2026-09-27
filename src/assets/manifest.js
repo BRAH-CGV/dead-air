@@ -216,6 +216,38 @@ const PLACED = {
     url: 'assets/models/locker.glb',
     physics: 'static',
   },
+  // Office furniture. Scales take each download to real size: a 0.9 m
+  // chair, 0.5 m bin, 1.9 m shelf, 0.57 m extinguisher, 0.74 × 1 m poster.
+  'model:metal-chair': {
+    type: 'model',
+    url: 'assets/models/metal-chair.glb',
+    scale: 0.365,
+    physics: 'static',
+  },
+  'model:trash-bin': {
+    type: 'model',
+    url: 'assets/models/trash-bin.glb',
+    scale: 0.25,
+    physics: 'static',
+  },
+  'model:shelf': {
+    type: 'model',
+    url: 'assets/models/shelf.glb',
+    scale: 0.9,
+    physics: 'static',
+  },
+  'model:fire-extinguisher': {
+    type: 'model',
+    url: 'assets/models/fire-extinguisher.glb',
+    scale: 0.012,
+    origin: 'floor',
+    physics: 'static',
+  },
+  'model:poster': {
+    type: 'model',
+    url: 'assets/models/poster.glb',
+    scale: 0.008,
+  },
 
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {
@@ -278,11 +310,6 @@ const LIBRARY = {
     url: 'assets/models/barrel.glb',
     physics: 'static',
   },
-  'model:shelf': {
-    type: 'model',
-    url: 'assets/models/shelf.glb',
-    physics: 'static',
-  },
   'model:soap-dispenser': {
     type: 'model',
     url: 'assets/models/soap-dispenser.glb',
@@ -291,10 +318,6 @@ const LIBRARY = {
     type: 'model',
     url: 'assets/models/vending-machine.glb',
     physics: 'static',
-  },
-  'model:poster': {
-    type: 'model',
-    url: 'assets/models/poster.glb',
   },
   'model:bush': {
     type: 'model',
@@ -315,10 +338,6 @@ const LIBRARY = {
     url: 'assets/models/door-interior.glb',
     physics: 'static',
   },
-  'model:fire-extinguisher': {
-    type: 'model',
-    url: 'assets/models/fire-extinguisher.glb',
-  },
   'model:generator': {
     type: 'model',
     url: 'assets/models/generator.glb',
@@ -328,19 +347,9 @@ const LIBRARY = {
     type: 'model',
     url: 'assets/models/light-ceiling.glb',
   },
-  'model:metal-chair': {
-    type: 'model',
-    url: 'assets/models/metal-chair.glb',
-    physics: 'static',
-  },
   'model:simple-desk': {
     type: 'model',
     url: 'assets/models/simple-desk.glb',
-    physics: 'static',
-  },
-  'model:trash-bin': {
-    type: 'model',
-    url: 'assets/models/trash-bin.glb',
     physics: 'static',
   },
   'model:wall-light': {
