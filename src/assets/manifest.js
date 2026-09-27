@@ -210,14 +210,23 @@ const PLACED = {
     url: 'assets/models/dish-tower.glb',
     physics: 'kinematic',
   },
-  // The airlock's suit locker.
+  // The airlock's suit locker, and the bedroom's lockers.
   'model:locker': {
     type: 'model',
     url: 'assets/models/locker.glb',
     physics: 'static',
   },
-  // Office furniture. Scales take each download to real size: a 0.9 m
-  // chair, 0.5 m bin, 1.9 m shelf, 0.57 m extinguisher, 0.74 × 1 m poster.
+  // The bedroom's bunk: the bed you sleep through the day in. Modelled
+  // around its centre, so `origin: 'floor'` stands it on the floor.
+  'model:bunk-bed': {
+    type: 'model',
+    url: 'assets/models/bunk-bed.glb',
+    origin: 'floor',
+    physics: 'static',
+  },
+  // Office furniture; the chair is in the bedroom too. Scales take each
+  // download to real size: a 0.9 m chair, 0.5 m bin, 1.9 m shelf, 0.57 m
+  // extinguisher, 0.74 × 1 m poster.
   'model:metal-chair': {
     type: 'model',
     url: 'assets/models/metal-chair.glb',
@@ -293,11 +302,6 @@ const LIBRARY = {
   'model:server-rack-tall': {
     type: 'model',
     url: 'assets/models/server-rack-tall.glb',
-    physics: 'static',
-  },
-  'model:bunk-bed': {
-    type: 'model',
-    url: 'assets/models/bunk-bed.glb',
     physics: 'static',
   },
   'model:couch': {
