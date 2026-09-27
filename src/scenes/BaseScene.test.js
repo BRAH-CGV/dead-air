@@ -15,6 +15,12 @@ import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { EVASuit } from '../components/EVASuit.js';
 
+// A full base build takes several seconds under jsdom (8–16 s when the
+// suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
+// Those timeouts were failing tests that pass on their own, so this file
+// gets a longer budget.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const EPS = 1e-6;
 
 function makeSceneEngine() {
