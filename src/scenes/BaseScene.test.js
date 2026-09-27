@@ -13,6 +13,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { EVASuit } from '../components/EVASuit.js';
 
 const EPS = 1e-6;
 
@@ -52,11 +53,38 @@ describe('BaseScene', () => {
     sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
   });
 
-  it('creates all three rooms under SceneRoot', () => {
+  it('creates all four rooms under SceneRoot', () => {
     expect(sceneRoot).toBeDefined();
     const names = sceneRoot.children.map(c => c.name);
-    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters']));
-    expect(Object.keys(scene.rooms).sort()).toEqual(['LivingQuarters', 'MainOffice', 'ServerRoom']);
+    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters', 'Room:Airlock']));
+    expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
+  });
+
+  it('butts the airlock flush on the office front wall, lined up with its front doorway', () => {
+    const office = scene.rooms.MainOffice;
+    const airlock = scene.rooms.Airlock;
+    expect(airlock.bounds().min.z).toBeCloseTo(office.bounds().max.z);
+
+    const door = office.doors.find(d => d.targetRoom === 'Airlock');
+    expect(door).toBeDefined();
+    expect(worldPos(door).x).toBeCloseTo(airlock.position[0]);
+    expect(worldPos(airlock.hatch).x).toBeCloseTo(airlock.position[0]);
+    expect(door.doorSize[0]).toBeLessThan(airlock.corridorWidth - airlock.wallThick);
+  });
+
+  it('the airlock hatch is the only way outside, and it opens for the player in the EVA suit', () => {
+    const outward = Object.values(scene.rooms).flatMap(r => r.doors).filter(d => d.targetRoom === 'Outside');
+    expect(outward).toEqual([scene.rooms.Airlock.hatch]);
+
+    expect(scene.suit).toBeInstanceOf(EVASuit);
+    expect(engine.player.getComponent(EVASuit)).toBe(scene.suit);
+
+    const { hatch } = scene.rooms.Airlock;
+    expect(hatch.locked).toBe(true);
+    scene.suit.putOn();
+    expect(hatch.locked).toBe(false);
+    scene.suit.takeOff();
+    expect(hatch.locked).toBe(true);
   });
 
   it('keeps the office at the origin', () => {
@@ -115,7 +143,7 @@ describe('BaseScene', () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
     expect(sys).not.toBeNull();
     const allDoors = Object.values(scene.rooms).flatMap(r => r.doors);
-    expect(allDoors.length).toBe(5);
+    expect(allDoors.length).toBe(6);
     expect(sys.doors).toEqual(expect.arrayContaining(allDoors));
     expect(sys.rooms).toEqual(expect.arrayContaining(Object.values(scene.rooms)));
   });

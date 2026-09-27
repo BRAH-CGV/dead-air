@@ -17,7 +17,9 @@ import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
+import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
+import { EVASuit } from '../components/EVASuit.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
@@ -27,13 +29,17 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
 // ─────────────────────────────────────────────
-// Three rooms joined by corridors, plus the small outside area — all of it
-// standing on the Mars valley (MarsTerrain), under the procedural night sky
-// and its two moons (MarsSky). Nothing is loaded per night, and every
-// interior door is open from night 1 — NightManager only counts nights.
+// Three rooms joined by corridors, an airlock, and the small outside area —
+// all of it standing on the Mars valley (MarsTerrain), under the procedural
+// night sky and its two moons (MarsSky). Nothing is loaded per night, and
+// every interior door is open from night 1 — NightManager only counts
+// nights. The one door that stays shut is the airlock hatch, and it opens
+// for the EVA suit (on the player), not for a night.
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
+//                                  Airlock (suit locker)
+//                                     │ hatch — suit on
 //                                  Outside (generator, satellite)
 //
 // The office sits at the origin. Everything else is placed from the rooms'
@@ -94,13 +100,16 @@ const DISH_LANE = Math.atan2(-25, 0);
 const BUGGY_SCALE = 0.75;
 
 export class BaseScene extends Scene {
-  /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
+  /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
   rooms = {};
   /** @type {{OfficeToServer: Corridor, OfficeToQuarters: Corridor}} */
   corridors = {};
   /** Which night it is. The game controller follows it.
    *  @type {NightManager|null} */
   nights = null;
+  /** The player's EVA suit — the airlock hatch follows it.
+   *  @type {EVASuit|null} */
+  suit = null;
 
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
@@ -184,7 +193,14 @@ export class BaseScene extends Scene {
     server.position   = [ officeEdge + CORRIDOR_LENGTH + server.wallThick / 2 + server.width / 2, 0, SIDE_ROOM_Z];
     quarters.position = [-(officeEdge + CORRIDOR_LENGTH + quarters.wallThick / 2 + quarters.width / 2), 0, SIDE_ROOM_Z];
 
-    this.rooms = { MainOffice: office, ServerRoom: server, LivingQuarters: quarters };
+    // The airlock's open end sits on the office's front outer wall face,
+    // centred on the front doorway — the office doorway is its way in.
+    const airlock = new Airlock(engine);
+    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
+    airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
+
+    this.rooms = { MainOffice: office, ServerRoom: server, LivingQuarters: quarters, Airlock: airlock };
     for (const room of Object.values(this.rooms)) this._sceneRoot.addChild(room.build());
 
     this._doorZ = { right: doorZ('right'), left: doorZ('left') };
@@ -386,7 +402,7 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
-  // Outside area (night 3)
+  // Outside area (through the airlock, suit on)
   // ──────────────────────────────────────────
   _buildOutside() {
     const { engine } = this;
@@ -550,6 +566,11 @@ export class BaseScene extends Scene {
     });
     transitions.onRoomChange = room => this._applyRoomFog(room);
     engine.player.addComponent(transitions);
+
+    // The suit rides on the player; the hatch follows it however it changes,
+    // not only through the locker.
+    this.suit = engine.player.addComponent(new EVASuit());
+    this.rooms.Airlock.bindSuit(this.suit);
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the
