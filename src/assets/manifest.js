@@ -50,6 +50,9 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  * @property {'model'} type
  * @property {string}  url             Relative path under `public/`.
  * @property {number}  [scale]         Uniform scale baked in once, at load time.
+ * @property {'floor'} [origin]        'floor' re-centres a download whose pivot is off
+ *           in space or sunk into its ground plane, so `position` is where
+ *           the middle of its base stands. Also at load time.
  * @property {boolean} [castShadow]    Default true.
  * @property {boolean} [receiveShadow] Default true.
  * @property {{ side?: 'front'|'back'|'double', depthWrite?: boolean, transmission?: number,

@@ -15,6 +15,9 @@ import * as THREE from 'three';
  * @param {THREE.Object3D} root
  * @param {Object} [opts]
  * @param {number}  [opts.scale]            Uniform scale baked into the root.
+ * @param {'floor'} [opts.origin]           'floor' moves the pivot to the middle of
+ *        the model's base, for a download modelled off in space or sunk into
+ *        its ground plane. Omitted, the pivot stays where the file put it.
  * @param {boolean} [opts.castShadow=true]
  * @param {boolean} [opts.receiveShadow=true]
  * @param {number}  [opts.anisotropy=1]     Usually renderer.capabilities.getMaxAnisotropy().
@@ -31,9 +34,11 @@ export function prepareModel(root, opts = {}) {
     receiveShadow = true,
     anisotropy = 1,
     material: materialOpts,
+    origin,
   } = opts;
 
   if (scale !== undefined) root.scale.setScalar(scale);
+  if (origin === 'floor') moveOriginToFloor(root);
 
   root.traverse((child) => {
     if (!child.isMesh) return;
@@ -52,6 +57,22 @@ export function prepareModel(root, opts = {}) {
 
   root.updateMatrixWorld(true);
   return root;
+}
+
+/** Shift a model's contents so the middle of its base sits on the root's
+ *  origin. The children move, in the model's own units, so the root's
+ *  transform stays free for the manifest scale and for spawnModel. Runs
+ *  before collider extraction, so UCX_ proxies count toward the base. */
+function moveOriginToFloor(root) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+
+  const base = new THREE.Vector3(
+    (box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2,
+  );
+  root.worldToLocal(base);
+  for (const child of root.children) child.position.sub(base);
 }
 
 function applyMaterialOptions(material, opts) {
