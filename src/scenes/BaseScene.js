@@ -20,11 +20,13 @@ import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { EVASuit } from '../components/EVASuit.js';
+import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { ScreenFade } from '../ui/ScreenFade.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -48,8 +50,12 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// Until gameplay drives the nights, press N (Engine keyBinds.nextNight) to
-// advance; it wraps back to night 1 after the last.
+// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. The last hour brings the dawn (Daylight
+// turns the sky, lights and fog to the Martian day). A met quota makes it
+// morning, and the bunk in LivingQuarters sleeps through the day to the next
+// night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
+// night 1 after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -297,12 +303,31 @@ export class BaseScene extends Scene {
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on
-    // their own — otherwise pressing N would move to night 2 while the HUD
-    // still read "Night 1". autoStart is off for the same reason: it
-    // hardcodes night 1.
+    // their own — otherwise sleeping (or pressing N) would move to night 2
+    // while the HUD still read "Night 1". autoStart is off for the same
+    // reason: it hardcodes night 1.
     this.gameController.autoStart = false;
-    this.gameController.startNight(this.nights.currentNight);
-    this._offNightStart = this.nights.onChange(night => this.gameController.startNight(night));
+    this._offNightStart = this.gameController.bindNights(this.nights);
+
+    // The day. Added after the controller so, within a frame, it reads the
+    // state the controller has just moved to.
+    this.daylight = gameplayGO.addComponent(new Daylight({
+      controller: this.gameController,
+      sky:        this.sky,
+      ambient:    this.ambientLight,
+      sun:        this.moonLight,
+      fog:        this.engine.scene.fog,
+    }));
+
+    // Rooms build the clock and the bed; gameplay is handed to them here.
+    const { wallClock } = this.rooms.MainOffice;
+    if (wallClock) wallClock.clock = this.nightClock;
+    this.screenFade = new ScreenFade();
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) {
+      bed.controller = this.gameController;
+      bed.fade       = this.screenFade;
+    }
 
     this.hud.setSuit(this.suit.worn);
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
@@ -320,6 +345,7 @@ export class BaseScene extends Scene {
     sky.addComponent(new SkyFollow());
     skyGroup.addChild(sky);
     this._ownResourcesOf(sky);
+    this.sky = sky;   // Daylight turns its uDawn
 
     // Remember the fog we were handed before touching it. Scene teardown
     // never resets scene.fog, and both halves of the pair are ours now: the
@@ -366,7 +392,9 @@ export class BaseScene extends Scene {
     // Down from 1.0: the valley was reading as dusk rather than night once
     // there was scenery out there to light. The rooms carry their own lamps,
     // so this is the fill the windows look out on.
-    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 0.72));
+    // Daylight reads these night values as its starting point.
+    this.ambientLight = new THREE.AmbientLight(0x435472, 0.72);
+    ambientGO.object3d.add(this.ambientLight);
     this._lighting.addChild(ambientGO);
 
     // Shadow frustum sized to the whole base, not just the office.
@@ -398,6 +426,8 @@ export class BaseScene extends Scene {
     moon.shadow.camera.bottom = -reach;
     moonGO.object3d.add(moon);
     this._lighting.addChild(moonGO);
+    // Doubles as the sunlight in the morning — Daylight warms and brightens it.
+    this.moonLight = moon;
 
     // No hand-placed moon prop or its point light here any more. MarsSky
     // hangs the real Phobos and Deimos at sky distance with their own halos;
