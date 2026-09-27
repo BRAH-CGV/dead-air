@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// The terminal imports FirstPersonController only as a getComponent key,
+// but that module imports Rapier, whose WASM build doesn't load under
+// vitest (BUG-003). Nothing here constructs a controller, so an empty
+// module is enough to let this file run.
+vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
+
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 
