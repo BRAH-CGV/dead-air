@@ -155,6 +155,7 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this._offNightStart?.();
+    this._offSuitHud?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
     // borrowed — otherwise the Mars horizon tint and this scene's long
     // outdoor sightlines follow us into whatever loads next.
@@ -302,6 +303,9 @@ export class BaseScene extends Scene {
     this.gameController.autoStart = false;
     this.gameController.startNight(this.nights.currentNight);
     this._offNightStart = this.nights.onChange(night => this.gameController.startNight(night));
+
+    this.hud.setSuit(this.suit.worn);
+    this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
   }
 
   // ──────────────────────────────────────────

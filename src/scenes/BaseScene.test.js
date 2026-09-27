@@ -539,6 +539,20 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
   });
 
+  it('shows the EVA suit on the HUD while the player wears it', () => {
+    const setSuit = vi.spyOn(scene.hud, 'setSuit');
+    scene.suit.putOn();
+    expect(setSuit).toHaveBeenLastCalledWith(true);
+    scene.suit.takeOff();
+    expect(setSuit).toHaveBeenLastCalledWith(false);
+
+    // And lets go of the suit on dispose.
+    scene.dispose();
+    setSuit.mockClear();
+    scene.suit.putOn();
+    expect(setSuit).not.toHaveBeenCalled();
+  });
+
   it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {
     const hidden = [scene.hud, scene.radarOverlay, scene.reviewPanel]
       .map(ui => vi.spyOn(ui, 'hide'));
