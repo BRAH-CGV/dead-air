@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
+import { WallClock } from '../../gameobjects/WallClock.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -13,9 +14,16 @@ import { Room } from './Room.js';
 // Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
 // The side doorways sit toward the front so they clear the server rack,
 // switchboard and radar along those walls.
+//
+// A wall clock hangs right of the window. The room builds it; the scene
+// hands it the NightClock (`wallClock.clock`), since rooms don't know about
+// gameplay.
 // ─────────────────────────────────────────────
 
 export class MainOffice extends Room {
+  /** Hung by buildProps(). @type {WallClock|null} */
+  wallClock = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -70,6 +78,7 @@ export class MainOffice extends Room {
 
   buildProps() {
     this._buildWindowFrame();
+    this._buildWallClock();
 
     // rotationY 0 seats the desk facing the back window — the dish tower is
     // out there, and the terminal's whole job is aiming it. The kneehole
@@ -104,6 +113,14 @@ export class MainOffice extends Room {
       });
       go.object3d.rotation.set(...cam.rotation);
     }
+  }
+
+  /** Right of the window, between its frame (x 4.43) and the side wall
+   *  (x 5.9), flush on the back wall's inner face. */
+  _buildWallClock() {
+    this.wallClock = this._own(new WallClock());
+    this.wallClock.object3d.position.set(5.15, 1.95, -4.9);
+    this.root.addChild(this.wallClock);
   }
 
   /** Frame around the back-wall opening. Left clear of glass: imported desk
