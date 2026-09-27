@@ -14,6 +14,7 @@ import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { EVASuit } from '../components/EVASuit.js';
+import { PRELOAD } from '../assets/manifest.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -91,6 +92,15 @@ describe('BaseScene', () => {
     expect(hatch.locked).toBe(false);
     scene.suit.takeOff();
     expect(hatch.locked).toBe(true);
+  });
+
+  it('spawns only preloaded models, so nothing is fetched mid-build', () => {
+    // The real AssetManager throws on a model that isn't in the cache, and
+    // the cache only holds PRELOAD. A key left in the manifest's LIBRARY
+    // passes these tests (spawnModel is faked) and breaks the game at boot.
+    const spawned = new Set(engine.spawnModel.mock.calls.map(([key]) => key));
+    const missing = [...spawned].filter(key => !PRELOAD.includes(key));
+    expect(missing).toEqual([]);
   });
 
   it('keeps the office at the origin', () => {
