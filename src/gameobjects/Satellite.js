@@ -20,9 +20,11 @@ import { GameObject } from '../core/GameObject.js';
 
 export class Satellite extends GameObject {
 
-  /** Slew limit shared by both axes, radians per second (π/64 ≈ 2.8°/s —
-   *  a full yaw revolution takes ~128 s). */
-  maxRotationSpeed = Math.PI / 64;
+  /** Slew limit shared by both axes, radians per second (π/4 = 45°/s — a
+   *  half turn settles in ~4 s, a 12° correction in under a second). Fast enough
+   *  that the minigame is about aiming, not waiting; slow enough that the
+   *  tower still reads as heavy machinery. */
+  maxRotationSpeed = Math.PI / 4;
 
   /** Angle the neck is slewing toward, radians around Y. */
   targetYaw = 0;
@@ -34,10 +36,13 @@ export class Satellite extends GameObject {
   velYaw = 0;
   /** Angular velocity around X (rad/s). */
   velPitch = 0;
-  /** How fast the dish accelerates toward target (rad/s^2). */
-  angularAccel = 2.0;
+  // The pair is a spring (stiffness k = angularAccel) and damper
+  // (c = angularDamping). c = 2·√k is critical damping: the fastest settle
+  // that never swings past the target. Change one, re-derive the other.
+  /** How fast the dish accelerates toward target (rad/s^2 per rad of error). */
+  angularAccel = 25.0;
   /** Velocity damping factor (higher = less overshoot). */
-  angularDamping = 4.0;
+  angularDamping = 10.0;
 
   /** The slewing base of the tower. @type {GameObject|null} */
   neck = null;
