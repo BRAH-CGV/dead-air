@@ -21,13 +21,7 @@
 
 ## Scene Structure
 
-**One continuous scene, not separate levels.** A single base with rooms that unlock progressively:
-
-| Night | Rooms Accessible |
-|---|---|
-| 1 | Room 1 (starting room) |
-| 2 | Rooms 1 + 2 |
-| 3 | All 3 rooms + outside area |
+**One continuous scene, not separate levels.** A single base where every interior room is open from night 1. Each night brings a new threat rather than a new room. The only door that stays shut is the airlock onto the surface, and the EVA suit opens it, not the calendar. (Rooms used to unlock by night; that was dropped as arbitrary.)
 
 ### The 3 Rooms
 
@@ -97,7 +91,7 @@
 ## Key Decisions
 
 1. **3 rooms + small outside area** — not more, not less. Keeps scope manageable.
-2. **One continuous scene** — doors unlock rooms progressively, no scene loading.
+2. **One continuous scene** — no scene loading; interior doors are always open, and the airlock is gated on the EVA suit.
 3. **FNAF-style first-person horror** — not a security camera sim. Player is *in* the base.
 4. **RetroSaffa aesthetic** — all assets must match. Consistency over variety.
 5. **VotV-inspired UI** — clean, minimal, functional.

@@ -101,7 +101,7 @@ Three toggles, all edge-triggered and free while off:
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
-| `N` | `NightManager` (BaseScene) | Advance to the next night, unlocking its doors; wraps back to night 1 after the last |
+| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
 **DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.

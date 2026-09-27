@@ -183,9 +183,9 @@ export class Engine {
       // Only scenes with night progression (BaseScene) have `nights`.
       const nights = this.activeScene?.nights;
       if (e.code === this.keyBinds.nextNight && nights) {
-        if (nights.currentNight >= nights.maxNight) nights.setNight(1);
+        if (nights.isLastNight()) nights.setNight(1);
         else nights.advance();
-        console.log(`[DEBUG] Night ${nights.currentNight} — open: ${nights.getOpenRooms().join(', ')}`);
+        console.log(`[DEBUG] Night ${nights.currentNight} of ${nights.maxNight}`);
       }
       // F4, not F1: F1 belongs to the browser — Chrome opens help with it
       // and DevTools opens its settings — and those contexts swallow the

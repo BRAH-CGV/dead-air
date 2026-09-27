@@ -230,19 +230,18 @@ describe('BaseScene', () => {
     expect(generator.powerOn).toBe(true);
   });
 
-  it('starts on night 1 with every doorway out of the office locked', () => {
-    expect(scene.nights.currentNight).toBe(1);
-    const doors = Object.values(scene.rooms).flatMap(r => r.doors);
-    for (const d of doors) expect(d.locked, d.name).toBe(true);
-  });
+  it('opens every interior door from night 1, and keeps them open every night', () => {
+    // Nights bring threats, not keys: the base is walkable from the start.
+    // Only a door onto the surface may be shut, and not by the calendar.
+    const interior = Object.values(scene.rooms).flatMap(r => r.doors)
+      .filter(d => d.targetRoom !== 'Outside');
+    expect(interior.length).toBeGreaterThan(0);
 
-  it('advancing the night unlocks the server room corridor, both ends', () => {
-    scene.nights.advance();
-    const office = scene.rooms.MainOffice.doors;
-    expect(office.find(d => d.targetRoom === 'ServerRoom').locked).toBe(false);
-    expect(scene.rooms.ServerRoom.doors[0].locked).toBe(false);
-    expect(office.find(d => d.targetRoom === 'LivingQuarters').locked).toBe(true);
-    expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
+    expect(scene.nights.currentNight).toBe(1);
+    for (const night of [1, 2, 3]) {
+      scene.nights.setNight(night);
+      for (const d of interior) expect(d.locked, `${d.name} on night ${night}`).toBe(false);
+    }
   });
 
   it('starts at the outdoor fog density, thin enough to see the valley rim', () => {

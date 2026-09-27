@@ -29,8 +29,8 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 // ─────────────────────────────────────────────
 // Three rooms joined by corridors, plus the small outside area — all of it
 // standing on the Mars valley (MarsTerrain), under the procedural night sky
-// and its two moons (MarsSky). Nothing is loaded per night: doors lock and
-// unlock instead (NightManager).
+// and its two moons (MarsSky). Nothing is loaded per night, and every
+// interior door is open from night 1 — NightManager only counts nights.
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
@@ -98,7 +98,7 @@ export class BaseScene extends Scene {
   rooms = {};
   /** @type {{OfficeToServer: Corridor, OfficeToQuarters: Corridor}} */
   corridors = {};
-  /** Which rooms are open tonight; re-locks doors on every change.
+  /** Which night it is. The game controller follows it.
    *  @type {NightManager|null} */
   nights = null;
 
@@ -145,7 +145,6 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
-    this._offNightChange?.();
     this._offNightStart?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
     // borrowed — otherwise the Mars horizon tint and this scene's long
@@ -211,8 +210,6 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _setupNights() {
     this.nights = new NightManager();
-    this.nights.applyTo(this.rooms);
-    this._offNightChange = this.nights.onChange(() => this.nights.applyTo(this.rooms));
   }
 
   // ──────────────────────────────────────────
@@ -281,11 +278,11 @@ export class BaseScene extends Scene {
       this.gameController.onSignalDeleted();
     });
 
-    // One night number across the scene. NightManager already owns which
-    // rooms are unlocked tonight; the controller's quota, clock and HUD now
-    // follow it instead of counting on their own — otherwise pressing N
-    // would open night 2's doors while the HUD still read "Night 1".
-    // autoStart is off for the same reason: it hardcodes night 1.
+    // One night number across the scene. NightManager owns it; the
+    // controller's quota, clock and HUD follow it instead of counting on
+    // their own — otherwise pressing N would move to night 2 while the HUD
+    // still read "Night 1". autoStart is off for the same reason: it
+    // hardcodes night 1.
     this.gameController.autoStart = false;
     this.gameController.startNight(this.nights.currentNight);
     this._offNightStart = this.nights.onChange(night => this.gameController.startNight(night));
