@@ -634,6 +634,19 @@ describe('BaseScene gameplay loop', () => {
     expect(engine.scene.fog.color.getHex()).toBe(night.fog);
   });
 
+  it('turns the sky with the night clock and keeps the moonlight on Phobos', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const daylight = gameplay.getComponent(Daylight);
+    const toLight  = () => scene.moonLight.position.clone().sub(scene.moonLight.target.position);
+
+    scene.nightClock.currentTime = 3;
+    daylight.onUpdate(0.016);
+
+    expect(scene.sky.hour).toBe(3);
+    expect(toLight().length()).toBeCloseTo(30);          // still inside the shadow camera's near/far
+    expect(toLight().normalize().distanceTo(scene.sky.directions.phobos)).toBeCloseTo(0, 5);
+  });
+
   it('shows the EVA suit on the HUD while the player wears it', () => {
     const setSuit = vi.spyOn(scene.hud, 'setSuit');
     scene.suit.putOn();

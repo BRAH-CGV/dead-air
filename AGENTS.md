@@ -55,10 +55,10 @@ src/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
-│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog
+│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
 │   └── Bed.js           # Interactable: sleep in the morning → next night
 ├── gameobjects/
-│   ├── MarsSky.js       # Night/day sky dome shader, stars, moons
+│   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   └── WallClock.js     # Analogue clock driven by the NightClock
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
@@ -146,6 +146,15 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
   - the fog colour.
 
   Night values are captured when `Daylight` is built, so the scene's lighting code stays the one place that defines the night.
+- **The sky turns.** `Daylight` also calls `sky.setHour(clock.currentTime)`.
+  - **What turns.** The stars, Milky Way, both moons and the Sun turn together, 15° an hour, westward about a pole due north and 35° up (`latitude`, `hourRate`). Midnight is the sky as authored, so the moon angles in `DEFAULT_MOONS` are their midnight positions.
+  - **The Sun.** The turn is what places it: it reaches the horizon at `sunAzimuth`, in the window, at 6 AM (`sunriseHour`). The moons ride ~125° away from it, across the sky, and stay up all night.
+  - **How each part turns.**
+    - The stars and moons get the turn as a quaternion.
+    - The dome can't rotate, since its horizon haze belongs to the ground. It gets the same turn as the `uSkyRotation` mat3 uniform, and looks the Milky Way up at `dir * uSkyRotation`.
+    - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
+  - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
+  - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
 ### Input system
 

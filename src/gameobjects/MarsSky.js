@@ -24,7 +24,8 @@ import { GameObject } from '../core/GameObject.js';
 //
 // ── Aiming the moons ──
 // Moons are placed by ANGLE, not by hand-tuned XYZ, so they can be re-aimed
-// when the room around them changes:
+// when the room around them changes. The angles are where they stand at
+// midnight — see "The night turns" below for the rest of the night:
 //
 //   azimuth   0°  looks straight out the office window (−Z)
 //             +   swings right (+X), −  swings left
@@ -37,7 +38,7 @@ import { GameObject } from '../core/GameObject.js';
 // 2 m away and higher still at the glass.
 //
 // The two moons use that deliberately. Deimos sits at 10°, inside the mid-room
-// box, so there is always a moon in the window wherever the player stands.
+// box, so a shift opens with a moon in the window wherever the player stands.
 // Phobos sits at 30°, above it — you have to walk up to the glass to find it,
 // which is worth more than having both hang there at once. It also means the
 // MoonLight aimed at Phobos comes in steeper, so the ground outside is lit
@@ -53,9 +54,43 @@ import { GameObject } from '../core/GameObject.js';
 // bring it in across the top-left of the window and set it into the horizon on
 // the right, just under Deimos. Its brightest stretch is at the pinned point.
 //
+// ── The night turns ──
+// `sky.setHour(hour)` turns the whole sky — stars, Milky Way, both moons and
+// the Sun — about the celestial pole, 15° an hour: a sol turns it 360° in its
+// 24 hours, and the base keeps local Mars time. Daylight calls it from the
+// night clock. Midnight is the sky exactly as authored above.
+//
+//   pole      due north, a quarter-turn left of where the Sun rises
+//             (azimuth sunAzimuth − 90°), standing `latitude` degrees up —
+//             35°: the base is at northern mid-latitudes
+//   turn      westward: what is in the east climbs, what is in the west sets
+//   Sun       on the celestial equator, placed so the turn brings it onto the
+//             horizon at sunAzimuth at `sunriseHour` (6 AM). All night it is
+//             below the horizon behind the base, climbing
+//
+// The moons ride the turn with the stars, so their distance from the Sun
+// never changes: ~125°, across the sky from it, which is why they are drawn
+// as (nearly) full discs. Both stay up all night: Phobos climbs from 30° to
+// ~58° and is still 45° up at 6 AM, off to the right behind the office.
+// Deimos leaves the mid-room window view at about 2 AM. At this rate nothing
+// can stay in an 82° window for six hours; `hourRate` is the knob if the
+// team wants a slower sky.
+//
+// Real Phobos laps Mars faster than Mars turns, so it rises in the WEST and
+// crosses the sky in about four hours; real Deimos, only a little slower
+// than the turn, takes days. Here both simply ride the sky — a simplification,
+// kept so the pair stays together and clear of the Sun.
+//
+// How the pieces turn: the stars and the moons are objects, so they get the
+// turn as a quaternion. The dome can't rotate — its gradient and horizon
+// haze belong to the ground — so it gets the same turn as the mat3 uniform
+// `uSkyRotation`, and the fragment shader looks the Milky Way up at the
+// pixel's direction turned back onto the sky. `sky.directions` holds the
+// live world directions of the Sun and both moons, for aiming lights.
+//
 // ── Dawn ──
-// `skyUniforms.uDawn` runs 0 (night) → 1 (day) and is the one knob the game
-// turns — Daylight sets it from the clock. Both shaders read it: the dome
+// `skyUniforms.uDawn` runs 0 (night) → 1 (day) and is the other knob the
+// game turns — Daylight sets it from the clock. Both shaders read it: the dome
 // blends the night gradient (Milky Way included) into the butterscotch day
 // gradient, and the stars fade out. On top, a blue glow gathers round the
 // Sun on the horizon: Martian dust scatters blue light forward, so the sky
@@ -113,6 +148,17 @@ const DEFAULT_DAY = {
   sunAzimuth:   -35,
 };
 
+/** How the sky turns through the night — see "The night turns" above. */
+const DEFAULT_TURN = {
+  // Northern mid-latitudes. The pole stands this high, so the sky wheels at
+  // a slant and both moons stay up all night.
+  latitude:    35,
+  // Degrees an hour: 360° over a sol's 24 hours.
+  hourRate:    15,
+  // The hour the Sun is on the horizon: the end of the shift.
+  sunriseHour: 6,
+};
+
 const UP = new THREE.Vector3(0, 1, 0);
 
 /**
@@ -127,6 +173,9 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {number} [opts.dayZenithColor]   Hex zenith colour at full day.
  * @param {number} [opts.sunriseColor]     Hex colour of the glow round the Sun.
  * @param {number} [opts.sunAzimuth]       Where the Sun rises, in degrees.
+ * @param {number} [opts.sunriseHour]      When it rises, on the night clock.
+ * @param {number} [opts.latitude]         Degrees north: how high the pole stands.
+ * @param {number} [opts.hourRate]         Degrees the sky turns an hour.
  * @param {number} [opts.starCount]        Number of stars over the whole sphere.
  * @param {number} [opts.starSize]         Star sprite size in pixels.
  * @param {number} [opts.starBrightness]
@@ -138,7 +187,8 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {Object} [opts.phobos]  `{ azimuth, elevation, size, color, glow }`,
  *                                angles in degrees, `glow` 0 to disable.
  * @param {Object} [opts.deimos]  Same shape.
- * @returns {GameObject} a group carrying the dome mesh and one child per moon
+ * @returns {GameObject} a group carrying the dome mesh and one child per moon,
+ *          plus `skyUniforms`, `setHour(hour)`, `hour` and `directions`
  */
 export function createMarsSky(opts = {}) {
   const {
@@ -154,6 +204,9 @@ export function createMarsSky(opts = {}) {
     dayZenithColor  = DEFAULT_DAY.zenithColor,
     sunriseColor    = DEFAULT_DAY.sunriseColor,
     sunAzimuth      = DEFAULT_DAY.sunAzimuth,
+    sunriseHour     = DEFAULT_TURN.sunriseHour,
+    latitude        = DEFAULT_TURN.latitude,
+    hourRate        = DEFAULT_TURN.hourRate,
   } = opts;
 
   const milkyWay = { ...DEFAULT_MILKY_WAY, ...opts.milkyWay };
@@ -184,7 +237,9 @@ export function createMarsSky(opts = {}) {
     uDayHorizonColor: { value: new THREE.Color(dayHorizonColor) },
     uDayZenithColor:  { value: new THREE.Color(dayZenithColor) },
     uSunriseColor:    { value: new THREE.Color(sunriseColor) },
-    uSunDir:          { value: directionFromAngles(sunAzimuth, 0) },
+    // Both written by setHour, below.
+    uSunDir:          { value: new THREE.Vector3() },
+    uSkyRotation:     { value: new THREE.Matrix3() },
   };
 
   const dome = new THREE.Mesh(
@@ -213,12 +268,50 @@ export function createMarsSky(opts = {}) {
   });
   sky.object3d.add(stars);
 
+  const moons = {};
+  const turning = [stars];
   for (const [key, name] of [['phobos', 'Phobos'], ['deimos', 'Deimos']]) {
-    const moon = { ...DEFAULT_MOONS[key], ...opts[key] };
-    sky.addChild(createMoon(name, moon, radius));
+    moons[key] = { ...DEFAULT_MOONS[key], ...opts[key] };
+    const moon = createMoon(name, moons[key], radius);
+    sky.addChild(moon);
+    turning.push(moon.object3d);
   }
 
   sky.skyUniforms = { ...domeUniforms, ...stars.material.uniforms };
+
+  // ── The turn ──
+  const pole = celestialPole(sunAzimuth, latitude);
+  // Where each lies on the turning sky, which is the world at midnight. The
+  // Sun is wound back from its sunrise point by the turn up to sunriseHour.
+  const home = {
+    sun:    directionFromAngles(sunAzimuth, 0)
+      .applyQuaternion(skyRotation(-sunriseHour, pole, hourRate)),
+    phobos: directionFromAngles(moons.phobos.azimuth, moons.phobos.elevation),
+    deimos: directionFromAngles(moons.deimos.azimuth, moons.deimos.elevation),
+  };
+  /** Live world directions, rewritten in place by setHour. `sun` is the
+   *  dome's uSunDir itself. */
+  sky.directions = {
+    sun:    domeUniforms.uSunDir.value,
+    phobos: new THREE.Vector3(),
+    deimos: new THREE.Vector3(),
+  };
+
+  const turn = new THREE.Quaternion();
+  const turnMatrix = new THREE.Matrix4();
+  /** Turn the sky to `hour` on the night clock (0 = midnight). Allocates
+   *  nothing, so it can run every frame. */
+  sky.setHour = (hour) => {
+    skyRotation(hour, pole, hourRate, turn);
+    for (const object of turning) object.quaternion.copy(turn);
+    domeUniforms.uSkyRotation.value.setFromMatrix4(turnMatrix.makeRotationFromQuaternion(turn));
+    sky.directions.sun.copy(home.sun).applyQuaternion(turn);
+    sky.directions.phobos.copy(home.phobos).applyQuaternion(turn);
+    sky.directions.deimos.copy(home.deimos).applyQuaternion(turn);
+    sky.hour = hour;
+  };
+  sky.setHour(0);
+
   return sky;
 }
 
@@ -358,6 +451,27 @@ export function directionFromAngles(azimuthDeg, elevationDeg) {
   );
 }
 
+/** The celestial pole the sky turns about: due north — a quarter-turn left
+ *  of where the Sun rises — and as high above the horizon as the latitude. */
+export function celestialPole(sunAzimuthDeg, latitudeDeg) {
+  return directionFromAngles(sunAzimuthDeg - 90, latitudeDeg);
+}
+
+/**
+ * The sky's turn at `hour`, from midnight: `hourRate` degrees an hour,
+ * westward about `pole`. Negative about the pole, because the sky wheels
+ * clockwise to someone looking up at it — what is in the east climbs.
+ *
+ * @param {number} hour
+ * @param {THREE.Vector3} pole  Unit vector, from celestialPole().
+ * @param {number} [hourRate]   Degrees an hour.
+ * @param {THREE.Quaternion} [out]
+ * @returns {THREE.Quaternion} `out`
+ */
+export function skyRotation(hour, pole, hourRate = DEFAULT_TURN.hourRate, out = new THREE.Quaternion()) {
+  return out.setFromAxisAngle(pole, -THREE.MathUtils.degToRad(hourRate * hour));
+}
+
 /**
  * Orthonormal frame for the Milky Way's great circle: `center` is the point
  * it is pinned to, `tangent` runs along the band there, and `normal` is the
@@ -382,6 +496,8 @@ function gaussian() {
 
 // The dome never rotates — only its position follows the camera — so a
 // vertex's direction from the local origin is already its world direction.
+// The night's turn happens in the fragment shader instead (uSkyRotation), so
+// the gradient and the horizon haze stay with the ground.
 const DOME_VERTEX_SHADER = /* glsl */`
   varying vec3 vWorldDir;
 
@@ -421,6 +537,9 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   uniform vec3  uSunriseColor;
   uniform vec3  uSunDir;
 
+  // The night's turn, from the sky's own frame into the world.
+  uniform mat3  uSkyRotation;
+
   varying vec3 vWorldDir;
 
   float hash13(vec3 p) {
@@ -458,8 +577,10 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   float gaussian(float x) { return exp(-x * x); }
 
   // Noise is sampled on the direction itself, not on UVs, so the structure has
-  // no seam and no pinch at the poles.
-  vec3 milkyWay(vec3 dir) {
+  // no seam and no pinch at the poles. dir is on the turning sky, so the
+  // band and its clumps turn with the stars; up is the world height, since
+  // the air the starlight comes through does not turn.
+  vec3 milkyWay(vec3 dir, float up) {
     float offset = dot(dir, uBandNormal);
     float band   = gaussian(offset / uBandWidth);
     if (band < 0.002) return vec3(0.0);
@@ -470,7 +591,7 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
     float dust   = smoothstep(0.45, 0.75, fbm(dir * 4.0 + 19.0))
                  * gaussian(offset / (uBandWidth * 0.35));
     // Starlight crosses more air near the horizon, so the band dims there too.
-    float extinction = smoothstep(-0.02, 0.2, dir.y);
+    float extinction = smoothstep(-0.02, 0.2, up);
 
     float glow = band * (0.4 + 0.6 * core) * (0.35 + 0.9 * clumps) * (1.0 - 0.6 * dust);
     return uBandColor * glow * uBandIntensity * extinction;
@@ -480,10 +601,13 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
     // Interpolation across each triangle shortens the direction slightly, which
     // the band's plane and core distances would pick up as drift.
     vec3 dir = normalize(vWorldDir);
+    // The same direction on the turning sky. A row vector times a matrix is
+    // the transpose times the vector — for a rotation, the turn undone.
+    vec3 celestial = dir * uSkyRotation;
 
     float height = pow(clamp(dir.y, 0.0, 1.0), 1.0 / uHorizonExponent);
 
-    vec3 night = mix(uHorizonColor, uZenithColor, height) + milkyWay(dir);
+    vec3 night = mix(uHorizonColor, uZenithColor, height) + milkyWay(celestial, dir.y);
     vec3 day   = mix(uDayHorizonColor, uDayZenithColor, height);
     vec3 color = mix(night, day, uDawn);
 
@@ -520,7 +644,10 @@ const STAR_VERTEX_SHADER = /* glsl */`
     // Its own phase, so the field shimmers instead of pulsing in unison.
     float twinkle = 0.75 + 0.25 * sin(uTime * 2.0 + aPhase);
     // Fade out just below the horizon, so stars don't sit on top of the haze.
-    float horizonFade = smoothstep(-0.03, 0.09, normalize(position).y);
+    // The field turns through the night, so this is the star's WORLD height:
+    // mat3 keeps the model matrix's turn and drops the camera-following
+    // translation, and the sky is never scaled.
+    float horizonFade = smoothstep(-0.03, 0.09, normalize(mat3(modelMatrix) * position).y);
 
     vBrightness  = (0.25 + 0.75 * aMagnitude) * twinkle * horizonFade;
     gl_PointSize = uStarSize * (0.5 + 0.5 * aMagnitude);

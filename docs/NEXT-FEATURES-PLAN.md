@@ -229,6 +229,27 @@ but **nothing listens for either**, so the game stalls. The sky never changes.
 - **In-world wall clock** in the office: a face plus hour and minute hands,
   driven from `NightClock`. The time is readable without the HUD.
 
+**Revised after team review.** The stars and moons stood still all night,
+and the Sun came up in the window right beside two full moons. So:
+- **The sky turns.** `MarsSky.setHour(hour)` turns the stars, the Milky
+  Way, both moons and the Sun together, 15° an hour (a sol's 360° over its
+  24 hours) about a celestial pole due north, 35° up (`latitude`). Midnight
+  is the sky as authored. `Daylight` calls it from the clock every frame of
+  the night.
+- **The Sun is placed by the turn.** It sits on the celestial equator
+  where the turn brings it onto the horizon at `sunAzimuth` (in the
+  window) at 6 AM. All night it is below the horizon, climbing. The moons
+  stay ~125° from it, across the sky, and both stay up all night. Deimos
+  leaves the mid-room window view at about 2 AM. `hourRate` is the knob.
+- **How it turns.** The stars and the moons get a quaternion. The dome
+  gets the same turn as a `uSkyRotation` mat3 uniform, and its fragment
+  shader looks the Milky Way up at `dir * uSkyRotation`, the pixel's
+  direction turned back onto the sky. The horizon haze stays put. The star
+  shader fades at the world horizon (`mat3(modelMatrix)`).
+- **The light follows.** The moonlight shines from wherever Phobos is. Through the
+  dawn it swings to the Sun's bearing, lifted to 30° (`sunElevation`),
+  keeping its 30 m distance so the shadow camera still spans the base.
+
 **Tests first**
 - `GameController.test.js`: quota met at 6 AM → `morning`; missed →
   `gameOver`; `retryNight` restarts the clock and signals;
@@ -236,7 +257,15 @@ but **nothing listens for either**, so the game stalls. The sky never changes.
   clock; sleeping after the last night → `finished`.
 - `Daylight.test.js`: `dawnFactor` is 0 at 3 AM, rises through 5–6 AM, 1 in
   the morning; applying it raises the light intensities and moves the sky
-  uniforms.
+  uniforms. The sky's hour follows the clock; the light points at Phobos
+  all night, reaches the Sun's bearing 30° up in the morning without a
+  jump, keeps its distance, and is back at midnight's when the next night
+  starts; nothing is rewritten while the morning clock is stopped.
+- `MarsSky.test.js`: midnight is the authored sky; the turn is westward
+  about the pole, 15° an hour; stars, moons and `uSkyRotation` share it;
+  the Sun is below the horizon all night and on it in the window at 6 AM;
+  it stays over 110° from both moons; both moons stay up all night;
+  nothing is allocated per turn.
 - `WallClock.test.js`: hand angles for 12:00, 3:00 and 4:30.
 - `BaseScene.test.js`: the bed triggers sleep; the night number stays in
   sync across `NightManager`, `GameController` and the HUD.
