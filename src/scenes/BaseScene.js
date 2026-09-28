@@ -36,7 +36,9 @@ import { ScreenFade } from '../ui/ScreenFade.js';
 // night sky and its two moons (MarsSky). Nothing is loaded per night, and
 // every interior door is open from night 1 — NightManager only counts
 // nights. The one door that stays shut is the airlock hatch, and it opens
-// for the EVA suit (on the player), not for a night.
+// for the EVA suit (on the player), not for a night. The office's front
+// door is the airlock's inner door: the interlock shuts it while the suit
+// is on, so the two are never open together.
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
@@ -209,6 +211,10 @@ export class BaseScene extends Scene {
 
     this.rooms = { MainOffice: office, ServerRoom: server, LivingQuarters: quarters, Airlock: airlock };
     for (const room of Object.values(this.rooms)) this._sceneRoot.addChild(room.build());
+
+    // The office's front door is the airlock's inner door: the interlock
+    // shuts it behind the suit before the hatch opens.
+    airlock.bindInnerDoor(office.doors.find(d => d.targetRoom === 'Airlock'));
 
     this._doorZ = { right: doorZ('right'), left: doorZ('left') };
     this._officeEdge = officeEdge;

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { Corridor } from './Corridor.js';
+import { Component } from '../../core/Component.js';
 import { Interactable } from '../../components/Interactable.js';
+import { PLAYER_BODY } from '../../components/PlayerBody.js';
 
 // ─────────────────────────────────────────────
 // Airlock  –  the only way out, sealed without the EVA suit
@@ -14,9 +16,29 @@ import { Interactable } from '../../components/Interactable.js';
 //
 // The suit hangs in a locker against the left wall. The hatch has no key
 // and no night — it opens for whoever is wearing the suit. `bindSuit`
-// hands the airlock the player's EVASuit; from then on the hatch lock, the
-// locker's prompt and the beacon over the hatch all follow `suit.worn`,
-// whatever changes it.
+// hands the airlock the player's EVASuit, and `bindInnerDoor` the office's
+// front door; from then on both doors, the locker's prompt and the beacon
+// over the hatch follow `suit.worn`, whatever changes it.
+//
+// An interlock: the two doors are never open together.
+//
+//   pressurised ──suit on──▶ depressurising ──cycleTime──▶ depressurised
+//        ▲                      │   ▲                          │
+//        └──cycleTime── pressurising ◀──────────suit off────────┘
+//
+//   pressurised     inner door open, hatch shut       red beacon
+//   depressurising  both shut                         amber
+//   depressurised   inner door shut, hatch open       green
+//   pressurising    both shut                         amber
+//
+// The door you are leaving shuts the moment the suit changes; the one ahead
+// opens once the airlock has cycled. Changing your mind mid-cycle runs back
+// only as far as the cycle had got. The room's root carries the ticking
+// component, so the scene drives the cycle like any other GameObject.
+//
+// The locker only works from inside the chamber, clear of both doorways:
+// not through the open inner door from the office, and never where a door
+// would shut on the player.
 //
 // locker.glb is 1.45 × 2.1 × 0.49 m (w × h × d) with its origin 0.274 m
 // off-centre along its width. Turned a quarter to face +X, the width runs
@@ -28,9 +50,31 @@ import { Interactable } from '../../components/Interactable.js';
 const PROMPT = {
   putOn:   '[E] Put on EVA suit',
   takeOff: '[E] Take off EVA suit',
+  stepIn:  'Step into the airlock to use the suit locker',
 };
-const SEALED = 'Sealed — put on the EVA suit';
-const BEACON = { sealed: 0xff2a1a, open: 0x2aff5a };
+const SHUT = {
+  sealed:        'Sealed — put on the EVA suit',
+  cycling:       'Airlock cycling…',
+  depressurised: 'Depressurised — take off the EVA suit',
+};
+const BEACON = { sealed: 0xff2a1a, cycling: 0xffa01a, open: 0x2aff5a };
+
+/** How far the player's centre must be from a doorway box for the locker
+ *  to work: the capsule radius plus a little, so a door that shuts never
+ *  shuts on the player. */
+const CLEARANCE = PLAYER_BODY.radius + 0.05;
+
+const _wearerPos = new THREE.Vector3();
+
+/** Ticks the airlock from its root, so the scene drives the cycle. */
+class AirlockCycle extends Component {
+  constructor(airlock) {
+    super();
+    this.airlock = airlock;
+  }
+
+  onUpdate(dt) { this.airlock.update(dt); }
+}
 
 export class Airlock extends Corridor {
   static kind = 'Room';
@@ -55,19 +99,33 @@ export class Airlock extends Corridor {
 
     /** @type {import('../../gameobjects/Door.js').Door|null} */
     this.hatch = null;
+    /** The office's front door, the other half of the interlock.
+     *  @type {import('../../gameobjects/Door.js').Door|null} */
+    this.innerDoor = null;
     /** @type {import('../../components/EVASuit.js').EVASuit|null} */
     this.suit = null;
-    /** Hatch status light — red sealed, green open. @type {THREE.PointLight|null} */
+    /** Hatch status light — red sealed, amber cycling, green open. @type {THREE.PointLight|null} */
     this.beacon = null;
 
+    /** @type {'pressurised'|'depressurising'|'depressurised'|'pressurising'} */
+    this.state = 'pressurised';
+    /** Seconds to cycle from one door to the other. */
+    this.cycleTime = 2.5;
+
+    this._cycleLeft = 0;
     this._lockerUse = null;
     this._beaconLens = null;
     this._offSuit = null;
+    this._disposed = false;
+  }
+
+  get cycling() {
+    return this.state === 'depressurising' || this.state === 'pressurising';
   }
 
   buildDoors() {
     this.hatch = this.addDoor('ToOutside', 'front', 'Outside', { locked: true });
-    this.hatch.lockedPrompt = SEALED;
+    this.hatch.lockedPrompt = SHUT.sealed;
   }
 
   buildLighting() {
@@ -100,32 +158,107 @@ export class Airlock extends Corridor {
     const airlock = this;
     this._lockerUse = locker.addComponent(new class extends Interactable {
       promptLabel = PROMPT.putOn;
-      onInteract() { airlock.suit?.toggle(); }
+      onInteract() { airlock._useLocker(); }
     }());
+
+    this.root.addComponent(new AirlockCycle(this));
   }
 
-  /** Give the airlock the player's suit. The hatch, the locker prompt and
+  /** Give the airlock the office door it opens from. It is locked and
+   *  unlocked with the cycle from now on, starting with the current state.
+   *  @param {import('../../gameobjects/Door.js').Door} door */
+  bindInnerDoor(door) {
+    this.innerDoor = door;
+    this._apply();
+  }
+
+  /** Give the airlock the player's suit. The doors, the locker prompt and
    *  the beacon follow it from now on; a previously bound suit is let go.
+   *  The airlock settles to the suit's current state without a cycle.
    *  @param {import('../../components/EVASuit.js').EVASuit} suit */
   bindSuit(suit) {
     this._offSuit?.();
     this.suit = suit;
-    this._offSuit = suit.onChange(worn => this._sync(worn));
-    this._sync(suit.worn);
+    this._offSuit = suit.onChange(worn => this._cycle(worn));
+    this._settle(suit.worn);
   }
 
-  _sync(worn) {
-    this.hatch.locked = !worn;
-    this._lockerUse.promptLabel = worn ? PROMPT.takeOff : PROMPT.putOn;
-    const colour = worn ? BEACON.open : BEACON.sealed;
+  /** Advance the cycle. The room's root calls this every frame.
+   *  @param {number} dt  Seconds */
+  update(dt) {
+    if (this._disposed) return;
+    if (this.cycling) {
+      this._cycleLeft -= dt;
+      if (this._cycleLeft <= 0) this._settle(this.state === 'depressurising');
+    }
+    this._updateLockerLabel();
+  }
+
+  /** The suit changed: shut both doors and start cycling towards the other
+   *  side. A reversal mid-cycle only has to undo the time already run. */
+  _cycle(worn) {
+    this._cycleLeft = this.cycling ? this.cycleTime - this._cycleLeft : this.cycleTime;
+    this.state = worn ? 'depressurising' : 'pressurising';
+    this._apply();
+  }
+
+  _settle(worn) {
+    this.state = worn ? 'depressurised' : 'pressurised';
+    this._cycleLeft = 0;
+    this._apply();
+  }
+
+  /** Put the doors, their prompts and the beacon in step with `state`. */
+  _apply() {
+    const { cycling } = this;
+
+    this.hatch.locked = this.state !== 'depressurised';
+    this.hatch.lockedPrompt = cycling ? SHUT.cycling : SHUT.sealed;
+
+    if (this.innerDoor) {
+      this.innerDoor.locked = this.state !== 'pressurised';
+      this.innerDoor.lockedPrompt = cycling ? SHUT.cycling : SHUT.depressurised;
+    }
+
+    const colour = cycling ? BEACON.cycling
+      : this.state === 'depressurised' ? BEACON.open : BEACON.sealed;
     this.beacon.color.setHex(colour);
     this._beaconLens.emissive.setHex(colour);
+
+    this._updateLockerLabel();
+  }
+
+  _useLocker() {
+    if (!this.suit || !this._wearerInChamber()) return;
+    this.suit.toggle();
+  }
+
+  /** The suit's wearer stands in the airlock, clear of both doorways. */
+  _wearerInChamber() {
+    const wearer = this.suit?.gameObject;
+    if (!wearer) return false;
+    const p = wearer.object3d.getWorldPosition(_wearerPos);
+    return this.containsPoint(p)
+        && !this.hatch.containsPoint(p, CLEARANCE)
+        && !(this.innerDoor?.containsPoint(p, CLEARANCE) ?? false);
+  }
+
+  _updateLockerLabel() {
+    if (!this._lockerUse) return;
+    let label = PROMPT.putOn;
+    if (this.suit) {
+      label = !this._wearerInChamber() ? PROMPT.stepIn
+        : this.suit.worn ? PROMPT.takeOff : PROMPT.putOn;
+    }
+    this._lockerUse.promptLabel = label;
   }
 
   dispose(opts) {
     this._offSuit?.();
     this._offSuit = null;
     this.suit = null;
+    this.innerDoor = null;
+    this._disposed = true;
     super.dispose(opts);
   }
 }

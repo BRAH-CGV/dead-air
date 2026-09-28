@@ -166,6 +166,23 @@ outside should be gated, and on Mars the reason is obvious: you need a suit.
   says why: "Sealed — put on the EVA suit".
 - HUD shows `EVA SUIT` while it's worn.
 
+**Revised after team review.** An airlock that is open at both ends at once
+isn't an airlock, and the locker could be used from the office, through the
+open doorway and (before the interact ray stopped at walls) through the
+wall itself. So:
+- **Interlock.** The office's front door is the airlock's inner door
+  (`Airlock.bindInnerDoor`). `Airlock.state` cycles `pressurised` →
+  `depressurising` → `depressurised` → `pressurising`. The door you are
+  leaving shuts at once; the other opens after `cycleTime` (2.5 s). The two
+  are never open on the same frame, and a reversal mid-cycle runs back only
+  the time already run. The beacon is red / amber / green, and each shut
+  door's prompt says why ("Sealed — put on the EVA suit", "Airlock
+  cycling…", "Depressurised — take off the EVA suit").
+- **Locker from inside only.** It works only with the player in the
+  chamber, clear of both doorways by the capsule radius, so a door never
+  shuts on them. Elsewhere its label is "Step into the airlock…".
+- `RoomTransitionSystem` re-shows a locked door's prompt when it changes.
+
 **Tests first**
 - `NightManager.test.js`: counts nights, `advance` stops at the last,
   `setNight`/`onChange` as before; no room/door API remains.
@@ -174,9 +191,16 @@ outside should be gated, and on Mars the reason is obvious: you need a suit.
 - `EVASuit.test.js`: starts off; `putOn`/`takeOff` flip `worn` and notify.
 - `Airlock.test.js`: shell sits flush against the office's front wall,
   lined up with its doorway; the outer door is locked by default with the
-  suit prompt; the suit locker's interactable toggles the suit.
+  suit prompt; the suit locker's interactable toggles the suit — only from
+  inside the chamber. Interlock: each door shuts at once and the other
+  opens after `cycleTime`; never both open on any frame of a round trip
+  with reversals; beacon hue and door prompts per state; ticked by the
+  room's own root.
+- `RoomTransitionSystem.test.js`: a changed `lockedPrompt` is re-shown
+  once, not every frame.
 - `BaseScene.test.js`: every interior door is unlocked on every night; the
-  outer airlock door follows the suit; the airlock is in the rooms that
+  outer airlock door follows the suit; the office's front door is the
+  airlock's inner door; the airlock is in the rooms that
   `RoomTransitionSystem` tracks.
 
 ---

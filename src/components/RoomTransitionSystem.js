@@ -10,7 +10,8 @@ import { PromptLabel } from '../ui/PromptLabel.js';
 //  • Doors — fires door.onPlayerEnter / onPlayerExit on the edges. An
 //    unlocked door counts its doorway box; a locked one is solid, so it
 //    counts an approach zone `approachMargin` around it instead, and shows
-//    the door's lockedPrompt while the player is there.
+//    the door's lockedPrompt while the player is there — re-shown if the
+//    door changes it meanwhile (the airlock's doors do, as it cycles).
 //  • Rooms — keeps `currentRoom` (null in corridors and outside) and calls
 //    onRoomChange(room, previous) when it changes. Per-room atmosphere
 //    (fog, ambience) hooks in there.
@@ -41,8 +42,9 @@ export class RoomTransitionSystem extends Component {
 
     /** Doors whose zone the player is in. */
     this._inside = [];
-    /** Door whose locked prompt is showing. */
+    /** Door whose locked prompt is showing, and the text it showed. */
     this._promptDoor = null;
+    this._promptText = null;
   }
 
   addDoors(doors) { this.doors.push(...doors); }
@@ -89,9 +91,11 @@ export class RoomTransitionSystem extends Component {
     for (const door of this._inside) {
       if (door.locked) { target = door; break; }
     }
-    if (target === this._promptDoor) return;
+    const text = target?.lockedPrompt ?? null;
+    if (target === this._promptDoor && text === this._promptText) return;
     this._promptDoor = target;
-    if (target) this.prompt?.show(target.lockedPrompt);
+    this._promptText = text;
+    if (target) this.prompt?.show(text);
     else this.prompt?.hide();
   }
 

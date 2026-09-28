@@ -109,6 +109,23 @@ describe('RoomTransitionSystem', () => {
     expect(prompt.visible).toBe(false);
   });
 
+  it('re-shows the prompt when a locked door changes its lockedPrompt while the player is at it', () => {
+    // The airlock hatch reads "Sealed" and then "Cycling" with the player
+    // standing at it the whole time — the prompt must not keep the stale one.
+    const door = makeDoor('Door:A', [2, 1.1, 5], { locked: true });
+    door.lockedPrompt = 'Sealed';
+    const sys = attach({ doors: [door] });
+    const show = vi.spyOn(prompt, 'show');
+
+    moveTo(sys, 2, 1, 5.5);
+    door.lockedPrompt = 'Cycling';
+    moveTo(sys, 2, 1, 5.5);
+    moveTo(sys, 2, 1, 5.5);
+
+    expect(prompt.text).toBe('Cycling');
+    expect(show.mock.calls).toEqual([['Sealed'], ['Cycling']]);   // not every frame
+  });
+
   it('tracks the current room and fires onRoomChange on transitions', () => {
     const office = fakeRoom('MainOffice', -6, 6);
     const server = fakeRoom('ServerRoom', 10, 16);

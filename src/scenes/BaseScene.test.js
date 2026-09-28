@@ -88,12 +88,29 @@ describe('BaseScene', () => {
     expect(scene.suit).toBeInstanceOf(EVASuit);
     expect(engine.player.getComponent(EVASuit)).toBe(scene.suit);
 
-    const { hatch } = scene.rooms.Airlock;
+    const airlock = scene.rooms.Airlock;
+    const { hatch } = airlock;
+    const cycle = () => { for (let i = 0; i < Math.ceil((airlock.cycleTime + 0.1) * 60); i++) airlock.update(1 / 60); };
     expect(hatch.locked).toBe(true);
     scene.suit.putOn();
+    cycle();
     expect(hatch.locked).toBe(false);
     scene.suit.takeOff();
     expect(hatch.locked).toBe(true);
+  });
+
+  it("the office's front door is the airlock's inner door: it shuts behind the suit before the hatch opens", () => {
+    const airlock = scene.rooms.Airlock;
+    const inner = scene.rooms.MainOffice.doors.find(d => d.targetRoom === 'Airlock');
+    expect(airlock.innerDoor).toBe(inner);
+    expect(inner.locked).toBe(false);
+
+    scene.suit.putOn();
+    expect(inner.locked).toBe(true);
+    expect(airlock.hatch.locked).toBe(true);
+    for (let i = 0; i < Math.ceil((airlock.cycleTime + 0.1) * 60); i++) airlock.update(1 / 60);
+    expect(airlock.hatch.locked).toBe(false);
+    expect(inner.locked).toBe(true);
   });
 
   it('spawns only preloaded models, so nothing is fetched mid-build', () => {
