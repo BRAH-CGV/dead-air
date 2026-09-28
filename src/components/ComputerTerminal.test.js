@@ -9,7 +9,7 @@ vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 import * as THREE from 'three';
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
-import { Satellite } from '../gameobjects/Satellite.js';
+import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 
 // ── Helper: convert sky coords to Cartesian cursor position ──
 function skyToCursor(yaw, pitch) {
@@ -128,14 +128,22 @@ describe('ComputerTerminal', () => {
     expect(term._cursorX).toBeGreaterThan(leftmost); // moved back right
   });
 
-  it('holding a direction carries the cursor from centre to rim in two seconds', () => {
+  it('holding a direction carries the cursor from centre to rim in four seconds', () => {
     term.enter();
     let t = 0;
     while (Math.hypot(term._cursorX, term._cursorY) < 1 && t < 10) {
       term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
       t += 1 / 60;
     }
-    expect(t).toBeCloseTo(2, 1);
+    expect(t).toBeCloseTo(4, 1);
+  });
+
+  it("sweeps the cursor at the dish's own pace, so the dish never falls further behind", () => {
+    term.enter();
+    const before = term._cursorToSky().pitch;
+    term.moveCursor({ left: false, right: false, up: true, down: false }, 0.5);
+    const skyPerSecond = Math.abs(term._cursorToSky().pitch - before) / 0.5;
+    expect(skyPerSecond).toBeCloseTo(DISH_SLEW_RATE, 5);
   });
 
   it('keeps the dish close behind the cursor: on target within half a second of a full sweep', () => {

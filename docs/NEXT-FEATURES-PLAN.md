@@ -113,26 +113,34 @@ cross the radar.
 
 | Tunable | Before | After |
 |---|---|---|
-| `Satellite.maxRotationSpeed` | π/64 (2.8°/s) | π/5 (36°/s) |
+| `Satellite.maxRotationSpeed` | π/64 (2.8°/s) | π/8 (22.5°/s) — `DISH_SLEW_RATE` (first passes: π/5, π/4) |
 | `Satellite.angularAccel` | 2 | raised with the damping so the dish still settles without oscillating |
-| `CURSOR_RATE` (radar radius per s) | 1/4 | 1/2 (first pass: 1/1.25) |
+| `CURSOR_RATE` (radar radius per s) | 1/4 | 1/4, derived from `DISH_SLEW_RATE` (first passes: 1/1.25, 1/2) |
 | `SignalTarget` default `scanTime` | 3 s | 2.5 s |
 
-**Target:** any signal on the radar is aimed at and scanned in under ~8 s.
+**Target:** any signal on the radar is aimed at and scanned in about 10 s at
+most (a 90° sweep is 4 s, a half turn of yaw 8 s, plus the 2.5 s scan).
 
 **Revised after play-testing.** At 1/1.25 the cursor swept 72°/s of sky
 while the dish turns at most 45°/s, so the dish fell further behind the
-longer a key was held. The cursor now crosses the 90° radius in 2 s, the
-dish's own pace: it trails by a steady ~18° while moving and is on target
-about 0.3 s after you let go.
+longer a key was held. The cursor was then paced to the dish, crossing the
+90° radius at its speed.
+
+**Revised again after team review.** At 45°/s the dish felt twitchy; the
+team preferred it slower. It now slews at π/8 (22.5°/s), `DISH_SLEW_RATE`
+in `Satellite.js`, and `ComputerTerminal` derives `CURSOR_RATE` from that
+constant (1/4 radius per second), so the two cannot drift apart. The
+cursor crosses the radar in 4 s and the dish is still on target within
+0.5 s of letting go.
 
 **Tests first**
-- `Satellite.test.js`: a 180° yaw slew settles within 6 s of simulated
-  time; the dish comes to rest within the default signal tolerance without
-  swinging back out of it (no oscillation).
+- `Satellite.test.js`: a 180° yaw slew settles within 10 s of simulated
+  time but takes at least 8 s; the default slew limit is `DISH_SLEW_RATE`
+  (π/8); the dish comes to rest without swinging past the target (no
+  oscillation).
 - `ComputerTerminal.test.js`: holding a direction moves the cursor from the
-  centre to the rim in 2 s; after that sweep the real dish is on target
-  within 0.5 s of letting go.
+  centre to the rim in 4 s, sweeping sky at `DISH_SLEW_RATE`; after that
+  sweep the real dish is on target within 0.5 s of letting go.
 - `SignalTarget`/`SignalManager` test: default scan time is 2.5 s.
 
 ---

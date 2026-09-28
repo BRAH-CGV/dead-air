@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
-import { Satellite } from './Satellite.js';
+import { Satellite, DISH_SLEW_RATE } from './Satellite.js';
 
 /** Minimal dish-tower stand-in: Base → Neck_block → Dish, matching the node
  *  names the real GLB ships with. */
@@ -228,11 +228,25 @@ describe('Satellite', () => {
     return Infinity;
   }
 
-  it('swings round to face the opposite sky within 5 s', () => {
+  it('swings round to face the opposite sky within 10 s', () => {
     const { root, neck, dish } = buildTower();
     const sat = Satellite.fromObject3D(root);
     sat.aimAt(Math.PI * 0.99, 0);
-    expect(timeToSettle(sat, neck, dish)).toBeLessThanOrEqual(5);
+    expect(timeToSettle(sat, neck, dish)).toBeLessThanOrEqual(10);
+  });
+
+  it('takes its time over a half turn — heavy, not twitchy (at least 8 s)', () => {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.aimAt(Math.PI * 0.99, 0);
+    expect(timeToSettle(sat, neck, dish)).toBeGreaterThanOrEqual(8);
+  });
+
+  it('slews at DISH_SLEW_RATE, 22.5°/s, by default', () => {
+    const { root } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    expect(DISH_SLEW_RATE).toBeCloseTo(Math.PI / 8);
+    expect(sat.maxRotationSpeed).toBe(DISH_SLEW_RATE);
   });
 
   it('makes a small correction in under a second', () => {

@@ -1,6 +1,7 @@
 import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
+import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -20,11 +21,12 @@ import { FirstPersonController } from './FirstPersonController.js';
 
 /** @readonly */
 // Cursor movement rate in Cartesian units per second (unit-circle space).
-// Paced to the dish: the radius is 90° of sky (zenith to horizon), so 1/2
-// unit/s is 45°/s — Satellite.maxRotationSpeed. Any faster and the dish
-// falls further behind the longer a key is held. One 60 fps frame moves
-// 0.75° of sky, so a tap can stop inside a signal's 12° acceptance.
-const CURSOR_RATE = 1 / 2;  // unit/s — full radius in 2 seconds
+// Paced to the dish: the radius is 90° of sky (zenith to horizon), so the
+// cursor sweeps DISH_SLEW_RATE (22.5°/s) — 1/4 unit/s, the full radius in
+// 4 s. Any faster and the dish falls further behind the longer a key is
+// held. One 60 fps frame moves 0.375° of sky, so a tap can stop inside a
+// signal's 12° acceptance.
+const CURSOR_RATE = DISH_SLEW_RATE / (Math.PI / 2);
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
