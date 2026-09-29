@@ -32,6 +32,10 @@ export function rapierModule() {
   return {
     default: {
       RigidBodyDesc: { fixed: () => bodyDesc('fixed') },
+      // Line-of-sight rays: a Ray only carries its origin and direction (by
+      // reference, as the real one does); the world's castRay is the test's.
+      Ray: class { constructor(origin, dir) { this.origin = origin; this.dir = dir; } },
+      QueryFilterFlags: { EXCLUDE_SENSORS: 8 },
       ColliderDesc: {
         cuboid: (x, y, z) => {
           const d = {
