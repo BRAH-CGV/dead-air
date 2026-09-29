@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { RadarOverlay } from './HUD.js';
+import { HUD, RadarOverlay } from './HUD.js';
+
+// ── Suit indicator ────────────────────────────────────────
+// A stand-in root: HUD only ever reaches its elements through querySelector.
+describe('HUD suit indicator', () => {
+  function fakeRoot() {
+    const suit = { textContent: '', style: { display: 'none' } };
+    return { suit, root: { style: {}, querySelector: sel => (sel === '#hud-suit' ? suit : null) } };
+  }
+
+  it('shows the EVA suit while it is worn, and hides it once it is off', () => {
+    const { suit, root } = fakeRoot();
+    const hud = new HUD(root);
+
+    hud.setSuit(true);
+    expect(suit.style.display).not.toBe('none');
+    expect(suit.textContent).toMatch(/EVA suit/i);
+
+    hud.setSuit(false);
+    expect(suit.style.display).toBe('none');
+  });
+
+  it('does nothing without the markup (tests, other scenes)', () => {
+    expect(() => new HUD(null).setSuit(true)).not.toThrow();
+  });
+});
 
 // ── Radar sky-mapping tests ───────────────────────────────
 // No DOM in the node test environment: the overlay falls back to a

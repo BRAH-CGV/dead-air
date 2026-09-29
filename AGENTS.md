@@ -52,11 +52,27 @@ src/
 │   ├── DebugCamera.js   # Free-fly noclip camera (V to toggle)
 │   └── Fullbright.js    # Unlit debug lighting (B to toggle)
 ├── components/
-│   └── FirstPersonController.js  # WASD + mouse look, Rapier character controller
+│   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
+│   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
+│   ├── EVASuit.js       # On the player: worn or not, with change listeners
+│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
+│   └── Bed.js           # Interactable: sleep in the morning → next night
+├── gameobjects/
+│   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
+│   └── WallClock.js     # Analogue clock driven by the NightClock
+├── gameplay/
+│   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
+│   └── GameController.js # playing → morning → sleep → next night
+├── scenes/
+│   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
+│   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
+├── systems/
+│   └── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
-│   └── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
+│   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
+│   └── ScreenFade.js    # Fade to black and back (#fade in index.html)
 └── main.js              # Entry point: creates Engine, awaits init()
 ```
 
@@ -70,7 +86,7 @@ src/
 
 **Component** — Base class. Hooks: `onAwake` → `onStart` → `onUpdate(dt)` | `onFixedUpdate(dt)` | `onLateUpdate(dt)` → `onDestroy`. Getters: `transform`, `scene`, `world`. A component with `enabled = false` skips its per-frame hooks (but still gets its one-shot lifecycle) — the debug fly camera uses this to freeze the player in place.
 
-**FirstPersonController** — Component on Player. Reads `Engine.input` for WASD + mouse. YXZ Euler camera rotation. Drives `KinematicCharacterController` with capsule collider. Handles gravity, jump (crouching included), ground detection, and Source-style movement — horizontal velocity integrates on the fixed step (`accel`/`airAccel`/`friction`/`stopSpeed` tunables) instead of snapping to wish speed. Crouch (`C` — toggle by default; `crouchMode: 'hold'` switches to hold-to-crouch): the player body carries two swapped capsules — standing 1.6 m and crouch 0.65 m, the tallest that clears the desk's 0.72 m under-top gap. Grounded swaps anchor the feet (stand-up gated by a headroom check); mid-air swaps anchor the capsule's centre — crouching tucks the legs up (crouch-jump), standing sweeps them back down and pops the body up onto whatever is below, so only the ceiling can refuse a stand-up.
+**FirstPersonController** — Component on Player. Reads `Engine.input` for WASD + mouse. YXZ Euler camera rotation. Drives `KinematicCharacterController` with capsule collider. Handles gravity, jump (crouching included), ground detection, and Source-style movement — horizontal velocity integrates on the fixed step (`accel`/`airAccel`/`friction`/`stopSpeed` tunables) instead of snapping to wish speed. Crouch (`C` — toggle by default; `crouchMode: 'hold'` switches to hold-to-crouch): the player body carries two swapped capsules — standing 1.35 m (under the 2.2 m doorways) and crouch 0.65 m, the tallest that clears the desk's 0.72 m under-top gap. Both sizes live in `PlayerBody.js`, measured from the feet. The camera sits at eye height (1.24 m standing, 0.55 m crouched), not at the capsule centre. Each capsule carries an eye offset above its centre (`standEyeOffset` / `crouchEyeOffset`, which default to 0 = centre), and a swap compensates for both the centre shift and the change of offset so the view never pops. Grounded swaps anchor the feet (stand-up gated by a headroom check); mid-air swaps anchor the capsule's centre — crouching tucks the legs up (crouch-jump), standing sweeps them back down and pops the body up onto whatever is below, so only the ceiling can refuse a stand-up.
 
 ### Scene hierarchy
 
@@ -82,6 +98,63 @@ Ground (visual PlaneGeometry + static cuboid collider, textured)
 Crates (dynamic rigidBodies, box colliders)
 Desk (imported .glb, static auto-fitted box collider)
 ```
+
+### Base layout and doors
+
+`BaseScene` builds the whole base as one scene — nothing loads per night:
+
+```
+LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
+                                  │ front door
+                               Airlock (suit locker)
+                                  │ hatch — EVA suit on
+                               Outside (generator, dish)
+```
+
+Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
+
+The airlock is an interlock — its two doors are never open together. `BaseScene` hands it the office's front door with `Airlock.bindInnerDoor(door)`, and `Airlock.state` runs `pressurised` (inner door open, hatch shut, red beacon) → `depressurising` (both shut, amber) → `depressurised` (hatch open, inner door shut, green) → `pressurising` → back. The door you are leaving shuts the moment the suit changes; the one ahead opens after `cycleTime` (2.5 s). Changing your mind mid-cycle runs back only the time already run. The cycle is ticked by a component on the airlock's own root, so nothing else has to call `Airlock.update`. The suit locker only works from inside the chamber, clear of both doorways by the player's radius — never from the office through the open inner door, and never where a door would shut on the player; elsewhere its label reads "Step into the airlock…".
+
+An Interactable whose `promptLabel` changes while you look at it (the locker's Put on / Take off) is re-shown by `InteractionSystem` — update the label as a data field, since the base class field shadows a getter. `RoomTransitionSystem` does the same for a locked door whose `lockedPrompt` changes while you stand at it ("Sealed" → "Airlock cycling…").
+
+`InteractionSystem`'s ray stops at the first solid collider it meets, so nothing can be used through a wall, a locked door or another prop. Sensors (open doorways) don't stop it. An Interactable is reached only through a collider on its own GameObject's body, so give it one that isn't buried inside another prop's.
+
+Every prop has a job:
+
+- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
+- **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
+
+The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
+
+### Shift and day
+
+A night is a shift: `NightClock` runs 12:00 → 6:00 AM, shown on the HUD and on the office's `WallClock`. `GameController` owns the state:
+
+```
+playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
+   │                            └──sleep() on the last night──▶ finished
+   └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
+```
+
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+
+- **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Dawn.** `dawnFactor(hour, state)` is 0 all night, smoothsteps to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to:
+  - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
+  - the ambient and moon lights (the moon light is the morning sun).
+  - the fog colour.
+
+  Night values are captured when `Daylight` is built, so the scene's lighting code stays the one place that defines the night.
+- **The sky turns.** `Daylight` also calls `sky.setHour(clock.currentTime)`.
+  - **What turns.** The stars, Milky Way, both moons and the Sun turn together, 15° an hour, westward about a pole due north and 35° up (`latitude`, `hourRate`). Midnight is the sky as authored, so the moon angles in `DEFAULT_MOONS` are their midnight positions.
+  - **The Sun.** The turn is what places it: it reaches the horizon at `sunAzimuth`, in the window, at 6 AM (`sunriseHour`). The moons ride ~125° away from it, across the sky, and stay up all night.
+  - **How each part turns.**
+    - The stars and moons get the turn as a quaternion.
+    - The dome can't rotate, since its horizon haze belongs to the ground. It gets the same turn as the `uSkyRotation` mat3 uniform, and looks the Milky Way up at `dir * uSkyRotation`.
+    - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
+  - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
+  - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
 ### Input system
 
@@ -101,7 +174,7 @@ Three toggles, all edge-triggered and free while off:
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
-| `N` | `NightManager` (BaseScene) | Advance to the next night, unlocking its doors; wraps back to night 1 after the last |
+| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
 **DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
@@ -129,6 +202,12 @@ Rigged models are cloned with `SkeletonUtils.clone()`; a plain `.clone()` leaves
 ### Conventions for custom models
 
 Author in **metres**, +Y up, origin on the floor at the object's centre. Export as `.glb` (single file — a `.gltf` with loose `.bin`/`.png` siblings is one more chance for a case-sensitive 404). `ModelUtils.normalize(root, targetSize)` is the escape hatch for a download authored in centimetres.
+
+**Fixing a download in the manifest.** Two entry keys fix a model that wasn't authored this way, without editing the file. `scale` (a number) takes it to real size. `origin: 'floor'` moves its pivot to the floor under its centre, for a download modelled around its middle or placed off in space. Both are baked in at load, below the model's root, so every spawn, the measured bounds and the fitted collider see them. A spawn's own `scale` multiplies on top rather than replacing them. To pick `scale`, measure the download's native size first (in the level editor, or from the `.glb`'s accessor min/max), then divide the real-world size you want by it.
+
+```js
+'model:fire-extinguisher': { type: 'model', url: '…', scale: 0.012, origin: 'floor', physics: 'static' },
+```
 
 ### Compression
 
@@ -197,7 +276,7 @@ Press **`` ` ``** in game to overlay every collider Rapier knows about. Authorin
 
 ### Worked example: the under-desk gap
 
-`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2). `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `Engine.buildPlayer`).
+`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2). `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `PlayerBody.js`).
 
 Fixed with tier 3, in the manifest (`src/assets/manifest.js`) — after two guesses from the raw mesh data got it wrong (first left 3 of the model's 4 sides open, since it isn't a table on legs; then a U-shaped compound with a full-footprint top slab, which still blocked *walking up to* the desk while standing, since the lid covered the opening too). Third time, measured instead of guessed: box primitives placed in the level editor (F2) against the rendered model, positions/sizes read off their transform panel. That gave three boxes — a solid back region and two solid side walls, all about 0.73 m tall, **no separate top lid** — with the front (the kneehole) having no ceiling at all, so a standing player can walk up to the opening and only needs to crouch further in, toward the back.
 

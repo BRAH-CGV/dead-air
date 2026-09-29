@@ -1,20 +1,33 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
+import { Interactable } from '../../components/Interactable.js';
+import { WallClock } from '../../gameobjects/WallClock.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
 // ─────────────────────────────────────────────
 // The hub room, carried over from OfficeScene: same 12 × 10 × 3 shell, big
-// back window, computer desk, server rack, radar terminal, switchboard,
-// security cameras, warm ceiling light and cool desk glow. Scene-wide
-// lighting (ambient, moon) belongs to the scene, not the room.
+// back window, warm ceiling light and cool desk glow. Scene-wide lighting
+// (ambient, moon) belongs to the scene, not the room.
 //
-// Doorways: front (the original door) → Outside, right → ServerRoom,
-// left → LivingQuarters. The side doorways sit toward the front so they
-// clear the server rack, switchboard and radar along those walls.
+// Furnished for the job and nothing else: the computer desk facing the
+// window, its chair, a food-ration dispenser (the player eats here, between
+// scans), a bin, a shelf of spares, an extinguisher by the door, a poster.
+//
+// Doorways: front (the original door) → Airlock, and through its hatch to
+// Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
+// The side doorways sit toward the front, leaving the back half of the
+// side walls for the dispenser and the shelf.
+//
+// A wall clock hangs right of the window. The room builds it; the scene
+// hands it the NightClock (`wallClock.clock`), since rooms don't know about
+// gameplay.
 // ─────────────────────────────────────────────
 
 export class MainOffice extends Room {
+  /** Hung by buildProps(). @type {WallClock|null} */
+  wallClock = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -37,7 +50,7 @@ export class MainOffice extends Room {
   }
 
   buildDoors() {
-    this.addDoor('ToOutside',        'front', 'Outside');
+    this.addDoor('ToAirlock',        'front', 'Airlock');
     this.addDoor('ToServerRoom',     'right', 'ServerRoom');
     this.addDoor('ToLivingQuarters', 'left',  'LivingQuarters');
   }
@@ -69,6 +82,7 @@ export class MainOffice extends Room {
 
   buildProps() {
     this._buildWindowFrame();
+    this._buildWallClock();
 
     // rotationY 0 seats the desk facing the back window — the dish tower is
     // out there, and the terminal's whole job is aiming it. The kneehole
@@ -82,27 +96,75 @@ export class MainOffice extends Room {
     this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
-    this._spawnProp('model:server-rack', {
-      name: 'ServerRack', position: [4.55, 0, -1.35], rotationY: -Math.PI / 2, scale: 0.333,
-    });
-    this._spawnProp('model:radar-terminal', {
-      name: 'RadarTerminal', position: [-4.45, 0, -0.55], rotationY: Math.PI / 2, scale: 0.478,
-    });
-    this._spawnProp('model:switchboard', {
-      name: 'Switchboard', position: [5.72, 1.15, 1.25], rotationY: -Math.PI / 2, scale: 0.638,
+
+    // Pulled out to the right and turned toward the door, as if just left:
+    // the kneehole (x ±0.545) stays open to crouch into.
+    this._spawnProp('model:metal-chair', {
+      name: 'DeskChair', position: [0.95, 0, -1.75], rotationY: Math.PI - 0.45,
     });
 
-    const cameras = [
-      { name: 'SecurityCamera_Window', position: [-2.2, 2.75, -4.65], rotation: [Math.PI / 5, -Math.PI / 8, 0] },
-      { name: 'SecurityCamera_Door',   position: [4.9, 2.65, 3.9],    rotation: [Math.PI / 4, -Math.PI * 0.78, 0] },
-      { name: 'SecurityCamera_Desk',   position: [-4.7, 2.55, 2.2],   rotation: [Math.PI / 4, Math.PI * 0.65, 0] },
-    ];
-    for (const cam of cameras) {
-      const go = this._spawnProp('model:security-camera', {
-        name: cam.name, position: cam.position, scale: 0.339, physics: 'none',
-      });
-      go.object3d.rotation.set(...cam.rotation);
-    }
+    // Left wall, behind the doorway: the ration dispenser and a bin for the
+    // wrappers.
+    this._buildRationDispenser();
+    this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 0.05] });
+
+    // Right wall: spare parts on a shelf; a poster where the eye lands
+    // walking in from the airlock. The shelf's open sides face ±x.
+    this._spawnProp('model:shelf', { name: 'Shelf', position: [5.68, 0, -2.0] });
+    this._spawnProp('model:poster', {
+      name: 'Poster', position: [5.9, 1.05, 0.6], rotationY: -Math.PI / 2, physics: 'none',
+    });
+
+    // By the airlock door, where a fire would be fought from.
+    this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
+  }
+
+  /** Where food comes from: a wall-mounted machine that dispenses rations
+   *  of nutrient mush. Built here rather than imported — the downloaded
+   *  vending machine is a broken fragment. The body is the collider the
+   *  interact ray hits; the face details are plain meshes on it. */
+  _buildRationDispenser() {
+    const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
+    const size = [0.7, 1.9, 0.9];
+    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, -1.0], size, body);
+
+    // Front face is +x, into the room; positions are relative to the body's
+    // centre, 0.95 m up.
+    const front = size[0] / 2;
+    const detail = (geometry, material, position) => {
+      const mesh = new THREE.Mesh(this._own(geometry), material);
+      mesh.position.set(...position);
+      go.object3d.add(mesh);
+      return mesh;
+    };
+    const dark  = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 }));
+    const glass = this._own(new THREE.MeshStandardMaterial({
+      color: 0x0a140e, emissive: 0x6dff9c, emissiveIntensity: 0.9, roughness: 0.3,
+    }));
+    const light = this._own(new THREE.MeshStandardMaterial({
+      color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
+    }));
+
+    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
+    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // dispense button
+    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
+
+    go.addComponent(new class extends Interactable {
+      promptLabel = '[E] Take a food ration';
+      onInteract() {
+        // TODO: coordinate with Hayden's stamina system.
+        console.log('[MainOffice] food ration eaten');
+      }
+    }());
+  }
+
+  /** Right of the window, between its frame (x 4.43) and the side wall
+   *  (x 5.9), flush on the back wall's inner face. */
+  _buildWallClock() {
+    this.wallClock = this._own(new WallClock());
+    this.wallClock.object3d.position.set(5.15, 1.95, -4.9);
+    this.root.addChild(this.wallClock);
   }
 
   /** Frame around the back-wall opening. Left clear of glass: imported desk

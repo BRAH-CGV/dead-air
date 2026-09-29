@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
-import { Satellite } from './Satellite.js';
+import { Satellite, DISH_SLEW_RATE } from './Satellite.js';
 
 /** Minimal dish-tower stand-in: Base → Neck_block → Dish, matching the node
  *  names the real GLB ships with. */
@@ -206,6 +206,80 @@ describe('Satellite', () => {
 
     expect(sat.isAimedAt(0.01, 0.01, 0.1)).toBe(true);   // tiny error < 0.1
     expect(sat.isAimedAt(1.0, 1.0, 0.1)).toBe(false);     // large error > 0.1
+  });
+
+  // ── Default tuning — how the dish feels in the minigame ───
+  // These use the shipped constants, not per-test overrides: they pin the
+  // pace a player actually waits through while the dish chases the cursor.
+
+  /** Step at 60 fps until both axes have stayed within 1° of target for a
+   *  full second; returns the time that settled run began. */
+  function timeToSettle(sat, neck, dish, maxSeconds = 20) {
+    const DT = 1 / 60, ONE_DEG = Math.PI / 180;
+    let settledAt = null;
+    for (let t = 0; t < maxSeconds; t += DT) {
+      sat._update(DT);
+      const onTarget = Math.abs(neck.rotation.y - sat.targetYaw) < ONE_DEG
+                    && Math.abs(dish.rotation.x - sat.targetPitch) < ONE_DEG;
+      if (!onTarget) settledAt = null;
+      else if (settledAt === null) settledAt = t;
+      else if (t - settledAt >= 1) return settledAt;
+    }
+    return Infinity;
+  }
+
+  it('swings round to face the opposite sky within 10 s', () => {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.aimAt(Math.PI * 0.99, 0);
+    expect(timeToSettle(sat, neck, dish)).toBeLessThanOrEqual(10);
+  });
+
+  it('takes its time over a half turn — heavy, not twitchy (at least 8 s)', () => {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.aimAt(Math.PI * 0.99, 0);
+    expect(timeToSettle(sat, neck, dish)).toBeGreaterThanOrEqual(8);
+  });
+
+  it('slews at DISH_SLEW_RATE, 22.5°/s, by default', () => {
+    const { root } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    expect(DISH_SLEW_RATE).toBeCloseTo(Math.PI / 8);
+    expect(sat.maxRotationSpeed).toBe(DISH_SLEW_RATE);
+  });
+
+  it('makes a small correction in under a second', () => {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.aimAt(12 * Math.PI / 180, -12 * Math.PI / 180);
+    expect(timeToSettle(sat, neck, dish)).toBeLessThan(1);
+  });
+
+  it('comes to rest without swinging past the target', () => {
+    const { root, neck } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    const target = Math.PI / 2;
+    sat.targetYaw = target;
+    let furthest = 0;
+    for (let i = 0; i < 600; i++) {
+      sat._update(1 / 60);
+      furthest = Math.max(furthest, neck.rotation.y);
+    }
+    expect(furthest - target).toBeLessThan(Math.PI / 180);   // < 1° overshoot
+  });
+
+  it('still looks like heavy machinery — never snaps faster than 60°/s', () => {
+    const { root, neck } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.targetYaw = Math.PI * 0.99;
+    let prev = neck.rotation.y, fastest = 0;
+    for (let i = 0; i < 300; i++) {
+      sat._update(1 / 60);
+      fastest = Math.max(fastest, (neck.rotation.y - prev) * 60);
+      prev = neck.rotation.y;
+    }
+    expect(fastest).toBeLessThanOrEqual(Math.PI / 3 + 1e-9);
   });
 
   it('scan state starts cleared', () => {

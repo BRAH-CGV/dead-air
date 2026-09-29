@@ -13,6 +13,16 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { EVASuit } from '../components/EVASuit.js';
+import { PRELOAD } from '../assets/manifest.js';
+import { Daylight } from '../components/Daylight.js';
+import { ScreenFade } from '../ui/ScreenFade.js';
+
+// A full base build takes several seconds under jsdom (8–16 s when the
+// suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
+// Those timeouts were failing tests that pass on their own, so this file
+// gets a longer budget.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const EPS = 1e-6;
 
@@ -52,11 +62,64 @@ describe('BaseScene', () => {
     sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
   });
 
-  it('creates all three rooms under SceneRoot', () => {
+  it('creates all four rooms under SceneRoot', () => {
     expect(sceneRoot).toBeDefined();
     const names = sceneRoot.children.map(c => c.name);
-    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters']));
-    expect(Object.keys(scene.rooms).sort()).toEqual(['LivingQuarters', 'MainOffice', 'ServerRoom']);
+    expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters', 'Room:Airlock']));
+    expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
+  });
+
+  it('butts the airlock flush on the office front wall, lined up with its front doorway', () => {
+    const office = scene.rooms.MainOffice;
+    const airlock = scene.rooms.Airlock;
+    expect(airlock.bounds().min.z).toBeCloseTo(office.bounds().max.z);
+
+    const door = office.doors.find(d => d.targetRoom === 'Airlock');
+    expect(door).toBeDefined();
+    expect(worldPos(door).x).toBeCloseTo(airlock.position[0]);
+    expect(worldPos(airlock.hatch).x).toBeCloseTo(airlock.position[0]);
+    expect(door.doorSize[0]).toBeLessThan(airlock.corridorWidth - airlock.wallThick);
+  });
+
+  it('the airlock hatch is the only way outside, and it opens for the player in the EVA suit', () => {
+    const outward = Object.values(scene.rooms).flatMap(r => r.doors).filter(d => d.targetRoom === 'Outside');
+    expect(outward).toEqual([scene.rooms.Airlock.hatch]);
+
+    expect(scene.suit).toBeInstanceOf(EVASuit);
+    expect(engine.player.getComponent(EVASuit)).toBe(scene.suit);
+
+    const airlock = scene.rooms.Airlock;
+    const { hatch } = airlock;
+    const cycle = () => { for (let i = 0; i < Math.ceil((airlock.cycleTime + 0.1) * 60); i++) airlock.update(1 / 60); };
+    expect(hatch.locked).toBe(true);
+    scene.suit.putOn();
+    cycle();
+    expect(hatch.locked).toBe(false);
+    scene.suit.takeOff();
+    expect(hatch.locked).toBe(true);
+  });
+
+  it("the office's front door is the airlock's inner door: it shuts behind the suit before the hatch opens", () => {
+    const airlock = scene.rooms.Airlock;
+    const inner = scene.rooms.MainOffice.doors.find(d => d.targetRoom === 'Airlock');
+    expect(airlock.innerDoor).toBe(inner);
+    expect(inner.locked).toBe(false);
+
+    scene.suit.putOn();
+    expect(inner.locked).toBe(true);
+    expect(airlock.hatch.locked).toBe(true);
+    for (let i = 0; i < Math.ceil((airlock.cycleTime + 0.1) * 60); i++) airlock.update(1 / 60);
+    expect(airlock.hatch.locked).toBe(false);
+    expect(inner.locked).toBe(true);
+  });
+
+  it('spawns only preloaded models, so nothing is fetched mid-build', () => {
+    // The real AssetManager throws on a model that isn't in the cache, and
+    // the cache only holds PRELOAD. A key left in the manifest's LIBRARY
+    // passes these tests (spawnModel is faked) and breaks the game at boot.
+    const spawned = new Set(engine.spawnModel.mock.calls.map(([key]) => key));
+    const missing = [...spawned].filter(key => !PRELOAD.includes(key));
+    expect(missing).toEqual([]);
   });
 
   it('keeps the office at the origin', () => {
@@ -115,7 +178,7 @@ describe('BaseScene', () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
     expect(sys).not.toBeNull();
     const allDoors = Object.values(scene.rooms).flatMap(r => r.doors);
-    expect(allDoors.length).toBe(5);
+    expect(allDoors.length).toBe(6);
     expect(sys.doors).toEqual(expect.arrayContaining(allDoors));
     expect(sys.rooms).toEqual(expect.arrayContaining(Object.values(scene.rooms)));
   });
@@ -230,19 +293,18 @@ describe('BaseScene', () => {
     expect(generator.powerOn).toBe(true);
   });
 
-  it('starts on night 1 with every doorway out of the office locked', () => {
-    expect(scene.nights.currentNight).toBe(1);
-    const doors = Object.values(scene.rooms).flatMap(r => r.doors);
-    for (const d of doors) expect(d.locked, d.name).toBe(true);
-  });
+  it('opens every interior door from night 1, and keeps them open every night', () => {
+    // Nights bring threats, not keys: the base is walkable from the start.
+    // Only a door onto the surface may be shut, and not by the calendar.
+    const interior = Object.values(scene.rooms).flatMap(r => r.doors)
+      .filter(d => d.targetRoom !== 'Outside');
+    expect(interior.length).toBeGreaterThan(0);
 
-  it('advancing the night unlocks the server room corridor, both ends', () => {
-    scene.nights.advance();
-    const office = scene.rooms.MainOffice.doors;
-    expect(office.find(d => d.targetRoom === 'ServerRoom').locked).toBe(false);
-    expect(scene.rooms.ServerRoom.doors[0].locked).toBe(false);
-    expect(office.find(d => d.targetRoom === 'LivingQuarters').locked).toBe(true);
-    expect(office.find(d => d.targetRoom === 'Outside').locked).toBe(true);
+    expect(scene.nights.currentNight).toBe(1);
+    for (const night of [1, 2, 3]) {
+      scene.nights.setNight(night);
+      for (const d of interior) expect(d.locked, `${d.name} on night ${night}`).toBe(false);
+    }
   });
 
   it('starts at the outdoor fog density, thin enough to see the valley rim', () => {
@@ -510,6 +572,93 @@ describe('BaseScene gameplay loop', () => {
   it('follows the NightManager when the night advances, so there is one night number', () => {
     scene.nights.advance();
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
+  });
+
+  /** Save the night's whole quota and run the clock out: it is morning. */
+  function workTheShift() {
+    const { signalManager, gameController } = scene;
+    for (let id = 1; id <= signalManager.required; id++) signalManager.saveSignal(id);
+    gameController.onSignalSaved();
+    gameController.onUpdate(999);
+    expect(gameController.state).toBe('morning');
+  }
+
+  it('the bunk sleeps through the day to the next night, in step across NightManager, controller and HUD', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    expect(bed.controller).toBe(scene.gameController);
+    expect(bed.fade).toBeInstanceOf(ScreenFade);
+    const setNight = vi.spyOn(scene.hud, 'setNight');
+
+    workTheShift();
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toBe('[E] Sleep');
+
+    bed.onInteract({});                  // no DOM: the fade goes black at once
+    expect(scene.nights.currentNight).toBe(2);
+    expect(scene.gameController.nightNumber).toBe(2);
+    expect(scene.gameController.state).toBe('playing');
+    expect(setNight).toHaveBeenLastCalledWith(2);
+    expect(scene.nightClock.timeString).toBe('12:00 AM');
+  });
+
+  it('hangs the night clock on the office wall', () => {
+    expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
+  });
+
+  it('turns the night to day and back with the controller — sky, lights and fog', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const daylight = gameplay.getComponent(Daylight);
+    expect(daylight).not.toBeNull();
+    // Updated after the controller in the same frame, so it never lags a state.
+    expect(gameplay.components.indexOf(daylight))
+      .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
+
+    const uDawn = scene.sky.skyUniforms.uDawn;
+    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
+                    fog: engine.scene.fog.color.getHex() };
+
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(0);
+
+    workTheShift();
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(1);
+    expect(scene.ambientLight.intensity).toBeGreaterThan(night.ambient);
+    expect(scene.moonLight.intensity).toBeGreaterThan(night.sun);
+    expect(engine.scene.fog.color.getHex()).not.toBe(night.fog);
+
+    scene.rooms.LivingQuarters.bed.onInteract({});
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(0);
+    expect(scene.ambientLight.intensity).toBe(night.ambient);
+    expect(engine.scene.fog.color.getHex()).toBe(night.fog);
+  });
+
+  it('turns the sky with the night clock and keeps the moonlight on Phobos', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const daylight = gameplay.getComponent(Daylight);
+    const toLight  = () => scene.moonLight.position.clone().sub(scene.moonLight.target.position);
+
+    scene.nightClock.currentTime = 3;
+    daylight.onUpdate(0.016);
+
+    expect(scene.sky.hour).toBe(3);
+    expect(toLight().length()).toBeCloseTo(30);          // still inside the shadow camera's near/far
+    expect(toLight().normalize().distanceTo(scene.sky.directions.phobos)).toBeCloseTo(0, 5);
+  });
+
+  it('shows the EVA suit on the HUD while the player wears it', () => {
+    const setSuit = vi.spyOn(scene.hud, 'setSuit');
+    scene.suit.putOn();
+    expect(setSuit).toHaveBeenLastCalledWith(true);
+    scene.suit.takeOff();
+    expect(setSuit).toHaveBeenLastCalledWith(false);
+
+    // And lets go of the suit on dispose.
+    scene.dispose();
+    setSuit.mockClear();
+    scene.suit.putOn();
+    expect(setSuit).not.toHaveBeenCalled();
   });
 
   it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {

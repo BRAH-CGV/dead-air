@@ -27,6 +27,8 @@ vi.mock('@dimforge/rapier3d', () => {
 import { MainOffice } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
+import { WallClock } from '../../gameobjects/WallClock.js';
+import { PRELOAD } from '../../assets/manifest.js';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -84,6 +86,53 @@ function childNames(room) {
   return room.root.children.map(c => c.name);
 }
 
+/** Real floor size [x, z] of each spawned model, unrotated: its .glb's
+ *  measured bounds times the manifest scale. The fake spawnModel loads no
+ *  mesh, so there's nothing to measure. */
+const MODEL_SIZE = {
+  ComputerDesk: [1.6, 0.8],
+  DeskChair: [0.44, 0.51],
+  TrashBin: [0.31, 0.33],
+  Shelf: [0.36, 1.03],
+  FireExtinguisher: [0.2, 0.25],
+};
+
+/** Floor footprint {x0, x1, z0, z1} of a room child, room-local. A
+ *  procedural prop is measured; a spawned model is its MODEL_SIZE turned by
+ *  its yaw. */
+function footprint(go) {
+  const box = new THREE.Box3().setFromObject(go.object3d);
+  if (!box.isEmpty()) return { x0: box.min.x, x1: box.max.x, z0: box.min.z, z1: box.max.z };
+  const [w, d] = MODEL_SIZE[go.name];
+  const { x, z } = go.object3d.position;
+  const cos = Math.abs(Math.cos(go.object3d.rotation.y));
+  const sin = Math.abs(Math.sin(go.object3d.rotation.y));
+  const hx = (cos * w + sin * d) / 2;
+  const hz = (sin * w + cos * d) / 2;
+  return { x0: x - hx, x1: x + hx, z0: z - hz, z1: z + hz };
+}
+
+const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1;
+
+/** The first metre of floor inside each doorway, where the player walks through. */
+function doorwayApproaches(room) {
+  const inX = room.width / 2 - room.wallThick / 2;
+  const inZ = room.depth / 2 - room.wallThick / 2;
+  return room.doors.map(door => {
+    const { x, z } = door.object3d.position;
+    const half = door.doorSize[0] / 2 + 0.1;
+    if (Math.abs(z) >= inZ) {
+      const z0 = z > 0 ? inZ - 1 : -inZ;
+      return { name: door.name, x0: x - half, x1: x + half, z0, z1: z0 + 1 };
+    }
+    const x0 = x > 0 ? inX - 1 : -inX;
+    return { name: door.name, x0, x1: x0 + 1, z0: z - half, z1: z + half };
+  });
+}
+
+/** Everything standing on the floor that isn't part of the shell. */
+const FURNITURE = ['ComputerDesk', 'DeskChair', 'VendingMachine', 'TrashBin', 'Shelf', 'FireExtinguisher'];
+
 describe('MainOffice', () => {
   let engine, room;
 
@@ -99,22 +148,96 @@ describe('MainOffice', () => {
     expect(room.root.object3d.position.toArray()).toEqual([0, 0, 0]);
   });
 
-  it('spawns the computer desk, server rack, radar terminal and switchboard', () => {
-    for (const name of ['ComputerDesk', 'ServerRack', 'RadarTerminal', 'Switchboard']) {
-      expect(room.root.find(name), name).not.toBeNull();
+  it('keeps the computer desk and clears out the props with no job', () => {
+    expect(room.root.find('ComputerDesk')).not.toBeNull();
+    for (const name of ['ServerRack', 'RadarTerminal', 'Switchboard']) {
+      expect(room.root.find(name), name).toBeNull();
     }
+    expect(childNames(room).filter(n => n.startsWith('SecurityCamera_'))).toEqual([]);
+
     const keys = engine.spawnModel.mock.calls.map(([key]) => key);
-    expect(keys).toEqual(expect.arrayContaining([
-      'model:retro-computer', 'model:server-rack', 'model:radar-terminal', 'model:switchboard',
-    ]));
+    for (const gone of ['model:server-rack', 'model:radar-terminal', 'model:switchboard', 'model:security-camera']) {
+      expect(keys, gone).not.toContain(gone);
+    }
   });
 
-  it('spawns the three security cameras without physics', () => {
-    const cams = childNames(room).filter(n => n.startsWith('SecurityCamera_'));
-    expect(cams.sort()).toEqual(['SecurityCamera_Desk', 'SecurityCamera_Door', 'SecurityCamera_Window']);
-    for (const [key, opts] of engine.spawnModel.mock.calls) {
-      if (key === 'model:security-camera') expect(opts.physics).toBe('none');
+  it('is dressed for the job: a chair at the desk, a bin, a shelf, an extinguisher and a poster', () => {
+    const expected = {
+      DeskChair: 'model:metal-chair',
+      TrashBin: 'model:trash-bin',
+      Shelf: 'model:shelf',
+      FireExtinguisher: 'model:fire-extinguisher',
+      Poster: 'model:poster',
+    };
+    for (const [name, key] of Object.entries(expected)) {
+      expect(room.root.find(name)?.physicsAssetKey, name).toBe(key);
     }
+  });
+
+  it('spawns only models the scene preloads', () => {
+    const keys = engine.spawnModel.mock.calls.map(([key]) => key);
+    expect(PRELOAD).toEqual(expect.arrayContaining(keys));
+  });
+
+  it('pulls the chair out beside the desk, leaving the kneehole open to crouch into', () => {
+    // The desk collider's kneehole runs between its side walls, x −0.545 …
+    // 0.545, and opens toward +z from the desk front at z −2.15. The player
+    // has to be able to walk straight up to it.
+    const kneehole = { x0: -0.545, x1: 0.545, z0: -2.15, z1: -1.15 };
+    const chair = room.root.find('DeskChair');
+    expect(overlaps(footprint(chair), kneehole)).toBe(false);
+    // Still at the desk, not across the room.
+    expect(chair.object3d.position.distanceTo(new THREE.Vector3(0, 0, -2.55))).toBeLessThan(1.5);
+  });
+
+  it('has a food-ration dispenser against the left wall: solid, lit and usable', () => {
+    const dispenser = room.root.find('VendingMachine');
+    expect(dispenser.parent).toBe(room.root);
+    expect(dispenser.rigidBody.isFixed()).toBe(true);           // the interact ray hits it
+    expect(engine._bodyToGO.get(dispenser.rigidBody.handle)).toBe(dispenser);
+
+    const box = new THREE.Box3().setFromObject(dispenser.object3d);
+    expect(box.min.x).toBeGreaterThan(-5.9 - 1e-6);             // not sunk into the wall
+    expect(box.min.x).toBeLessThan(-5.8);                       // but standing against it
+    expect(box.max.y).toBeGreaterThan(1.6);                     // machine-sized
+
+    const glows = [];
+    dispenser.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
+    expect(glows.length).toBeGreaterThan(0);                    // findable in the dark
+
+    const use = dispenser.getComponent(Interactable);
+    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(() => use.onInteract({})).not.toThrow();
+    log.mockRestore();
+  });
+
+  it('keeps the furniture inside the room and out of every doorway', () => {
+    const inX = room.width / 2 - room.wallThick / 2;
+    const inZ = room.depth / 2 - room.wallThick / 2;
+    const approaches = doorwayApproaches(room);
+    expect(approaches.length).toBe(3);
+
+    for (const name of FURNITURE) {
+      const f = footprint(room.root.find(name));
+      expect(f.x0, name).toBeGreaterThan(-inX - 1e-6);
+      expect(f.x1, name).toBeLessThan(inX + 1e-6);
+      expect(f.z0, name).toBeGreaterThan(-inZ - 1e-6);
+      expect(f.z1, name).toBeLessThan(inZ + 1e-6);
+      for (const door of approaches) {
+        expect(overlaps(f, door), `${name} blocks ${door.name}`).toBe(false);
+      }
+    }
+  });
+
+  it('hangs the poster flat on the right wall, facing into the room', () => {
+    const [, opts] = engine.spawnModel.mock.calls.find(([key]) => key === 'model:poster');
+    expect(opts.physics).toBe('none');
+    const poster = room.root.find('Poster').object3d;
+    expect(poster.position.x).toBeCloseTo(5.9);
+    // The model faces +z; a quarter turn clockwise points that at −x.
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(poster.rotation);
+    expect(facing.x).toBeCloseTo(-1);
   });
 
   it('props are room children only — not also root objects (no double update)', () => {
@@ -141,17 +264,21 @@ describe('MainOffice', () => {
     expect(childNames(room)).toEqual(expect.arrayContaining(['LeftWall_A', 'LeftWall_B', 'LeftWall_Header']));
   });
 
-  it('keeps the original front door, leading outside', () => {
-    const front = room.doors.find(d => d.targetRoom === 'Outside');
-    expect(front.name).toBe('Door:ToOutside');
+  it('keeps the original front door, now leading into the airlock', () => {
+    // Never straight outside: this is Mars. The airlock's hatch is the door
+    // onto the surface.
+    expect(room.doors.some(d => d.targetRoom === 'Outside')).toBe(false);
+    const front = room.doors.find(d => d.targetRoom === 'Airlock');
+    expect(front.name).toBe('Door:ToAirlock');
+    expect(front.locked).toBe(false);
     expect(front.object3d.position.x).toBeCloseTo(2);
     expect(front.object3d.position.z).toBeCloseTo(5);
   });
 
-  it('doorways do not collide with the furniture along the side walls', () => {
-    // Server rack sits against the right wall around z = -1.35, the
-    // switchboard around z = 1.25; the radar against the left at z = -0.55.
-    for (const door of room.doors.filter(d => d.targetRoom !== 'Outside')) {
+  it('puts the side doorways toward the front, leaving the back of the side walls for furniture', () => {
+    // The dispenser and bin stand on the left wall and the shelf on the
+    // right, all well behind z = 2; the doorways sit forward of it.
+    for (const door of room.doors.filter(d => d.targetRoom !== 'Airlock')) {
       const [w] = door.doorSize;
       const z = door.object3d.position.z;
       expect(z - w / 2).toBeGreaterThan(2);
@@ -181,6 +308,20 @@ describe('MainOffice', () => {
     expect(room.root.find('ComputerDesk').getComponent(Interactable)).toBeNull();
   });
 
+  it('hangs a wall clock on the back wall beside the window, facing into the room', () => {
+    const clock = room.root.find('WallClock');
+    expect(clock).toBeInstanceOf(WallClock);
+    expect(room.wallClock).toBe(clock);             // the scene hands it the NightClock
+
+    const box = new THREE.Box3().setFromObject(clock.object3d);
+    expect(clock.object3d.position.z).toBeCloseTo(-4.9);   // flush on the wall's inner face
+    expect(box.min.z).toBeGreaterThan(-4.9 - 1e-6);        // not sunk into it
+    expect(box.min.x).toBeGreaterThan(4.43);               // clear of the window frame
+    expect(box.max.x).toBeLessThan(5.9);                   // clear of the right wall
+    expect(box.min.y).toBeGreaterThan(1.5);                // above the desk, readable
+    expect(box.max.y).toBeLessThan(2.9);                   // below the ceiling
+  });
+
   it('leaves global lights (ambient, moon) to the scene', () => {
     let globals = 0;
     room.root.object3d.traverse(o => { if (o.isAmbientLight || o.isDirectionalLight) globals++; });
@@ -194,11 +335,14 @@ describe('MainOffice placement', () => {
     const room = new MainOffice(engine, { position: [5, 0, 0] });
     room.build();
 
-    const call = engine.spawnModel.mock.calls.find(([key]) => key === 'model:server-rack');
-    call[1].position.forEach((v, i) => expect(v).toBeCloseTo([9.55, 0, -1.35][i]));
-    const rack = room.root.find('ServerRack');
-    expect(rack.object3d.position.toArray()).toEqual([4.55, 0, -1.35]);
-    expect(rack.rigidBody.translation().x).toBeCloseTo(9.55);
+    const [, opts] = engine.spawnModel.mock.calls.find(([key]) => key === 'model:shelf');
+    const shelf = room.root.find('Shelf');
+    const local = shelf.object3d.position;
+    expect(opts.position[0]).toBeCloseTo(local.x + 5);
+    expect(opts.position[2]).toBeCloseTo(local.z);
+    expect(local.x).toBeGreaterThan(5);                   // still room-local, on its right wall
+    expect(shelf.rigidBody.translation().x).toBeCloseTo(local.x + 5);
+    expect(shelf.parent).toBe(room.root);
   });
 
   it('dispose removes every body, including the props, and forgets their handles', () => {
@@ -223,6 +367,16 @@ describe('MainOffice placement', () => {
     room.dispose();
     expect(geom).toBe(true);
     expect(mat).toBe(true);
+  });
+});
+
+describe('MainOffice wall clock teardown', () => {
+  it('dispose frees the wall clock with the rest of the room', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const dispose = vi.spyOn(room.wallClock, 'dispose');
+    room.dispose();
+    expect(dispose).toHaveBeenCalled();
   });
 });
 

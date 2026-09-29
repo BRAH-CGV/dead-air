@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { createMarsSky, directionFromAngles, milkyWayFrame } from './MarsSky.js';
+import {
+  createMarsSky, directionFromAngles, milkyWayFrame, celestialPole, DEFAULT_MOONS,
+} from './MarsSky.js';
 
 // ─────────────────────────────────────────────
 // MarsSky  –  procedural night sky
@@ -13,6 +15,12 @@ const findMesh = (go, name) => go.object3d.children.find(c => c.name === name);
 
 /** The moon's body, ignoring the halo quad sitting alongside it. */
 const moonBody = (sky, name) => findMesh(sky.find(name), name);
+
+/** Azimuth and elevation of a direction, in degrees, in the header's convention. */
+const azEl = (v) => ({
+  azimuth:   THREE.MathUtils.radToDeg(Math.atan2(v.x, -v.z)),
+  elevation: THREE.MathUtils.radToDeg(Math.asin(v.y / v.length())),
+});
 
 describe('createMarsSky structure', () => {
   it('returns a group so the level editor treats it as a container', () => {
@@ -317,5 +325,228 @@ describe('moon glow', () => {
     const sky = createMarsSky({ deimos: { glow: 0 } });
     expect(findMesh(sky.find('Deimos'), 'DeimosGlow')).toBeUndefined();
     expect(moonBody(sky, 'Deimos')).toBeDefined();
+  });
+});
+
+// ─────────────────────────────────────────────
+// Dawn — the state-driven uniform
+// ─────────────────────────────────────────────
+// uDawn runs 0 (night) → 1 (day). Daylight sets it from the game clock; the
+// shaders do the blending. What they paint is checked in the browser — here,
+// only that the uniform exists, is shared and is actually read.
+
+describe('dawn uniform', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+  const domeOf  = (sky) => findMesh(sky, 'MarsSkyDome');
+
+  it('starts at night', () => {
+    expect(createMarsSky().skyUniforms.uDawn.value).toBe(0);
+  });
+
+  it('is one uniform shared by the dome and the stars, so one write drives both', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.skyUniforms.uDawn.value = 0.4;
+
+    expect(domeOf(sky).material.uniforms.uDawn.value).toBe(0.4);
+    expect(starsOf(sky).material.uniforms.uDawn.value).toBe(0.4);
+  });
+
+  it('is read by both fragment shaders', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    expect(domeOf(sky).material.fragmentShader).toMatch(/uniform float uDawn;/);
+    expect(starsOf(sky).material.fragmentShader).toMatch(/uniform float uDawn;/);
+  });
+
+  it('carries a butterscotch day gradient, tunable like the night one', () => {
+    const sky = createMarsSky({ dayHorizonColor: 0x112233, dayZenithColor: 0x445566 });
+    expect(sky.skyUniforms.uDayHorizonColor.value.getHex()).toBe(0x112233);
+    expect(sky.skyUniforms.uDayZenithColor.value.getHex()).toBe(0x445566);
+
+    // Default day: warm — more red than blue, at the horizon and overhead.
+    const day = createMarsSky().skyUniforms;
+    for (const key of ['uDayHorizonColor', 'uDayZenithColor']) {
+      const { r, b } = day[key].value;
+      expect(r).toBeGreaterThan(b);
+    }
+  });
+
+  it('glows blue around the rising Sun — Martian twilight is blue', () => {
+    const { uSunriseColor } = createMarsSky().skyUniforms;
+    const { r, b } = uSunriseColor.value;
+    expect(b).toBeGreaterThan(r);
+  });
+
+  it('rises on the horizon inside the office window at 6 AM, so the dawn is seen from the desk', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setHour(6);
+    const dir = sky.skyUniforms.uSunDir.value;
+    expect(dir.length()).toBeCloseTo(1);
+    expect(Math.abs(dir.y)).toBeLessThan(0.05);               // on the horizon
+    expect(azEl(dir).azimuth).toBeCloseTo(-35, 1);            // where sunAzimuth puts it
+    expect(Math.abs(azEl(dir).azimuth)).toBeLessThan(41);     // window: ±41°
+  });
+});
+
+// ─────────────────────────────────────────────
+// The night turns
+// ─────────────────────────────────────────────
+// setHour(h) turns the stars, the Milky Way, the moons and the Sun together
+// about the celestial pole, 15° an hour. Midnight is the sky as authored, so
+// every framing test above is the midnight sky.
+
+describe('the night turns', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+  const domeOf  = (sky) => findMesh(sky, 'MarsSkyDome');
+  const turnOf  = (sky) => starsOf(sky).quaternion;
+  const deg     = THREE.MathUtils.radToDeg;
+  const authored = (key) => directionFromAngles(DEFAULT_MOONS[key].azimuth, DEFAULT_MOONS[key].elevation);
+
+  it('starts at midnight, with the moons where they are aimed', () => {
+    const sky = createMarsSky({ starCount: 10 });
+
+    expect(sky.hour).toBe(0);
+    expect(turnOf(sky).angleTo(new THREE.Quaternion())).toBeCloseTo(0);
+    for (const key of ['phobos', 'deimos']) {
+      expect(sky.directions[key].distanceTo(authored(key))).toBeCloseTo(0);
+    }
+  });
+
+  it('turns about a pole due north, as high as the latitude', () => {
+    // North is a quarter-turn left of where the Sun rises (a compass bearing
+    // 90° less), and a pole stands as high above the horizon as you are far
+    // from the equator.
+    const pole = celestialPole(-35, 35);
+    expect(azEl(pole).azimuth).toBeCloseTo(-125);
+    expect(azEl(pole).elevation).toBeCloseTo(35);
+
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setHour(3.7);
+    expect(pole.clone().applyQuaternion(turnOf(sky)).distanceTo(pole)).toBeCloseTo(0);
+  });
+
+  it('turns westward — the east climbs, the west sinks', () => {
+    const sky  = createMarsSky({ starCount: 10 });
+    const east = directionFromAngles(-35, 0);      // where the Sun comes up
+    const west = directionFromAngles(145, 0);
+    let prev = { east: -Infinity, west: Infinity };
+
+    for (let hour = 0; hour <= 6; hour++) {
+      sky.setHour(hour);
+      const now = {
+        east: east.clone().applyQuaternion(turnOf(sky)).y,
+        west: west.clone().applyQuaternion(turnOf(sky)).y,
+      };
+      expect(now.east).toBeGreaterThan(prev.east);
+      expect(now.west).toBeLessThan(prev.west);
+      prev = now;
+    }
+  });
+
+  it('turns 15° an hour — a sol turns the sky 360° in its 24 hours', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setHour(2);
+    expect(deg(turnOf(sky).angleTo(new THREE.Quaternion()))).toBeCloseTo(30);
+    sky.setHour(6);
+    expect(deg(turnOf(sky).angleTo(new THREE.Quaternion()))).toBeCloseTo(90);
+    expect(sky.hour).toBe(6);
+  });
+
+  it('carries the stars, the moons and the Milky Way round as one sky', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setHour(4.2);
+    const q = turnOf(sky);
+
+    for (const name of ['Phobos', 'Deimos']) {
+      expect(sky.find(name).object3d.quaternion.angleTo(q)).toBeCloseTo(0);
+    }
+
+    // The dome shader reads the same turn as a matrix, to take each pixel's
+    // direction back into the sky's own frame before it looks up the band.
+    const m = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(q));
+    const u = sky.skyUniforms.uSkyRotation.value;
+    expect(domeOf(sky).material.uniforms.uSkyRotation.value).toBe(u);
+    u.elements.forEach((e, i) => expect(e).toBeCloseTo(m.elements[i]));
+  });
+
+  it('keeps the live moon directions on the moons actually drawn', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setHour(2.5);
+    sky.object3d.updateMatrixWorld(true);
+
+    for (const [key, name] of [['phobos', 'Phobos'], ['deimos', 'Deimos']]) {
+      const drawn = moonBody(sky, name).getWorldPosition(new THREE.Vector3()).normalize();
+      expect(drawn.distanceTo(sky.directions[key])).toBeCloseTo(0);
+      expect(drawn.distanceTo(authored(key))).toBeGreaterThan(0.1);   // it did move
+    }
+  });
+
+  it('turns the Milky Way in the dome shader, and fades stars at the real horizon', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    const dome = domeOf(sky).material.fragmentShader;
+    expect(dome).toMatch(/uniform mat3\s+uSkyRotation;/);
+    expect(dome).toMatch(/dir \* uSkyRotation/);
+    // The star field turns as an object, so its horizon fade has to look at
+    // the world direction, not the star's position in the field.
+    expect(starsOf(sky).material.vertexShader).toMatch(/modelMatrix/);
+  });
+
+  it('keeps the Sun below the horizon all night, climbing to it for 6 AM', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    expect(sky.directions.sun).toBe(sky.skyUniforms.uSunDir.value);
+
+    let prev = -Infinity;
+    for (let hour = 0; hour <= 6; hour += 0.5) {
+      sky.setHour(hour);
+      const { y } = sky.directions.sun;
+      if (hour < 6) expect(y).toBeLessThan(0);
+      expect(y).toBeGreaterThan(prev);
+      prev = y;
+    }
+    expect(Math.abs(prev)).toBeLessThan(1e-6);
+  });
+
+  it('never has the Sun next to the moons — they are across the sky from it all night', () => {
+    // The two discs are drawn full, so they have to be well away from the
+    // Sun: 125° out, they would really be gibbous.
+    const sky = createMarsSky({ starCount: 10 });
+    for (let hour = 0; hour <= 6; hour += 0.5) {
+      sky.setHour(hour);
+      for (const key of ['phobos', 'deimos']) {
+        expect(deg(sky.directions[key].angleTo(sky.directions.sun)), `${key} at ${hour}`).toBeGreaterThan(110);
+      }
+    }
+  });
+
+  it('keeps both moons up all night — Phobos high, lighting the valley', () => {
+    // The moonlight follows Phobos, so Phobos has to stay well up.
+    const sky = createMarsSky({ starCount: 10 });
+    for (let hour = 0; hour <= 6; hour += 0.25) {
+      sky.setHour(hour);
+      expect(azEl(sky.directions.phobos).elevation, `Phobos at ${hour}`).toBeGreaterThanOrEqual(29.9);
+      expect(azEl(sky.directions.deimos).elevation, `Deimos at ${hour}`).toBeGreaterThan(5);
+    }
+  });
+
+  it('takes the latitude, the turn rate and the sunrise hour as options', () => {
+    const sky = createMarsSky({ starCount: 10, latitude: 50, hourRate: 30, sunriseHour: 2 });
+    sky.setHour(1);
+    expect(deg(turnOf(sky).angleTo(new THREE.Quaternion()))).toBeCloseTo(30);
+
+    const pole = celestialPole(-35, 50);
+    expect(pole.clone().applyQuaternion(turnOf(sky)).distanceTo(pole)).toBeCloseTo(0);
+
+    sky.setHour(2);
+    expect(Math.abs(sky.directions.sun.y)).toBeLessThan(1e-6);
+    expect(azEl(sky.directions.sun).azimuth).toBeCloseTo(-35);
+  });
+
+  it('allocates nothing to turn — the same objects every hour', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    const before = { ...sky.directions, rot: sky.skyUniforms.uSkyRotation.value };
+    sky.setHour(3);
+    expect(sky.directions.sun).toBe(before.sun);
+    expect(sky.directions.phobos).toBe(before.phobos);
+    expect(sky.directions.deimos).toBe(before.deimos);
+    expect(sky.skyUniforms.uSkyRotation.value).toBe(before.rot);
   });
 });

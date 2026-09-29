@@ -3,7 +3,7 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 
 // ─────────────────────────────────────────────
-// Door  –  doorway between rooms, lockable per night
+// Door  –  doorway between rooms, lockable (the airlock hatch is)
 // ─────────────────────────────────────────────
 // One box-shaped collider filling the doorway. Unlocked it is a sensor —
 // the player walks through (the character controller excludes sensors) and

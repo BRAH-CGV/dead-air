@@ -1,24 +1,28 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
-import { Interactable } from '../../components/Interactable.js';
+import { Bed } from '../../components/Bed.js';
 
 // ─────────────────────────────────────────────
-// LivingQuarters  –  break room, open from night 3
+// LivingQuarters  –  the bedroom
 // ─────────────────────────────────────────────
-// Sleep, eat, recover stamina. The "safe" room — but never truly safe.
-// The vending machine is where coffee (stamina) will come from.
+// Where the day goes: the player works the night shift and sleeps through
+// the daylight. The "safe" room — but never truly safe.
 //
-// Bunk, vending machine and lockers are procedural stand-ins until the
-// models on the asset list arrive. Each records the file it's waiting for
-// in `placeholderFor`, so swapping one is: add the model to the manifest,
-// replace the _placeholder call with a _spawnProp.
+// The bunk is the bed: its Bed interactable (`room.bed`) is how the player
+// sleeps through the day. The scene wires the controller and fade into it.
+// Around it, a row of lockers and a desk with a chair. Food is in the
+// office — the ration dispenser lives there.
 //
 // The doorway is in the right wall, leading back toward the office.
 // `doorOffset` slides it along the wall so BaseScene can line it up with
-// the corridor.
+// the corridor. The furniture keeps to the left half, leaving the metre
+// inside the right wall clear wherever the doorway lands.
 // ─────────────────────────────────────────────
 
 export class LivingQuarters extends Room {
+  /** On the bunk, from buildProps(). @type {Bed|null} */
+  bed = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -62,36 +66,21 @@ export class LivingQuarters extends Room {
     const inX = this.width / 2 - this.wallThick / 2;   // inner face of the side walls
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
-    // Back-left corner.
-    this._placeholder('Bunk', 'bunk-bed.glb',
-      [-inX + 0.45, 0.85, -inZ + 1.0], [0.9, 1.7, 2.0], 0x4a5058);
+    // Back-left corner, its long side along the left wall.
+    const bunk = this._spawnProp('model:bunk-bed', {
+      name: 'Bunk', position: [-inX + 0.56, 0, -inZ + 1.02],
+    });
+    this.bed = bunk.addComponent(new Bed());
 
-    // Against the back wall, right side. Faint glow from the lit front.
-    const vending = this._placeholder('VendingMachine', 'vending-machine.glb',
-      [1.8, 0.95, -inZ + 0.4], [1.0, 1.9, 0.8], 0x6b2a24, { emissive: 0x335577, emissiveIntensity: 0.4 });
-    vending.addComponent(new class extends Interactable {
-      promptLabel = '[E] Get coffee';
-      onInteract() {
-        // TODO: coordinate with Hayden's stamina system.
-        console.log('[LivingQuarters] coffee consumed');
-      }
-    }());
-
-    // Row of lockers along the left wall.
-    [0.5, 1.02, 1.54].forEach((z, i) => {
-      this._placeholder(`Locker_${i + 1}`, 'locker.glb',
-        [-inX + 0.25, 0.95, z], [0.5, 1.9, 0.5], 0x56606a);
+    // Three lockers in one model, along the left wall with the doors facing
+    // into the room. Same model, scale and turn as the airlock's suit
+    // locker, so the same +0.25 m nudge centres it — here on z = 0.3.
+    this._spawnProp('model:locker', {
+      name: 'Lockers', position: [-inX + 0.22, 0, 0.3 + 0.25], rotationY: Math.PI / 2, scale: 0.9,
     });
 
-    // Front-right, clear of the doorway.
-    this._spawnProp('model:desk', { name: 'Desk', position: [1.6, 0, inZ - 1.0], rotationY: Math.PI });
-  }
-
-  /** Solid stand-in box for a model that hasn't been sourced yet. */
-  _placeholder(name, file, position, size, color, { emissive = 0x000000, emissiveIntensity = 1 } = {}) {
-    const material = this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.8, emissive, emissiveIntensity }));
-    const go = this._addStaticBox(name, position, size, material);
-    go.placeholderFor = file;
-    return go;
+    // Front-left: a desk against the front wall and its chair.
+    this._spawnProp('model:desk', { name: 'Desk', position: [-1.4, 0, inZ - 0.42], rotationY: Math.PI });
+    this._spawnProp('model:metal-chair', { name: 'DeskChair', position: [-1.3, 0, inZ - 1.18], rotationY: 0.25 });
   }
 }

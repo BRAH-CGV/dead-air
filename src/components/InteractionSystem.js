@@ -7,8 +7,10 @@ import { PromptLabel } from '../ui/PromptLabel.js';
 // ─────────────────────────────────────────────
 // InteractionSystem  –  Component (attach to Player)
 // ─────────────────────────────────────────────
-// Casts a ray from the camera centre every frame and looks for the
-// nearest GameObject that carries an Interactable component.
+// Casts a ray from the camera centre every frame. It stops at the first
+// solid collider it meets — a wall, a locked door, a prop — and targets it
+// only if that collider's GameObject carries an Interactable, so nothing is
+// reachable through a wall. Sensors (open doorways) block nothing.
 //
 // When the player presses the interact action (default: KeyE),
 // the targeted Interactable.onInteract(rayHitInfo) is invoked.
@@ -72,26 +74,24 @@ export class InteractionSystem extends Component {
     this.currentTarget = null;
 
     // ── Cast ray into physics world ──
-    // filterExcludeRigidBody: skip the player's own body
-    // filterPredicate: only accept colliders whose GameObject has an Interactable
+    // The first solid thing hit is what the player is looking at. No
+    // Interactable filter on the cast itself: that would let the ray pass
+    // through walls to whatever interactable lies behind them.
     const ray     = new RAPIER.Ray(this._origin, this._dir);
     const bodyMap = engine._bodyToGO;
 
     const hit = engine.world.castRay(
       ray,
       this.range,
-      true,                          // solid
-      undefined,                     // filterFlags
-      undefined,                     // filterGroups
-      undefined,                     // filterExcludeCollider
-      this.gameObject.rigidBody,     // filterExcludeRigidBody – skip self
-      (collider) => {
-        const go = bodyMap.get(collider.parent()?.handle);
-        return go?.getComponent(Interactable) != null;
-      },
+      true,                                       // solid
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,    // open doorways block nothing
+      undefined,                                  // filterGroups
+      undefined,                                  // filterExcludeCollider
+      this.gameObject.rigidBody,                  // filterExcludeRigidBody – skip self
     );
 
     if (hit) {
+      // A wall, the terrain or a plain prop has no Interactable: no target.
       const go        = bodyMap.get(hit.collider.parent()?.handle);
       const interact  = go?.getComponent(Interactable);
 
@@ -115,12 +115,19 @@ export class InteractionSystem extends Component {
     }
 
     // ── Hover callbacks + HUD prompt ──
+    // Re-shown on a new target, or when the same target changes its label
+    // (a toggle like the suit locker's "Put on" / "Take off") — never every
+    // frame for an unchanged prompt.
+    const label = this.currentTarget?.promptLabel ?? null;
     if (this.currentTarget !== this._prevTarget) {
       this._prevTarget?.onHoverEnd();
       this._prevTarget = this.currentTarget;
-      if (this.currentTarget) this.prompt?.show(this.currentTarget.promptLabel);
+      if (this.currentTarget) this.prompt?.show(label);
       else this.prompt?.hide();
+    } else if (this.currentTarget && label !== this._prevLabel) {
+      this.prompt?.show(label);
     }
+    this._prevLabel = label;
     if (this.currentTarget && this.currentHit) {
       this.currentTarget.onHover(this.currentHit);
     }

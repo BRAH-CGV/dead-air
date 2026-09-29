@@ -16,7 +16,10 @@ import { Room, SIDES } from './Room.js';
 // doorway threshold.
 //
 // `ends: 'doorway'` adds end walls with a centred doorway, for a corridor
-// that doesn't sit flush against a room.
+// that doesn't sit flush against a room. `ends` can also be set per end,
+// `[first, second]` in the order the axis runs — [left, right] along x,
+// [back, front] along z — for a passage that butts against a room at one
+// end and stands free at the other (the airlock).
 // ─────────────────────────────────────────────
 
 const AXES = ['x', 'z'];
@@ -34,8 +37,9 @@ export class Corridor extends Room {
    * @param {number} [opts.height=3]
    * @param {number} [opts.wallThick=0.2]
    * @param {'x'|'z'} [opts.axis='x']
-   * @param {'open'|'doorway'} [opts.ends='open']
-   * @param {number} [opts.doorWidth=1.2]  Only used with ends: 'doorway'
+   * @param {'open'|'doorway'|('open'|'doorway')[]} [opts.ends='open']  Both
+   *        ends, or [first, second] along the axis
+   * @param {number} [opts.doorWidth=1.2]  Only used by a 'doorway' end
    * @param {number} [opts.doorHeight=2.2]
    * @param {number[]} [opts.position]    World position of the floor centre
    * @param {import('three').Material} [opts.material]
@@ -45,12 +49,15 @@ export class Corridor extends Room {
     ends = 'open', doorWidth = 1.2, doorHeight = 2.2, position, material,
   }) {
     if (!AXES.includes(axis)) throw new Error(`Corridor ${name}: axis must be 'x' or 'z', got '${axis}'`);
-    if (!ENDS.includes(ends)) throw new Error(`Corridor ${name}: ends must be 'open' or 'doorway', got '${ends}'`);
+    const endModes = Array.isArray(ends) ? ends : [ends, ends];
+    if (endModes.length !== 2 || !endModes.every(mode => ENDS.includes(mode))) {
+      throw new Error(`Corridor ${name}: ends must be 'open', 'doorway' or a pair of them, got ${JSON.stringify(ends)}`);
+    }
 
     const endSides = axis === 'x' ? ['left', 'right'] : ['back', 'front'];
-    const openings = ends === 'doorway'
-      ? endSides.map(side => ({ side, width: doorWidth, height: doorHeight }))
-      : [];
+    const openings = endSides
+      .filter((_, i) => endModes[i] === 'doorway')
+      .map(side => ({ side, width: doorWidth, height: doorHeight }));
 
     // Room's width/depth are X/Z extents, so map length/width onto them.
     super(engine, {
@@ -63,6 +70,8 @@ export class Corridor extends Room {
     this.corridorWidth = width;
     this.axis          = axis;
     this.ends          = ends;
+    /** Mode per end side, e.g. { back: 'open', front: 'doorway' }. */
+    this._endMode      = Object.fromEntries(endSides.map((side, i) => [side, endModes[i]]));
   }
 
   /** A single ceiling light at the midpoint, with a visible fixture (same
@@ -101,7 +110,7 @@ export class Corridor extends Room {
   _buildShell() {
     const t = this.wallThick;
     for (const side of Object.keys(SIDES)) {
-      if (this._isLong(side) || this.ends === 'doorway') this._buildWall(side);
+      if (this._isLong(side) || this._endMode[side] === 'doorway') this._buildWall(side);
     }
 
     const size = this.axis === 'x'

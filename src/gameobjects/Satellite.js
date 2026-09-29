@@ -18,11 +18,16 @@ import { GameObject } from '../core/GameObject.js';
 //   dish.isRotating();              // false once both axes are on target
 // ─────────────────────────────────────────────
 
+/** The dish's default slew limit, radians per second: π/8 = 22.5°/s. A half
+ *  turn takes ~8 s, a 12° correction under a second. Slow enough that the
+ *  tower reads as heavy machinery; fast enough that the minigame is still
+ *  about aiming, not waiting. ComputerTerminal paces its cursor to it. */
+export const DISH_SLEW_RATE = Math.PI / 8;
+
 export class Satellite extends GameObject {
 
-  /** Slew limit shared by both axes, radians per second (π/64 ≈ 2.8°/s —
-   *  a full yaw revolution takes ~128 s). */
-  maxRotationSpeed = Math.PI / 64;
+  /** Slew limit shared by both axes, radians per second. */
+  maxRotationSpeed = DISH_SLEW_RATE;
 
   /** Angle the neck is slewing toward, radians around Y. */
   targetYaw = 0;
@@ -34,10 +39,13 @@ export class Satellite extends GameObject {
   velYaw = 0;
   /** Angular velocity around X (rad/s). */
   velPitch = 0;
-  /** How fast the dish accelerates toward target (rad/s^2). */
-  angularAccel = 2.0;
+  // The pair is a spring (stiffness k = angularAccel) and damper
+  // (c = angularDamping). c = 2·√k is critical damping: the fastest settle
+  // that never swings past the target. Change one, re-derive the other.
+  /** How fast the dish accelerates toward target (rad/s^2 per rad of error). */
+  angularAccel = 25.0;
   /** Velocity damping factor (higher = less overshoot). */
-  angularDamping = 4.0;
+  angularDamping = 10.0;
 
   /** The slewing base of the tower. @type {GameObject|null} */
   neck = null;
@@ -162,12 +170,4 @@ const SETTLED_EPSILON = 0.05;  // ~3 degrees
  *  the distance and direction around the circle. */
 function angleDelta(angle, target) {
   return Math.atan2(Math.sin(target - angle), Math.cos(target - angle));
-}
-
-/** Step `angle` toward `target` by at most `maxStep` radians. The atan2
- *  wraps the difference into ±π, so yaw always takes the short way around
- *  the circle instead of slewing through a full turn. */
-function approachAngle(angle, target, maxStep) {
-  const delta = angleDelta(angle, target);
-  return Math.abs(delta) <= maxStep ? target : angle + Math.sign(delta) * maxStep;
 }

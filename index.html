@@ -135,6 +135,14 @@
         font-size: 11px;
         color: #8898a8;
       }
+      #hud-suit {
+        display: none;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #e8a050;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
 
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
@@ -212,6 +220,18 @@
       #signal-delete-btn:hover {
         background: rgba(207, 110, 110, 0.15);
       }
+
+      /* ── Screen fade (ScreenFade.js sets the duration) ──── */
+      #fade {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.7s ease;
+        z-index: 101;
+      }
+      #fade.is-dark { opacity: 1; }
     </style>
   </head>
   <body>
@@ -224,6 +244,7 @@
       <div id="hud-night">Night 1</div>
       <div id="hud-scan-bar"></div>
       <div id="hud-prompt"></div>
+      <div id="hud-suit">EVA suit on</div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->
@@ -241,6 +262,8 @@
         <span id="signal-delete-btn">[D] Delete Signal</span>
       </div>
     </div>
+
+    <div id="fade"></div>
 
     <div id="loading">
       <div id="loading-track"><div id="loading-bar"></div></div>

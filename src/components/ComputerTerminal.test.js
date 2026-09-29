@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// The terminal imports FirstPersonController only as a getComponent key,
+// but that module imports Rapier, whose WASM build doesn't load under
+// vitest (BUG-003). Nothing here constructs a controller, so an empty
+// module is enough to let this file run.
+vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
+
+import * as THREE from 'three';
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 
 // ── Helper: convert sky coords to Cartesian cursor position ──
 function skyToCursor(yaw, pitch) {
@@ -10,6 +19,18 @@ function skyToCursor(yaw, pitch) {
 }
 
 // ── Minimal test doubles ──────────────────────────────────
+
+/** The real dish, on a bare Base → Neck_block → Dish rig, parked at the
+ *  zenith where a fresh terminal's cursor starts. */
+function makeRealDish() {
+  const root = new THREE.Object3D(); root.name = 'Base';
+  const neck = new THREE.Object3D(); neck.name = 'Neck_block';
+  const dish = new THREE.Object3D(); dish.name = 'Dish';
+  neck.add(dish);
+  root.add(neck);
+  dish.rotation.x = -Math.PI / 2;
+  return Satellite.fromObject3D(root);
+}
 
 function makeSatellite() {
   return {
@@ -102,8 +123,59 @@ describe('ComputerTerminal', () => {
     // Satellite target is derived via _cursorToSky
     expect(sat.targetYaw).toBe(term._cursorToSky().yaw);
 
+    const leftmost = term._cursorX;
     term.moveCursor({ left: false, right: true, up: false, down: false }, 0.5);
-    expect(term._cursorX).toBeGreaterThan(-0.25); // moved back right
+    expect(term._cursorX).toBeGreaterThan(leftmost); // moved back right
+  });
+
+  it('holding a direction carries the cursor from centre to rim in four seconds', () => {
+    term.enter();
+    let t = 0;
+    while (Math.hypot(term._cursorX, term._cursorY) < 1 && t < 10) {
+      term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
+      t += 1 / 60;
+    }
+    expect(t).toBeCloseTo(4, 1);
+  });
+
+  it("sweeps the cursor at the dish's own pace, so the dish never falls further behind", () => {
+    term.enter();
+    const before = term._cursorToSky().pitch;
+    term.moveCursor({ left: false, right: false, up: true, down: false }, 0.5);
+    const skyPerSecond = Math.abs(term._cursorToSky().pitch - before) / 0.5;
+    expect(skyPerSecond).toBeCloseTo(DISH_SLEW_RATE, 5);
+  });
+
+  it('keeps the dish close behind the cursor: on target within half a second of a full sweep', () => {
+    const dish = makeRealDish();
+    term.satellite = dish;
+    term.enter();
+    const dt = 1 / 60;
+    const up = { left: false, right: false, up: true, down: false };
+
+    // Zenith to horizon, the dish chasing every frame.
+    while (Math.hypot(term._cursorX, term._cursorY) < 1) {
+      term.moveCursor(up, dt);
+      dish._update(dt);
+    }
+
+    // Let go: how long until the dish could scan where the cursor stopped?
+    const goal = term._cursorToSky();
+    let t = 0;
+    while (!dish.isAimedAt(goal.yaw, goal.pitch, mgr.signals[0].tolerance) && t < 5) {
+      dish._update(dt);
+      t += dt;
+    }
+    expect(t).toBeLessThanOrEqual(0.5);
+  });
+
+  it('moves finely enough per frame to stop inside a signal', () => {
+    term.enter();
+    const before = term._cursorToSky().pitch;
+    term.moveCursor({ left: false, right: false, up: true, down: false }, 1 / 60);
+    const stepAngle = Math.abs(term._cursorToSky().pitch - before);
+    // At least four frames to cross a signal's acceptance radius.
+    expect(stepAngle).toBeLessThan(mgr.signals[0].tolerance / 4);
   });
 
   it('moveCursor y moves up and down', () => {

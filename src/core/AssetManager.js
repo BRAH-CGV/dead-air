@@ -129,6 +129,7 @@ export class AssetManager {
     return this.gltfLoader.loadAsync(url).then((gltf) => {
       prepareModel(gltf.scene, {
         scale: entry.scale,
+        origin: entry.origin,
         castShadow: entry.castShadow,
         receiveShadow: entry.receiveShadow,
         anisotropy: this.maxAnisotropy,

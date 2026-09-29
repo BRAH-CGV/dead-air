@@ -17,23 +17,33 @@ import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
+import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
+import { EVASuit } from '../components/EVASuit.js';
+import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { ScreenFade } from '../ui/ScreenFade.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
 // ─────────────────────────────────────────────
-// Three rooms joined by corridors, plus the small outside area — all of it
-// standing on the Mars valley (MarsTerrain), under the procedural night sky
-// and its two moons (MarsSky). Nothing is loaded per night: doors lock and
-// unlock instead (NightManager).
+// Three rooms joined by corridors, an airlock, and the small outside area —
+// all of it standing on the Mars valley (MarsTerrain), under the procedural
+// night sky and its two moons (MarsSky). Nothing is loaded per night, and
+// every interior door is open from night 1 — NightManager only counts
+// nights. The one door that stays shut is the airlock hatch, and it opens
+// for the EVA suit (on the player), not for a night. The office's front
+// door is the airlock's inner door: the interlock shuts it while the suit
+// is on, so the two are never open together.
 //
 //   LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRoom
 //                                     │ front door
+//                                  Airlock (suit locker)
+//                                     │ hatch — suit on
 //                                  Outside (generator, satellite)
 //
 // The office sits at the origin. Everything else is placed from the rooms'
@@ -42,8 +52,12 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// Until gameplay drives the nights, press N (Engine keyBinds.nextNight) to
-// advance; it wraps back to night 1 after the last.
+// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. The last hour brings the dawn (Daylight
+// turns the sky, lights and fog to the Martian day). A met quota makes it
+// morning, and the bunk in LivingQuarters sleeps through the day to the next
+// night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
+// night 1 after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -94,13 +108,16 @@ const DISH_LANE = Math.atan2(-25, 0);
 const BUGGY_SCALE = 0.75;
 
 export class BaseScene extends Scene {
-  /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters}} */
+  /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
   rooms = {};
   /** @type {{OfficeToServer: Corridor, OfficeToQuarters: Corridor}} */
   corridors = {};
-  /** Which rooms are open tonight; re-locks doors on every change.
+  /** Which night it is. The game controller follows it.
    *  @type {NightManager|null} */
   nights = null;
+  /** The player's EVA suit — the airlock hatch follows it.
+   *  @type {EVASuit|null} */
+  suit = null;
 
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
@@ -145,8 +162,8 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
-    this._offNightChange?.();
     this._offNightStart?.();
+    this._offSuitHud?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
     // borrowed — otherwise the Mars horizon tint and this scene's long
     // outdoor sightlines follow us into whatever loads next.
@@ -185,8 +202,19 @@ export class BaseScene extends Scene {
     server.position   = [ officeEdge + CORRIDOR_LENGTH + server.wallThick / 2 + server.width / 2, 0, SIDE_ROOM_Z];
     quarters.position = [-(officeEdge + CORRIDOR_LENGTH + quarters.wallThick / 2 + quarters.width / 2), 0, SIDE_ROOM_Z];
 
-    this.rooms = { MainOffice: office, ServerRoom: server, LivingQuarters: quarters };
+    // The airlock's open end sits on the office's front outer wall face,
+    // centred on the front doorway — the office doorway is its way in.
+    const airlock = new Airlock(engine);
+    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
+    airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
+
+    this.rooms = { MainOffice: office, ServerRoom: server, LivingQuarters: quarters, Airlock: airlock };
     for (const room of Object.values(this.rooms)) this._sceneRoot.addChild(room.build());
+
+    // The office's front door is the airlock's inner door: the interlock
+    // shuts it behind the suit before the hatch opens.
+    airlock.bindInnerDoor(office.doors.find(d => d.targetRoom === 'Airlock'));
 
     this._doorZ = { right: doorZ('right'), left: doorZ('left') };
     this._officeEdge = officeEdge;
@@ -211,8 +239,6 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _setupNights() {
     this.nights = new NightManager();
-    this.nights.applyTo(this.rooms);
-    this._offNightChange = this.nights.onChange(() => this.nights.applyTo(this.rooms));
   }
 
   // ──────────────────────────────────────────
@@ -281,14 +307,36 @@ export class BaseScene extends Scene {
       this.gameController.onSignalDeleted();
     });
 
-    // One night number across the scene. NightManager already owns which
-    // rooms are unlocked tonight; the controller's quota, clock and HUD now
-    // follow it instead of counting on their own — otherwise pressing N
-    // would open night 2's doors while the HUD still read "Night 1".
-    // autoStart is off for the same reason: it hardcodes night 1.
+    // One night number across the scene. NightManager owns it; the
+    // controller's quota, clock and HUD follow it instead of counting on
+    // their own — otherwise sleeping (or pressing N) would move to night 2
+    // while the HUD still read "Night 1". autoStart is off for the same
+    // reason: it hardcodes night 1.
     this.gameController.autoStart = false;
-    this.gameController.startNight(this.nights.currentNight);
-    this._offNightStart = this.nights.onChange(night => this.gameController.startNight(night));
+    this._offNightStart = this.gameController.bindNights(this.nights);
+
+    // The day. Added after the controller so, within a frame, it reads the
+    // state the controller has just moved to.
+    this.daylight = gameplayGO.addComponent(new Daylight({
+      controller: this.gameController,
+      sky:        this.sky,
+      ambient:    this.ambientLight,
+      sun:        this.moonLight,
+      fog:        this.engine.scene.fog,
+    }));
+
+    // Rooms build the clock and the bed; gameplay is handed to them here.
+    const { wallClock } = this.rooms.MainOffice;
+    if (wallClock) wallClock.clock = this.nightClock;
+    this.screenFade = new ScreenFade();
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) {
+      bed.controller = this.gameController;
+      bed.fade       = this.screenFade;
+    }
+
+    this.hud.setSuit(this.suit.worn);
+    this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
   }
 
   // ──────────────────────────────────────────
@@ -303,6 +351,7 @@ export class BaseScene extends Scene {
     sky.addComponent(new SkyFollow());
     skyGroup.addChild(sky);
     this._ownResourcesOf(sky);
+    this.sky = sky;   // Daylight turns its uDawn
 
     // Remember the fog we were handed before touching it. Scene teardown
     // never resets scene.fog, and both halves of the pair are ours now: the
@@ -349,7 +398,9 @@ export class BaseScene extends Scene {
     // Down from 1.0: the valley was reading as dusk rather than night once
     // there was scenery out there to light. The rooms carry their own lamps,
     // so this is the fill the windows look out on.
-    ambientGO.object3d.add(new THREE.AmbientLight(0x435472, 0.72));
+    // Daylight reads these night values as its starting point.
+    this.ambientLight = new THREE.AmbientLight(0x435472, 0.72);
+    ambientGO.object3d.add(this.ambientLight);
     this._lighting.addChild(ambientGO);
 
     // Shadow frustum sized to the whole base, not just the office.
@@ -381,6 +432,8 @@ export class BaseScene extends Scene {
     moon.shadow.camera.bottom = -reach;
     moonGO.object3d.add(moon);
     this._lighting.addChild(moonGO);
+    // Doubles as the sunlight in the morning — Daylight warms and brightens it.
+    this.moonLight = moon;
 
     // No hand-placed moon prop or its point light here any more. MarsSky
     // hangs the real Phobos and Deimos at sky distance with their own halos;
@@ -389,7 +442,7 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
-  // Outside area (night 3)
+  // Outside area (through the airlock, suit on)
   // ──────────────────────────────────────────
   _buildOutside() {
     const { engine } = this;
@@ -553,6 +606,11 @@ export class BaseScene extends Scene {
     });
     transitions.onRoomChange = room => this._applyRoomFog(room);
     engine.player.addComponent(transitions);
+
+    // The suit rides on the player; the hatch follows it however it changes,
+    // not only through the locker.
+    this.suit = engine.player.addComponent(new EVASuit());
+    this.rooms.Airlock.bindSuit(this.suit);
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the
