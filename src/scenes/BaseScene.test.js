@@ -19,6 +19,7 @@ import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ThreatDirector, THREATS_BY_NIGHT } from '../gameplay/ThreatDirector.js';
 import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
+import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -722,6 +723,36 @@ describe('BaseScene threats', () => {
     expect(figure).toBe(threat.figure);
     expect(figure.object3d.visible).toBe(false);
     expect(figure.rigidBody).toBeNull();
+  });
+
+  it("registers night 3's camera entity on the server room's camera, cone off until its night", () => {
+    const threat = scene.threatDirector.threats.get('cameraEntity');
+    expect(threat).toBeInstanceOf(CameraEntity);
+    expect(THREATS_BY_NIGHT[3]).toContain('cameraEntity');
+    threat.ctx = scene.threatContext;
+    expect(threat.rig).toBe(scene.rooms.ServerRoom.securityCamera);
+    expect(threat.rig.cone.visible).toBe(false);
+  });
+
+  it('turns signal storage on from night 3, two saved signals at a time', () => {
+    expect(scene.signalManager.storageFromNight).toBe(3);
+    expect(scene.signalManager.storageCapacity).toBe(2);
+  });
+
+  it("the server room's storage console stores what the terminal holds and tells the controller", () => {
+    const sm = scene.signalManager;
+    const { storageConsole } = scene.rooms.ServerRoom;
+    sm.startNight(3);
+    sm.saveSignal(sm.signals[0].id);
+    sm.saveSignal(sm.signals[1].id);
+    expect(storageConsole.waiting()).toBe(2);
+
+    const stored = vi.spyOn(scene.gameController, 'onSignalsStored');
+    storageConsole.onUse();
+    expect(sm.pending).toBe(0);
+    expect(sm.stored).toBe(2);
+    expect(storageConsole.waiting()).toBe(0);
+    expect(stored).toHaveBeenCalledTimes(1);
   });
 
   it('stops every threat on dispose — loadScene never reaches onDestroy', () => {

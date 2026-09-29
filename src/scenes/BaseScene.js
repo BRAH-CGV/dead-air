@@ -29,6 +29,7 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ThreatDirector } from '../gameplay/ThreatDirector.js';
 import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
+import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 
 // ─────────────────────────────────────────────
@@ -152,6 +153,7 @@ export class BaseScene extends Scene {
     this._buildOutside();
     this._spawnPlayer();
     this._addGameplaySystems();
+    this._addSignalStorage();
     this._addThreats();
 
     console.timeEnd('BaseScene.build');
@@ -270,7 +272,11 @@ export class BaseScene extends Scene {
     const payloadPool = Array.from({ length: 8 }, (_, i) =>
       `assets/signals/signal-${i + 1}.png`,
     );
-    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+    // From night 3 the terminal holds two saved signals; they count once
+    // stored at the server room's console (_addSignalStorage).
+    this.signalManager = new SignalManager({
+      signalsPerNight: 5, payloadPool, storageFromNight: 3, storageCapacity: 2,
+    });
 
     // UI wrappers over the markup in index.html. With no DOM (tests) each
     // falls back to a null root and every call is a no-op.
@@ -349,6 +355,19 @@ export class BaseScene extends Scene {
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
   }
 
+  /** Night 3's errand: the server room's console empties the terminal's
+   *  storage into the quota. The room builds the console; what it stores
+   *  is handed to it here. */
+  _addSignalStorage() {
+    const { storageConsole } = this.rooms.ServerRoom;
+    if (!storageConsole) return;
+    storageConsole.waiting = () => this.signalManager.pending;
+    storageConsole.onUse = () => {
+      this.signalManager.storeSignals();
+      this.gameController.onSignalsStored();
+    };
+  }
+
   // ──────────────────────────────────────────
   // Threats (one per night — ThreatDirector's table)
   // ──────────────────────────────────────────
@@ -382,6 +401,7 @@ export class BaseScene extends Scene {
     this.gameController.gameObject.addComponent(this.threatDirector);
 
     this._addWindowWatchers();
+    this._addCameraEntity();
   }
 
   /** Night 2: a figure walks up to the office window. */
@@ -392,6 +412,12 @@ export class BaseScene extends Scene {
     this._threats.addChild(figure);
     this._ownResourcesOf(figure);
     this.threatDirector.register('windowWatchers', new WindowWatchers({ figure }));
+  }
+
+  /** Night 3: the server room's ceiling camera sweeps the aisle to the
+   *  storage console. The room builds the rig; the threat drives it. */
+  _addCameraEntity() {
+    this.threatDirector.register('cameraEntity', new CameraEntity());
   }
 
   // ──────────────────────────────────────────
