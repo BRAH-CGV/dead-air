@@ -298,6 +298,52 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('radar');
   });
 
+  // ── tryScan: what Enter does ──
+
+  /** Hover signal `i` with the dish on it (or not). */
+  function hover(i, { aimed = true } = {}) {
+    term.enter();
+    const sig = mgr.signals[i];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = aimed ? sig.yaw : sig.yaw + 1;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    return sig;
+  }
+
+  it('tryScan starts the scan on an aimed signal', () => {
+    const sig = hover(0);
+    expect(term.tryScan()).toBe(true);
+    expect(term.state).toBe('scanning');
+    expect(sat.scanTarget).toBe(sig);
+  });
+
+  it('tryScan waits for the dish', () => {
+    hover(0, { aimed: false });
+    expect(term.tryScan()).toBe(false);
+    expect(term.state).toBe('radar');
+    expect(radar.setInfo).toHaveBeenLastCalledWith('Dish not aimed — wait for it to settle');
+  });
+
+  it('tryScan refuses while the terminal is full (night 3 storage)', () => {
+    mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL, storageFromNight: 3, storageCapacity: 2 });
+    term.signalManager = mgr;
+    mgr.startNight(3);
+    mgr.saveSignal(1);
+    mgr.saveSignal(2);
+
+    hover(2);
+    expect(term.tryScan()).toBe(false);
+    expect(term.state).toBe('radar');
+    expect(sat.isScanning).toBe(false);
+    expect(radar.setInfo).toHaveBeenLastCalledWith('Storage full — store signals at the server console');
+
+    mgr.storeSignals();
+    expect(term.tryScan()).toBe(true);
+  });
+
   // ── SCANNING → REVIEW ──
 
   it('transitions to review when scan completes', () => {

@@ -141,6 +141,26 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = closest;
   }
 
+  /** Start scanning the hovered signal — what Enter does on the radar.
+   *  Refuses, with a line on the radar, while the dish is still slewing or
+   *  (night 3 on) while the terminal is full of signals waiting to be
+   *  stored: a scan could only end in a save it can't hold.
+   *  @returns {boolean} whether the scan started */
+  tryScan() {
+    const sig = this._hoveredSignal;
+    if (this.state !== 'radar' || !sig || !this.satellite) return false;
+    if (this.signalManager?.canSave() === false) {
+      this.radar?.setInfo('Storage full — store signals at the server console');
+      return false;
+    }
+    if (!this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)) {
+      this.radar?.setInfo('Dish not aimed — wait for it to settle');
+      return false;
+    }
+    this._enterScanning();
+    return true;
+  }
+
   /** Save the currently reviewed signal. */
   saveSignal() {
     if (this.state !== 'review') return;
@@ -284,15 +304,7 @@ export class ComputerTerminal extends Component {
 
       // Enter key starts scanning if hovering and dish is aimed
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
-      if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
-        const sig = this._hoveredSignal;
-        const aimed = this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance);
-        if (aimed) {
-          this._enterScanning();
-        } else {
-          this.radar?.setInfo('Dish not aimed — wait for it to settle');
-        }
-      }
+      if (enterDown && !this._enterHeld) this.tryScan();
       this._enterHeld = enterDown;
 
       // Update radar display
