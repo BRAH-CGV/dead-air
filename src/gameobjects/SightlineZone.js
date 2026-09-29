@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 
 // ─────────────────────────────────────────────
-// SightlineZone  –  box volume a camera-entity AI can query (stub)
+// SightlineZone  –  box volume a threat can query
 // ─────────────────────────────────────────────
-// Phase 10 stub for the camera-entity sightline hook: a marker volume with
-// no rendering and no physics collider, just a bounds check. Wire it up to
-// the camera entity once that system exists — for now it only records
-// where the watch area is.
+// A marker volume with no rendering and no physics collider, just a bounds
+// check. The ServerRoom's `sightline` is the aisle the camera entity can
+// catch you in (night 3); the MainOffice's `underDesk` is the kneehole the
+// window watchers can't see into (night 2).
 // ─────────────────────────────────────────────
 
 const _local = new THREE.Vector3();

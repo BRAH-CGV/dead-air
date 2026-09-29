@@ -3,11 +3,13 @@ import * as THREE from 'three';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
 
-import { ServerRoom } from './ServerRoom.js';
+import { ServerRoom, StorageConsole } from './ServerRoom.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
+import { SecurityCameraRig } from '../../gameobjects/SecurityCameraRig.js';
+import { inCone } from '../../gameplay/threats/CameraEntityLogic.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -114,19 +116,104 @@ describe('ServerRoom', () => {
     expect(after).not.toEqual(before);
   });
 
-  it('the console is an Interactable stub for evil-signal deletion (phase 10)', () => {
-    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
-    expect(interactable).not.toBeNull();
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    interactable.onInteract({});
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('signal deleted'));
-    log.mockRestore();
+  describe('storage console', () => {
+    it("is the ServerConsole's Interactable, exposed for the scene to wire", () => {
+      const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+      expect(interactable).toBeInstanceOf(StorageConsole);
+      expect(room.storageConsole).toBe(interactable);
+    });
+
+    it('says there is nothing to store until something is waiting', () => {
+      room.storageConsole.onUpdate(0.016);
+      expect(room.storageConsole.promptLabel).not.toMatch(/\[E\]/);
+
+      room.storageConsole.waiting = () => 2;
+      room.storageConsole.onUpdate(0.016);
+      expect(room.storageConsole.promptLabel).toBe('[E] Store signals (2)');
+    });
+
+    it('stores through onUse, only when something is waiting', () => {
+      const onUse = vi.fn();
+      room.storageConsole.onUse = onUse;
+      room.storageConsole.onInteract({});
+      expect(onUse).not.toHaveBeenCalled();
+
+      room.storageConsole.waiting = () => 1;
+      room.storageConsole.onInteract({});
+      expect(onUse).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {
-    const zone = room.root.children.find(c => c instanceof SightlineZone);
-    expect(zone).toBeDefined();
-    expect(room.containsPoint(zone.object3d.getWorldPosition(new THREE.Vector3()))).toBe(true);
+  describe('camera watch', () => {
+    const local = (x, y, z) => room.root.object3d.localToWorld(new THREE.Vector3(x, y, z));
+    // Where the player stands to use the console, and hugging the left wall.
+    const AT_CONSOLE = [-1, 1.24, -1.8];
+    const LEFT_WALL  = [-2.7, 1.24, 0];
+    const BEHIND_RACKS = [2.4, 1.24, 0];
+
+    it('exposes the sightline zone, covering the whole aisle but not behind the racks', () => {
+      expect(room.sightline).toBeInstanceOf(SightlineZone);
+      expect(room.sightline.parent).toBe(room.root);
+      expect(room.sightline.containsPoint(local(...AT_CONSOLE))).toBe(true);
+      expect(room.sightline.containsPoint(local(...LEFT_WALL))).toBe(true);
+      expect(room.sightline.containsPoint(local(...BEHIND_RACKS))).toBe(false);
+      // Inside the walls.
+      const [w, , d] = room.sightline.size;
+      const c = room.sightline.object3d.position;
+      expect(Math.abs(c.x) + w / 2).toBeLessThanOrEqual(room.width / 2);
+      expect(Math.abs(c.z) + d / 2).toBeLessThanOrEqual(room.depth / 2);
+    });
+
+    it('hangs a security camera from the ceiling in a corner', () => {
+      const rig = room.securityCamera;
+      expect(rig).toBeInstanceOf(SecurityCameraRig);
+      expect(rig.parent).toBe(room.root);
+      const p = rig.object3d.position;
+      expect(p.y).toBeGreaterThan(room.height - 0.5);
+      expect(Math.abs(p.x)).toBeGreaterThan(room.width / 2 - 0.8);
+      expect(Math.abs(p.z)).toBeGreaterThan(room.depth / 2 - 0.8);
+    });
+
+    it('mounts the camera model on the moving head, render-only', () => {
+      const call = engine.spawnModel.mock.calls.find(([key]) => key === 'model:security-camera');
+      expect(call).toBeDefined();
+      expect(call[1].physics).toBe('none');
+      const model = room.root.find(call[1].name);
+      expect(model.parent).toBe(room.securityCamera.head);
+      expect(engine._rootObjects).not.toContain(model);
+    });
+
+    it('sweeps between the racks and the console: one end sees the console, the other does not', () => {
+      const rig = room.securityCamera;
+      expect(rig.yaw).toBe(rig.minYaw);
+      expect(rig.tilt).toBe(rig.restTilt);
+      expect(rig.restTilt).toBeGreaterThan(0);          // looking down
+
+      const sees = (yaw, point) => {
+        rig.yaw = yaw;
+        room.root.object3d.updateMatrixWorld(true);
+        const at = rig.getLensPosition(new THREE.Vector3());
+        const dir = rig.getLensDirection(new THREE.Vector3());
+        return inCone(at, dir, local(...point), 25 * Math.PI / 180, 7);
+      };
+      expect(sees(rig.maxYaw, AT_CONSOLE)).toBe(true);
+      expect(sees(rig.minYaw, AT_CONSOLE)).toBe(false);
+    });
+
+    it('its lens looks into the room, not at a wall', () => {
+      const rig = room.securityCamera;
+      room.root.object3d.updateMatrixWorld(true);
+      const at = rig.getLensPosition(new THREE.Vector3());
+      const ahead = rig.getLensDirection(new THREE.Vector3()).multiplyScalar(3).add(at);
+      expect(room.containsPoint(ahead)).toBe(true);
+    });
+
+    it('is placed room-locally, so a moved room carries it', () => {
+      const moved = new ServerRoom(makeEngine(), { position: [20, 0, 0] });
+      moved.build();
+      expect(moved.securityCamera.object3d.position.toArray())
+        .toEqual(room.securityCamera.object3d.position.toArray());
+    });
   });
 
   it('is darker-walled than the office default', () => {

@@ -28,6 +28,11 @@ const CONE_ALERT  = new THREE.Color(0xff3020);
 const CONE_OPACITY = [0.1, 0.32];   // calm, alert
 
 export class SecurityCameraRig extends GameObject {
+  /** The sweep its owner wants, radians: yaw limits and the resting tilt. */
+  minYaw = 0;
+  maxYaw = 0;
+  restTilt = 0;
+
   /**
    * @param {string} [name]
    * @param {object} [opts]

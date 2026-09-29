@@ -3,6 +3,7 @@ import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
+import { SecurityCameraRig } from '../../gameobjects/SecurityCameraRig.js';
 
 // ─────────────────────────────────────────────
 // ServerRoom  –  dark rack room, open from night 2
@@ -20,7 +21,48 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // The doorway is in the left wall, leading back toward the office.
 // `doorOffset` slides it along the wall so BaseScene can line it up with
 // the corridor.
+//
+// Night 3's hooks — the room knows nothing of the rules, it only exposes:
+//   storageConsole  the console's Interactable. The scene sets `waiting`
+//                   (how many saved signals wait) and `onUse` (store them).
+//   sightline       the aisle, from the left wall to the racks' fronts —
+//                   where the camera can catch you. Behind the racks is not.
+//   securityCamera  a SecurityCameraRig in the front-left corner, with the
+//                   sweep it should make (`minYaw` at the racks by the door,
+//                   `maxYaw` at the console, `restTilt`), aimed from
+//                   room-local points so it follows the layout.
 // ─────────────────────────────────────────────
+
+const NOTHING_TO_STORE = 'Storage console — nothing waiting';
+
+/** The server console: stores the terminal's saved signals (night 3 on). */
+export class StorageConsole extends Interactable {
+  promptLabel = NOTHING_TO_STORE;
+  /** How many saved signals are waiting to be stored. Set by the scene. */
+  waiting = () => 0;
+  /** Store them. Set by the scene. @type {(() => void)|null} */
+  onUse = null;
+  _shown = 0;
+
+  onUpdate() {
+    const n = this.waiting();
+    if (n === this._shown) return;      // build the label only when it changes
+    this._shown = n;
+    this.promptLabel = n > 0 ? `[E] Store signals (${n})` : NOTHING_TO_STORE;
+  }
+
+  onInteract() {
+    if (this.waiting() > 0) this.onUse?.();
+  }
+}
+
+/** Eye height the camera aims at, and the camera model's own measurements
+ *  (native units: its bracket rises 0.24 above its origin, the lens sits
+ *  0.245 in front) at the scale it is hung. */
+const EYE = 1.24;
+const CAMERA_SCALE = 0.6;
+const CAMERA_BRACKET = 0.24 * CAMERA_SCALE;
+const CAMERA_LENS = 0.245 * CAMERA_SCALE;
 
 export class ServerRoom extends Room {
   /**
@@ -77,19 +119,51 @@ export class ServerRoom extends Room {
     });
 
     // Console against the back wall, facing the racks' aisle.
+    const consoleAt = [-1, 0, -2.45];
     const console_ = this._spawnProp('model:radar-terminal', {
-      name: 'ServerConsole', position: [-1, 0, -2.45], scale: 0.478,
+      name: 'ServerConsole', position: consoleAt, scale: 0.478,
     });
-    console_.addComponent(new class extends Interactable {
-      promptLabel = '[E] Delete signal';
-      onInteract() { console.log('[ServerRoom] signal deleted'); }
-    }());
+    this.storageConsole = console_.addComponent(new StorageConsole());
 
-    // Camera-entity watch volume, over the rack aisle. Not wired to an AI
-    // yet — a stub for phase 10, see docs/ROOM-BASED-SCENE-PLAN.md.
-    this.root.addChild(new SightlineZone('SightlineZone', {
-      position: [0, 1.5, -0.5], size: [4, 2, 5],
+    // The camera's watch volume: the aisle, left wall to the racks' fronts,
+    // back wall to front wall. The strip behind the racks is the cover route.
+    const innerX = this.width / 2 - this.wallThick / 2;
+    const innerZ = this.depth / 2 - this.wallThick / 2;
+    const rackFront = rackX - 0.35;
+    this.sightline = this.root.addChild(new SightlineZone('SightlineZone', {
+      position: [(rackFront - innerX) / 2, 1.3, 0],
+      size: [rackFront + innerX, 2.2, innerZ * 2],
     }));
+
+    this._buildSecurityCamera({
+      from: [rackFront, EYE, 1.6],                        // the front rack, by the door
+      to:   [consoleAt[0], EYE, consoleAt[2] + 0.65],     // where you stand at the console
+    });
+  }
+
+  /** Hang the camera in the front-left corner and work out its sweep from
+   *  two room-local aim points. */
+  _buildSecurityCamera({ from, to }) {
+    const inset = this.wallThick / 2 + 0.3;
+    const rig = new SecurityCameraRig('SecurityCamera', { lensOffset: CAMERA_LENS });
+    rig.object3d.position.set(-(this.width / 2 - inset), this.height - CAMERA_BRACKET, this.depth / 2 - inset);
+    this.root.addChild(rig);
+    for (const r of rig.resources) this._own(r);
+
+    const model = this._spawnProp('model:security-camera', {
+      name: 'SecurityCameraModel', scale: CAMERA_SCALE, physics: 'none',
+    });
+    rig.attachModel(model);
+
+    const p = rig.object3d.position;
+    const yawTo = ([x, , z]) => Math.atan2(x - p.x, z - p.z);
+    const [tx, ty, tz] = to;
+    rig.minYaw = yawTo(from);
+    rig.maxYaw = yawTo(to);
+    rig.restTilt = Math.atan2(p.y - ty, Math.hypot(tx - p.x, tz - p.z));
+    rig.yaw = rig.minYaw;
+    rig.tilt = rig.restTilt;
+    this.securityCamera = rig;
   }
 
   /** Glow-in-the-dark trim, a small blinking LED cluster, and a light that
