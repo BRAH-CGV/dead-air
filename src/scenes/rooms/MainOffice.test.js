@@ -29,6 +29,8 @@ import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { PRELOAD } from '../../assets/manifest.js';
+import { SightlineZone } from '../../gameobjects/SightlineZone.js';
+import { PLAYER_BODY } from '../../components/PlayerBody.js';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -389,5 +391,49 @@ describe('MainOffice window frame', () => {
       const mesh = go.object3d.children.find(c => c.isMesh);
       expect(mesh.position.equals(new THREE.Vector3()), go.name).toBe(true);
     }
+  });
+});
+
+describe('MainOffice hiding spot and window anchor (night 2)', () => {
+  const { crouchEyeHeight, standEyeHeight } = PLAYER_BODY;
+
+  it('builds an UnderDesk zone: a crouched eye in the kneehole is inside, a player at the chair is not', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const zone = room.underDesk;
+    expect(zone).toBeInstanceOf(SightlineZone);
+    expect(zone.name).toBe('UnderDesk');
+
+    // Kneehole: between the side walls (x ±0.545), in front of the solid back
+    // region (z -2.61), and the player's 0.3 m radius keeps the eye 0.3 m off it.
+    expect(zone.containsPoint(new THREE.Vector3(0, crouchEyeHeight, -2.35))).toBe(true);
+    expect(zone.containsPoint(new THREE.Vector3(0.95, standEyeHeight, -1.75))).toBe(false);
+    expect(zone.containsPoint(new THREE.Vector3(0.95, crouchEyeHeight, -1.75))).toBe(false);
+    // Standing up in the kneehole puts the eye over the desk top.
+    expect(zone.containsPoint(new THREE.Vector3(0, standEyeHeight, -2.35))).toBe(false);
+  });
+
+  it('the zone rides the room offset, like every other room feature', () => {
+    const room = new MainOffice(makeEngine(), { position: [10, 0, 5] });
+    room.build();
+    expect(room.underDesk.containsPoint(new THREE.Vector3(10, crouchEyeHeight, 5 - 2.35))).toBe(true);
+    expect(room.underDesk.containsPoint(new THREE.Vector3(0, crouchEyeHeight, -2.35))).toBe(false);
+  });
+
+  it('is a marker, not a body: nothing to bump into or raycast', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    expect(room.underDesk.rigidBody).toBeFalsy();
+  });
+
+  it('exposes the spot outside the window glass, room-local, clear of the back wall', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const [x, y, z] = room.threatAnchors.windowGlass;
+    const backOuterFace = -(room.depth / 2 + room.wallThick / 2);
+    expect(z).toBeLessThan(backOuterFace - 0.3);
+    expect(z).toBeGreaterThan(backOuterFace - 1);
+    expect(x).toBe(0);
+    expect(y).toBe(0);
   });
 });

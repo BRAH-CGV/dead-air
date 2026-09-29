@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
+import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -22,11 +23,25 @@ import { WallClock } from '../../gameobjects/WallClock.js';
 // A wall clock hangs right of the window. The room builds it; the scene
 // hands it the NightClock (`wallClock.clock`), since rooms don't know about
 // gameplay.
+//
+// Threat hooks, all room-local so they move with the room:
+//   underDesk      the kneehole, as a SightlineZone — a crouched eye in it
+//                  is hidden from the window (night 2)
+//   threatAnchors  named spots monsters use; `windowGlass` is where a
+//                  Window Watcher stands to look in
 // ─────────────────────────────────────────────
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
   wallClock = null;
+  /** The kneehole under the computer desk. @type {SightlineZone|null} */
+  underDesk = null;
+  /** Room-local [x, y, z] spots for monsters, feet on the floor plane. */
+  threatAnchors = {
+    /** Outside the back wall, centred on the window, a figure's width off
+     *  the outer face (z −5.1). */
+    windowGlass: [0, 0, -5.6],
+  };
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -96,6 +111,7 @@ export class MainOffice extends Room {
     this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
+    this._buildUnderDesk();
 
     // Pulled out to the right and turned toward the door, as if just left:
     // the kneehole (x ±0.545) stays open to crouch into.
@@ -157,6 +173,18 @@ export class MainOffice extends Room {
         console.log('[MainOffice] food ration eaten');
       }
     }());
+  }
+
+  /** The hiding spot: the desk's kneehole, between its side walls (x
+   *  ±0.545) and in front of its solid back (z −2.61), as tall as the
+   *  under-top gap. Sized from the manifest collider, which was measured
+   *  against the rendered model — a crouched eye (0.55 m) fits, a standing
+   *  one (1.24 m) is over the desk top. No body: it's a marker. */
+  _buildUnderDesk() {
+    this.underDesk = new SightlineZone('UnderDesk', {
+      position: [0, 0.35, -2.45], size: [1.0, 0.7, 0.9],
+    });
+    this.root.addChild(this.underDesk);
   }
 
   /** Right of the window, between its frame (x 4.43) and the side wall
