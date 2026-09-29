@@ -276,6 +276,67 @@ describe('GameController', () => {
     expect(hud.setSignals).toHaveBeenCalled();
   });
 
+  describe('fail(reason) — a threat ends the night', () => {
+    it('from playing: gameOver, the clock stops, the reason is kept and shown with the retry key', () => {
+      gc.startNight(2);
+      gc.onUpdate(50);
+      gc.fail('Something saw you through the window.');
+
+      expect(gc.state).toBe('gameOver');
+      expect(gc.failReason).toBe('Something saw you through the window.');
+      expect(clock.paused).toBe(true);
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('Something saw you through the window. [E] to retry');
+
+      const before = clock.elapsed;
+      gc.onUpdate(10);
+      expect(clock.elapsed).toBe(before);
+    });
+
+    it('is a no-op in the morning — a threat that fires after 6 AM must not kill', () => {
+      gc.startNight(1);
+      meetQuota();
+      gc.onUpdate(999);
+      expect(gc.state).toBe('morning');
+
+      gc.fail('too late');
+      expect(gc.state).toBe('morning');
+      expect(gc.failReason).toBeNull();
+    });
+
+    it('is a no-op once the night has already failed, or before any night', () => {
+      gc.fail('idle');
+      expect(gc.state).toBe('idle');
+      expect(gc.failReason).toBeNull();
+
+      gc.startNight(1);
+      gc.fail('first');
+      gc.fail('second');
+      expect(gc.failReason).toBe('first');
+    });
+
+    it('startNight clears the reason, and a failed night retries like a missed quota', () => {
+      const engine = attachEngine();
+      gc.startNight(3);
+      gc.onUpdate(100);
+      gc.fail('The camera found you.');
+
+      engine.input.pressed.KeyE = true;
+      gc.onUpdate(0.016);
+      expect(gc.state).toBe('playing');
+      expect(gc.nightNumber).toBe(3);
+      expect(gc.failReason).toBeNull();
+      expect(clock.elapsed).toBe(0);
+      expect(clock.paused).toBe(false);
+    });
+
+    it('a missed quota at 6 AM still reads as the plain failure, with no reason', () => {
+      gc.startNight(1);
+      gc.onUpdate(999);
+      expect(gc.state).toBe('gameOver');
+      expect(gc.failReason).toBeNull();
+    });
+  });
+
   it('the clock holds at 6:00 AM all morning', () => {
     gc.startNight(1);
     meetQuota();

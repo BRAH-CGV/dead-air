@@ -8,7 +8,8 @@ import { Component } from '../core/Component.js';
 //
 //   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
 //      │                            └──sleep() on the last night──▶ finished
-//      └──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      └──fail(reason)─────────▶ gameOver   (a threat caught the player)
 //
 // Meeting the quota early doesn't end the shift: the player still has to
 // hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
@@ -36,6 +37,11 @@ export class GameController extends Component {
   /** Current night number (1-based). */
   nightNumber = 0;
 
+  /** Why the night failed, when a threat ended it (fail()); null for a
+   *  missed quota, and cleared when a night starts. The failed screen can
+   *  show it. @type {string|null} */
+  failReason = null;
+
   // ── External references ──
   /** @type {import('./NightClock.js').NightClock|null} */
   nightClock = null;
@@ -62,6 +68,7 @@ export class GameController extends Component {
   startNight(nightNumber) {
     this.nightNumber = nightNumber;
     this.state = 'playing';
+    this.failReason = null;
 
     this.nightClock?.reset();
     this.signalManager?.startNight(nightNumber);
@@ -101,6 +108,16 @@ export class GameController extends Component {
   /** Called when a signal is deleted by the terminal. */
   onSignalDeleted() {
     this._updateHUD();
+  }
+
+  /** End the night early: a threat caught the player. Only a running shift
+   *  can fail — from any other state this does nothing, so a threat that
+   *  fires after 6 AM, or twice in one frame, can't kill.
+   *  @param {string} reason  One sentence, shown before the retry key. */
+  fail(reason) {
+    if (this.state !== 'playing') return;
+    this.failReason = reason;
+    this._endShift('gameOver', `${reason} [E] to retry`);
   }
 
   /** Retry the current night (from gameOver). */
