@@ -24,7 +24,7 @@ vi.mock('@dimforge/rapier3d', () => {
   };
 });
 
-import { MainOffice } from './MainOffice.js';
+import { MainOffice, RationDispenser } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
@@ -208,10 +208,11 @@ describe('MainOffice', () => {
     expect(glows.length).toBeGreaterThan(0);                    // findable in the dark
 
     const use = dispenser.getComponent(Interactable);
+    expect(use).toBeInstanceOf(RationDispenser);
+    expect(use).toBe(room.rationDispenser);
     expect(use.promptLabel).toMatch(/\[E\].*ration/i);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    expect(() => use.onInteract({})).not.toThrow();
-    log.mockRestore();
+    expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to feed
+    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
@@ -391,6 +392,86 @@ describe('MainOffice window frame', () => {
       const mesh = go.object3d.children.find(c => c.isMesh);
       expect(mesh.position.equals(new THREE.Vector3()), go.name).toBe(true);
     }
+  });
+});
+
+describe('MainOffice ration dispenser (night 1)', () => {
+  function make() {
+    const dispenser = new RationDispenser();
+    dispenser.stamina = { value: 0.3, restore(a) { this.value = Math.min(1, this.value + a); } };
+    return dispenser;
+  }
+
+  it('a ration gives back 0.35 stamina', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(0.65);
+  });
+
+  it('refills for 40 s after each ration, and says so', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
+
+    dispenser.onInteract({});                                   // nothing while refilling
+    expect(dispenser.stamina.value).toBeCloseTo(0.65);
+
+    dispenser.onUpdate(39.9);
+    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
+    dispenser.onUpdate(0.2);
+    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(1);
+  });
+
+  it('tells the scene when the player eats', () => {
+    const dispenser = make();
+    dispenser.onEat = vi.fn();
+    dispenser.onInteract({});
+    dispenser.onInteract({});
+    expect(dispenser.onEat).toHaveBeenCalledTimes(1);
+  });
+
+  it('reset() has a ration ready for a new or retried night', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    dispenser.reset();
+    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(1);
+  });
+});
+
+describe('MainOffice sleep demon anchors (night 1)', () => {
+  const room = new MainOffice(makeEngine());
+  room.build();
+  const inX = room.width / 2 - room.wallThick / 2;
+  const inZ = room.depth / 2 - room.wallThick / 2;
+
+  it('outsideWindow stands out in the dust, framed by the back window', () => {
+    const [x, y, z] = room.threatAnchors.outsideWindow;
+    expect(z).toBeLessThan(room.threatAnchors.windowGlass[2] - 2);
+    expect(Math.abs(x)).toBeLessThan(8.5 / 2 - 0.5);
+    expect(y).toBe(0);
+  });
+
+  it('leftDoorway is just inside the doorway to the living quarters', () => {
+    const [x, y, z] = room.threatAnchors.leftDoorway;
+    const door = room.doors.find(d => d.targetRoom === 'LivingQuarters');
+    expect(x).toBeGreaterThan(-inX);
+    expect(x).toBeLessThan(-inX + 1);
+    expect(z).toBeCloseTo(door.object3d.position.z);
+    expect(y).toBe(0);
+  });
+
+  it('cornerBehindDesk is in the back-left corner, clear of the dispenser and the window', () => {
+    const [x, y, z] = room.threatAnchors.cornerBehindDesk;
+    expect(x).toBeLessThan(-8.5 / 2);                          // beside the glass, not in front of it
+    expect(x).toBeGreaterThan(-inX + 0.2);
+    expect(z).toBeLessThan(-2.55);                             // past the desk
+    expect(z).toBeGreaterThan(-inZ + 0.2);
+    expect(z).toBeLessThan(-1.0 - 0.45 - 0.5);                 // a body's width off the dispenser
+    expect(y).toBe(0);
   });
 });
 

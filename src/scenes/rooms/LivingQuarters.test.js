@@ -68,6 +68,17 @@ describe('LivingQuarters', () => {
     expect(shifted.doors[0].object3d.position.z).toBeCloseTo(2);
   });
 
+  it('exposes the corridor end for the sleep demon: just inside the doorway, following doorOffset', () => {
+    const shifted = new LivingQuarters(makeEngine(), { doorOffset: 2 });
+    shifted.build();
+    const [x, y, z] = shifted.threatAnchors.corridorEnd;
+    const inX = shifted.width / 2 - shifted.wallThick / 2;
+    expect(x).toBeLessThan(inX);
+    expect(x).toBeGreaterThan(inX - 1);                         // in the clear metre by the wall
+    expect(z).toBeCloseTo(2);
+    expect(y).toBe(0);
+  });
+
   it('is furnished with real models: bunk, lockers, desk and chair', () => {
     const expected = {
       Bunk: 'model:bunk-bed',

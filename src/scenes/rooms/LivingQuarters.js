@@ -17,11 +17,17 @@ import { Bed } from '../../components/Bed.js';
 // `doorOffset` slides it along the wall so BaseScene can line it up with
 // the corridor. The furniture keeps to the left half, leaving the metre
 // inside the right wall clear wherever the doorway lands.
+//
+// `threatAnchors.corridorEnd` (room-local) is just inside that doorway:
+// the far end of the corridor seen from the office, the Sleep Demon's
+// second stage.
 // ─────────────────────────────────────────────
 
 export class LivingQuarters extends Room {
   /** On the bunk, from buildProps(). @type {Bed|null} */
   bed = null;
+  /** Room-local [x, y, z] spots for monsters, feet on the floor. */
+  threatAnchors = {};
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -40,6 +46,8 @@ export class LivingQuarters extends Room {
       openings: [{ side: 'right', width: 1.2, height: 2.2, offset: doorOffset }],
     });
     if (ownsMaterial) this._own(this.material);
+    const inX = this.width / 2 - this.wallThick / 2;
+    this.threatAnchors = { corridorEnd: [inX - 0.5, 0, doorOffset] };
   }
 
   buildDoors() {

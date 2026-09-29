@@ -25,15 +25,58 @@ import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 // gameplay.
 //
 // Threat hooks, all room-local so they move with the room:
-//   underDesk      the kneehole, as a SightlineZone — a crouched eye in it
-//                  is hidden from the window (night 2)
-//   threatAnchors  named spots monsters use; `windowGlass` is where a
-//                  Window Watcher stands to look in
+//   underDesk       the kneehole, as a SightlineZone — a crouched eye in it
+//                   is hidden from the window (night 2)
+//   threatAnchors   named spots monsters use; `windowGlass` is where a
+//                   Window Watcher stands to look in, the others are the
+//                   Sleep Demon's stages (night 1)
+//   rationDispenser the RationDispenser; the scene hands it the stamina
+//                   a ration restores
 // ─────────────────────────────────────────────
+
+const RATION_READY = '[E] Take a food ration';
+const RATION_REFILLING = 'Dispenser refilling…';
+
+/** The dispenser's use: a ration restores stamina, then it refills for
+ *  `cooldown` seconds. The prompt is a data field, so InteractionSystem
+ *  re-shows it when it changes under the crosshair. */
+export class RationDispenser extends Interactable {
+  promptLabel = RATION_READY;
+  /** Set by the scene. @type {{restore(amount: number): void}|null} */
+  stamina = null;
+  /** Stamina per ration. */
+  amount = 0.35;
+  /** Seconds before the next ration. */
+  cooldown = 40;
+  /** Seconds left until it is ready again. */
+  refill = 0;
+  /** Called after each ration (sound, the scene's own bookkeeping). */
+  onEat = null;
+
+  onUpdate(dt) {
+    if (this.refill > 0 && (this.refill -= dt) <= 0) this.reset();
+  }
+
+  onInteract() {
+    if (!this.stamina || this.refill > 0) return;
+    this.stamina.restore(this.amount);
+    this.refill = this.cooldown;
+    this.promptLabel = RATION_REFILLING;
+    this.onEat?.();
+  }
+
+  /** Ready again: a new or retried night. */
+  reset() {
+    this.refill = 0;
+    this.promptLabel = RATION_READY;
+  }
+}
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
   wallClock = null;
+  /** On the VendingMachine, from buildProps(). @type {RationDispenser|null} */
+  rationDispenser = null;
   /** The kneehole under the computer desk. @type {SightlineZone|null} */
   underDesk = null;
   /** Room-local [x, y, z] spots for monsters, feet on the floor plane. */
@@ -41,6 +84,15 @@ export class MainOffice extends Room {
     /** Outside the back wall, centred on the window, a figure's width off
      *  the outer face (z −5.1). */
     windowGlass: [0, 0, -5.6],
+    /** Sleep Demon, stage 1: out in the dust beyond the glass, left of the
+     *  desk's line of sight. */
+    outsideWindow: [-2.2, 0, -9],
+    /** Stage 3: just inside the left doorway (offset 3.5), from the
+     *  living quarters. */
+    leftDoorway: [-5.4, 0, 3.5],
+    /** Stage 4: the back-left corner, beside the window — just past the
+     *  edge of the view from the desk. */
+    cornerBehindDesk: [-5.3, 0, -4.3],
   };
 
   /**
@@ -166,13 +218,7 @@ export class MainOffice extends Room {
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 
-    go.addComponent(new class extends Interactable {
-      promptLabel = '[E] Take a food ration';
-      onInteract() {
-        // TODO: coordinate with Hayden's stamina system.
-        console.log('[MainOffice] food ration eaten');
-      }
-    }());
+    this.rationDispenser = go.addComponent(new RationDispenser());
   }
 
   /** The hiding spot: the desk's kneehole, between its side walls (x
