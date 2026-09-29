@@ -27,6 +27,7 @@ import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { ThreatDirector } from '../gameplay/ThreatDirector.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -118,6 +119,11 @@ export class BaseScene extends Scene {
   /** The player's EVA suit — the airlock hatch follows it.
    *  @type {EVASuit|null} */
   suit = null;
+  /** The player's room tracker. Threats read `currentRoom` off it.
+   *  @type {RoomTransitionSystem|null} */
+  transitions = null;
+  /** Which monsters run tonight. @type {ThreatDirector|null} */
+  threatDirector = null;
 
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
@@ -144,6 +150,7 @@ export class BaseScene extends Scene {
     this._buildOutside();
     this._spawnPlayer();
     this._addGameplaySystems();
+    this._addThreats();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -162,6 +169,7 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
+    this.threatDirector?.dispose();
     this._offNightStart?.();
     this._offSuitHud?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
@@ -337,6 +345,39 @@ export class BaseScene extends Scene {
 
     this.hud.setSuit(this.suit.worn);
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
+  }
+
+  // ──────────────────────────────────────────
+  // Threats (one per night — ThreatDirector's table)
+  // ──────────────────────────────────────────
+  /** The monsters and the director that runs them. The director goes on
+   *  GameplaySystems after the controller, so within a frame it reads the
+   *  state the controller has just moved to.
+   *
+   *  Monster visuals hang under a Threats group, built hidden and with no
+   *  collider: a monster that isn't a body can't push the player through a
+   *  wall. */
+  _addThreats() {
+    this._threats = this._group('Threats');
+
+    this.threatContext = {
+      engine:      this.engine,
+      scene:       this,
+      player:      this.engine.player,
+      rooms:       this.rooms,
+      transitions: this.transitions,
+      hud:         this.hud,
+      stamina:     null,
+      audio:       null,
+      lights:      null,
+    };
+    this.threatDirector = new ThreatDirector({
+      controller: this.gameController,
+      context:    this.threatContext,
+      hud:        this.hud,
+    });
+
+    this.gameController.gameObject.addComponent(this.threatDirector);
   }
 
   // ──────────────────────────────────────────
@@ -604,13 +645,21 @@ export class BaseScene extends Scene {
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),
     });
-    transitions.onRoomChange = room => this._applyRoomFog(room);
+    // One callback, shared: the fog first, then whatever else follows the
+    // player from room to room. Add to _onRoomChange, don't reassign this.
+    transitions.onRoomChange = (room, previous) => this._onRoomChange(room, previous);
     engine.player.addComponent(transitions);
+    this.transitions = transitions;
 
     // The suit rides on the player; the hatch follows it however it changes,
     // not only through the locker.
     this.suit = engine.player.addComponent(new EVASuit());
     this.rooms.Airlock.bindSuit(this.suit);
+  }
+
+  /** The player moved between rooms (null = a corridor or outside). */
+  _onRoomChange(room, _previous) {
+    this._applyRoomFog(room);
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the

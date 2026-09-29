@@ -24,6 +24,7 @@ export class HUD {
     this._scanBar   = root?.querySelector('#hud-scan-bar')  ?? null;
     this._prompt    = root?.querySelector('#hud-prompt')    ?? null;
     this._suit      = root?.querySelector('#hud-suit')      ?? null;
+    this._objective = root?.querySelector('#hud-objective') ?? null;
   }
 
   show() { if (this.root) this.root.style.display = 'block'; }
@@ -61,6 +62,14 @@ export class HUD {
     if (!this._suit) return;
     this._suit.textContent = 'EVA suit on';
     this._suit.style.display = worn ? 'block' : 'none';
+  }
+
+  /** Tonight's objective in one sentence — what the threat asks of the
+   *  player. Hidden when empty (the day, a failed night). */
+  setObjective(text) {
+    if (!this._objective) return;
+    this._objective.textContent = text || '';
+    this._objective.style.display = text ? 'block' : 'none';
   }
 }
 

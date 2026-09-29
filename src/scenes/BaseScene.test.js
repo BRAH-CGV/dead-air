@@ -17,6 +17,7 @@ import { EVASuit } from '../components/EVASuit.js';
 import { PRELOAD } from '../assets/manifest.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { ThreatDirector } from '../gameplay/ThreatDirector.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -666,5 +667,53 @@ describe('BaseScene gameplay loop', () => {
       .map(ui => vi.spyOn(ui, 'hide'));
     scene.dispose();
     for (const spy of hidden) expect(spy).toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────
+// Threats
+// ─────────────────────────────────────────────
+describe('BaseScene threats', () => {
+  let engine, scene, gameplay;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+  });
+
+  it('runs the ThreatDirector after the controller, with the scene context', () => {
+    const director = gameplay.getComponent(ThreatDirector);
+    expect(director).toBe(scene.threatDirector);
+    // Updated after the controller in the same frame, so it never lags a state.
+    expect(gameplay.components.indexOf(director))
+      .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
+
+    const ctx = director.context;
+    expect(ctx.engine).toBe(engine);
+    expect(ctx.scene).toBe(scene);
+    expect(ctx.controller).toBe(scene.gameController);
+    expect(ctx.player).toBe(engine.player);
+    expect(ctx.rooms).toBe(scene.rooms);
+    expect(ctx.transitions).toBeInstanceOf(RoomTransitionSystem);
+    expect(ctx.transitions).toBe(engine.player.getComponent(RoomTransitionSystem));
+  });
+
+  it('keeps the per-room fog when the room-change callback is shared', () => {
+    const fog = engine.scene.fog;
+    scene.transitions.onRoomChange(scene.rooms.ServerRoom, null);
+    expect(fog.density).toBeCloseTo(0.03);
+  });
+
+  it('hangs a Threats group under SceneRoot for the monsters', () => {
+    const sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
+    expect(sceneRoot.find('Threats')).not.toBeNull();
+  });
+
+  it('stops every threat on dispose — loadScene never reaches onDestroy', () => {
+    const stop = vi.spyOn(scene.threatDirector, 'dispose');
+    scene.dispose();
+    expect(stop).toHaveBeenCalled();
   });
 });

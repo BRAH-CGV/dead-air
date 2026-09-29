@@ -26,6 +26,30 @@ describe('HUD suit indicator', () => {
   });
 });
 
+// ── Objective line ────────────────────────────────────────
+describe('HUD objective', () => {
+  function fakeRoot() {
+    const el = { textContent: '', style: { display: 'none' } };
+    return { el, root: { style: {}, querySelector: sel => (sel === '#hud-objective' ? el : null) } };
+  }
+
+  it("says what tonight's threat asks of the player, and hides when there is nothing to say", () => {
+    const { el, root } = fakeRoot();
+    const hud = new HUD(root);
+
+    hud.setObjective("Something walks past the window. Don't let it see you.");
+    expect(el.textContent).toBe("Something walks past the window. Don't let it see you.");
+    expect(el.style.display).not.toBe('none');
+
+    hud.setObjective('');
+    expect(el.style.display).toBe('none');
+  });
+
+  it('does nothing without the markup', () => {
+    expect(() => new HUD(null).setObjective('x')).not.toThrow();
+  });
+});
+
 // ── Radar sky-mapping tests ───────────────────────────────
 // No DOM in the node test environment: the overlay falls back to a
 // 400x400 logical canvas (radius 200, centre 200,200, rim at 0.85r=170).
