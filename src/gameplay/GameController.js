@@ -12,9 +12,13 @@ import { Component } from '../core/Component.js';
 //      └──fail(reason)─────────▶ gameOver   (a threat caught the player)
 //
 // Meeting the quota early doesn't end the shift: the player still has to
-// hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
-// signals and heats up the dust storms — so nothing happens in the morning
-// until the player goes to bed.
+// hold out until 6 AM. From night 3 a saved signal only counts once it is
+// stored at the server console (SignalManager storage): the quota is met by
+// onSignalsStored, and a full terminal says where to go.
+//
+// The day is for sleeping — the Sun drowns the faint signals and heats up
+// the dust storms — so nothing happens in the morning until the player goes
+// to bed.
 //
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
@@ -25,6 +29,7 @@ import { Component } from '../core/Component.js';
 
 const PROMPT = {
   quotaMet: 'Quota met — hold out until 6:00 AM',
+  storageFull: 'Terminal full — store signals at the server console',
   morning:  'Shift over — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
   finished: 'You made it through every shift.',
@@ -100,9 +105,17 @@ export class GameController extends Component {
   /** Called when a signal is saved by the terminal. */
   onSignalSaved() {
     this._updateHUD();
-    if (this.state === 'playing' && this.signalManager?.isComplete()) {
-      this.hud?.setPrompt(PROMPT.quotaMet);
-    }
+    if (this.state !== 'playing') return;
+    if (this.signalManager?.isComplete()) this.hud?.setPrompt(PROMPT.quotaMet);
+    else if (this.signalManager?.canSave() === false) this.hud?.setPrompt(PROMPT.storageFull);
+  }
+
+  /** Called when the server console stores the waiting signals (night 3
+   *  on) — the moment they start to count. */
+  onSignalsStored() {
+    this._updateHUD();
+    if (this.state !== 'playing') return;
+    this.hud?.setPrompt(this.signalManager?.isComplete() ? PROMPT.quotaMet : '');
   }
 
   /** Called when a signal is deleted by the terminal. */
@@ -194,7 +207,7 @@ export class GameController extends Component {
 
     const progress = this.signalManager?.getProgress();
     if (progress) {
-      this.hud.setSignals(progress.saved, progress.required);
+      this.hud.setSignals(progress.counted, progress.required, progress.pending);
     }
 
     // Scan bar — driven by satellite state (works even when terminal is closed)

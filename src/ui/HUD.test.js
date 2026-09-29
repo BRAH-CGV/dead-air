@@ -50,6 +50,30 @@ describe('HUD objective', () => {
   });
 });
 
+// ── Signal counter ────────────────────────────────────────
+describe('HUD signal counter', () => {
+  function fakeRoot() {
+    const el = { textContent: '' };
+    return { el, root: { style: {}, querySelector: sel => (sel === '#hud-signals' ? el : null) } };
+  }
+
+  it('reads counted / required', () => {
+    const { el, root } = fakeRoot();
+    new HUD(root).setSignals(2, 3);
+    expect(el.textContent).toBe('Signals: 2 / 3');
+  });
+
+  it('adds the saved signals still waiting to be stored (night 3 on)', () => {
+    const { el, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setSignals(1, 5, 2);
+    expect(el.textContent).toBe('Signals: 1 / 5 (+2 to store)');
+
+    hud.setSignals(3, 5, 0);
+    expect(el.textContent).toBe('Signals: 3 / 5');
+  });
+});
+
 // ── Radar sky-mapping tests ───────────────────────────────
 // No DOM in the node test environment: the overlay falls back to a
 // 400x400 logical canvas (radius 200, centre 200,200, rim at 0.85r=170).

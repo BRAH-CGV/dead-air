@@ -165,3 +165,98 @@ describe('SignalManager', () => {
     }
   });
 });
+
+// Night 3 gives the player a reason to cross the server room: the terminal
+// holds only a couple of saved signals, and they count once stored there.
+describe('SignalManager storage', () => {
+  const make = () => new SignalManager({
+    signalsPerNight: 5, payloadPool: POOL, storageFromNight: 3, storageCapacity: 2,
+  });
+
+  it('is off unless configured — nights behave exactly as before', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(3);
+    expect(mgr.storageLimit).toBeNull();
+    for (const s of mgr.signals) expect(mgr.saveSignal(s.id)).toBe(true);
+    expect(mgr.saved).toBe(5);
+    expect(mgr.pending).toBe(0);
+    expect(mgr.canSave()).toBe(true);
+    expect(mgr.isComplete()).toBe(true);
+  });
+
+  it('switches on from storageFromNight, and not before', () => {
+    const mgr = make();
+    mgr.startNight(2);
+    expect(mgr.storageLimit).toBeNull();
+    mgr.startNight(3);
+    expect(mgr.storageLimit).toBe(2);
+  });
+
+  it('holds at most storageCapacity saved signals until they are stored', () => {
+    const mgr = make();
+    mgr.startNight(3);
+    const [a, b, c] = mgr.signals;
+    expect(mgr.saveSignal(a.id)).toBe(true);
+    expect(mgr.saveSignal(b.id)).toBe(true);
+    expect(mgr.pending).toBe(2);
+    expect(mgr.canSave()).toBe(false);
+
+    expect(mgr.saveSignal(c.id)).toBe(false);
+    expect(c.saved).toBe(false);
+    expect(mgr.saved).toBe(2);
+  });
+
+  it('storeSignals() moves what is waiting into storage and frees the terminal', () => {
+    const mgr = make();
+    mgr.startNight(3);
+    mgr.saveSignal(1);
+    mgr.saveSignal(2);
+    expect(mgr.storeSignals()).toBe(2);
+    expect(mgr.pending).toBe(0);
+    expect(mgr.stored).toBe(2);
+    expect(mgr.canSave()).toBe(true);
+    expect(mgr.storeSignals()).toBe(0);
+  });
+
+  it('counts only stored signals toward the quota while storage is on', () => {
+    const mgr = make();
+    mgr.startNight(3);
+    mgr.required = 2;
+    mgr.saveSignal(1);
+    mgr.saveSignal(2);
+    expect(mgr.isComplete()).toBe(false);
+    mgr.storeSignals();
+    expect(mgr.isComplete()).toBe(true);
+  });
+
+  it('reports pending and stored, and counts stored, in getProgress()', () => {
+    const mgr = make();
+    mgr.startNight(3);
+    mgr.saveSignal(1);
+    mgr.saveSignal(2);
+    mgr.storeSignals();
+    mgr.saveSignal(3);
+    expect(mgr.getProgress()).toEqual({
+      saved: 3, stored: 2, pending: 1, counted: 2, required: mgr.required,
+      remaining: mgr.required - 2,
+    });
+  });
+
+  it('counts saved signals when storage is off', () => {
+    const mgr = make();
+    mgr.startNight(1);
+    mgr.saveSignal(1);
+    expect(mgr.getProgress()).toMatchObject({ saved: 1, stored: 0, pending: 0, counted: 1 });
+  });
+
+  it('startNight clears what was waiting and what was stored', () => {
+    const mgr = make();
+    mgr.startNight(3);
+    mgr.saveSignal(1);
+    mgr.storeSignals();
+    mgr.saveSignal(2);
+    mgr.startNight(3);
+    expect(mgr.pending).toBe(0);
+    expect(mgr.stored).toBe(0);
+  });
+});

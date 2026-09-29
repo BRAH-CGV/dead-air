@@ -337,6 +337,87 @@ describe('GameController', () => {
     });
   });
 
+  describe('night 3 storage', () => {
+    // Storage from night 3: the terminal holds two saved signals, and only
+    // those stored at the server console count. Night 3 needs 5.
+    beforeEach(() => {
+      mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL, storageFromNight: 3, storageCapacity: 2 });
+      gc.signalManager = mgr;
+      gc.startNight(3);
+    });
+
+    /** Save and store signals in pairs, through the controller. */
+    function saveAndStore(ids) {
+      for (const id of ids) {
+        mgr.saveSignal(id);
+        gc.onSignalSaved();
+      }
+      mgr.storeSignals();
+      gc.onSignalsStored();
+    }
+
+    it('shows stored signals as the count, and saved-but-unstored ones as waiting', () => {
+      mgr.saveSignal(1);
+      gc.onSignalSaved();
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 5, 1);
+
+      mgr.storeSignals();
+      gc.onSignalsStored();
+      expect(hud.setSignals).toHaveBeenLastCalledWith(1, 5, 0);
+    });
+
+    it('saving the last signals is not the quota — storing them is', () => {
+      saveAndStore([1, 2]);
+      saveAndStore([3, 4]);
+      mgr.saveSignal(5);
+      gc.onSignalSaved();
+      expect(hud.setPrompt).not.toHaveBeenCalledWith(expect.stringMatching(/Quota met/));
+
+      mgr.storeSignals();
+      gc.onSignalsStored();
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+    });
+
+    it('a full terminal tells the player to store', () => {
+      mgr.saveSignal(1);
+      mgr.saveSignal(2);
+      gc.onSignalSaved();
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('Terminal full — store signals at the server console');
+    });
+
+    it('storing clears the full-terminal prompt', () => {
+      mgr.saveSignal(1);
+      mgr.saveSignal(2);
+      gc.onSignalSaved();
+      mgr.storeSignals();
+      gc.onSignalsStored();
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('');
+    });
+
+    it('signals still waiting at 6 AM do not count', () => {
+      saveAndStore([1, 2]);
+      saveAndStore([3, 4]);
+      mgr.saveSignal(5);
+      gc.onSignalSaved();
+      gc.onUpdate(999);
+      expect(gc.state).toBe('gameOver');
+    });
+
+    it('every signal stored by 6 AM is a morning', () => {
+      saveAndStore([1, 2]);
+      saveAndStore([3, 4]);
+      saveAndStore([5]);
+      gc.onUpdate(999);
+      expect(gc.state).toBe('morning');
+    });
+
+    it('storing does nothing once the shift is over', () => {
+      gc.onUpdate(999);
+      gc.onSignalsStored();
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('Night failed. [E] to retry');
+    });
+  });
+
   it('the clock holds at 6:00 AM all morning', () => {
     gc.startNight(1);
     meetQuota();

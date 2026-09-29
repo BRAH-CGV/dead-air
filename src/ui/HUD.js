@@ -34,8 +34,13 @@ export class HUD {
     if (this._clock) this._clock.textContent = timeString;
   }
 
-  setSignals(saved, required) {
-    if (this._signals) this._signals.textContent = `Signals: ${saved} / ${required}`;
+  /** @param {number} saved     signals that count toward the quota
+   *  @param {number} required
+   *  @param {number} [waiting]  saved but not yet stored (night 3 on) */
+  setSignals(saved, required, waiting = 0) {
+    if (!this._signals) return;
+    const extra = waiting > 0 ? ` (+${waiting} to store)` : '';
+    this._signals.textContent = `Signals: ${saved} / ${required}${extra}`;
   }
 
   setNight(number) {
