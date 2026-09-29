@@ -28,6 +28,8 @@ import { ComputerTerminal, createComputerInteractable } from '../components/Comp
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ThreatDirector } from '../gameplay/ThreatDirector.js';
+import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -378,6 +380,18 @@ export class BaseScene extends Scene {
     });
 
     this.gameController.gameObject.addComponent(this.threatDirector);
+
+    this._addWindowWatchers();
+  }
+
+  /** Night 2: a figure walks up to the office window. */
+  _addWindowWatchers() {
+    const figure = createMonsterFigure({
+      name: 'WindowWatcher', height: 2.4, placeholderFor: 'window-watcher.glb',
+    });
+    this._threats.addChild(figure);
+    this._ownResourcesOf(figure);
+    this.threatDirector.register('windowWatchers', new WindowWatchers({ figure }));
   }
 
   // ──────────────────────────────────────────

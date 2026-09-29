@@ -17,7 +17,8 @@ import { EVASuit } from '../components/EVASuit.js';
 import { PRELOAD } from '../assets/manifest.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
-import { ThreatDirector } from '../gameplay/ThreatDirector.js';
+import { ThreatDirector, THREATS_BY_NIGHT } from '../gameplay/ThreatDirector.js';
+import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -709,6 +710,18 @@ describe('BaseScene threats', () => {
   it('hangs a Threats group under SceneRoot for the monsters', () => {
     const sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
     expect(sceneRoot.find('Threats')).not.toBeNull();
+  });
+
+  it("registers night 2's window watcher: a hidden figure under Threats, not a body", () => {
+    const threat = scene.threatDirector.threats.get('windowWatchers');
+    expect(threat).toBeInstanceOf(WindowWatchers);
+    expect(THREATS_BY_NIGHT[2]).toContain('windowWatchers');
+
+    const sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
+    const figure = sceneRoot.find('Threats').find('WindowWatcher');
+    expect(figure).toBe(threat.figure);
+    expect(figure.object3d.visible).toBe(false);
+    expect(figure.rigidBody).toBeNull();
   });
 
   it('stops every threat on dispose — loadScene never reaches onDestroy', () => {
