@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { statSync, readdirSync, readFileSync } from 'node:fs';
+import { statSync, readdirSync, readFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
@@ -110,7 +110,9 @@ describe('what ships in public/', () => {
     expect(missing).toEqual([]);
   });
 
-  it('holds no two identical files', () => {
+  // It hashes all of public/ (~100 MB): a fraction of a second once the disk
+  // cache is warm, but past the default 5 s on a cold first run.
+  it('holds no two identical files', { timeout: 30_000 }, () => {
     const seen = new Map();
     const duplicates = [];
     for (const file of shipped) {
@@ -131,10 +133,19 @@ describe('what ships in public/', () => {
       new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '[^/]*')}$`).test(file);
     /** The `### ` section that names `file` by its exact path. */
     const sectionFor = file => doc.split(/^### /m).filter(s => s.includes(`\`public/${file}\``));
-    /** A .glb's asset block: Sketchfab writes the download's source into its extras. */
+    /** A .glb's asset block: Sketchfab writes the download's source into its
+     *  extras. Only the JSON chunk is read — the header says how long it is. */
     const glbAsset = file => {
-      const bytes = readFileSync(new URL(file, PUBLIC));
-      return JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()).asset ?? {};
+      const fd = openSync(new URL(file, PUBLIC));
+      try {
+        const header = Buffer.alloc(20);
+        readSync(fd, header, 0, 20, 0);
+        const json = Buffer.alloc(header.readUInt32LE(12));
+        readSync(fd, json, 0, json.length, 20);
+        return JSON.parse(json.toString()).asset ?? {};
+      } finally {
+        closeSync(fd);
+      }
     };
 
     it('names every shipped file, except the synthesised .wav sounds', () => {
