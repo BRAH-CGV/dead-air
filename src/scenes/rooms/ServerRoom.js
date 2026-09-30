@@ -91,7 +91,7 @@ export class ServerRoom extends Room {
   buildLighting() {
     // Blue only, to match the racks' own glow — a red light here read as an
     // unrelated alarm state rather than part of the room's palette.
-    const status = new THREE.PointLight(0x3a6bff, 2.0, 6, 2);
+    const status = this._lit(new THREE.PointLight(0x3a6bff, 2.0, 6, 2));
     status.position.set(1.5, 2.2, -2.5);
     this._addGroup('StatusLEDs').object3d.add(status);
   }
@@ -210,7 +210,8 @@ export class ServerRoom extends Room {
 
     // The light source sits right at the LED cluster, not somewhere else —
     // the blinking dots *are* the point of light.
-    const glow = new THREE.PointLight(0x3a6bff, 0.9, 9, 1.2);
+    // On the power, unlike the LEDs: LEDStrip drives their glow.
+    const glow = this._lit(new THREE.PointLight(0x3a6bff, 0.9, 9, 1.2));
     glow.position.set(0.02, 1.63, 0.3);
     groupGO.object3d.add(glow);
   }

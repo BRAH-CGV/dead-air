@@ -68,6 +68,7 @@ export class LivingQuarters extends Room {
     );
     shade.position.set(0, 2.94, 0);
     lampGO.object3d.add(shade);
+    this._lit(lamp, shade);
   }
 
   buildProps() {

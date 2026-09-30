@@ -518,3 +518,19 @@ describe('MainOffice hiding spot and window anchor (night 2)', () => {
     expect(y).toBe(0);
   });
 });
+
+describe('MainOffice lights', () => {
+  it('every light it built is on the power, with the ceiling fixture and the dispenser glow', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    for (const light of pointLights(room)) expect(room.lights).toContain(light);
+    const fixture = room.root.find('CeilingLight').object3d.children.find(o => o.isMesh);
+    expect(room.lights).toContain(fixture);
+    const glowing = [];
+    room.root.find('VendingMachine').object3d.traverse(o => {
+      if (o.isMesh && o.material.emissiveIntensity > 0 && o.material.emissive?.getHex()) glowing.push(o);
+    });
+    expect(glowing.length).toBeGreaterThan(0);
+    for (const mesh of glowing) expect(room.lights).toContain(mesh);
+  });
+});

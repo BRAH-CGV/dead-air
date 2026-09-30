@@ -145,6 +145,7 @@ export class MainOffice extends Room {
     const desk = new THREE.PointLight(0x66ccff, 4.0, 6, 1.6);
     desk.position.set(0, 1.1, -2.1);
     deskGO.object3d.add(desk);
+    this._lit(ceiling, fixture, desk);
   }
 
   buildProps() {
@@ -213,8 +214,10 @@ export class MainOffice extends Room {
       color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
     }));
 
-    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
-    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // dispense button
+    this._lit(
+      detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]),     // status screen
+      detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]), // dispense button
+    );
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 

@@ -348,3 +348,15 @@ describe('Airlock', () => {
     expect(engine.world.bodies.len()).toBe(0);
   });
 });
+
+describe('Airlock lights', () => {
+  it('its ceiling light is on the power, but the beacon runs on its own battery', () => {
+    const airlock = new Airlock(makeEngine(), { position: [2, 0, 6.6] });
+    airlock.build();
+    const ceiling = airlock.root.find('CorridorLight').object3d.children.find(o => o.isPointLight);
+    expect(airlock.lights).toContain(ceiling);
+    expect(airlock.lights).not.toContain(airlock.beacon);
+    const beaconParts = airlock.root.find('HatchBeacon').object3d.children;
+    for (const part of beaconParts) expect(airlock.lights).not.toContain(part);
+  });
+});

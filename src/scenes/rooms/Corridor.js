@@ -95,6 +95,7 @@ export class Corridor extends Room {
     );
     fixture.position.copy(light.position);
     lightGO.object3d.add(fixture);
+    this._lit(light, fixture);
   }
 
   /** Long walls run along the corridor axis; end walls cross it. */

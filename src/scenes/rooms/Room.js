@@ -20,6 +20,11 @@ import { Door } from '../../gameobjects/Door.js';
 // same treatment for orientation.
 //
 // Subclasses override `buildDoors()`, `buildLighting()` and `buildProps()`.
+//
+// Lights and glowing fixtures that run off the base's power go through
+// `_lit()`, which lists them in `room.lights`. The room never dims them
+// itself: BaseScene hands the list to BaseLights. Anything on its own
+// battery (the airlock beacon) or with its own driver (rack LEDs) stays off it.
 // ─────────────────────────────────────────────
 
 /** Wall per side. `axis` is the world axis the wall runs along. */
@@ -74,6 +79,9 @@ export class Room {
     this.root = null;
     /** @type {Door[]} */
     this.doors = [];
+    /** Lights and glowing meshes on the base's power, for BaseLights.
+     *  @type {THREE.Object3D[]} */
+    this.lights = [];
 
     this._openingBySide = new Map();
   }
@@ -102,6 +110,13 @@ export class Room {
 
   /** Override: room-specific lights. */
   buildLighting() {}
+
+  /** Put lights and glowing fixtures on the base's power (see header).
+   *  @returns {THREE.Object3D} The first one, for chaining into `add`. */
+  _lit(...objects) {
+    this.lights.push(...objects);
+    return objects[0];
+  }
 
   /** Override: room-specific models and furniture. */
   buildProps() {}

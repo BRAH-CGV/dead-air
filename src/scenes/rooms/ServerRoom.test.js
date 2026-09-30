@@ -228,3 +228,16 @@ describe('ServerRoom', () => {
     expect(engine._bodyToGO.size).toBe(0);
   });
 });
+
+describe('ServerRoom lights', () => {
+  it("every light it built is on the power, but the racks' LEDs blink on their own", () => {
+    const room = new ServerRoom(makeEngine());
+    room.build();
+    const lights = pointLights(room);
+    expect(lights.length).toBeGreaterThan(1);
+    for (const light of lights) expect(room.lights).toContain(light);
+    for (const strip of room.root.descendants().flatMap(go => go.components.filter(c => c instanceof LEDStrip))) {
+      for (const led of strip.leds) expect(room.lights).not.toContain(led);
+    }
+  });
+});

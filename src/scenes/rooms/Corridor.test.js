@@ -226,3 +226,14 @@ describe('Corridor', () => {
     expect(engine.world.bodies.len()).toBe(0);
   });
 });
+
+describe('Corridor lights', () => {
+  it('its light and its fixture are on the power', () => {
+    const c = new Corridor({ world: new FakeWorld() }, X);
+    c.build();
+    const group = c.root.find('CorridorLight').object3d;
+    expect(c.lights).toHaveLength(2);
+    expect(c.lights).toContain(group.children.find(o => o.isPointLight));
+    expect(c.lights).toContain(group.children.find(o => o.isMesh));
+  });
+});

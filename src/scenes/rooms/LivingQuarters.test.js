@@ -157,3 +157,13 @@ describe('LivingQuarters', () => {
     expect(engine.world.bodies.len()).toBe(0);
   });
 });
+
+describe('LivingQuarters lights', () => {
+  it('its lamp and the glowing shade are on the power', () => {
+    const room = new LivingQuarters(makeEngine());
+    room.build();
+    for (const light of pointLights(room)) expect(room.lights).toContain(light);
+    const shade = room.root.find('CeilingLamp').object3d.children.find(o => o.isMesh);
+    expect(room.lights).toContain(shade);
+  });
+});

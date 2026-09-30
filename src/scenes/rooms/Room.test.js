@@ -496,3 +496,23 @@ describe('Room hooks and teardown', () => {
     expect(disposed).toBe(false);
   });
 });
+
+describe('Room lights', () => {
+  it('lists the lights it built, for the power to feed', () => {
+    class Lit extends Room {
+      buildLighting() {
+        this.lamp = this._lit(new THREE.PointLight(0xffffff, 3));
+        this.root.object3d.add(this.lamp);
+      }
+    }
+    const room = new Lit(makeEngine(), BASE);
+    room.build();
+    expect(room.lights).toEqual([room.lamp]);
+  });
+
+  it('lists nothing when it built no lights', () => {
+    const room = new Room(makeEngine(), BASE);
+    room.build();
+    expect(room.lights).toEqual([]);
+  });
+});
