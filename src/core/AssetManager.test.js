@@ -34,3 +34,30 @@ describe('AssetManager model loading', () => {
     expect(assets.getCollision('model:thing').bounds.center[0]).toBeCloseTo(3);
   });
 });
+
+describe('AssetManager audio loading', () => {
+  function audioManager() {
+    const assets = new AssetManager({ manifest: {
+      'sfx:beep': { type: 'audio', url: 'assets/audio/beep.wav' },
+    } });
+    const buffer = { duration: 0.4, numberOfChannels: 1 };   // stands in for a decoded AudioBuffer
+    assets.audioLoader.loadAsync = vi.fn(async () => buffer);
+    return { assets, buffer };
+  }
+
+  it('decodes an audio entry once and caches the AudioBuffer', async () => {
+    const { assets, buffer } = audioManager();
+    await Promise.all([assets.load('sfx:beep'), assets.load('sfx:beep')]);
+    expect(assets.audioLoader.loadAsync).toHaveBeenCalledTimes(1);
+    expect(assets.audioLoader.loadAsync.mock.calls[0][0]).toMatch(/assets\/audio\/beep\.wav$/);
+    expect(assets.get('sfx:beep')).toBe(buffer);
+  });
+
+  it('is not a model: instantiate refuses it, release just drops it', async () => {
+    const { assets } = audioManager();
+    await assets.load('sfx:beep');
+    expect(() => assets.instantiate('sfx:beep')).toThrow(/not a model/);
+    expect(() => assets.release('sfx:beep')).not.toThrow();
+    expect(assets.has('sfx:beep')).toBe(false);
+  });
+});

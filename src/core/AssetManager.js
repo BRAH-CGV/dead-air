@@ -7,7 +7,7 @@ import {
 } from './ModelUtils.js';
 
 // ─────────────────────────────────────────────
-// AssetManager  –  loads, caches and hands out meshes & textures
+// AssetManager  –  loads, caches and hands out meshes, textures & sounds
 // ─────────────────────────────────────────────
 // One instance lives on the Engine as `engine.assets`.
 //
@@ -39,7 +39,8 @@ export function resolveAssetUrl(relativePath, base = BASE_URL) {
 }
 
 export class AssetManager {
-  /** key → { scene, animations } for models, THREE.Texture for textures */
+  /** key → { scene, animations } for models, THREE.Texture for textures,
+   *  a decoded AudioBuffer for audio (AudioSystem plays it) */
   _cache = new Map();
   /** key → in-flight promise, so two callers share one request */
   _pending = new Map();
@@ -63,6 +64,7 @@ export class AssetManager {
     this.manager = new THREE.LoadingManager();
     this.gltfLoader = new GLTFLoader(this.manager);
     this.textureLoader = new THREE.TextureLoader(this.manager);
+    this.audioLoader = new THREE.AudioLoader(this.manager);
 
     /** Cheap sharpness on textures viewed at a glancing angle, like the floor. */
     this.maxAnisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
@@ -89,9 +91,7 @@ export class AssetManager {
     }
 
     const url = resolveAssetUrl(entry.url);
-    const promise = (entry.type === 'model'
-      ? this._loadModel(url, entry)
-      : this._loadTexture(url, entry))
+    const promise = this._loadEntry(url, entry)
       .then((asset) => {
         this._cache.set(key, asset);
         this._pending.delete(key);
@@ -123,6 +123,14 @@ export class AssetManager {
       loaded += 1;
       onProgress?.(loaded / total, loaded, total);
     }));
+  }
+
+  _loadEntry(url, entry) {
+    if (entry.type === 'model') return this._loadModel(url, entry);
+    // Decoding needs the AudioContext, which the browser creates suspended
+    // until the first click — decoding works on a suspended context.
+    if (entry.type === 'audio') return this.audioLoader.loadAsync(url);
+    return this._loadTexture(url, entry);
   }
 
   _loadModel(url, entry) {
@@ -251,7 +259,8 @@ export class AssetManager {
     if (!asset) return;
 
     if (asset.isTexture) asset.dispose();
-    else disposeObject3D(asset.scene, { disposeShared: true });
+    else if (asset.scene) disposeObject3D(asset.scene, { disposeShared: true });
+    // An AudioBuffer holds no GPU memory: dropping it from the cache frees it.
 
     this._cache.delete(key);
   }
