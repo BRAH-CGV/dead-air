@@ -205,10 +205,15 @@ When you select a **group** (folder icon in the tree), the info panel shows the 
 | **💾 Save All** | Both .json + .js | Your go-to save button. Gets everything. |
 | **🌳 .json** | Just the hierarchy JSON | When you want to back up the layout data only |
 | **📜 .js** | Just the JavaScript scene file | When you want the code file only |
+| **📂 Load** | Nothing (opens a file picker) | Picking an editing session back up from a saved `.hierarchy.json` |
 
-> **Note:** There is no Load button. The exported `.json` and `.js` files are
-> **snapshots for reference** — hand edits to the scene source file (with AI
-> assistance if you like) are the supported way to persist changes permanently.
+> **Note:** **📂 Load** puts a saved `.hierarchy.json` back over the live scene,
+> matching objects by name and place in the hierarchy
+> (`docs/JSON-LOAD-DEBUG.md`). It only lasts until the page reloads, so the
+> exported files are still **snapshots for reference**. Hand edits to the
+> scene source file (with AI assistance if you like) are the supported way to
+> persist changes permanently. Load came back under BUG-R5 and hasn't been
+> checked in a browser yet, so save before you try it on real work.
 
 ### How to Use the Saved Files
 

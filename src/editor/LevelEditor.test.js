@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { LevelEditor } from './LevelEditor.js';
 import { GameObject } from '../core/GameObject.js';
+import { Fullbright } from '../core/Fullbright.js';
 
 describe('LevelEditor', () => {
   let editor;
@@ -340,13 +341,17 @@ describe('LevelEditor', () => {
       expect(texts.some(t => t.includes('Hierarchy'))).toBe(false);
     });
 
-    it('panel keeps Save All, .json and .js, and has no Load button', () => {
+    it('panel keeps Save All, .json and .js, and a Load button for a saved .json', () => {
       const texts = [...editor.panel.querySelectorAll('button')].map(b => b.textContent);
       expect(texts.some(t => t.includes('Save All'))).toBe(true);
       expect(texts.some(t => t.includes('.json'))).toBe(true);
       expect(texts.some(t => t.includes('.js'))).toBe(true);
-      // Loading was removed — the JSON is a snapshot for reference only
-      expect(texts.some(t => t.includes('Load'))).toBe(false);
+      // Back since BUG-R5: docs/JSON-LOAD-DEBUG.md
+      const load = editor.panel.querySelector('#load-hierarchy-btn');
+      expect(load?.textContent).toContain('Load');
+      const spy = vi.spyOn(editor, '_loadHierarchy').mockImplementation(() => {});
+      load.click();
+      expect(spy).toHaveBeenCalledOnce();
     });
 
     it('dead export methods are removed', () => {
@@ -434,6 +439,8 @@ describe('LevelEditor', () => {
               position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
               children: [
                 {
+                  // World space, as _generateJSON saves it: 1 m further on
+                  // than its place in the Office group.
                   name: 'WallBox', isGroup: false, shapeType: 'box',
                   position: [2, 1, 3], rotation: [0, 1, 0], scale: [4, 2, 0.2],
                   collider: true, glow: { enabled: true, color: '#ff0000', intensity: 5, range: 10 },
@@ -470,11 +477,11 @@ describe('LevelEditor', () => {
       const wall = group.children.find(c => c.name === 'WallBox');
       expect(wall).toBeDefined();
       expect(wall._shapeType).toBe('box');
-      expect(wall.object3d.position.x).toBe(2);
-      expect(wall.object3d.position.y).toBe(1);
-      expect(wall.object3d.position.z).toBe(3);
-      expect(wall.object3d.scale.x).toBe(4);
-      expect(wall.object3d.rotation.y).toBe(1);
+      expect(wall.object3d.position.x).toBeCloseTo(1);
+      expect(wall.object3d.position.y).toBeCloseTo(1);
+      expect(wall.object3d.position.z).toBeCloseTo(3);
+      expect(wall.object3d.scale.x).toBeCloseTo(4);
+      expect(wall.object3d.rotation.y).toBeCloseTo(1);
       expect(editor._hasCollider(wall)).toBe(true);
       expect(editor._hasGlow(wall)).toBe(true);
       expect(editor._getGlowColor(wall)).toBe('#ff0000');
@@ -1507,6 +1514,258 @@ describe('LevelEditor', () => {
       editor._setGlow(model, false);
       expect(mat.emissive.getHex()).toBe(0x111111);
       expect(mat.emissiveIntensity).toBe(0.5);
+    });
+
+    // ── BUG-R5: what a save-then-load still got wrong ─────────────────
+    // docs/JSON-LOAD-DEBUG.md, issues A and B.
+
+    /** A named GameObject with one box mesh of its own material. */
+    function boxGO(name, material = new THREE.MeshStandardMaterial()) {
+      const go = new GameObject(name);
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material));
+      return go;
+    }
+    const worldPos = go => go.object3d.getWorldPosition(new THREE.Vector3()).toArray();
+    const worldScale = go => go.object3d.getWorldScale(new THREE.Vector3()).toArray();
+    const expectClose = (actual, expected) => actual.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 6));
+
+    it('puts a child back where it was saved when its parent moves in the same load (issue B)', () => {
+      // The ceiling-light shift: the parent's move hadn't reached its world
+      // matrix when the child's saved world position was turned local.
+      const lamp = boxGO('CeilingLight');
+      const bulb = boxGO('Bulb');
+      editor.sceneRoot.addChild(lamp);
+      lamp.addChild(bulb);
+      bulb.object3d.position.set(0, -0.2, 0);
+      lamp.object3d.position.set(2, 3, 0);
+
+      const data = JSON.parse(editor._generateJSON());
+      lamp.object3d.position.set(0, 3, 0);
+      editor._applyHierarchyDelta(data);
+
+      expectClose(worldPos(lamp), [2, 3, 0]);
+      expectClose(worldPos(bulb), [2, 2.8, 0]);
+    });
+
+    it('turns a saved world scale back into a local one under a scaled parent (issue B)', () => {
+      const rack = boxGO('Rack');
+      const panel = boxGO('Panel');
+      editor.sceneRoot.addChild(rack);
+      rack.addChild(panel);
+      rack.object3d.scale.setScalar(2);
+
+      editor._applyHierarchyDelta(JSON.parse(editor._generateJSON()));
+
+      expectClose(worldScale(panel), [2, 2, 2]);
+      expectClose(panel.object3d.scale.toArray(), [1, 1, 1]);
+    });
+
+    it('tells apart objects that share a name in different rooms (issue B)', () => {
+      // Every room has a Ceiling. Matched by name across the whole scene,
+      // both entries landed on the first one: it took the second room's
+      // place, and the second never moved.
+      const rooms = ['MainOffice', 'ServerRoom'].map((name, i) => {
+        const room = new GameObject(name);
+        room.makeGroup();
+        editor.sceneRoot.addChild(room);
+        const ceiling = boxGO('Ceiling');
+        room.addChild(ceiling);
+        ceiling.object3d.position.set(i * 20, 3, 0);
+        return ceiling;
+      });
+
+      const data = JSON.parse(editor._generateJSON());
+      for (const ceiling of rooms) ceiling.object3d.position.set(0, 0, 0);
+      editor._applyHierarchyDelta(data);
+
+      expectClose(worldPos(rooms[0]), [0, 3, 0]);
+      expectClose(worldPos(rooms[1]), [20, 3, 0]);
+    });
+
+    it('pairs siblings of the same name in order', () => {
+      const crates = [0, 1, 2].map(i => {
+        const crate = boxGO('Crate');
+        editor.sceneRoot.addChild(crate);
+        crate.object3d.position.set(i, 0, 0);
+        return crate;
+      });
+
+      const data = JSON.parse(editor._generateJSON());
+      for (const crate of crates) crate.object3d.position.set(9, 9, 9);
+      editor._applyHierarchyDelta(data);
+
+      crates.forEach((crate, i) => expectClose(worldPos(crate), [i, 0, 0]));
+    });
+
+    it('still finds an object moved to another parent since the save, when its name is unique', () => {
+      const shelf = new GameObject('Shelf');
+      shelf.makeGroup();
+      editor.sceneRoot.addChild(shelf);
+      const radio = boxGO('Radio');
+      editor.sceneRoot.addChild(radio);
+      radio.object3d.position.set(1, 1, 1);
+
+      const data = JSON.parse(editor._generateJSON());
+      editor.sceneRoot.removeChild(radio);
+      shelf.addChild(radio);
+      radio.object3d.position.set(5, 5, 5);
+      const before = editor.sceneRoot.children.length + shelf.children.length;
+      editor._applyHierarchyDelta(data);
+
+      expectClose(worldPos(radio), [1, 1, 1]);
+      expect(editor.sceneRoot.children.length + shelf.children.length).toBe(before);
+    });
+
+    it('moves a group back to where it was saved, not only its children', () => {
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+      const desk = boxGO('Desk');
+      group.addChild(desk);
+      group.object3d.position.set(10, 0, 0);
+
+      const data = JSON.parse(editor._generateJSON());
+      group.object3d.position.set(0, 0, 0);
+      editor._applyHierarchyDelta(data);
+
+      expectClose(worldPos(group), [10, 0, 0]);
+      expectClose(worldPos(desk), [10, 0, 0]);
+      expectClose(desk.object3d.position.toArray(), [0, 0, 0]);
+    });
+
+    it('spawns an object the scene lacks where it was saved, under a moved group', () => {
+      // The save is in world space; a spawn took it as local, so under a
+      // group 10 m along it landed 10 m further on.
+      const group = new GameObject('Office');
+      group.makeGroup();
+      editor.sceneRoot.addChild(group);
+      group.object3d.position.set(10, 0, 0);
+
+      editor._applyHierarchyDelta({
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [{
+            name: 'Office', isGroup: true, position: [10, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+            children: [{
+              name: 'NewBox', isGroup: false, shapeType: 'box', position: [12, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+              collider: false, glow: { enabled: false }, color: '#808080', hidden: false, children: [],
+            }],
+          }],
+        },
+        dynamicObjects: [],
+      });
+
+      const box = group.children.find(c => c.name === 'NewBox');
+      expectClose(worldPos(box), [12, 1, 0]);
+      expectClose(box.object3d.position.toArray(), [2, 1, 0]);
+    });
+
+    describe('with Fullbright on (issue A)', () => {
+      let scene, fullbright;
+      beforeEach(() => {
+        scene = new THREE.Scene();
+        scene.add(editor.sceneRoot.object3d);
+        fullbright = new Fullbright(scene);
+        mockEngine.fullbright = fullbright;
+      });
+
+      const entryFor = (name, fields) => ({
+        root: {
+          name: 'SceneRoot', isGroup: true,
+          children: [{ name, isGroup: false, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], children: [], ...fields }],
+        },
+        dynamicObjects: [],
+      });
+
+      it('writes a loaded colour to the lit material, not its unlit stand-in', () => {
+        const material = new THREE.MeshStandardMaterial({ color: 0x808080 });
+        const crate = boxGO('Crate', material);
+        editor.sceneRoot.addChild(crate);
+        fullbright.enable();
+
+        editor._applyHierarchyDelta(entryFor('Crate', { color: '#ff0000' }));
+
+        expect(fullbright.active).toBe(true);
+        const shown = crate.object3d.children[0].material;
+        expect(shown.isMeshBasicMaterial).toBe(true);
+        expect(shown.color.getHexString()).toBe('ff0000');
+        fullbright.disable();
+        expect(material.color.getHexString()).toBe('ff0000');
+      });
+
+      it('lights a loaded glow on the lit material, which the stand-in has no emissive for', () => {
+        const material = new THREE.MeshStandardMaterial({ color: 0x808080 });
+        const sign = boxGO('Sign', material);
+        editor.sceneRoot.addChild(sign);
+        fullbright.enable();
+
+        editor._applyHierarchyDelta(entryFor('Sign', {
+          glow: { enabled: true, color: '#00ff00', intensity: 2, range: 6 },
+        }));
+        fullbright.disable();
+
+        expect(material.emissive.getHexString()).toBe('00ff00');
+        expect(editor._findGlowLight(sign).visible).toBe(true);
+      });
+
+      it('keeps the lights dark and a new mesh unlit while the mode stays on', () => {
+        const sign = boxGO('Sign');
+        editor.sceneRoot.addChild(sign);
+        fullbright.enable();
+
+        editor._applyHierarchyDelta({
+          root: {
+            name: 'SceneRoot', isGroup: true,
+            children: [
+              { name: 'Sign', isGroup: false, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+                glow: { enabled: true, color: '#00ff00', intensity: 2, range: 6 }, children: [] },
+              { name: 'NewBox', isGroup: false, shapeType: 'box', position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+                collider: false, glow: { enabled: false }, color: '#123456', hidden: false, children: [] },
+            ],
+          },
+          dynamicObjects: [],
+        });
+
+        expect(editor._findGlowLight(sign).visible).toBe(false);
+        const box = editor.sceneRoot.children.find(c => c.name === 'NewBox');
+        const meshes = [];
+        box.object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+        expect(meshes.length).toBeGreaterThan(0);
+        for (const mesh of meshes) expect(mesh.material.isMeshBasicMaterial).toBe(true);
+      });
+
+      it('colours the lit material when the picker is used with the mode on', () => {
+        const material = new THREE.MeshStandardMaterial({ color: 0x808080 });
+        const crate = boxGO('Crate', material);
+        editor.sceneRoot.addChild(crate);
+        fullbright.enable();
+
+        editor._setObjectColor(crate, '#0000ff');
+        fullbright.disable();
+
+        expect(material.color.getHexString()).toBe('0000ff');
+      });
+    });
+
+    it('gives back a scene light that was adopted after the save, instead of deleting it (issue A)', () => {
+      // Saved while untagged, it went into the JSON as the object's light
+      // with glow off. Adopted since, it was tagged, and a tagged light with
+      // glow off was removed on load, though the save had it.
+      const lamp = new GameObject('DeskGlow');
+      const light = new THREE.PointLight(0x66ccff, 2.8, 6);
+      lamp.object3d.add(light);
+      editor.sceneRoot.addChild(lamp);
+
+      const data = JSON.parse(editor._generateJSON());
+      editor._setGlow(lamp, true, '#ff0000', 9, 20);
+      editor._applyHierarchyDelta(data);
+
+      expect(light.parent).toBe(lamp.object3d);
+      expect(light._editorGlowLight).toBeFalsy();
+      expect(light.color.getHexString()).toBe('66ccff');
+      expect(light.intensity).toBeCloseTo(2.8);
+      expect(light.distance).toBe(6);
+      expect(light.castShadow).toBe(false);
     });
   });
 

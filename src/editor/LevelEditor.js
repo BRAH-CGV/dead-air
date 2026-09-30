@@ -2,6 +2,14 @@ import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { ASSETS } from '../assets/manifest.js';
 
+// Scratch for _applySavedTransform: a load puts back hundreds of objects.
+const _savedPos = new THREE.Vector3();
+const _savedQuat = new THREE.Quaternion();
+const _savedScale = new THREE.Vector3();
+const _savedEuler = new THREE.Euler();
+const _savedWorld = new THREE.Matrix4();
+const _parentInverse = new THREE.Matrix4();
+
 // ─────────────────────────────────────────────
 // LevelEditor  –  Visual scene editing tool
 // ─────────────────────────────────────────────
@@ -499,11 +507,17 @@ export class LevelEditor {
     saveCodeBtn.onclick = () => this._saveSceneCode();
     saveRow.appendChild(saveCodeBtn);
 
-    // NOTE: The Load button was intentionally removed. Delta-loading a saved
-    // JSON back into the live scene proved unreliable (emissive corruption,
-    // world/local transform mismatches, glow light adoption). The exported
-    // .js and .hierarchy.json files are snapshots for reference — hand edits
-    // to the scene source are the supported way to persist changes.
+    // Loads a saved .json back over the live scene (_applyHierarchyDelta).
+    // It was off while the load lost colours under Fullbright, deleted
+    // adopted lights and mixed up world and local transforms (BUG-R5,
+    // docs/JSON-LOAD-DEBUG.md). The scene source is still what ships: a
+    // load is for picking up an editing session, not for persisting it.
+    const loadBtn = document.createElement('button');
+    loadBtn.id = 'load-hierarchy-btn';
+    loadBtn.textContent = '\u{1F4C2} Load';
+    loadBtn.style.cssText = 'flex:1; padding:6px; background:#555; color:white; border:none; border-radius:3px; cursor:pointer; font-family:monospace;';
+    loadBtn.onclick = () => this._loadHierarchy();
+    saveRow.appendChild(loadBtn);
 
     header.appendChild(saveRow);
     this.panel.appendChild(header);
@@ -676,6 +690,9 @@ export class LevelEditor {
       console.warn('[LevelEditor] _applyHierarchy: invalid data (missing root)');
       return false;
     }
+    if (this.engine.fullbright?.active) {
+      return this._withLitMaterials(() => this._applyHierarchy(data));
+    }
 
     // ── Clear existing editable content ────────────────────────────
     this.deselectAll();
@@ -706,159 +723,87 @@ export class LevelEditor {
   }
 
   /** Apply a saved hierarchy as a DELTA on top of the existing scene.
-   *  Matches JSON entries to existing GameObjects by name and applies
-   *  transform/visibility/state changes. New objects are spawned; objects
-   *  not in the JSON are left untouched (preserving visual fidelity).
+   *  Each entry is matched to an existing GameObject and given back its
+   *  saved transform, colour, glow and visibility. New objects are spawned;
+   *  objects not in the JSON are left untouched (preserving visual fidelity).
    *  Returns true on success, null if the data is invalid (caller should
-   *  fall back to _applyHierarchy). */
+   *  fall back to _applyHierarchy).
+   *
+   *  An entry takes the first unclaimed child of its name under the object
+   *  its parent entry matched, so two rooms' Ceilings, or a row of Crates,
+   *  each find their own. Failing that, it takes the one object in the
+   *  scene with its name, if only one has it: an object moved to another
+   *  parent since the save. */
   _applyHierarchyDelta(data) {
     if (!data || !data.root || !Array.isArray(data.root.children)) {
       return null; // invalid data — let caller fall back
     }
+    if (this.engine.fullbright?.active) {
+      return this._withLitMaterials(() => this._applyHierarchyDelta(data));
+    }
 
     this.deselectAll();
 
-    // Build a name → GameObject map from the existing scene hierarchy
-    const existingByName = new Map();
-    const collectExisting = (go) => {
-      if (go.name && !existingByName.has(go.name)) {
-        existingByName.set(go.name, go);
+    // Everything a save could have written, by name. Imported models'
+    // parts are left out, as _generateJSON leaves them out.
+    const byName = new Map();
+    let total = 0;
+    const index = (go) => {
+      if (go.name) {
+        const named = byName.get(go.name);
+        if (named) named.push(go);
+        else byName.set(go.name, [go]);
+        total++;
       }
-      for (const child of (go.children || [])) {
-        collectExisting(child);
-      }
+      if (go.physicsAssetKey) return;
+      for (const child of (go.children || [])) index(child);
     };
-    if (this.sceneRoot) {
-      for (const child of this.sceneRoot.children) {
-        collectExisting(child);
+    for (const child of (this.sceneRoot?.children ?? [])) index(child);
+    for (const go of (this.dynamicObjects ?? [])) index(go);
+
+    const claimed = new Set();
+    const match = (entry, siblings) => {
+      let go = siblings.find(s => s.name === entry.name && !claimed.has(s));
+      if (!go) {
+        const named = byName.get(entry.name);
+        if (named?.length === 1 && !claimed.has(named[0])) go = named[0];
       }
-    }
-    for (const go of (this.dynamicObjects || [])) {
-      collectExisting(go);
-    }
+      if (go) claimed.add(go);
+      return go ?? null;
+    };
 
-    // Track which existing objects are accounted for in the JSON
-    const matchedNames = new Set();
-
-    // Recursively apply JSON entries to the existing hierarchy
+    // Parents before children, so a child's saved world transform is taken
+    // against where its parent has just been put.
     const applyDelta = (entries, parentGO) => {
       for (const entry of entries) {
         if (!entry || !entry.name) continue;
-
-        const existing = existingByName.get(entry.name);
-        if (existing && !entry.isGroup) {
-          // ── Match found: apply transform and state ──
-          matchedNames.add(entry.name);
-          const obj = existing.object3d;
-
-          // Apply transform — the JSON stores WORLD-space position/rotation,
-          // so convert back to local space relative to the current parent
-          // before setting. This makes the loaded scene match what was visible
-          // when it was saved, regardless of parent group transforms.
-          if (entry.position) {
-            obj.updateMatrixWorld(false);
-            const worldPos = new THREE.Vector3().fromArray(entry.position);
-            if (obj.parent) {
-              obj.parent.worldToLocal(worldPos);
-            }
-            obj.position.copy(worldPos);
-          }
-          if (entry.rotation) {
-            obj.updateMatrixWorld(false);
-            const wq = new THREE.Quaternion().setFromEuler(
-              new THREE.Euler(entry.rotation[0], entry.rotation[1], entry.rotation[2], 'XYZ'));
-            if (obj.parent) {
-              const parentInv = obj.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
-              wq.premultiply(parentInv);
-            }
-            obj.quaternion.copy(wq);
-          }
-          if (entry.scale) obj.scale.fromArray(entry.scale);
-
-          // Apply colour — only for procedural (non-imported, non-light) objects.
-          // Imported models have textures that must not be tinted, and light
-          // GameObjects must keep their original light colour/intensity.
-          // In delta mode the existing scene already has the correct colours,
-          // so we only re-apply when the JSON has an explicit editor-set color
-          // that differs from the default AND the object is a procedural box.
-          const isImportedModel = !!existing.physicsAssetKey;
-          const hasSceneLight = this._findSceneLight(existing) !== null;
-          if (entry.color && entry.color !== '#808080' && !isImportedModel && !hasSceneLight) {
-            this._setObjectColor(existing, entry.color);
-          }
-
-          // Apply glow
-          if (entry.glow?.enabled) {
-            this._setGlow(existing, true, entry.glow.color ?? '#ffffff', entry.glow.intensity ?? 5, entry.glow.range ?? LevelEditor.GLOW_DEFAULT_RANGE);
-          } else if (entry.glow && !entry.glow.enabled && this._findGlowLight(existing)?._editorGlowLight) {
-            this._setGlow(existing, false);
-          }
-
-          // Apply visibility
-          if (entry.hidden !== undefined) {
-            this._setHidden(existing, !!entry.hidden);
-          }
-
-          // Sync physics if the object has a rigid body
-          if (existing.rigidBody) {
-            this._syncSingleTransformToPhysics(existing);
-          }
-
-          // Recurse into children (for groups that were matched)
-          if (entry.children?.length && existing.children?.length) {
-            applyDelta(entry.children, existing);
-          }
-        } else if (existing && entry.isGroup) {
-          // Group matched — just recurse into children
-          matchedNames.add(entry.name);
-          if (entry.children?.length) {
-            applyDelta(entry.children, existing);
-          }
-        } else {
-          // ── No match: spawn a new object ──
+        const existing = match(entry, parentGO.children || []);
+        if (!existing) {
           this._instantiateEntry(entry, parentGO);
+          continue;
         }
+        this._applySavedTransform(existing.object3d, entry);
+        if (!entry.isGroup) this._applySavedState(existing, entry);
+        if (existing.rigidBody) this._syncSingleTransformToPhysics(existing);
+        if (entry.children?.length) applyDelta(entry.children, existing);
       }
     };
 
-    // Apply delta to the hierarchy
     if (this.sceneRoot) {
       applyDelta(data.root.children, this.sceneRoot);
     }
 
-    // Apply delta to dynamic objects
+    // Dynamic objects: Rapier owns the rest of their state, so only the
+    // transform comes back.
     for (const entry of (data.dynamicObjects ?? [])) {
       if (!entry?.name) continue;
-      const existing = existingByName.get(entry.name);
-      if (existing) {
-        matchedNames.add(entry.name);
-        const obj = existing.object3d;
-        // World-space position/rotation — same conversion as the hierarchy path
-        if (entry.position) {
-          obj.updateMatrixWorld(false);
-          const worldPos = new THREE.Vector3().fromArray(entry.position);
-          if (obj.parent) {
-            obj.parent.worldToLocal(worldPos);
-          }
-          obj.position.copy(worldPos);
-        }
-        if (entry.rotation) {
-          obj.updateMatrixWorld(false);
-          const wq = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(entry.rotation[0], entry.rotation[1], entry.rotation[2], 'XYZ'));
-          if (obj.parent) {
-            const parentInv = obj.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
-            wq.premultiply(parentInv);
-          }
-          obj.quaternion.copy(wq);
-        }
-        if (entry.scale) obj.scale.fromArray(entry.scale);
-        if (existing.rigidBody) {
-          this._syncSingleTransformToPhysics(existing);
-        }
-      } else {
+      const existing = match(entry, this.dynamicObjects ?? []);
+      if (!existing) {
         this._instantiateEntry(entry, null);
+        continue;
       }
+      this._applySavedTransform(existing.object3d, entry);
+      if (existing.rigidBody) this._syncSingleTransformToPhysics(existing);
     }
 
     this._refreshEditableObjects();
@@ -866,10 +811,81 @@ export class LevelEditor {
     this._dirty = false;
     this._updateDirtyIndicator();
 
-    const matched = matchedNames.size;
-    const total = existingByName.size;
-    console.log(`[LevelEditor] Delta load: matched ${matched}/${total} existing objects`);
+    console.log(`[LevelEditor] Delta load: matched ${claimed.size}/${total} existing objects`);
     return true;
+  }
+
+  /** Put an object back at the WORLD transform an entry saved, whatever
+   *  its parent is now. The parent's matrix is brought up to date first,
+   *  so a parent moved earlier in the same load counts, and scale is made
+   *  local too: under a parent scaled ×2, a saved world scale of 2 is 1.
+   *  A field the entry lacks keeps its current world value. */
+  _applySavedTransform(obj, entry) {
+    if (!entry.position && !entry.rotation && !entry.scale) return;
+    obj.updateWorldMatrix(true, false);
+    obj.matrixWorld.decompose(_savedPos, _savedQuat, _savedScale);
+    if (entry.position) _savedPos.fromArray(entry.position);
+    if (entry.rotation) {
+      _savedQuat.setFromEuler(_savedEuler.set(entry.rotation[0], entry.rotation[1], entry.rotation[2], 'XYZ'));
+    }
+    if (entry.scale) _savedScale.fromArray(entry.scale);
+    _savedWorld.compose(_savedPos, _savedQuat, _savedScale);
+    if (obj.parent) {
+      _savedWorld.premultiply(_parentInverse.copy(obj.parent.matrixWorld).invert());
+    }
+    _savedWorld.decompose(obj.position, obj.quaternion, obj.scale);
+    obj.updateMatrixWorld(true);
+  }
+
+  /** A matched object's saved colour, glow and visibility. */
+  _applySavedState(go, entry) {
+    // Colour — only for procedural (non-imported, non-light) objects.
+    // Imported models have textures that must not be tinted, and light
+    // GameObjects must keep their original light colour/intensity.
+    // In delta mode the existing scene already has the correct colours,
+    // so we only re-apply when the JSON has an explicit editor-set color
+    // that differs from the default AND the object is a procedural box.
+    const isImportedModel = !!go.physicsAssetKey;
+    const hasSceneLight = this._findSceneLight(go) !== null;
+    if (entry.color && entry.color !== '#808080' && !isImportedModel && !hasSceneLight) {
+      this._setObjectColor(go, entry.color);
+    }
+
+    // Glow. With glow off in the save, a tagged light is either the editor's
+    // own (removed) or a scene light adopted since the save, which the save
+    // still has as entry.light: that one is given back, not deleted.
+    const glowLight = this._findGlowLight(go);
+    if (entry.glow?.enabled) {
+      this._setGlow(go, true, entry.glow.color ?? '#ffffff', entry.glow.intensity ?? 5, entry.glow.range ?? LevelEditor.GLOW_DEFAULT_RANGE);
+    } else if (entry.glow && glowLight?._editorGlowLight) {
+      if (entry.light?.type === glowLight.type) {
+        this._restoreSceneLight(glowLight, entry.light);
+        this._restoreEmissive(go);
+      } else {
+        this._setGlow(go, false);
+      }
+    }
+
+    if (entry.hidden !== undefined) {
+      this._setHidden(go, !!entry.hidden);
+    }
+  }
+
+  /** Run fn with the scene's own materials and lights in place. Fullbright
+   *  swaps every lit material for an unlit twin and hides the lights, so a
+   *  colour or glow written while it is on lands on a twin, and is lost
+   *  when the mode is turned off. The mode steps aside for the edit and
+   *  comes back after it, making twins of whatever the edit changed or
+   *  added, and hiding any light it made. */
+  _withLitMaterials(fn) {
+    const fullbright = this.engine.fullbright;
+    if (!fullbright?.active) return fn();
+    fullbright.disable();
+    try {
+      return fn();
+    } finally {
+      fullbright.enable();
+    }
   }
 
   /** Remove a GameObject (and its descendants' physics) from the scene.
@@ -996,10 +1012,8 @@ export class LevelEditor {
       return null;
     }
 
-    // ── Transform ─────────────────────────────────────────────────
-    go.object3d.position.fromArray(entry.position ?? [0, 0, 0]);
-    if (entry.rotation) go.object3d.rotation.set(entry.rotation[0], entry.rotation[1], entry.rotation[2]);
-    if (entry.scale) go.object3d.scale.fromArray(entry.scale);
+    // ── Transform (saved in world space) ──────────────────────────
+    this._applySavedTransform(go.object3d, { ...entry, position: entry.position ?? [0, 0, 0] });
 
     if (!entry.isGroup) {
       // ── Per-object state: collider, colour, glow, hidden ────────
@@ -2113,6 +2127,9 @@ export class LevelEditor {
    *  at enable-time is restored so the object's scene-authored glow
    *  returns instead of going black. */
   _setGlow(go, enabled, colorHex, intensity, range) {
+    if (this.engine.fullbright?.active) {
+      return this._withLitMaterials(() => this._setGlow(go, enabled, colorHex, intensity, range));
+    }
     range = range ?? LevelEditor.GLOW_DEFAULT_RANGE;
 
     const existing = this._findGlowLight(go);
@@ -2170,27 +2187,42 @@ export class LevelEditor {
         existing.dispose?.();
       }
 
-      // Restore emissive — skip imported models (their materials were never touched)
-      if (!isImportedModel) {
-        go.object3d.traverse((child) => {
-          if (!child.isMesh || !child.material) return;
-          const mat = child.material;
-          if (!('emissive' in mat)) return;
-          if (mat._originalEmissive !== undefined) {
-            mat.emissive.copy(mat._originalEmissive);
-            mat.emissiveIntensity = mat._originalEmissiveIntensity;
-            delete mat._originalEmissive;
-            delete mat._originalEmissiveIntensity;
-          } else {
-            mat.emissive.set(0x000000);
-            mat.emissiveIntensity = 0;
-          }
-        });
-      }
+      this._restoreEmissive(go);
     }
 
     this._markDirty();
     console.log(`[LevelEditor] Glow ${enabled ? 'enabled' : 'disabled'} on '${go.name}': color=${colorHex}, intensity=${intensity}, range=${range}m`);
+  }
+
+  /** Put back the emissive a glow overrode: the one saved when it was lit,
+   *  else none. Skips imported models (their materials were never touched). */
+  _restoreEmissive(go) {
+    if (go.physicsAssetKey) return;
+    go.object3d.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      const mat = child.material;
+      if (!('emissive' in mat)) return;
+      if (mat._originalEmissive !== undefined) {
+        mat.emissive.copy(mat._originalEmissive);
+        mat.emissiveIntensity = mat._originalEmissiveIntensity;
+        delete mat._originalEmissive;
+        delete mat._originalEmissiveIntensity;
+      } else {
+        mat.emissive.set(0x000000);
+        mat.emissiveIntensity = 0;
+      }
+    });
+  }
+
+  /** Give an adopted scene light back as a save had it (_serializeLight):
+   *  untagged, with the scene's own colour, strength, reach and shadow. */
+  _restoreSceneLight(light, saved) {
+    delete light._editorGlowLight;
+    light.color.set(saved.color);
+    light.intensity = saved.intensity;
+    if (saved.range !== undefined) light.distance = saved.range;
+    if (saved.decay !== undefined) light.decay = saved.decay;
+    if (saved.castShadow !== undefined) light.castShadow = saved.castShadow;
   }
 
   // ── Object colour management ───────────────────────────────────
@@ -2210,6 +2242,9 @@ export class LevelEditor {
   /** Set the base colour on all mesh materials. Also updates the glow light
    *  colour (if glow is active) so the emitted light matches the material. */
   _setObjectColor(go, colorHex) {
+    if (this.engine.fullbright?.active) {
+      return this._withLitMaterials(() => this._setObjectColor(go, colorHex));
+    }
     const color = new THREE.Color(colorHex);
 
     // Update base colour on every mesh
