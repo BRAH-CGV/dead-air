@@ -3,6 +3,7 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createDefaultNeighbourDishes } from '../gameobjects/DishRig.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
@@ -503,6 +504,11 @@ export class BaseScene extends Scene {
     this._adopt(this._outside, this.satellite);
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+
+    // The dishes of the neighbouring array nodes, lent to this station.
+    // Too far away to be seen or heard, so they are simulated headless:
+    // the Satellite ticks their rigs, and the radar shows their sections.
+    this.satellite.neighbours = createDefaultNeighbourDishes();
 
     // Lit concrete under the dish. Positioned off the satellite's own
     // transform rather than a second copy of its coordinates.

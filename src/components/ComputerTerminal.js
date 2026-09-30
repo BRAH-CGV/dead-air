@@ -99,11 +99,11 @@ export class ComputerTerminal extends Component {
       this._cursorX /= r;
       this._cursorY /= r;
     }
-    // Convert to sky coords and update satellite target
+    // Convert to sky coords and aim the whole array — every dish whose
+    // section contains the point follows the cursor.
     const sky = this._cursorToSky();
     if (this.satellite) {
-      this.satellite.targetYaw = sky.yaw;
-      this.satellite.targetPitch = sky.pitch;
+      this.satellite.aimAll(sky.yaw, sky.pitch);
     }
   }
 
@@ -191,7 +191,7 @@ export class ComputerTerminal extends Component {
     this.state = 'radar';
     this._setInputLocked(true);
     this.radar?.show();
-    this.radar?.setHint('WASD: move cursor | Enter: scan (when dish aimed) | Q: exit');
+    this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
     this.radar?.setInfo('');
     this._hoveredSignal = null;
     // Check if a scan completed while terminal was closed
@@ -282,15 +282,15 @@ export class ComputerTerminal extends Component {
       // Update hover detection
       this._updateHover();
 
-      // Enter key starts scanning if hovering and dish is aimed
+      // Enter key starts scanning if hovering and a dish of the array is aimed
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
       if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
         const sig = this._hoveredSignal;
-        const aimed = this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+        const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
         if (aimed) {
           this._enterScanning();
         } else {
-          this.radar?.setInfo('Dish not aimed — wait for it to settle');
+          this.radar?.setInfo('No dish aimed — wait for one to settle');
         }
       }
       this._enterHeld = enterDown;
@@ -348,6 +348,7 @@ export class ComputerTerminal extends Component {
       this._cursorY,
       this._hoveredSignal,
       scanProgress,
+      this.satellite.neighbours ?? [],
     );
   }
 }

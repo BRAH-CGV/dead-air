@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { Satellite, DISH_SLEW_RATE } from './Satellite.js';
+import { DishRig } from './DishRig.js';
 
 /** Minimal dish-tower stand-in: Base → Neck_block → Dish, matching the node
  *  names the real GLB ships with. */
@@ -288,5 +289,161 @@ describe('Satellite', () => {
     expect(sat.scanProgress).toBe(0);
     expect(sat.scanTarget).toBeNull();
     expect(sat.isScanning).toBe(false);
+  });
+
+  // ── The neighbouring array dishes ────────────────────────
+
+  /** A satellite with two hand-placed neighbour rigs: one whose section
+   *  covers (0, -0.5) and one whose doesn't. */
+  function makeArrayed() {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    neck.rotation.y = 0;
+    dish.rotation.x = -0.5;
+    sat.rig.currentYaw = 0;
+    sat.rig.currentPitch = -0.5;
+    sat.rig.targetYaw = 0;
+    sat.rig.targetPitch = -0.5;
+    sat.neighbours = [
+      new DishRig({ originYaw: 0.1, originPitch: -0.5, coverageRadius: 0.65 }),   // covers (0, -0.5)
+      new DishRig({ originYaw: 2.0, originPitch: -0.5, coverageRadius: 0.3 }),     // doesn't
+    ];
+    return { sat, neck, dish };
+  }
+
+  it('aimAll re-targets the local dish and every neighbour that covers the point', () => {
+    const { sat } = makeArrayed();
+    const outside = sat.neighbours[1];
+    outside.targetYaw = 1.5;                // something to hold on to
+    outside.targetPitch = -0.2;
+
+    sat.aimAll(0, -0.5);
+
+    expect(sat.targetYaw).toBeCloseTo(0);           // local: always re-targets
+    expect(sat.targetPitch).toBeCloseTo(-0.5);
+    expect(sat.neighbours[0].targetYaw).toBeCloseTo(0);   // covers → follows
+    expect(sat.neighbours[0].targetPitch).toBeCloseTo(-0.5);
+    expect(outside.targetYaw).toBeCloseTo(1.5);           // doesn't cover → holds
+    expect(outside.targetPitch).toBeCloseTo(-0.2);
+  });
+
+  it('_update ticks every neighbour rig alongside the local tower', () => {
+    const { sat } = makeArrayed();
+    const [a, b] = sat.neighbours;
+    a.aimAt(0.1, -0.5);   // an error-free target: no motion
+    b.aimAt(2.6, -0.5);   // a step away from its pose — must slew
+    const before = b.currentYaw;
+
+    for (let i = 0; i < 10; i++) sat._update(1 / 60);   // momentum builds from rest
+
+    expect(b.currentYaw - before).toBeGreaterThan(0.01);   // physics ran on the neighbour
+    expect(a.isRotating()).toBe(false);                    // and only where it should
+  });
+
+  it('isAnyDishAimedAt and aimedDishCount span the local dish and the neighbours', () => {
+    const { sat } = makeArrayed();
+    // Local dish aimed at (0, -0.5); neighbour 0 at (0.3, -0.5); neighbour 1 far off.
+    sat.neighbours[0].currentYaw = 0.3;
+    sat.neighbours[0].currentPitch = -0.5;
+    sat.neighbours[1].currentYaw = 2.0;
+    sat.neighbours[1].currentPitch = -0.5;
+
+    // A tolerance wide enough to admit both the local dish and neighbour 0.
+    expect(sat.aimedDishCount(0, -0.5, 0.4)).toBe(2);
+    expect(sat.isAnyDishAimedAt(0, -0.5, 0.4)).toBe(true);
+
+    // Tighter: only the local dish is close enough.
+    expect(sat.aimedDishCount(0, -0.5, 0.2)).toBe(1);
+    expect(sat.isAnyDishAimedAt(0, -0.5, 0.2)).toBe(true);
+
+    // Nowhere near anything.
+    expect(sat.aimedDishCount(3, -0.1, 0.05)).toBe(0);
+    expect(sat.isAnyDishAimedAt(3, -0.1, 0.05)).toBe(false);
+  });
+
+  it('aimedDishCount with no neighbours counts just the local dish', () => {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    neck.rotation.y = 1;
+    dish.rotation.x = -0.3;
+
+    expect(sat.aimedDishCount(1, -0.3, 0.1)).toBe(1);
+    expect(sat.aimedDishCount(1.5, -0.3, 0.1)).toBe(0);
+  });
+
+  // ── Multi-dish scan aggregation ──────────────────────────
+
+  /** A scan setup aimed (or not) by hand: local tower plus one neighbour,
+   *  a target at (0, -0.5) with a 3 s scan and a wide tolerance. */
+  function makeScan({ localAimed, neighbourAimed }) {
+    const { root, neck, dish } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    const yaw   = localAimed ? 0 : 2.0;
+    const pitch = localAimed ? -0.5 : -0.2;
+    neck.rotation.y = yaw;
+    dish.rotation.x = pitch;
+    sat.rig.currentYaw = yaw;      // frozen pose — no target set, nothing slews
+    sat.rig.currentPitch = pitch;
+    sat.rig.targetYaw = yaw;
+    sat.rig.targetPitch = pitch;
+
+    const neighbour = new DishRig({ originYaw: 0, originPitch: -0.5, coverageRadius: 1 });
+    neighbour.currentYaw   = neighbourAimed ? 0 : 2.0;
+    neighbour.currentPitch = neighbourAimed ? -0.5 : -0.2;
+    neighbour.targetYaw    = neighbour.currentYaw;
+    neighbour.targetPitch  = neighbour.currentPitch;
+    sat.neighbours = [neighbour];
+
+    sat.scanTarget = { id: 1, yaw: 0, pitch: -0.5, tolerance: 0.15, scanTime: 3, scanned: false };
+    sat.isScanning = true;
+    return { sat };
+  }
+
+  it('one aimed dish scans at dt per tick', () => {
+    const { sat } = makeScan({ localAimed: true, neighbourAimed: false });
+    expect(sat.aimedDishCount(0, -0.5, 0.15)).toBe(1);
+
+    sat._update(0.5);
+    expect(sat.scanProgress).toBeCloseTo(0.5);
+  });
+
+  it('two aimed dishes scan at 2× dt per tick', () => {
+    const { sat } = makeScan({ localAimed: true, neighbourAimed: true });
+    expect(sat.aimedDishCount(0, -0.5, 0.15)).toBe(2);
+
+    sat._update(0.5);
+    expect(sat.scanProgress).toBeCloseTo(1.0);
+  });
+
+  it('a neighbour alone can carry the scan — local dish off target', () => {
+    const { sat } = makeScan({ localAimed: false, neighbourAimed: true });
+    expect(sat.aimedDishCount(0, -0.5, 0.15)).toBe(1);
+
+    sat._update(0.5);
+    expect(sat.scanProgress).toBeCloseTo(0.5);
+  });
+
+  it('no dish aimed pauses the scan and keeps progress', () => {
+    const { sat } = makeScan({ localAimed: true, neighbourAimed: false });
+    sat._update(0.4);
+    expect(sat.scanProgress).toBeCloseTo(0.4);
+
+    // Local dish drifts off target mid-scan.
+    sat.neck.object3d.rotation.y = 2.0;
+    sat._update(0.5);
+
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanProgress).toBeCloseTo(0.4);   // kept, not reset
+  });
+
+  it('completion marks the target scanned, stops scanning and flags _scanComplete', () => {
+    const { sat } = makeScan({ localAimed: true, neighbourAimed: true });
+    sat.scanProgress = 2.9;                       // one 2× tick finishes it
+
+    sat._update(0.1);
+
+    expect(sat.scanTarget.scanned).toBe(true);
+    expect(sat.isScanning).toBe(false);
+    expect(sat._scanComplete).toBe(true);
   });
 });

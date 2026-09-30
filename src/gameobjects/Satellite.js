@@ -1,4 +1,5 @@
 import { GameObject } from '../core/GameObject.js';
+import { DishRig, aimError, angleDelta, SETTLED_EPSILON } from './DishRig.js';
 
 // ─────────────────────────────────────────────
 // Satellite  –  steerable dish tower
@@ -9,43 +10,56 @@ import { GameObject } from '../core/GameObject.js';
 // faster than `maxRotationSpeed`, so the tower steers like a real dish
 // instead of spinning forever.
 //
+// The aiming state and spring-damper physics live in a headless DishRig
+// (`this.rig`); the model's Object3D rotations stay authoritative for
+// rendering — _update syncs them into the rig, advances it, writes back.
+// The same rig class simulates the neighbouring array nodes' dishes
+// (`this.neighbours`), which are too far away to be seen or heard, so only
+// their rotation is simulated — no model, no body.
+//
 // Spawn through the engine, which handles physics and registration:
 //
 //   const dish = engine.spawnModel('model:dish-tower', {
 //     name: 'Satellite', position: [0, 0, -25], scale: 0.5, type: Satellite,
 //   });
-//   dish.targetYaw = Math.PI / 4;   // steer at any time, from any system
+//   dish.aimAll(Math.PI / 4, -0.4); // steer the whole array at any time
 //   dish.isRotating();              // false once both axes are on target
 // ─────────────────────────────────────────────
 
-/** The dish's default slew limit, radians per second: π/8 = 22.5°/s. A half
- *  turn takes ~8 s, a 12° correction under a second. Slow enough that the
- *  tower reads as heavy machinery; fast enough that the minigame is still
- *  about aiming, not waiting. ComputerTerminal paces its cursor to it. */
-export const DISH_SLEW_RATE = Math.PI / 8;
+export { DISH_SLEW_RATE } from './DishRig.js';
 
 export class Satellite extends GameObject {
 
+  /** The local tower's aiming state — covers the whole scannable sky. */
+  rig = new DishRig();
+
+  /** Dishes of the neighbouring array nodes, simulated headless. Set by the
+   *  scene; _update ticks them alongside the local rig.
+   *  @type {DishRig[]} */
+  neighbours = [];
+
+  // ── Facade over the rig: field writes/reads keep working ──
   /** Slew limit shared by both axes, radians per second. */
-  maxRotationSpeed = DISH_SLEW_RATE;
-
+  get maxRotationSpeed() { return this.rig.maxRotationSpeed; }
+  set maxRotationSpeed(v) { this.rig.maxRotationSpeed = v; }
   /** Angle the neck is slewing toward, radians around Y. */
-  targetYaw = 0;
+  get targetYaw() { return this.rig.targetYaw; }
+  set targetYaw(v) { this.rig.targetYaw = v; }
   /** Angle the dish is tilting toward, radians around X. */
-  targetPitch = 0;
-
-  // ── Momentum physics (spring-damper) ──
+  get targetPitch() { return this.rig.targetPitch; }
+  set targetPitch(v) { this.rig.targetPitch = v; }
   /** Angular velocity around Y (rad/s). */
-  velYaw = 0;
+  get velYaw() { return this.rig.velYaw; }
+  set velYaw(v) { this.rig.velYaw = v; }
   /** Angular velocity around X (rad/s). */
-  velPitch = 0;
-  // The pair is a spring (stiffness k = angularAccel) and damper
-  // (c = angularDamping). c = 2·√k is critical damping: the fastest settle
-  // that never swings past the target. Change one, re-derive the other.
+  get velPitch() { return this.rig.velPitch; }
+  set velPitch(v) { this.rig.velPitch = v; }
   /** How fast the dish accelerates toward target (rad/s^2 per rad of error). */
-  angularAccel = 25.0;
+  get angularAccel() { return this.rig.angularAccel; }
+  set angularAccel(v) { this.rig.angularAccel = v; }
   /** Velocity damping factor (higher = less overshoot). */
-  angularDamping = 10.0;
+  get angularDamping() { return this.rig.angularDamping; }
+  set angularDamping(v) { this.rig.angularDamping = v; }
 
   /** The slewing base of the tower. @type {GameObject|null} */
   neck = null;
@@ -72,53 +86,52 @@ export class Satellite extends GameObject {
     }
     // Hold the pose the model shipped with until something sets a target,
     // so spawning alone doesn't jerk the tower back to zero.
-    sat.targetYaw   = sat.neck?.object3d.rotation.y ?? 0;
-    sat.targetPitch = sat.dish?.object3d.rotation.x ?? 0;
+    const yaw   = sat.neck?.object3d.rotation.y ?? 0;
+    const pitch = sat.dish?.object3d.rotation.x ?? 0;
+    sat.rig.currentYaw   = yaw;
+    sat.rig.currentPitch = pitch;
+    sat.rig.targetYaw    = yaw;
+    sat.rig.targetPitch  = pitch;
     return sat;
   }
 
-  /** Slew both axes with spring-damper momentum physics. The dish
-   *  accelerates toward its target, decelerates as it approaches, and
-   *  never exceeds maxRotationSpeed. super first, so components and
-   *  children tick before we re-aim them. */
+  /** Slew the tower and tick every neighbour dish with the same
+   *  spring-damper momentum physics. super first, so components and
+   *  children tick before we re-aim them. The model's Object3D rotations
+   *  are authoritative: they sync into the rig, the rig advances, and the
+   *  new angles are written back. */
   _update(dt) {
     super._update(dt);
 
-    // Scan logic (runs regardless of terminal state)
+    // Scan logic (runs regardless of terminal state). Every dish of the
+    // array that is locked on adds its share to the scan speed — two dishes
+    // finish twice as fast.
     if (this.isScanning && this.scanTarget) {
-      const aimed = this.isAimedAt(this.scanTarget.yaw, this.scanTarget.pitch, this.scanTarget.tolerance);
-      if (aimed) {
-        this.scanProgress += dt;
+      const dishes = this.aimedDishCount(
+        this.scanTarget.yaw, this.scanTarget.pitch, this.scanTarget.tolerance,
+      );
+      if (dishes > 0) {
+        this.scanProgress += dishes * dt;
         if (this.scanProgress >= this.scanTarget.scanTime) {
           this.scanTarget.scanned = true;
           this.isScanning = false;
           this._scanComplete = true;
         }
       } else {
-        // Dish drifted — pause (don't reset progress)
+        // Every dish drifted — pause (don't reset progress)
         this.isScanning = false;
       }
     }
 
-    // Yaw axis: spring-damper physics
-    if (this.neck) {
-      const err = angleDelta(this.neck.object3d.rotation.y, this.targetYaw);
-      const accel = err * this.angularAccel;
-      this.velYaw -= this.velYaw * this.angularDamping * dt;
-      this.velYaw += accel * dt;
-      this.velYaw = Math.max(-this.maxRotationSpeed, Math.min(this.maxRotationSpeed, this.velYaw));
-      this.neck.object3d.rotation.y += this.velYaw * dt;
-    }
+    // Local tower: sync live rotations in, advance the shared physics, out.
+    if (this.neck) this.rig.currentYaw = this.neck.object3d.rotation.y;
+    if (this.dish) this.rig.currentPitch = this.dish.object3d.rotation.x;
+    this.rig.update(dt);
+    if (this.neck) this.neck.object3d.rotation.y = this.rig.currentYaw;
+    if (this.dish) this.dish.object3d.rotation.x = this.rig.currentPitch;
 
-    // Pitch axis: spring-damper physics
-    if (this.dish) {
-      const err = angleDelta(this.dish.object3d.rotation.x, this.targetPitch);
-      const accel = err * this.angularAccel;
-      this.velPitch -= this.velPitch * this.angularDamping * dt;
-      this.velPitch += accel * dt;
-      this.velPitch = Math.max(-this.maxRotationSpeed, Math.min(this.maxRotationSpeed, this.velPitch));
-      this.dish.object3d.rotation.x += this.velPitch * dt;
-    }
+    // The neighbours have no model — the rig's numbers are all they are.
+    for (const rig of this.neighbours) rig.update(dt);
   }
 
   /** True while either axis is still slewing toward its target — false once
@@ -136,38 +149,55 @@ export class Satellite extends GameObject {
 
   // ── Gameplay helpers ──────────────────────────────────────
 
-  /** Aim the dish at a sky direction. The slew happens over subsequent
+  /** Aim the local dish at a sky direction. The slew happens over subsequent
    *  _update ticks at maxRotationSpeed. */
   aimAt(yaw, pitch) {
-    this.targetYaw = yaw;
-    this.targetPitch = pitch;
+    this.rig.aimAt(yaw, pitch);
+  }
+
+  /** Aim the whole array at a sky direction — the cursor's shared aim
+   *  point. The local dish always re-targets (it covers the whole scannable
+   *  sky); each neighbour re-targets only while the point lies inside its
+   *  section, and a dish whose section doesn't contain the point holds its
+   *  last target. */
+  aimAll(yaw, pitch) {
+    this.rig.aimAt(yaw, pitch);
+    for (const rig of this.neighbours) {
+      if (rig.covers(yaw, pitch)) rig.aimAt(yaw, pitch);
+    }
+  }
+
+  /** How many dishes — local plus neighbours — are aimed within
+   *  `tolerance` radians of the target. Scan speed scales with this. */
+  aimedDishCount(targetYaw, targetPitch, tolerance) {
+    let count = this.isAimedAt(targetYaw, targetPitch, tolerance) ? 1 : 0;
+    for (const rig of this.neighbours) {
+      if (rig.isAimedAt(targetYaw, targetPitch, tolerance)) count++;
+    }
+    return count;
+  }
+
+  /** True when at least one dish of the array is aimed within `tolerance`
+   *  radians of the target — the gate for starting a scan. */
+  isAnyDishAimedAt(targetYaw, targetPitch, tolerance) {
+    if (this.isAimedAt(targetYaw, targetPitch, tolerance)) return true;
+    for (const rig of this.neighbours) {
+      if (rig.isAimedAt(targetYaw, targetPitch, tolerance)) return true;
+    }
+    return false;
   }
 
   /** Angular distance (radians) from the dish's current aim to a target
    *  direction. Combines yaw and pitch error into a single magnitude. */
   getAimError(targetYaw, targetPitch) {
-    const yawErr = this.neck
-      ? Math.abs(angleDelta(this.neck.object3d.rotation.y, targetYaw))
-      : 0;
-    const pitchErr = this.dish
-      ? Math.abs(angleDelta(this.dish.object3d.rotation.x, targetPitch))
-      : 0;
-    return Math.sqrt(yawErr * yawErr + pitchErr * pitchErr);
+    // A missing part can't contribute error — treat it as on target.
+    const yaw = this.neck ? this.neck.object3d.rotation.y : targetYaw;
+    const pitch = this.dish ? this.dish.object3d.rotation.x : targetPitch;
+    return aimError(yaw, pitch, targetYaw, targetPitch);
   }
 
   /** True when the dish is aimed within `tolerance` radians of the target. */
   isAimedAt(targetYaw, targetPitch, tolerance) {
     return this.getAimError(targetYaw, targetPitch) <= tolerance;
   }
-}
-
-/** Remaining error below which an axis counts as settled, in radians. With
- *  momentum physics, the dish oscillates slightly around the target, so we
- *  use a more generous threshold than the old constant-rate slew. */
-const SETTLED_EPSILON = 0.05;  // ~3 degrees
-
-/** Shortest signed difference from `angle` to `target`, wrapped into ±π —
- *  the distance and direction around the circle. */
-function angleDelta(angle, target) {
-  return Math.atan2(Math.sin(target - angle), Math.cos(target - angle));
 }

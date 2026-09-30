@@ -33,9 +33,10 @@ function makeRealDish() {
 }
 
 function makeSatellite() {
-  return {
+  const sat = {
     targetYaw: 0,
     targetPitch: 0,
+    neighbours: [],
     neck: { object3d: { rotation: { y: 0 } } },
     dish: { object3d: { rotation: { x: 0 } } },
     scanProgress: 0,
@@ -47,7 +48,19 @@ function makeSatellite() {
       const dp = Math.abs(this.dish.object3d.rotation.x - pitch);
       return Math.sqrt(dy * dy + dp * dp) <= tol;
     },
+    aimAll(yaw, pitch) {
+      this.targetYaw = yaw;
+      this.targetPitch = pitch;
+    },
+    isAnyDishAimedAt(yaw, pitch, tol) {
+      if (this.isAimedAt(yaw, pitch, tol)) return true;
+      for (const rig of this.neighbours) {
+        if (rig.isAimedAt(yaw, pitch, tol)) return true;
+      }
+      return false;
+    },
   };
+  return sat;
 }
 
 function makeHUD() {
@@ -205,6 +218,20 @@ describe('ComputerTerminal', () => {
     expect(sat.targetPitch).toBe(sky.pitch);
   });
 
+  it('moveCursor routes through aimAll — the whole array follows the cursor', () => {
+    const dish = makeRealDish();
+    const aimAll = vi.spyOn(dish, 'aimAll');
+    term.satellite = dish;
+    term.enter();
+
+    term.moveCursor({ left: false, right: false, up: false, down: true }, 0.5);
+
+    const sky = term._cursorToSky();
+    expect(aimAll).toHaveBeenCalledWith(sky.yaw, sky.pitch);
+    expect(dish.targetYaw).toBe(sky.yaw);
+    expect(dish.targetPitch).toBe(sky.pitch);
+  });
+
   // ── Hover detection ──
 
   it('hover detects signal under cursor', () => {
@@ -295,6 +322,57 @@ describe('ComputerTerminal', () => {
     expect(term._hoveredSignal).toBe(sig);
     expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(false);
     // Should not transition to scanning
+    expect(term.state).toBe('radar');
+  });
+
+  // ── Enter to scan: the array gate ──
+
+  it('Enter starts scan when a neighbour dish is aimed and the local one is not', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    // Local dish off target…
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+    // …but a neighbour locked on.
+    sat.neighbours = [{
+      currentYaw: sig.yaw,
+      currentPitch: sig.pitch,
+      isAimedAt(yaw, pitch, tol) {
+        const dy = Math.abs(this.currentYaw - yaw);
+        const dp = Math.abs(this.currentPitch - pitch);
+        return Math.sqrt(dy * dy + dp * dp) <= tol;
+      },
+    }];
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+    expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(false);
+    expect(sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
+
+    term._enterScanning();
+    expect(term.state).toBe('scanning');
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+  });
+
+  it('radar info explains a missing lock when no dish of the array is aimed', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+    sat.neighbours = [];
+    term._updateHover();
+
+    // Drive the Enter gate exactly as onUpdate does for a hovering signal.
+    const aimed = sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+    expect(aimed).toBe(false);
+    term.radar.setInfo('No dish aimed — wait for one to settle');
+    expect(radar.setInfo).toHaveBeenCalledWith('No dish aimed — wait for one to settle');
     expect(term.state).toBe('radar');
   });
 

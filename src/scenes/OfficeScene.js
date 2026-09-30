@@ -5,6 +5,7 @@ import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createDefaultNeighbourDishes } from '../gameobjects/DishRig.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { NightClock } from '../gameplay/NightClock.js';
@@ -67,6 +68,10 @@ export class OfficeScene extends Scene {
     // (the radar terminal) will steer these later.
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+
+    // The dishes of the neighbouring array nodes, lent to this station.
+    // Too far away to be seen or heard, so they are simulated headless.
+    this.satellite.neighbours = createDefaultNeighbourDishes();
 
     // ── Player (shared across all scenes) ──
     this.engine.buildPlayer();
