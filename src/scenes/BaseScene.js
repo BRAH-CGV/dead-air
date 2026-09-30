@@ -396,6 +396,7 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       onNightStart: () => this._startOfNight(),
+      lights:       this.baseLights,
     }));
   }
 

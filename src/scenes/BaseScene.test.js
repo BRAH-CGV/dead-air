@@ -22,7 +22,7 @@ import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
 import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
 import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
 import { Stamina } from '../gameplay/Stamina.js';
-import { StaminaDrain } from '../components/StaminaDrain.js';
+import { StaminaDrain, FATIGUE_DIM_MIN } from '../components/StaminaDrain.js';
 import { AudioSystem } from '../audio/AudioSystem.js';
 import { Ambience } from '../audio/Ambience.js';
 import { SoundCues } from '../audio/SoundCues.js';
@@ -981,6 +981,21 @@ describe('BaseScene power', () => {
     play.mockClear();
     scene.power.set(true);
     expect(play).not.toHaveBeenCalled();
+  });
+
+  it("a tired player's base dims through the same lights, on top of the power", () => {
+    const ceiling = pointLight(scene.rooms.MainOffice, 'CeilingLight');
+    const full = ceiling.intensity;
+    const drain = gameplay.getComponent(StaminaDrain);
+    expect(drain.lights).toBe(scene.baseLights);
+    scene.gameController.state = 'playing';
+    drain.onUpdate(0);
+    scene.stamina.value = 0;
+    drain.onUpdate(0);
+    expect(ceiling.intensity).toBeCloseTo(full * FATIGUE_DIM_MIN);
+    scene.power.set(false);
+    runPower(1);
+    expect(ceiling.intensity).toBeCloseTo(full * FATIGUE_DIM_MIN * EMERGENCY_LEVEL);
   });
 
   it('a new night, or a retry, starts with the power on', () => {
