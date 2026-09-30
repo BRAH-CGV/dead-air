@@ -101,6 +101,15 @@ describe('what ships in public/', () => {
     expect(unused).toEqual([]);
   });
 
+  // The Linux server is case-sensitive and Windows isn't: a url that differs
+  // from its file only in case loads here and 404s there. `shipped` is the
+  // real directory listing, so this compares exact names.
+  it('has a file for every manifest url, spelt with the same case', () => {
+    const files = new Set(shipped);
+    const missing = Object.values(ASSETS).map(e => e.url).filter(url => !files.has(url));
+    expect(missing).toEqual([]);
+  });
+
   it('holds no two identical files', () => {
     const seen = new Map();
     const duplicates = [];
