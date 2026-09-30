@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 
 import * as THREE from 'three';
-import { ComputerTerminal } from './ComputerTerminal.js';
+import { ComputerTerminal, createComputerInteractable, NO_POWER } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 
@@ -507,5 +507,60 @@ describe('ComputerTerminal', () => {
     // Open terminal — should go directly to review
     term.enter();
     expect(term.state).toBe('review');
+  });
+});
+
+describe('ComputerTerminal power', () => {
+  let term, sat, radar;
+
+  beforeEach(() => {
+    term = new ComputerTerminal();
+    sat = makeSatellite();
+    radar = makeRadar();
+    term.satellite = sat;
+    term.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    term.hud = makeHUD();
+    term.radar = radar;
+    term.reviewPanel = makeReviewPanel();
+    term.signalManager.startNight(1);
+  });
+
+  it('is powered to begin with', () => {
+    expect(term.powered).toBe(true);
+  });
+
+  it('will not start with the power off', () => {
+    term.setPowered(false);
+    term.enter();
+    expect(term.state).toBe('idle');
+    expect(radar.show).not.toHaveBeenCalled();
+  });
+
+  it('a cut while it is in use throws you off it, and drops the scan', () => {
+    term.enter();
+    sat.isScanning = true;
+    sat.scanTarget = term.signalManager.signals[0];
+    term.setPowered(false);
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+  });
+
+  it('works again once the power is back', () => {
+    term.setPowered(false);
+    term.setPowered(true);
+    term.enter();
+    expect(term.state).toBe('radar');
+  });
+
+  it("the computer's prompt says there is no power, and comes back with it", () => {
+    const interact = createComputerInteractable(term);
+    expect(interact.promptLabel).toBe('[E] Use Computer');
+    term.setPowered(false);
+    expect(interact.promptLabel).toBe(NO_POWER);
+    interact.onInteract({});
+    expect(term.state).toBe('idle');
+    term.setPowered(true);
+    expect(interact.promptLabel).toBe('[E] Use Computer');
   });
 });

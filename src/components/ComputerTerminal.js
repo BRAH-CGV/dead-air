@@ -17,6 +17,10 @@ import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 //
 // External references (set by OfficeScene during wiring):
 //   satellite, signalManager, hud, radar, reviewPanel
+//
+// Power: setPowered(false) (the generator cut) throws the player off it
+// mid-use and it won't start again until the power is back. The desk's
+// prompt says so.
 // ─────────────────────────────────────────────
 
 /** @readonly */
@@ -27,6 +31,9 @@ import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 // held. One 60 fps frame moves 0.375° of sky, so a tap can stop inside a
 // signal's 12° acceptance.
 const CURSOR_RATE = DISH_SLEW_RATE / (Math.PI / 2);
+
+/** The desk's prompt with the generator off. */
+export const NO_POWER = 'No power';
 
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
@@ -63,14 +70,26 @@ export class ComputerTerminal extends Component {
   promptLabel = '[E] Use Computer';
   interactRange = 4;
 
+  /** False with the generator off: the terminal is dead. */
+  powered = true;
+  /** The desk's Interactable, if createComputerInteractable made one. */
+  _interactable = null;
+
   // ──────────────────────────────────────────────────────────
   // Public API — also callable from tests
   // ──────────────────────────────────────────────────────────
 
   /** Enter the terminal (called when the player interacts with the computer). */
   enter() {
-    if (this.state !== 'idle') return;
+    if (this.state !== 'idle' || !this.powered) return;
     this._enterRadar();
+  }
+
+  /** The power, on or off. Off throws the player off the terminal. */
+  setPowered(on) {
+    this.powered = !!on;
+    if (!this.powered) this.exit();
+    if (this._interactable) this._interactable.promptLabel = this.powered ? this.promptLabel : NO_POWER;
   }
 
   /** Exit the terminal back to IDLE (Q key). */
@@ -372,5 +391,6 @@ export function createComputerInteractable(terminal) {
     interactRange = terminal.interactRange;
     onInteract() { terminal.enter(); }
   }();
+  terminal._interactable = interact;
   return interact;
 }
