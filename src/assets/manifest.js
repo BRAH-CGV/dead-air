@@ -16,8 +16,8 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 //   • Filenames must be lowercase and hyphen-separated — the LAMP server is
 //     case-sensitive, our dev machines usually are not. `validateManifest()`
 //     shouts in dev if you slip up.
-//   • Prefix keys by type ('model:', 'tex:') so a typo'd key is obvious in
-//     the console.
+//   • Prefix keys by type ('model:', 'tex:', and 'amb:' / 'sfx:' for looping
+//     and one-shot sounds) so a typo'd key is obvious in the console.
 //   • The filename IS the key with that prefix dropped, so 'model:trash-bin'
 //     lives at 'assets/models/trash-bin.glb'. Either one gives you the other
 //     without opening this file; `validateManifest()` enforces it.
@@ -85,6 +85,10 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  *                                           for normal / roughness / metalness.
  * @property {[number, number]} [repeat]     Enables wrapping and sets repeat.
  * @property {boolean}  [flipY]
+ *
+ * @typedef {Object} AudioEntry        Decoded to an AudioBuffer at load.
+ * @property {'audio'} type
+ * @property {string}   url
  */
 
 // NOTE: the desk and floor textures are stand-ins, not final art. Swapping in
@@ -94,7 +98,7 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 /**
  * What the game puts on screen today. These are fetched up front, so the
  * loading bar is only ever as long as this object.
- * @type {Record<string, ModelEntry | TextureEntry>}
+ * @type {Record<string, ModelEntry | TextureEntry | AudioEntry>}
  */
 const PLACED = {
   // ── Models ──────────────────────────────────
@@ -271,6 +275,35 @@ const PLACED = {
     colorSpace: 'linear',
     repeat: [24, 24],
   },
+
+  // ── Audio ───────────────────────────────────
+  // Original, synthesised by `node scripts/make-sounds.mjs` from the recipes
+  // in src/audio/sounds.js — edit a recipe and re-run it, never the .wav.
+  // Mono 16-bit WAV, ~3 MB in all. 'amb:' keys loop; 'sfx:' keys play once.
+  'amb:office':        { type: 'audio', url: 'assets/audio/office.wav' },
+  'amb:server-room':   { type: 'audio', url: 'assets/audio/server-room.wav' },
+  'amb:quarters':      { type: 'audio', url: 'assets/audio/quarters.wav' },
+  'amb:corridor':      { type: 'audio', url: 'assets/audio/corridor.wav' },
+  'amb:airlock':       { type: 'audio', url: 'assets/audio/airlock.wav' },
+  'amb:wind':          { type: 'audio', url: 'assets/audio/wind.wav' },
+  'amb:server-hum':    { type: 'audio', url: 'assets/audio/server-hum.wav' },
+  'amb:generator':     { type: 'audio', url: 'assets/audio/generator.wav' },
+  'amb:dish-motor':    { type: 'audio', url: 'assets/audio/dish-motor.wav' },
+  'amb:breathing':     { type: 'audio', url: 'assets/audio/breathing.wav' },
+  'amb:camera-servo':  { type: 'audio', url: 'assets/audio/camera-servo.wav' },
+  'amb:camera-tone':   { type: 'audio', url: 'assets/audio/camera-tone.wav' },
+
+  'sfx:scan-tick':     { type: 'audio', url: 'assets/audio/scan-tick.wav' },
+  'sfx:scan-lock':     { type: 'audio', url: 'assets/audio/scan-lock.wav' },
+  'sfx:save':          { type: 'audio', url: 'assets/audio/save.wav' },
+  'sfx:delete':        { type: 'audio', url: 'assets/audio/delete.wav' },
+  'sfx:airlock-hiss':  { type: 'audio', url: 'assets/audio/airlock-hiss.wav' },
+  'sfx:airlock-clunk': { type: 'audio', url: 'assets/audio/airlock-clunk.wav' },
+  'sfx:chime':         { type: 'audio', url: 'assets/audio/chime.wav' },
+  'sfx:glass-tap':     { type: 'audio', url: 'assets/audio/glass-tap.wav' },
+  'sfx:death-sting':   { type: 'audio', url: 'assets/audio/death-sting.wav' },
+  'sfx:power-cut':     { type: 'audio', url: 'assets/audio/power-cut.wav' },
+  'sfx:ration':        { type: 'audio', url: 'assets/audio/ration.wav' },
 };
 
 /**
@@ -417,7 +450,7 @@ export function validateManifest(assets = ASSETS) {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem)) {
       problems.push(`${key}: name must be lowercase and hyphen-separated — '${stem}'`);
     }
-    if (entry.type !== 'model' && entry.type !== 'texture') {
+    if (!['model', 'texture', 'audio'].includes(entry.type)) {
       problems.push(`${key}: unknown type '${entry.type}'`);
     }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { statSync } from 'node:fs';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
 
@@ -42,6 +43,28 @@ describe('manifest', () => {
     expect(validateManifest({
       'model:trash_bin': { type: 'model', url: 'assets/models/trash_bin.glb' },
     })).toContainEqual(expect.stringContaining('lowercase and hyphen-separated'));
+  });
+
+  it('knows audio: a sound under assets/audio/ is a clean entry, and gets no physics', () => {
+    expect(validateManifest({
+      'sfx:door': { type: 'audio', url: 'assets/audio/door.wav' },
+      'amb:wind': { type: 'audio', url: 'assets/audio/wind.wav' },
+    })).toEqual([]);
+    expect(validateManifest({
+      'sfx:door': { type: 'audio', url: 'assets/audio/door.wav', physics: 'static' },
+    })).toContainEqual(expect.stringContaining("only models can have 'physics'"));
+  });
+
+  it('preloads every sound, and keeps them under the 10 MB audio budget in mono', () => {
+    const audio = Object.entries(ASSETS).filter(([, e]) => e.type === 'audio');
+    expect(audio.length).toBeGreaterThan(0);
+    let bytes = 0;
+    for (const [key, entry] of audio) {
+      expect(PRELOAD, key).toContain(key);
+      expect(entry.url, key).toMatch(/^assets\/audio\//);
+      bytes += statSync(new URL(`../../public/${entry.url}`, import.meta.url)).size;
+    }
+    expect(bytes).toBeLessThan(10 * 1024 * 1024);
   });
 
   it('has no validation problems', () => {
