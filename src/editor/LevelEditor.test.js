@@ -59,7 +59,12 @@ describe('LevelEditor', () => {
         })),
       },
       RAPIER: {
-        ColliderDesc: { cuboid: vi.fn(colliderDesc) },
+        ColliderDesc: {
+          cuboid: vi.fn(colliderDesc),
+          cone: vi.fn(colliderDesc),
+          cylinder: vi.fn(colliderDesc),
+          ball: vi.fn(colliderDesc),
+        },
         RigidBodyDesc: { fixed: vi.fn(() => ({ setTranslation: vi.fn(function() { return this; }) })) },
       },
       rigidBodyMap: new Map(),
@@ -2309,6 +2314,62 @@ describe('LevelEditor', () => {
 
       const colliderBtn = editor.infoDiv.querySelector('#collider-toggle-btn');
       expect(colliderBtn).not.toBeNull();
+    });
+  });
+
+  // BUG-R4: every primitive got a box fitted to its bounds, so a cone or a
+  // cylinder collided at its bounding box's corners.
+  describe('primitive colliders match their shape', () => {
+    beforeEach(() => {
+      editor.init();
+      editor.toggle();
+      editor.sceneRoot = new GameObject('SceneRoot');
+      editor.sceneRoot.makeGroup();
+    });
+
+    it('gives a cone a cone collider, not a box', () => {
+      editor._createPrimitiveShape('cone', 'Cone');
+      const desc = mockEngine.RAPIER.ColliderDesc;
+      expect(desc.cuboid).not.toHaveBeenCalled();
+      // 1 m tall, 1 m across: half-height 0.5, radius 0.5.
+      expect(desc.cone).toHaveBeenCalledWith(0.5, 0.5);
+    });
+
+    it('centres the cone on its mesh, which stands on the object origin', () => {
+      editor._createPrimitiveShape('cone', 'Cone');
+      const cone = mockEngine.RAPIER.ColliderDesc.cone.mock.results[0].value;
+      expect(cone.setTranslation).toHaveBeenCalledWith(0, 0.5, 0);
+    });
+
+    it('gives a cylinder a cylinder collider', () => {
+      editor._createPrimitiveShape('cylinder', 'Cylinder');
+      const desc = mockEngine.RAPIER.ColliderDesc;
+      expect(desc.cuboid).not.toHaveBeenCalled();
+      expect(desc.cylinder).toHaveBeenCalledWith(0.5, 0.5);
+    });
+
+    it('gives a sphere a ball collider', () => {
+      editor._createPrimitiveShape('sphere', 'Sphere');
+      const desc = mockEngine.RAPIER.ColliderDesc;
+      expect(desc.cuboid).not.toHaveBeenCalled();
+      expect(desc.ball).toHaveBeenCalledWith(expect.closeTo(0.5, 6));
+    });
+
+    it('still gives a box a box collider', () => {
+      editor._createPrimitiveShape('box', 'Box');
+      expect(mockEngine.RAPIER.ColliderDesc.cuboid).toHaveBeenCalledWith(0.5, 0.5, 0.5);
+    });
+
+    it('rebuilds a scaled cone as a cone', () => {
+      const go = editor._createPrimitiveShape('cone', 'Cone');
+      go.object3d.scale.set(2, 3, 2);
+
+      editor._syncSingleTransformToPhysics(go);
+
+      const desc = mockEngine.RAPIER.ColliderDesc;
+      expect(desc.cuboid).not.toHaveBeenCalled();
+      // 3 m tall, 2 m across.
+      expect(desc.cone).toHaveBeenLastCalledWith(1.5, 1);
     });
   });
 

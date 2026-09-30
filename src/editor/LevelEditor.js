@@ -1119,7 +1119,7 @@ export class LevelEditor {
         // Manifest-spawned model — engine knows how to rebuild
         this.engine.rebuildModelPhysicsForScale?.(go);
       } else if (go._originalSize) {
-        // Procedural box — rebuild cuboid collider at new scale
+        // Procedural primitive — rebuild its collider at the new scale
         this._rebuildProceduralCollider(go);
       }
     }
@@ -1198,11 +1198,11 @@ export class LevelEditor {
       world.removeCollider(c, true);
     }
 
-    // Create the cuboid in the body's local frame — no rotation needed because
-    // the dimensions are already computed in that frame. The offset is the
-    // local-space center of the bounding box.
+    // Create the collider in the body's local frame — no rotation needed
+    // because the dimensions are already computed in that frame. The offset
+    // is the local-space center of the bounding box.
     const newCollider = world.createCollider(
-      RAPIER.ColliderDesc.cuboid(localSize.x / 2, localSize.y / 2, localSize.z / 2)
+      this._shapeColliderDesc(go, localSize)
         .setTranslation(localCenter.x, localCenter.y, localCenter.z),
       go.rigidBody,
     );
@@ -1629,7 +1629,25 @@ export class LevelEditor {
     return !!go.rigidBody;
   }
 
-  /** Create a static cuboid collider from the mesh's measured bounding box.
+  /** The Rapier shape for a procedural object, sized from its measured box
+   *  (`size`, full extents). A box fits a box, but a cone or a cylinder
+   *  would collide at its bounding box's corners (BUG-R4). Cones and
+   *  cylinders stand along Y, as the primitives are built, and take the
+   *  wider of their two horizontal extents as the diameter; a sphere takes
+   *  its widest extent. Anything else (a box, a torus, a model) gets a box. */
+  _shapeColliderDesc(go, size) {
+    const { ColliderDesc } = this.engine.RAPIER;
+    const radius = Math.max(size.x, size.z) / 2;
+    switch (go._shapeType) {
+      case 'cone':     return ColliderDesc.cone(size.y / 2, radius);
+      case 'cylinder': return ColliderDesc.cylinder(size.y / 2, radius);
+      case 'sphere':   return ColliderDesc.ball(Math.max(size.x, size.y, size.z) / 2);
+      default:         return ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2);
+    }
+  }
+
+  /** Create a static collider, shaped like the object, from the mesh's
+   *  measured bounding box (see _shapeColliderDesc).
    *  Used for primitives and for objects that don't already have physics. */
   _enableCollider(go) {
     if (go.rigidBody) return; // already has one
@@ -1658,14 +1676,14 @@ export class LevelEditor {
       .setTranslation(worldPos.x, worldPos.y, worldPos.z);
     go.rigidBody = world.createRigidBody(bodyDesc);
 
-    // Create a cuboid collider with half-extents, offset by the bbox centre
+    // Create a collider the shape of the object, offset by the bbox centre
     // relative to the body origin
     const localCenter = new THREE.Vector3(
       center.x - worldPos.x,
       center.y - worldPos.y,
       center.z - worldPos.z,
     );
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
+    const colliderDesc = this._shapeColliderDesc(go, size)
       .setTranslation(localCenter.x, localCenter.y, localCenter.z);
     const collider = world.createCollider(colliderDesc, go.rigidBody);
 
