@@ -12,7 +12,11 @@ import { Component } from '../core/Component.js';
 //                                     machines, threats. Silent at level 0.
 //   follow(emitter, { level, rate })  drive an emitter from the game every
 //                                     frame (the dish's speed → motor hum)
-//   setAmbience(key)                  the room tone, crossfaded over FADE s
+//   setAmbience(key, channel)         a looping bed, crossfaded over FADE s.
+//                                     Channels sound together and fade
+//                                     apart: 'bed' is the place (the base's
+//                                     hum, the wind), 'room' (the default)
+//                                     the room's own tone over it
 //   setPaused(bool)                   suspends everything (menus call this)
 //   setVolume(0..1)                   master volume
 //
@@ -109,9 +113,11 @@ export class AudioSystem extends Component {
     this.listener = listener === undefined ? (webAudioAvailable() ? new THREE.AudioListener() : null) : listener;
     this.available = !!this.listener;
     this.volume = clamp01(volume);
-    /** The room tone asked for — kept even while silent, to start on the first gesture. */
-    this.ambienceKey = null;
-    this.ambienceVolume = 0.5;
+    /** The ambience asked for on each channel — kept even while silent, to
+     *  start on the first gesture. */
+    this.ambience = { bed: null, room: null };
+    /** How loud each channel plays. */
+    this.ambienceVolume = { bed: 0.5, room: 0.5 };
     this.paused = false;
 
     this._doc = doc;
@@ -123,7 +129,7 @@ export class AudioSystem extends Component {
     this._emitters = [];
     /** @type {{ emitter: Emitter, level?: () => number, rate?: () => number }[]} */
     this._followers = [];
-    /** @type {{ key: string|null, sound: THREE.Audio, freeAt: number }[]} */
+    /** @type {{ channel: string, key: string|null, sound: THREE.Audio, freeAt: number }[]} */
     this._ambience = [];
 
     if (!this.available) return;
@@ -135,7 +141,7 @@ export class AudioSystem extends Component {
       if (this._gestured) return;
       this._gestured = true;
       this._syncContext();
-      this._fadeTo(this.ambienceKey);
+      for (const channel in this.ambience) this._fadeTo(channel, this.ambience[channel]);
       for (const e of this._emitters) e._apply();
     };
     this._onVisibility = () => this._syncContext();
@@ -256,19 +262,24 @@ export class AudioSystem extends Component {
 
   // ── Ambience ───────────────────────────────
 
-  /** The room tone: `key` fades in over FADE s as the last one fades out. null fades to silence. */
-  setAmbience(key) {
-    if (key === this.ambienceKey) return;
-    this.ambienceKey = key;
-    if (this.canPlay) this._fadeTo(key);
+  /**
+   * `key` fades in on `channel` over FADE s as that channel's last sound fades
+   * out; the other channel plays on. null fades the channel to silence.
+   * @param {string|null} key
+   * @param {'bed'|'room'} [channel='room']
+   */
+  setAmbience(key, channel = 'room') {
+    if (key === this.ambience[channel]) return;
+    this.ambience[channel] = key;
+    if (this.canPlay) this._fadeTo(channel, key);
   }
 
-  _fadeTo(key) {
+  _fadeTo(channel, key) {
     const ctx = this.context;
     const now = ctx.currentTime, end = now + AudioSystem.FADE;
 
     for (const a of this._ambience) {
-      if (!a.sound.isPlaying) continue;
+      if (a.channel !== channel || !a.sound.isPlaying) continue;
       const gain = a.sound.gain.gain;
       gain.cancelScheduledValues(now);
       gain.setValueAtTime(gain.value, now);
@@ -282,9 +293,10 @@ export class AudioSystem extends Component {
     // A voice still fading out keeps its gain ramp; take one that has finished.
     let voice = this._ambience.find(a => !a.sound.isPlaying && a.freeAt <= now);
     if (!voice) {
-      voice = { key: null, sound: new THREE.Audio(this.listener), freeAt: 0 };
+      voice = { channel, key: null, sound: new THREE.Audio(this.listener), freeAt: 0 };
       this._ambience.push(voice);
     }
+    voice.channel = channel;
     voice.key = key;
     const { sound } = voice;
     sound.setBuffer(buffer);
@@ -292,7 +304,7 @@ export class AudioSystem extends Component {
     const gain = sound.gain.gain;
     gain.cancelScheduledValues(now);
     gain.setValueAtTime(0, now);
-    gain.linearRampToValueAtTime(this.ambienceVolume, end);
+    gain.linearRampToValueAtTime(this.ambienceVolume[channel] ?? 0.5, end);
     sound.play();
   }
 

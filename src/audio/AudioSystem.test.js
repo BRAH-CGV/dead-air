@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { AudioSystem, dishMotorLevel } from './AudioSystem.js';
 import { FakeAudioContext, fakeAssets, fakeDocument } from '../test/fakeAudio.js';
 
-const KEYS = ['amb:office', 'amb:corridor', 'amb:wind', 'amb:dish-motor', 'sfx:save', 'sfx:glass-tap'];
+const KEYS = [
+  'amb:office', 'amb:corridor', 'amb:base-interior', 'amb:outside-wind', 'amb:dish-motor',
+  'sfx:save', 'sfx:glass-tap',
+];
 
 describe('AudioSystem', () => {
   let ctx, doc, camera, audio;
@@ -45,17 +48,18 @@ describe('AudioSystem', () => {
     it('plays nothing — the browser would block it — and remembers the ambience for later', () => {
       expect(audio.play('sfx:save')).toBe(null);
       audio.setAmbience('amb:office');
-      expect(audio.ambienceKey).toBe('amb:office');
+      expect(audio.ambience.room).toBe('amb:office');
       expect(ctx.sources).toHaveLength(0);
       expect(ctx.resumes).toBe(0);
     });
 
     it('the pointer lock wakes the context and starts the ambience asked for earlier', () => {
       audio.setAmbience('amb:office');
+      audio.setAmbience('amb:base-interior', 'bed');
       doc.lock();
       expect(ctx.state).toBe('running');
-      expect(ctx.playing).toHaveLength(1);
-      expect(ctx.playing[0].loop).toBe(true);
+      expect(ctx.playing).toHaveLength(2);
+      expect(ctx.playing.every(s => s.loop)).toBe(true);
     });
 
     it('so does a key press or a click, for menus that come before the lock', () => {
@@ -112,7 +116,25 @@ describe('AudioSystem', () => {
       const [inn] = [...corridor.outputs];
       expect(inn.gain.calls.at(-2)).toEqual(['setValueAtTime', 0, 10]);
       expect(inn.gain.calls.at(-1)).toEqual(
-        ['linearRampToValueAtTime', audio.ambienceVolume, 10 + AudioSystem.FADE]);
+        ['linearRampToValueAtTime', audio.ambienceVolume.room, 10 + AudioSystem.FADE]);
+    });
+
+    it('the bed under the room tone is a channel of its own: both sound, each fades alone', () => {
+      audio.setAmbience('amb:base-interior', 'bed');
+      audio.setAmbience('amb:office');                      // the room channel by default
+      expect(ctx.playing).toHaveLength(2);
+      const [bed, office] = ctx.playing;
+      const [bedGain] = [...bed.outputs];
+      expect(bedGain.gain.calls.at(-1)).toEqual(
+        ['linearRampToValueAtTime', audio.ambienceVolume.bed, AudioSystem.FADE]);
+
+      audio.setAmbience('amb:corridor');
+      expect(office.stopped).not.toBe(null);
+      expect(bed.stopped).toBe(null);                      // the bed plays on under the change
+      audio.setAmbience('amb:outside-wind', 'bed');
+      expect(bed.stopped).not.toBe(null);
+      expect(audio.ambience).toEqual({ bed: 'amb:outside-wind', room: 'amb:corridor' });
+      expect(ctx.playing).toHaveLength(2);
     });
 
     it('asking for the ambience already playing changes nothing', () => {
@@ -127,13 +149,16 @@ describe('AudioSystem', () => {
       audio.setAmbience('amb:office');
       expect(new Set(audio._ambience.map(a => a.sound)).size).toBe(3);
       ctx.currentTime = 5;
-      audio.setAmbience('amb:wind');
+      audio.setAmbience('amb:base-interior');
       expect(audio._ambience).toHaveLength(3);    // the first fade is over: reused
     });
 
-    it('null ambience fades everything out', () => {
+    it('null fades that channel out, and leaves the other playing', () => {
+      audio.setAmbience('amb:outside-wind', 'bed');
       audio.setAmbience('amb:office');
       audio.setAmbience(null);
+      expect(ctx.playing).toHaveLength(1);
+      audio.setAmbience(null, 'bed');
       expect(ctx.playing).toHaveLength(0);
     });
   });
@@ -259,7 +284,7 @@ describe('AudioSystem', () => {
       doc.lock();
       expect(silent.play('sfx:save')).toBe(null);
       silent.setAmbience('amb:office');
-      expect(silent.ambienceKey).toBe('amb:office');
+      expect(silent.ambience.room).toBe('amb:office');
       const hum = silent.positional('amb:dish-motor', new THREE.Object3D());
       hum.setLevel(1);
       hum.setRate(2);
