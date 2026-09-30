@@ -38,7 +38,7 @@ function instances(mesh) {
 }
 
 // Growing the whole belt is the point of most tests here, and it takes
-// seconds (5–8 s for the clearings sweep and the two-seed determinism check
+// seconds (5â€“8 s for the clearings sweep and the two-seed determinism check
 // when the suite runs in parallel), past vitest's 5 s default.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
