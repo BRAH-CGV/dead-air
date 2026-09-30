@@ -33,6 +33,7 @@ import { CrtScreen } from '../components/CrtScreen.js';
 import { Oxygen } from '../gameplay/Oxygen.js';
 import { OxygenSupply, OXYGEN_KILL } from '../components/OxygenSupply.js';
 import { ShadowRefresh } from '../components/ShadowRefresh.js';
+import { coplanarOverlaps } from '../test/coplanar.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -183,6 +184,18 @@ describe('BaseScene', () => {
         expect(overlaps(parts[i].bounds(), parts[j].bounds()), `${parts[i].name} × ${parts[j].name}`).toBe(false);
       }
     }
+  });
+
+  it('has no two surfaces in the same plane to z-fight (BUG-R2)', () => {
+    // The monsters are skipped: they hang hidden under Threats, and only
+    // one of them is ever shown at a time.
+    const underThreats = mesh => {
+      for (let o = mesh; o; o = o.parent) if (o.name === 'Threats') return true;
+      return false;
+    };
+    const root = new THREE.Group();
+    for (const go of engine._rootObjects) root.add(go.object3d);
+    expect(coplanarOverlaps(root, { skip: underThreats })).toEqual([]);
   });
 
   it('spawns the player inside the main office', () => {

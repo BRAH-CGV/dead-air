@@ -225,7 +225,7 @@ export class MainOffice extends Room {
       detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]), // dispense button
     );
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
-    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.475, 0]);     // tray lip, under the hatch
 
     this.rationDispenser = go.addComponent(new RationDispenser());
   }
@@ -252,14 +252,16 @@ export class MainOffice extends Room {
 
   /** Frame around the back-wall opening. Left clear of glass: imported desk
    *  materials use transparency, and a glass plane sorts badly against them
-   *  from inside the room. */
+   *  from inside the room. The side bars fit between the top and bottom bars
+   *  rather than through them, or their faces z-fight at the corners
+   *  (BUG-R2). */
   _buildWindowFrame() {
     const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 }));
     const parts = [
-      ['WindowFrame_Top',           [0, 2.9, -4.84],     [8.75, 0.12, 0.18]],
-      ['WindowFrame_Bottom',        [0, 0.4, -4.84],     [8.75, 0.12, 0.18]],
-      ['WindowFrame_Left',          [-4.37, 1.65, -4.84], [0.12, 2.6, 0.18]],
-      ['WindowFrame_Right',         [4.37, 1.65, -4.84],  [0.12, 2.6, 0.18]],
+      ['WindowFrame_Top',           [0, 2.9, -4.84],     [8.86, 0.12, 0.18]],
+      ['WindowFrame_Bottom',        [0, 0.4, -4.84],     [8.86, 0.12, 0.18]],
+      ['WindowFrame_Left',          [-4.37, 1.65, -4.84], [0.12, 2.38, 0.18]],
+      ['WindowFrame_Right',         [4.37, 1.65, -4.84],  [0.12, 2.38, 0.18]],
       ['WindowFrame_Mullion_Left',  [-1.42, 1.65, -4.83], [0.08, 2.35, 0.12]],
       ['WindowFrame_Mullion_Right', [1.42, 1.65, -4.83],  [0.08, 2.35, 0.12]],
       ['WindowFrame_Crossbar',      [0, 1.65, -4.82],     [8.5, 0.06, 0.12]],

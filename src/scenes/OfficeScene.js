@@ -291,7 +291,10 @@ export class OfficeScene extends Scene {
     const windowWidth  = 8.5;
     const windowHeight = 2.35;
     const windowY      = 1.65;
-    const sideWidth    = (roomWidth - windowWidth) / 2;
+    // The side walls run the full depth, corner to corner; the front and back
+    // walls fit between their inner faces. Overlapping at the corners, their
+    // top and bottom faces z-fought (BUG-R2).
+    const sideWidth    = (roomWidth - wallThick - windowWidth) / 2;
     const lowerHeight  = windowY - windowHeight / 2;
     const upperHeight  = wallHeight - (windowY + windowHeight / 2);
   
@@ -306,8 +309,8 @@ export class OfficeScene extends Scene {
     const doorX      = 2;
     const doorLeft   = doorX - doorWidth / 2;
     const doorRight  = doorX + doorWidth / 2;
-    const roomLeft   = -roomWidth / 2;
-    const roomRight  =  roomWidth / 2;
+    const roomLeft   = -roomWidth / 2 + wallThick / 2;
+    const roomRight  =  roomWidth / 2 - wallThick / 2;
     const frontLeftWidth  = doorLeft - roomLeft;
     const frontRightWidth = roomRight - doorRight;
     this._addStaticBox('FrontWall_Left', [roomLeft + frontLeftWidth / 2, wallHeight / 2, frontZ], [frontLeftWidth, wallHeight, wallThick], wallMaterial, this._office);
@@ -315,26 +318,31 @@ export class OfficeScene extends Scene {
     this._addStaticBox('DoorHeader', [doorX, doorHeight + (wallHeight - doorHeight) / 2, frontZ], [doorWidth, wallHeight - doorHeight, wallThick], wallMaterial, this._office);
     
     // Side walls and ceiling.
-    this._addStaticBox('LeftWall', [-roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial, this._office);
-    this._addStaticBox('RightWall', [roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth], wallMaterial, this._office);
+    this._addStaticBox('LeftWall', [-roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth + wallThick], wallMaterial, this._office);
+    this._addStaticBox('RightWall', [roomWidth / 2, wallHeight / 2, 0], [wallThick, wallHeight, roomDepth + wallThick], wallMaterial, this._office);
     this._addStaticBox('Ceiling', [0, wallHeight + wallThick / 2, 0], [roomWidth, wallThick, roomDepth], wallMaterial, this._office);
       
-    // Open doorway placeholder; a proper door model can be added later.
+    // Open doorway placeholder; a proper door model can be added later. The
+    // trim is a 4 cm casing on the wall's inner face. Sunk into the wall, it
+    // shared the doorway's jamb and head faces and z-fought with them (BUG-R2).
     const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 });
-    this._addStaticBox('DoorTrim_Left', [doorLeft - 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial, this._office);
-    this._addStaticBox('DoorTrim_Right', [doorRight + 0.06, doorHeight / 2, frontZ - 0.05], [0.12, doorHeight, 0.18], trimMaterial, this._office);
-    this._addStaticBox('DoorTrim_Top', [doorX, doorHeight + 0.06, frontZ - 0.05], [doorWidth + 0.24, 0.12, 0.18], trimMaterial, this._office);
+    const trimDepth = 0.04;
+    const trimZ = frontZ - wallThick / 2 - trimDepth / 2;
+    this._addStaticBox('DoorTrim_Left', [doorLeft - 0.06, doorHeight / 2, trimZ], [0.12, doorHeight, trimDepth], trimMaterial, this._office);
+    this._addStaticBox('DoorTrim_Right', [doorRight + 0.06, doorHeight / 2, trimZ], [0.12, doorHeight, trimDepth], trimMaterial, this._office);
+    this._addStaticBox('DoorTrim_Top', [doorX, doorHeight + 0.06, trimZ], [doorWidth + 0.24, 0.12, trimDepth], trimMaterial, this._office);
   }
   
   _addWindow() {
     // Leave the opening clear: imported desk materials use transparency, and a
     // transparent glass plane sorts badly against them from inside the room.
+    // The side bars fit between the top and bottom bars, as in MainOffice.
     const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 });
   
-    this._addStaticBox('WindowFrame_TOP', [0, 2.9, -4.84], [8.75, 0.12, 0.18], frameMaterial, this._office);
-    this._addStaticBox('WindowFrame_Bottom', [0, 0.4, -4.84], [8.75, 0.12, 0.18], frameMaterial, this._office);
-    this._addStaticBox('WindowFrame_Left', [-4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial, this._office);
-    this._addStaticBox('WindowFrame_Right', [4.37, 1.65, -4.84], [0.12, 2.6, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_TOP', [0, 2.9, -4.84], [8.86, 0.12, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Bottom', [0, 0.4, -4.84], [8.86, 0.12, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Left', [-4.37, 1.65, -4.84], [0.12, 2.38, 0.18], frameMaterial, this._office);
+    this._addStaticBox('WindowFrame_Right', [4.37, 1.65, -4.84], [0.12, 2.38, 0.18], frameMaterial, this._office);
     this._addStaticBox('WindowFrame_Mullion_Left', [-1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial, this._office);
     this._addStaticBox('WindowFrame_Mullion_Right', [1.42, 1.65, -4.83], [0.08, 2.35, 0.12], frameMaterial, this._office);
     this._addStaticBox('WindowFrame_Crossbar', [0, 1.65, -4.82], [8.5, 0.06, 0.12], frameMaterial, this._office);

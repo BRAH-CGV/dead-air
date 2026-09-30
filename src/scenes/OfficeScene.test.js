@@ -17,6 +17,7 @@ vi.mock('@dimforge/rapier3d', () => {
 
 import { OfficeScene } from './OfficeScene.js';
 import { GameObject } from '../core/GameObject.js';
+import { coplanarOverlaps } from '../test/coplanar.js';
 
 describe('OfficeScene hierarchy', () => {
   let scene;
@@ -51,6 +52,13 @@ describe('OfficeScene hierarchy', () => {
 
     scene = new OfficeScene(mockEngine);
   });
+
+  it('has no two surfaces in the same plane to z-fight (BUG-R2)', () => {
+    scene.build();
+    const root = new THREE.Group();
+    for (const go of mockEngine._rootObjects) root.add(go.object3d);
+    expect(coplanarOverlaps(root)).toEqual([]);
+  }, 30_000); // a build and a walk of every triangle: past the 5 s default when the suite runs in parallel
 
   it('creates SceneRoot group', () => {
     scene.build();
