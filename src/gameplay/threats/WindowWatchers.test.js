@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GameObject } from '../../core/GameObject.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { createMonsterFigure } from '../../gameobjects/MonsterFigure.js';
-import { WindowWatchers, WINDOW_WATCHER_KILL } from './WindowWatchers.js';
+import { WindowWatchers, WINDOW_WATCHER_KILL, DARK_SIGHT } from './WindowWatchers.js';
 import { WINDOW_WATCHERS as T } from './WindowWatcherLogic.js';
 import { fakeAudioSystem } from '../../test/fakeAudio.js';
 
@@ -129,6 +129,31 @@ describe('WindowWatchers', () => {
       place(camera, STANDING, head);
     });
     expect(threat.logic.phase).toBe('approach');
+  });
+
+  it('misses a player standing in a dark office, away from the glass', () => {
+    ctx.lights = { dark: true };                        // the power is cut
+    run(threat, 25 + T.approachTime + T.peerTime + T.leaveTime + 1);
+    expect(controller.fail).not.toHaveBeenCalled();
+    expect(threat.logic.visits).toBe(1);
+  });
+
+  it('still sees a player within DARK_SIGHT of the glass, dark or not', () => {
+    expect(DARK_SIGHT).toBe(2);
+    ctx.lights = { dark: true };
+    place(camera, [0, 1.24, -5.6 + DARK_SIGHT - 0.4], INTO_ROOM);
+    run(threat, 25 + T.approachTime + T.peerGrace + 0.1);
+    expect(controller.fail).toHaveBeenCalledWith(WINDOW_WATCHER_KILL);
+  });
+
+  it('a lit office hides nothing', () => {
+    ctx.lights = { dark: false };
+    run(threat, 25 + T.approachTime + T.peerGrace + 0.1);
+    expect(controller.fail).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the player the dark is a way to hide', () => {
+    expect(threat.objective).toMatch(/dark/i);
   });
 
   it('stop() hides the figure and it does nothing more', () => {

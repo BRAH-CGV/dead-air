@@ -11,7 +11,9 @@ import { makeRandom } from '../../core/Random.js';
 //
 //   seen      the player is in the MainOffice and their eye is not inside
 //             its `underDesk` zone (a standing eye is above the desk top,
-//             so being in the zone means crouched in the kneehole)
+//             so being in the zone means crouched in the kneehole), and
+//             the office is lit — with the power cut (BaseLights `dark`)
+//             it only sees a player within DARK_SIGHT of the glass
 //   stare     angle from the camera's view centre to the figure's head,
 //             counted only from inside the office
 //   the walk  from a point far out in the dust to `threatAnchors.windowGlass`
@@ -25,6 +27,9 @@ import { makeRandom } from '../../core/Random.js';
 
 export const WINDOW_WATCHER_KILL = 'Something saw you through the window.';
 
+/** In a dark office it can still make out anyone this close to the glass (m). */
+export const DARK_SIGHT = 2;
+
 /** Same visits every run of night 2, until something reseeds it. */
 const SEED = 0x2b0b;
 
@@ -33,7 +38,7 @@ const _forward = new THREE.Vector3();
 const _head = new THREE.Vector3();
 
 export class WindowWatchers extends Threat {
-  objective = "Something walks up to the window. When it looks in, hide under the desk or leave the office. Don't stare at it.";
+  objective = "Something walks up to the window. When it looks in, hide under the desk or leave the office — it can't see far into a dark one. Don't stare at it.";
 
   /**
    * @param {object} opts
@@ -75,7 +80,18 @@ export class WindowWatchers extends Threat {
     return zone.containsPoint(camera.getWorldPosition(_eye));
   }
 
-  isSeen() { return this.playerInOffice() && !this.isHidden(); }
+  /** The office is dark and the player's eye is more than DARK_SIGHT back
+   *  from the glass, measured room-local, straight in from the window. */
+  isInDark() {
+    const office = this.office;
+    const camera = this.ctx?.engine?.camera;
+    if (!this.ctx?.lights?.dark || !office || !camera) return false;
+    camera.getWorldPosition(_eye);
+    office.root.object3d.worldToLocal(_eye);
+    return _eye.z - office.threatAnchors.windowGlass[2] > DARK_SIGHT;
+  }
+
+  isSeen() { return this.playerInOffice() && !this.isHidden() && !this.isInDark(); }
 
   /** Radians between the view centre and the figure's head; Infinity when
    *  the player isn't in the office to see it through the glass. */
