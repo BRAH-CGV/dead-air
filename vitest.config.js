@@ -58,6 +58,10 @@ export default {
   },
   test: {
     include: ['src/**/*.test.js'],
+    // Worker threads, not the default forked processes: on Windows a cold
+    // fork sometimes never answered ("Timeout waiting for worker to
+    // respond", BUG-004), and the whole suite runs faster this way too.
+    pool: 'threads',
     server: {
       deps: { inline: [/rapier/] },
     },
