@@ -18,7 +18,6 @@ import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
-import { LevelEditor } from '../editor/LevelEditor.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -46,7 +45,7 @@ export class Engine {
   rigidBodyMap = new Map();       // RigidBody.handle → GameObject
   _bodyToGO    = new Map();       // RigidBody.handle → GameObject (all bodies, for raycasts)
   /** @type {PhysicsDebug} */ physicsDebug;
-  /** @type {LevelEditor}  */ levelEditor;
+  /** @type {import('../editor/LevelEditor.js').LevelEditor} Loaded on the first F2 press. */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
   /** @type {Fullbright}   */ fullbright;
   /** @type {GameObject}   */ player;
@@ -176,7 +175,7 @@ export class Engine {
     // listener rather than `input.keys`, which is level-triggered.
     addEventListener('keydown', (e) => {
       if (e.code === 'Backquote')        this.physicsDebug?.toggle();
-      if (e.code === 'F2')               this.levelEditor?.toggle();
+      if (e.code === 'F2')               this.toggleLevelEditor();
       if (e.code === this.keyBinds.debugFly)
         this.debugCamera?.toggle(this.player);
       if (e.code === this.keyBinds.fullbright) this.fullbright?.toggle();
@@ -229,10 +228,6 @@ export class Engine {
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
-    
-    // Level editor — toggle with F2. Provides visual object placement.
-    this.levelEditor = new LevelEditor(this);
-    this.levelEditor.init();
 
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
@@ -248,6 +243,20 @@ export class Engine {
 
     // ── Kick off the loop ──
     requestAnimationFrame(this._loop);
+  }
+
+  /** Open or close the level editor (F2). It is a dev tool most players
+   *  never open, and it was a fifth of the game's bundle, so its module is
+   *  fetched on the first press rather than with the game (BUG-007). A
+   *  second press while it is still arriving waits for the same load. */
+  async toggleLevelEditor() {
+    this._levelEditorLoad ??= import('../editor/LevelEditor.js').then(({ LevelEditor }) => {
+      const editor = new LevelEditor(this);
+      editor.init();
+      this.levelEditor = editor;
+    });
+    await this._levelEditorLoad;
+    this.levelEditor.toggle();
   }
 
   /** Free every GPU resource we own. Call before rebuilding a level, so
