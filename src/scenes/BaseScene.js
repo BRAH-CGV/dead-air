@@ -38,6 +38,8 @@ import { SoundCues } from '../audio/SoundCues.js';
 import { BaseLights } from '../gameplay/BaseLights.js';
 import { Power } from '../gameplay/Power.js';
 import { GeneratorSwitch } from '../components/GeneratorSwitch.js';
+import { CrtScreen, createCrtScreenMesh, RETRO_COMPUTER_SCREEN } from '../components/CrtScreen.js';
+import { createCrtMaterial } from '../shaders/CrtScreen.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -165,6 +167,7 @@ export class BaseScene extends Scene {
     this._addStamina();
     this._addAudio();
     this._addThreats();
+    this._addCrtScreen();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -522,6 +525,27 @@ export class BaseScene extends Scene {
     this._addSleepDemon();
     this._addWindowWatchers();
     this._addCameraEntity();
+  }
+
+  /** The terminal monitor's picture: a CRT radar shader on a plane over
+   *  the desk model's glass (see src/shaders/CrtScreen.js). It shows the
+   *  dish's scan, dies with the power, and breaks up while a Watcher looks
+   *  in. Added after the terminal, so the terminal's Interactable stays the
+   *  first one on the desk. */
+  _addCrtScreen() {
+    const desk = this.rooms.MainOffice.root.find('ComputerDesk');
+    if (!desk) return;
+    const material = this._own(createCrtMaterial({ bulge: RETRO_COMPUTER_SCREEN.bulge }));
+    const mesh = createCrtScreenMesh(material);
+    this._own(mesh.geometry);
+    desk.object3d.add(mesh);
+    const watchers = this.threatDirector.threats.get('windowWatchers');
+    desk.addComponent(new CrtScreen({
+      material,
+      satellite: this.satellite,
+      power:     this.power,
+      disturbed: () => watchers?.logic.phase === 'peer',
+    }));
   }
 
   /** Night 1: something steps closer through the rooms as you tire. */

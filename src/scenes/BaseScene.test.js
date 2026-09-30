@@ -29,6 +29,7 @@ import { SoundCues } from '../audio/SoundCues.js';
 import { BaseLights } from '../gameplay/BaseLights.js';
 import { Power, EMERGENCY_LEVEL } from '../gameplay/Power.js';
 import { GeneratorSwitch, RESTORE_POWER } from '../components/GeneratorSwitch.js';
+import { CrtScreen } from '../components/CrtScreen.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1013,5 +1014,48 @@ describe('BaseScene power', () => {
     runPower(1);
     scene.dispose();
     expect(ceiling.intensity).toBe(full);
+  });
+});
+
+describe('BaseScene CRT screen', () => {
+  let engine, scene, desk, crt;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    crt = desk.getComponent(CrtScreen);
+  });
+
+  it("puts the CRT on the office desk's monitor, driven by the dish and the power", () => {
+    expect(crt).toBeInstanceOf(CrtScreen);
+    const mesh = desk.object3d.getObjectByName('CrtScreen');
+    expect(mesh.parent).toBe(desk.object3d);
+    expect(mesh.material).toBe(crt.material);
+    expect(crt.material.uniforms.uSignal).toBeDefined();
+    expect(crt.satellite).toBe(scene.satellite);
+    expect(crt.power).toBe(scene.power);
+  });
+
+  it('keeps the terminal the first Interactable on the desk', () => {
+    const at = c => desk.components.indexOf(c);
+    expect(at(scene.terminal)).toBeLessThan(at(crt));
+  });
+
+  it('breaks into static while a Window Watcher looks in', () => {
+    const watchers = scene.threatDirector.threats.get('windowWatchers');
+    expect(crt.disturbed()).toBe(false);
+    watchers.logic.phase = 'peer';
+    expect(crt.disturbed()).toBe(true);
+  });
+
+  it('owns the material and the plane, and frees them with the scene', () => {
+    const mesh = desk.object3d.getObjectByName('CrtScreen');
+    expect(scene._owned).toContain(mesh.material);
+    expect(scene._owned).toContain(mesh.geometry);
+    const freed = vi.spyOn(mesh.material, 'dispose');
+    scene.dispose();
+    expect(freed).toHaveBeenCalled();
   });
 });
