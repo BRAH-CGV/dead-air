@@ -30,6 +30,9 @@ import { ScreenFade } from '../ui/ScreenFade.js';
 import { ThreatDirector } from '../gameplay/ThreatDirector.js';
 import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
 import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
+import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 
 // ─────────────────────────────────────────────
@@ -154,6 +157,7 @@ export class BaseScene extends Scene {
     this._spawnPlayer();
     this._addGameplaySystems();
     this._addSignalStorage();
+    this._addStamina();
     this._addThreats();
 
     console.timeEnd('BaseScene.build');
@@ -368,6 +372,23 @@ export class BaseScene extends Scene {
     };
   }
 
+  /** Night 1's clock of the body: stamina drains through each shift and the
+   *  office's ration dispenser tops it up. The drain ticks on GameplaySystems
+   *  after the controller (it reads the state just moved to) and before the
+   *  threats (the Sleep Demon reads the value just drained). A minimal seed:
+   *  the full stamina system is Hayden's. */
+  _addStamina() {
+    this.stamina = new Stamina();
+    const { rationDispenser } = this.rooms.MainOffice;
+    if (rationDispenser) rationDispenser.stamina = this.stamina;
+    this.gameController.gameObject.addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      onNightStart: () => rationDispenser?.reset(),
+    }));
+  }
+
   // ──────────────────────────────────────────
   // Threats (one per night — ThreatDirector's table)
   // ──────────────────────────────────────────
@@ -388,7 +409,7 @@ export class BaseScene extends Scene {
       rooms:       this.rooms,
       transitions: this.transitions,
       hud:         this.hud,
-      stamina:     null,
+      stamina:     this.stamina,
       audio:       null,
       lights:      null,
     };
@@ -400,8 +421,19 @@ export class BaseScene extends Scene {
 
     this.gameController.gameObject.addComponent(this.threatDirector);
 
+    this._addSleepDemon();
     this._addWindowWatchers();
     this._addCameraEntity();
+  }
+
+  /** Night 1: something steps closer through the rooms as you tire. */
+  _addSleepDemon() {
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', height: 2.2, placeholderFor: 'sleep-demon.glb',
+    });
+    this._threats.addChild(figure);
+    this._ownResourcesOf(figure);
+    this.threatDirector.register('sleepDemon', new SleepDemon({ figure }));
   }
 
   /** Night 2: a figure walks up to the office window. */

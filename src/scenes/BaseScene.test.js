@@ -20,6 +20,9 @@ import { ScreenFade } from '../ui/ScreenFade.js';
 import { ThreatDirector, THREATS_BY_NIGHT } from '../gameplay/ThreatDirector.js';
 import { WindowWatchers } from '../gameplay/threats/WindowWatchers.js';
 import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
+import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -723,6 +726,43 @@ describe('BaseScene threats', () => {
     expect(figure).toBe(threat.figure);
     expect(figure.object3d.visible).toBe(false);
     expect(figure.rigidBody).toBeNull();
+  });
+
+  it("registers night 1's sleep demon: a hidden figure under Threats, not a body, reading the scene's stamina", () => {
+    const threat = scene.threatDirector.threats.get('sleepDemon');
+    expect(threat).toBeInstanceOf(SleepDemon);
+    expect(THREATS_BY_NIGHT[1]).toContain('sleepDemon');
+    expect(scene.threatContext.stamina).toBe(scene.stamina);
+
+    const sceneRoot = engine._rootObjects.find(go => go.name === 'SceneRoot');
+    const figure = sceneRoot.find('Threats').find('SleepDemon');
+    expect(figure).toBe(threat.figure);
+    expect(figure.object3d.visible).toBe(false);
+    expect(figure.rigidBody).toBeNull();
+  });
+
+  it('ticks stamina on GameplaySystems between the controller and the threats', () => {
+    expect(scene.stamina).toBeInstanceOf(Stamina);
+    const drain = gameplay.getComponent(StaminaDrain);
+    expect(drain.stamina).toBe(scene.stamina);
+    expect(drain.controller).toBe(scene.gameController);
+    expect(drain.hud).toBe(scene.hud);
+    const at = c => gameplay.components.indexOf(c);
+    expect(at(drain)).toBeGreaterThan(at(scene.gameController));
+    expect(at(drain)).toBeLessThan(at(scene.threatDirector));
+  });
+
+  it("feeds the office's ration dispenser the stamina, and has it ready each night", () => {
+    const dispenser = scene.rooms.MainOffice.rationDispenser;
+    expect(dispenser.stamina).toBe(scene.stamina);
+    scene.stamina.value = 0.2;
+    dispenser.onInteract({});
+    expect(scene.stamina.value).toBeCloseTo(0.55);
+    expect(dispenser.refill).toBeGreaterThan(0);
+
+    const drain = gameplay.getComponent(StaminaDrain);
+    drain.onNightStart();
+    expect(dispenser.refill).toBe(0);
   });
 
   it("registers night 3's camera entity on the server room's camera, cone off until its night", () => {
