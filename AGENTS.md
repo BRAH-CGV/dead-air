@@ -19,6 +19,8 @@ Dead Air is a 3D browser-based survival horror game built for the Wits Computer 
   3. Camera entity
   4. Evil signal — must be deleted
   5. UFO — must cut power to hide
+
+  Nights 1–3 are built, as the Sleep Demon, the Window Watchers and the Camera Entity (see "Threats" below). The evil signal and the UFO are out of scope while `maxNight` is 3.
 - **Requirement:** 3 genuinely distinct levels/stages, each introducing a new mechanic, environment, story element, or challenge type.
 
 ## Tech Stack
@@ -51,18 +53,42 @@ src/
 │   ├── PhysicsDebug.js  # Collider wireframe overlay (` to toggle)
 │   ├── DebugCamera.js   # Free-fly noclip camera (V to toggle)
 │   └── Fullbright.js    # Unlit debug lighting (B to toggle)
+├── audio/
+│   ├── AudioSystem.js   # Every sound: one-shots, positional loops, two ambience channels
+│   ├── Ambience.js      # The bed (the base's hum or the wind) and the room's own tone
+│   ├── SoundCues.js     # One-shots off state edges: scan ticks, lock, 6 AM, death, airlock
+│   ├── sounds.js        # The recipe for every synthesised .wav
+│   └── synth.js         # Offline DSP kit the recipes use (never runs in the game)
+├── shaders/
+│   └── CrtScreen.js     # Terminal monitor: green radar on a curved tube (vertex + fragment)
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
-│   └── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── ComputerTerminal.js # The radar minigame at the desk; setPowered(false) throws you off
+│   ├── CrtScreen.js     # Writes the CRT shader's uniforms from the scan, power and threats
+│   ├── GeneratorSwitch.js # The generator's lever: toggles Power
+│   ├── StaminaDrain.js  # Ticks Stamina through the shift; a tired player sees the base dim
+│   ├── OxygenSupply.js  # Suit air: drains outside, refills in the pressurised airlock
+│   └── ShadowRefresh.js # Redraws a light's shadow only when a watched caster moves
 ├── gameobjects/
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
-│   └── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── MonsterFigure.js # Procedural monster stand-in: hidden, no body, eyes that glow
+│   ├── SecurityCameraRig.js # Night 3's ceiling camera: pans, tilts, shows its view cone
+│   └── SightlineZone.js # Box volume a threat can query (the kneehole, the server aisle)
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
-│   └── GameController.js # playing → morning → sleep → next night
+│   ├── GameController.js # playing → morning → sleep → next night; fail(reason) → gameOver
+│   ├── SignalManager.js # A night's signals: save / delete, and night 3's storage
+│   ├── ThreatDirector.js # Which monsters run tonight (THREATS_BY_NIGHT)
+│   ├── threats/         # Threat base; SleepDemon, WindowWatchers, CameraEntity + pure *Logic rules
+│   ├── Stamina.js       # How awake the player is, 1 → 0 (pure)
+│   ├── BaseLights.js    # The one writer of interior light levels: base × named factors
+│   ├── Power.js         # The generator's output: on, or the emergency glow
+│   └── Oxygen.js        # The suit's air tank (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
@@ -71,10 +97,14 @@ src/
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
+│   ├── HUD.js           # Clock, quota, stamina and oxygen bars, objective (markup in index.html)
 │   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
 │   └── ScreenFade.js    # Fade to black and back (#fade in index.html)
+├── test/                # Test doubles: fakeRapier and fakeAudio record what the code asks of them
 └── main.js              # Entry point: creates Engine, awaits init()
 ```
+
+Outside `src/`, `scripts/make-sounds.mjs` renders every synthesised sound into `public/assets/audio/`. `source-assets/` keeps downloads the game doesn't use (the unused monster and console models). It sits outside `public/`, so none of it ships in the build.
 
 ### Key classes
 
@@ -156,6 +186,118 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
   - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
+### Threats
+
+One monster a night, run by `ThreatDirector`, which sits on `GameplaySystems` after `GameController`:
+
+| Night | Threat | You survive by | Where |
+|---|---|---|---|
+| 1 | Sleep Demon | Eating. Stamina drains all shift, and a ration from the office dispenser tops it up | The whole base |
+| 2 | Window Watchers | Hiding. When the glass taps, crouch under the desk, or cut the power and keep away from the glass | The office window |
+| 3 | Camera Entity | Stealth. Saved signals must be stored at the server-room console, across the camera's aisle | ServerRoom |
+
+- **The table.** `THREATS_BY_NIGHT` maps a night to its threat keys. There is one threat a night (decision D1). To make them cumulative, list the earlier nights' keys too.
+- **The director polls.** Each frame it compares the controller's state and night with the last frame's:
+  - a night starting (sleep, a retry, `N`, a scene rebuild) stops everything and starts that night's threats fresh;
+  - any state but `playing` stops them;
+  - `playing` updates them.
+- **Threats are plain classes, not Components.** Only the director ticks them. So they never run in the morning, behind the failed-night prompt, or while the fly camera has frozen the player.
+- **The rules are pure.** Each threat keeps its rules in a `*Logic` class that takes injected functions (`canSee`, `isSeen`, `lookAngle`, `rand`), so they are tested without physics, a camera or a DOM. The `Threat` subclass maps them onto the scene through its `ctx`: the engine, player, rooms, transitions, HUD, stamina, audio and lights.
+- **The fail path.** A threat calls `kill(reason)`, which runs `GameController.fail(reason)`. The state goes to `gameOver`, the HUD shows the reason and "[E] to retry", and `retryNight()` replays the same night.
+- **Monsters are not physics.** Each figure is a hidden, body-less `GameObject` under the scene's `Threats` group. The figures are procedural placeholders (`MonsterFigure`, decision D3). To use a real model, replace what `createMonsterFigure` returns.
+- **Rooms expose places, not rules.** The places are:
+  - `MainOffice.underDesk`: the kneehole, as a `SightlineZone`;
+  - `MainOffice.threatAnchors`: `windowGlass`, and the Sleep Demon's spots;
+  - `LivingQuarters.threatAnchors.corridorEnd`;
+  - `ServerRoom.sightline` (the aisle), `ServerRoom.securityCamera` and `ServerRoom.storageConsole`.
+
+  Coordinates are room-local, read through the room's transform.
+
+How each one plays:
+
+- **Sleep Demon.** Six bands of stamina map to six stages: 0 (nowhere), then outside the office window, the quarters' corridor end, the office's left doorway, the corner behind the desk, and 1.5 m behind the player.
+  - It moves one stage at a time, and only while neither its spot nor the next is in view.
+  - Eating backs it off the same way.
+  - The night ends when stamina runs out, or after a grace at stage 5.
+  - **Stamina** is a minimal seed; the full system is Hayden's.
+    - `StaminaDrain` drains it through the shift and fills it each night.
+    - The `RationDispenser` (`MainOffice.rationDispenser`) restores 0.35 with a 40 s cooldown.
+    - Below 0.5 the base's lights dim, through BaseLights' `fatigue` factor.
+- **Window Watchers.** About six visits a night.
+  - A glass tap marks its arrival, followed by a short grace.
+  - While it peers in, a player in the office whose eye isn't in `underDesk` is seen, and the night ends.
+  - Staring at it on the way in (within 10° for 1.5 s) brings it straight to the glass.
+  - With the power cut (`BaseLights.dark`), it only sees a player within 2 m of the glass (decision D4).
+- **Camera Entity.** The rig sweeps between its yaw limits.
+  - Exposure rises while your eye is in the aisle, inside the view cone and not behind a rack (a ray from the lens), and decays otherwise.
+  - At 0.6 exposure it stops sweeping and follows you; at 1 the night fails.
+  - Night 3 also turns on signal storage (decision D2). The terminal holds saved signals as `pending` until they are stored at the console, and only stored signals count toward the quota.
+
+### Power and lights
+
+- **`BaseLights` is the only writer of interior light levels.**
+  - Rooms build their lights at full brightness and list them, with their glowing fixtures, in `room.lights`.
+  - `BaseScene._addPower` registers every room's and corridor's lights.
+  - Each system that dims the base owns one named factor (`power`, `fatigue`). Every light shows its base intensity × all the factors, so a power cut and a tired player compose instead of fighting over one number.
+  - `dark` means the level is below 0.25.
+- **What BaseLights does not touch.** `Daylight` owns the ambient light, the moon and the fog. `LEDStrip` owns the rack LEDs. The airlock beacon runs on its own battery. None of those are registered.
+- **`Power`.** The generator's lever outside (`GeneratorSwitch`) toggles it. A cut:
+  - stutters the lights down to an 8% emergency glow over 0.6 s;
+  - throws the player off the terminal (`setPowered(false)`);
+  - parks the dish (`satellite.powered`);
+  - plays `sfx:power-cut`.
+
+  The airlock keeps cycling, so a cut can never shut you outside. A new night, and a retry, turn the power back on.
+
+### The CRT shader
+
+`src/shaders/CrtScreen.js` draws the terminal monitor's picture: a green radar on a curved tube. With the sky's `uDawn`, it is the custom shader to walk through.
+
+- **The mesh.** A `ShaderMaterial` on a thin plane over the retro computer's glass. `BaseScene._addCrtScreen` places it with `RETRO_COMPUTER_SCREEN`, which was measured from the `.glb`'s vertices.
+- **The vertex shader** bows the plane's middle out like curved glass. The `bulge` is compiled in.
+- **The fragment shader** draws the sweep and its afterglow, the scanlines, the static and a lock ring.
+- **Four state-driven uniforms:**
+  - `uTime` turns the sweep and reshuffles the static.
+  - `uSignal` is the dish's scan progress. As it rises the afterglow shortens and the lock ring closes.
+  - `uNoise` is the static: some while idle, almost none mid-scan, and all of it while the power stutters or a Watcher peers in.
+  - `uPower` is the tube's supply. As it drops, the picture squashes to a line and goes black.
+- **The `CrtScreen` component** writes them each frame into the material's existing uniform objects. Nothing is allocated.
+- **Lighting.** It is unlit on purpose and skips the fog, but keeps three's tone mapping and colour space, like the sky.
+
+### Oxygen
+
+- **`Oxygen` is pure state.** The tank goes from 1 to 0 over 90 s spent outside, and refills in 3 s in the pressurised airlock.
+- **`OxygenSupply`** runs on `GameplaySystems`:
+  - with the suit on and outside, the tank drains;
+  - below 25%, the helmet beeps every 2 s;
+  - an empty tank ends the night.
+
+  The HUD gauge shows while the suit is worn. Outside the shift it holds still, and each night it starts full.
+- **What "outside" means.** `RoomTransitionSystem` reports `null` for a corridor and for outside alike, so "outside" is its own test: the player is inside no room's or corridor's `bounds()`. Those boxes are measured once, at build.
+
+### Sound
+
+`AudioSystem` is on `GameplaySystems`, before the threats. It is `scene.audio`, and `ctx.audio` for threats.
+
+- **Calls:**
+  - `play(key, { volume, at, rate })` for a one-shot;
+  - `positional(key, object3d)` for a looping emitter that rides an object (silent at level 0, so an idle machine costs nothing);
+  - `follow(emitter, { level, rate })` to drive an emitter from the game each frame;
+  - `setAmbience(key, channel)` for a looping bed;
+  - `setPaused` and `setVolume` for the menus.
+- **The browser's rule.** Nothing sounds until the first click or key press. Ambience and emitters asked for before then start at that point; one-shots are dropped.
+- **Without Web Audio** (tests, jsdom), every call is a no-op. Tests that check what plays install `src/test/fakeAudio.js`, a recording `AudioContext`, and run the real three.js audio classes on it.
+- **What plays:**
+  - **Ambience.** A bed channel (`amb:base-interior` indoors, `amb:outside-wind` outside) with the room's own tone over it. The airlock counts as indoors until its hatch opens.
+  - **Cues.** `SoundCues` watches state the game already keeps: scan ticks that quicken toward the lock, the lock chirp, the 6 AM chime, the death sting, and the airlock's hiss and clunk.
+  - **Machines.** The server racks, the generator (only while powered) and the dish drive (as loud as it is slewing).
+  - **Threats.** The demon's breathing, the Watcher's glass tap, and the camera's servo and exposure tone.
+- **The files.**
+  - The two ambience beds are recordings (`.mp3`).
+  - Every `.wav` is synthesised from its recipe in `src/audio/sounds.js` by `node scripts/make-sounds.mjs`. The randomness is seeded, so a rebuild is byte-identical. To change a sound, edit its recipe and re-run the script.
+  - Every file peaks at 0.9; the game sets how loud each one plays.
+- **The manifest.** Audio entries are `type: 'audio'`, with `amb:` for loops and `sfx:` for one-shots. They are decoded at preload.
+
 ### Input system
 
 Centralized on `Engine.input`:
@@ -177,7 +319,7 @@ Three toggles, all edge-triggered and free while off:
 | `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
-**DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
+**DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. `ThreatDirector` holds the threats while it's on, so nothing hunts a frozen player; the clock, sky, dish, lights and sound keep running. `Engine.loadScene` lands it before switching scenes, so a new scene always starts in first person. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
 
 **Fullbright (`engine.fullbright`)** — three things have to die for a scene to stop being dark: every light is hidden (remembering which were already off), fog is nulled, and tone mapping is switched to `NoToneMapping`. Hiding lights alone isn't enough — a lit material with no light renders black, not bright — so every `MeshStandard/Physical/Phong/Lambert` material is swapped for a `MeshBasicMaterial` twin carrying the same map and colour. Twins are cached per original material (shared materials stay shared) and disposed the moment the mode is toggled off, so the asset-cache ownership rule holds and memory stays flat. Unlit materials (Basic, Shader) are left alone. Meshes spawned while the mode is on are picked up by `fullbright.refresh()` — `Engine.spawnModel` already calls it.
 
@@ -189,7 +331,7 @@ Three toggles, all edge-triggered and free while off:
 2. Add a key to [`src/assets/manifest.js`](src/assets/manifest.js). The `url` is relative to `public/`, so `public/assets/models/desk.glb` → `'assets/models/desk.glb'`.
 3. Use it: `engine.spawnModel('model:desk', { position: [0, 0, -3] })`, or `engine.assets.get('tex:foo')` for a texture.
 
-No path is ever hard-coded outside the manifest. `validateManifest()` runs in dev and warns about the two mistakes that only fail after upload: absolute paths and capital letters.
+No path is ever hard-coded outside the manifest. The one exception is the eight signal images (`assets/signals/signal-N.png`): the review panel sets them as an `<img>` source, so the scenes build their paths rather than preloading them. `validateManifest()` runs in dev and warns about the two mistakes that only fail after upload: absolute paths and capital letters.
 
 ### How loading works
 
@@ -350,8 +492,8 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 - [ ] Game restarts without page refresh
 - [ ] Credits screen listing all non-original work
 - [ ] Production build (not source tree) uploaded
-- [ ] No absolute paths (`/…`) in code
-- [ ] Asset filenames match case exactly
+- [x] No absolute paths (`/…`) in code. Verified 2026-09-30 on `feat/threats-nights-and-polish`: after `npm run build`, `grep -rn 'src="/\|href="/' dist/index.html` prints nothing, neither the source (outside tests) nor the bundle has a `'/assets/…'` string, and `validateManifest()` reports no absolute urls
+- [x] Asset filenames match case exactly. Verified the same day: `manifest.test.js` compares the manifest urls with the real listing of `public/`, both ways ("every file is a manifest url", "a file for every manifest url, spelt with the same case"), and all 71 paths (manifest + signal images) were found in the built `dist/` with the same case
 - [ ] Acceptable frame rate on lab hardware (not gaming laptops)
 - [ ] Memory doesn't climb across levels (dispose removed resources)
 
@@ -364,3 +506,19 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 - Prefer `.glb` over `.gltf` with loose files; consider Draco compression.
 - Scale textures to smallest acceptable size; prefer power-of-two dimensions.
 - Profile with Chrome DevTools before optimizing.
+
+### What the base already does
+
+Readings and the remaining plan are in `docs/PERFORMANCE-PLAN.md`.
+
+- **Shadows are drawn on demand.**
+  - Two lights cast shadows: the office ceiling light and the moon. The ceiling light is a PointLight, so its shadow is a six-face cube map.
+  - `ShadowRefresh` turns their `shadow.autoUpdate` off. It redraws a shadow only when a watched caster moves, turns, or shows or hides: the monsters, the door panels, the dish and the security camera.
+  - The moon's own turning is flagged by `Daylight`.
+  - This is per light, not the renderer's global `shadowMap.autoUpdate`.
+  - Anything new that moves and casts a shadow goes in `BaseScene._addShadowRefresh`. A prop added at run time calls `shadowRefresh.flag()`.
+- **Far scenery hides indoors.**
+  - The terrain, the rock field and the vegetation belt are listed in `BaseScene.farScenery`.
+  - The belt is instanced across the whole valley, so frustum culling never drops it, and from anywhere in the base about 3 M triangles were drawn behind the walls.
+  - `_showFarScenery` hides the whole list in a room that can't see out: no window and no hatch, which means the server room and the quarters.
+  - Nothing in the list casts a shadow or gives light, so hiding it redraws no shadow map and recompiles no shader.
