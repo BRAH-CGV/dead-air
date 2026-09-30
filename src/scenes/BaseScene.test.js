@@ -32,6 +32,7 @@ import { GeneratorSwitch, RESTORE_POWER } from '../components/GeneratorSwitch.js
 import { CrtScreen } from '../components/CrtScreen.js';
 import { Oxygen } from '../gameplay/Oxygen.js';
 import { OxygenSupply, OXYGEN_KILL } from '../components/OxygenSupply.js';
+import { ShadowRefresh } from '../components/ShadowRefresh.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1130,5 +1131,66 @@ describe('BaseScene oxygen', () => {
     scene.oxygen.value = 0.1;
     gameplay.getComponent(StaminaDrain).onNightStart();
     expect(scene.oxygen.value).toBe(1);
+  });
+});
+
+describe('BaseScene shadows', () => {
+  let engine, scene, refresh, ceiling, moon;
+
+  const drawn = () => { ceiling.shadow.needsUpdate = false; moon.shadow.needsUpdate = false; };
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    refresh = gameplay.getComponent(ShadowRefresh);
+    ceiling = scene.rooms.MainOffice.ceilingLight;
+    moon = scene.moonLight;
+  });
+
+  it('draws the office ceiling light and the moon only when asked, through one ShadowRefresh', () => {
+    expect(ceiling.isPointLight && ceiling.castShadow).toBe(true);
+    expect(refresh).toBeInstanceOf(ShadowRefresh);
+    expect(refresh.lights).toEqual([ceiling, moon]);
+    expect(ceiling.shadow.autoUpdate).toBe(false);
+    expect(moon.shadow.autoUpdate).toBe(false);
+  });
+
+  it('watches what moves and casts: the monsters, the door panels, the dish and the security camera', () => {
+    for (const key of ['sleepDemon', 'windowWatchers']) {
+      expect(refresh.casters, key).toContain(scene.threatDirector.threats.get(key).figure.object3d);
+    }
+    const panels = Object.values(scene.rooms).flatMap(r => r.doors).map(d => d.panel).filter(Boolean);
+    expect(panels.length).toBeGreaterThan(0);
+    for (const panel of panels) expect(refresh.casters).toContain(panel);
+    expect(refresh.casters).toContain(scene.rooms.ServerRoom.securityCamera.head.object3d);
+  });
+
+  it("watches the dish's turning part, once the dish-tower model has one", () => {
+    // The model isn't loaded under test, so give the tower its Dish by hand.
+    const dish = new GameObject('Dish');
+    scene.satellite.dish = dish;
+    scene._addShadowRefresh();
+    expect(scene.shadowRefresh.casters).toContain(dish.object3d);
+  });
+
+  it('redraws both when a monster moves', () => {
+    const figure = scene.threatDirector.threats.get('sleepDemon').figure;
+    drawn();
+    refresh.onLateUpdate(0);
+    expect(ceiling.shadow.needsUpdate).toBe(false);
+    figure.object3d.visible = true;
+    figure.object3d.position.x += 1;
+    refresh.onLateUpdate(0);
+    expect(ceiling.shadow.needsUpdate).toBe(true);
+    expect(moon.shadow.needsUpdate).toBe(true);
+  });
+
+  it('redraws when the airlock shuts the office front door behind the suit', () => {
+    drawn();
+    scene.suit.putOn();
+    refresh.onLateUpdate(0);
+    expect(ceiling.shadow.needsUpdate).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { Daylight, dawnFactor } from './Daylight.js';
+import { Daylight, dawnFactor, MOON_SHADOW_STEP } from './Daylight.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 
 // ─────────────────────────────────────────────
@@ -227,6 +227,31 @@ describe('Daylight turning the sky', () => {
     at(0);                                   // slept — the next night starts
     expect(sky.hour).toBe(0);
     expect(dirOf(sun).distanceTo(midnightPhobos)).toBeCloseTo(0, 5);
+  });
+
+  it('draws the moon shadow only once the light has turned a quarter of a degree', () => {
+    expect(THREE.MathUtils.radToDeg(MOON_SHADOW_STEP)).toBeCloseTo(0.25);
+    expect(sun.shadow.autoUpdate).toBe(false);
+    at(0);
+    expect(sun.shadow.needsUpdate).toBe(true);
+    sun.shadow.needsUpdate = false;          // three drew it
+    at(0.001);                               // a few hundredths of a degree
+    expect(sun.shadow.needsUpdate).toBe(false);
+    at(0.1);                                 // over a degree
+    expect(sun.shadow.needsUpdate).toBe(true);
+  });
+
+  it('draws no moon shadow in the morning, when the sky has stopped', () => {
+    at(6, 'morning');
+    sun.shadow.needsUpdate = false;
+    at(6, 'morning');
+    expect(sun.shadow.needsUpdate).toBe(false);
+  });
+
+  it('leaves the shadow drawing every frame when there is no sky to follow', () => {
+    const still = new THREE.DirectionalLight();
+    daylight = new Daylight({ controller, sun: still });
+    expect(still.shadow.autoUpdate).toBe(true);
   });
 
   it('takes the Sun light\'s height as a day option', () => {

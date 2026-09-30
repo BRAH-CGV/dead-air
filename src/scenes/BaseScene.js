@@ -42,6 +42,7 @@ import { CrtScreen, createCrtScreenMesh, RETRO_COMPUTER_SCREEN } from '../compon
 import { createCrtMaterial } from '../shaders/CrtScreen.js';
 import { Oxygen } from '../gameplay/Oxygen.js';
 import { OxygenSupply } from '../components/OxygenSupply.js';
+import { ShadowRefresh } from '../components/ShadowRefresh.js';
 
 /** Scratch for the player's world position (read every frame, never kept). */
 const _playerPos = new THREE.Vector3();
@@ -174,6 +175,7 @@ export class BaseScene extends Scene {
     this._addOxygen();
     this._addThreats();
     this._addCrtScreen();
+    this._addShadowRefresh();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -415,6 +417,23 @@ export class BaseScene extends Scene {
     this.rooms.MainOffice.rationDispenser?.reset();
     this.power?.reset();
     this.oxygen?.reset();
+  }
+
+  /** The two shadow-casting lights, the office ceiling's PointLight (a
+   *  six-pass cube map) and the moon, draw their shadows only when asked:
+   *  Daylight asks for the moon's as it turns, and ShadowRefresh asks for
+   *  both when a caster that can move does. Everything else in their reach
+   *  is static. Add anything new that moves and casts here. */
+  _addShadowRefresh() {
+    const { rooms, threatDirector } = this;
+    const casters = [
+      ...['sleepDemon', 'windowWatchers'].map(key => threatDirector.threats.get(key)?.figure?.object3d),
+      ...Object.values(rooms).flatMap(room => room.doors).map(door => door.panel),
+      this.satellite?.dish?.object3d ?? this.satellite?.neck?.object3d,
+      rooms.ServerRoom.securityCamera?.head?.object3d,
+    ];
+    const lights = [rooms.MainOffice.ceilingLight, this.moonLight].filter(Boolean);
+    this.shadowRefresh = this.gameController.gameObject.addComponent(new ShadowRefresh({ lights, casters }));
   }
 
   /** The EVA suit's air: it drains while the suit is worn outside and

@@ -79,6 +79,8 @@ export class MainOffice extends Room {
   rationDispenser = null;
   /** The kneehole under the computer desk. @type {SightlineZone|null} */
   underDesk = null;
+  /** The one shadow-casting room light, from buildLighting(). @type {THREE.PointLight|null} */
+  ceilingLight = null;
   /** Room-local [x, y, z] spots for monsters, feet on the floor plane. */
   threatAnchors = {
     /** Outside the back wall, centred on the window, a figure's width off
@@ -129,6 +131,7 @@ export class MainOffice extends Room {
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
     ceilingGO.object3d.add(ceiling);
+    this.ceilingLight = ceiling;
 
     const fixture = new THREE.Mesh(
       this._own(new THREE.CylinderGeometry(0.35, 0.45, 0.08, 24)),

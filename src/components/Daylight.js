@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
+import { shouldRefreshShadow } from './ShadowRefresh.js';
 
 // ─────────────────────────────────────────────
 // Daylight  –  turns the night into the Martian day at the end of a shift
@@ -23,6 +24,12 @@ import { Component } from '../core/Component.js';
 // Sun's bearing, `sunElevation` up. It keeps the distance the scene put it
 // at, so its shadow camera still spans what it was sized for.
 //
+// The aimed light's shadow is not redrawn every frame: only once the light
+// has turned MOON_SHADOW_STEP since the last one. The sky turns ~0.3° a
+// second of play, so that is about one shadow a second instead of sixty,
+// and none in the still morning. (What moves under the light is
+// ShadowRefresh's to watch.)
+//
 // Nothing is allocated per frame. Through the night the hour moves, so the
 // sky and the light are rewritten every frame; in the morning the clock has
 // stopped and nothing is written at all.
@@ -43,6 +50,9 @@ const DEFAULT_DAY = {
   // the terrain's shadow; 30° is the height the moonlight was tuned at.
   sunElevation:     30,
 };
+
+/** How far the aimed light turns before its shadow is drawn again. */
+export const MOON_SHADOW_STEP = THREE.MathUtils.degToRad(0.25);
 
 const _day   = new THREE.Vector3();
 const _light = new THREE.Vector3();
@@ -105,7 +115,13 @@ export class Daylight extends Component {
       light:     sun,
       distance:  sun.position.distanceTo(sun.target.position),
       elevation: THREE.MathUtils.degToRad(target.sunElevation),
+      // The direction its shadow was last drawn from; zero = not yet.
+      shadowDir: new THREE.Vector3(),
     };
+    if (this._aim) {
+      sun.shadow.autoUpdate = false;
+      sun.shadow.needsUpdate = true;
+    }
   }
 
   onUpdate() {
@@ -151,6 +167,12 @@ export class Daylight extends Component {
     _day.y = Math.sin(elevation);
     _light.copy(phobos).lerp(_day, factor).normalize();
     light.position.copy(light.target.position).addScaledVector(_light, distance);
+
+    const { shadowDir } = this._aim;
+    if (shouldRefreshShadow(shadowDir, _light, MOON_SHADOW_STEP)) {
+      shadowDir.copy(_light);
+      light.shadow.needsUpdate = true;
+    }
   }
 }
 
