@@ -130,6 +130,9 @@ export class MainOffice extends Room {
     ceiling.position.set(0, 2.75, 0.4);
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
+    // About one cube-map texel as far out as the server-room racks (2 cm at
+    // 8 m), so a lit face can't fall into its own shadow and flicker (BUG-R1).
+    ceiling.shadow.normalBias = 0.02;
     ceilingGO.object3d.add(ceiling);
     this.ceilingLight = ceiling;
 

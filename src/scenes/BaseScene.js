@@ -723,6 +723,9 @@ export class BaseScene extends Scene {
     moon.shadow.camera.right  =  reach;
     moon.shadow.camera.top    =  reach;
     moon.shadow.camera.bottom = -reach;
+    // One shadow-map texel along the surface normal, so a lit face can't
+    // fall into its own shadow and flicker (BUG-R1, shadow acne).
+    moon.shadow.normalBias = (2 * reach) / moon.shadow.mapSize.x;
     moonGO.object3d.add(moon);
     this._lighting.addChild(moonGO);
     // Doubles as the sunlight in the morning — Daylight warms and brightens it.

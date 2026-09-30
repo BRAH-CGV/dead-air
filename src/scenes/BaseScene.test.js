@@ -1157,6 +1157,24 @@ describe('BaseScene shadows', () => {
     expect(moon.shadow.autoUpdate).toBe(false);
   });
 
+  // BUG-R1: the server racks flickered, but only with lighting on. Neither
+  // light set a bias, so a lit surface could land in its own shadow (acne).
+  // Each lookup is pushed off its surface by about one shadow-map texel:
+  // enough to clear its own shadow, not so much that shadows come loose
+  // from what casts them.
+  it('pushes each shadow lookup off its own surface by about one shadow texel', () => {
+    const cam = moon.shadow.camera;
+    const moonTexel = (cam.right - cam.left) / moon.shadow.mapSize.x;
+    expect(moon.shadow.normalBias).toBeGreaterThanOrEqual(moonTexel);
+    expect(moon.shadow.normalBias).toBeLessThanOrEqual(2 * moonTexel);
+
+    // A cube face spans 90°, so a texel d metres out is 2d / size wide.
+    // 8 m is past the far wall of the server room, where the racks stand.
+    const cubeTexelAt8m = (2 * 8) / ceiling.shadow.mapSize.x;
+    expect(ceiling.shadow.normalBias).toBeGreaterThanOrEqual(cubeTexelAt8m);
+    expect(ceiling.shadow.normalBias).toBeLessThanOrEqual(2 * cubeTexelAt8m);
+  });
+
   it('watches what moves and casts: the monsters, the door panels, the dish and the security camera', () => {
     for (const key of ['sleepDemon', 'windowWatchers']) {
       expect(refresh.casters, key).toContain(scene.threatDirector.threats.get(key).figure.object3d);
