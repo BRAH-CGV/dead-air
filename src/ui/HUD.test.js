@@ -236,3 +236,39 @@ describe('HUD oxygen gauge', () => {
     expect(() => new HUD(null).setOxygen(0.5)).not.toThrow();
   });
 });
+
+// ── Coffee ────────────────────────────────────────────────
+describe('HUD coffee', () => {
+  function fakeRoot() {
+    const line = { textContent: '', dataset: {} };
+    return { line, root: { style: {}, querySelector: sel => (sel === '#hud-coffee' ? line : null) } };
+  }
+
+  it('shows the cups left and the key that drinks one', () => {
+    const { line, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setCoffee(2, 'F');
+    expect(line.textContent).toBe('Coffee ×2 [F]');
+    expect(line.dataset.level).toBe('ok');
+  });
+
+  it('says when the thermos is empty', () => {
+    const { line, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setCoffee(0, 'F');
+    expect(line.textContent).toBe('Thermos empty');
+    expect(line.dataset.level).toBe('empty');
+  });
+
+  it('only touches the DOM when the count changes (it is called every frame)', () => {
+    const { line, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setCoffee(1, 'F');
+    Object.defineProperty(line, 'textContent', { set() { throw new Error('wrote the DOM'); } });
+    expect(() => hud.setCoffee(1, 'F')).not.toThrow();
+  });
+
+  it('does nothing without the markup', () => {
+    expect(() => new HUD(null).setCoffee(2, 'F')).not.toThrow();
+  });
+});

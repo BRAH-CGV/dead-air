@@ -5,6 +5,25 @@
 > which Sibonelo's agent is building from `docs/MENUS-NAVIGATION-PROMPT.md`.
 > You're working for Adrian (drax9207).
 
+> **Resume here (paused 2026-09-30, branch `feat/threats-nights-and-polish`).**
+> Adrian asked for everything on the list except Sibonelo's menus. Done and
+> committed: every package in §4 plus BUG-003/004/007/008 and R1/R2/R5, the
+> vegetation perf pass, and Hayden's stamina system: coffee thermos (F),
+> fatigue effects (tunnel, lids, yawns, heartbeat, the 'dread' light factor)
+> and the risky nap on the bunk. Still to do, in order:
+>
+> 1. Run the whole suite once (`npx vitest run`, ~5 min). The touched modules
+>    pass (609 tests in 50 files, and BaseScene's 99).
+> 2. Submission support (§5 L): zip `dist/`'s contents, a headless-Chrome
+>    smoke test of the production build, and the provenance lookups.
+> 3. Docs: move the fixed bugs to Fixed in `BUG-TRACKER.md`; refresh the
+>    stale BUG-003 comments in three tests; update AGENTS.md (tree, stamina,
+>    coffee, nap, the 'dread' factor, the suite's run time) and §6 of
+>    `PERFORMANCE-PLAN.md`; update the PR body.
+> 4. Push, then report to Adrian with the compare link.
+>
+> Leave `docs/MENUS-NAVIGATION-PROMPT.md` untracked and untouched.
+
 ---
 
 ## 0. How to use this document

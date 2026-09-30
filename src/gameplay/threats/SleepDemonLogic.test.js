@@ -132,3 +132,24 @@ describe('SleepDemonLogic', () => {
     expect(onKill).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('SleepDemonLogic.napKills — lying down with it in the base', () => {
+  it('the nearer it has come, the likelier a nap is the last: none at 0, certain from the desk corner', () => {
+    expect(T.napRisk).toHaveLength(T.stages + 1);
+    expect(T.napRisk[0]).toBe(0);
+    for (let s = 1; s <= T.stages; s++) expect(T.napRisk[s]).toBeGreaterThanOrEqual(T.napRisk[s - 1]);
+    expect(T.napRisk[4]).toBe(1);
+    expect(T.napRisk[5]).toBe(1);
+  });
+
+  it('rolls against its stage: r below the risk kills', () => {
+    const logic = new SleepDemonLogic();
+    logic.start();
+    expect(logic.napKills(0)).toBe(false);          // stage 0: never
+    logic.stage = 3;
+    expect(logic.napKills(T.napRisk[3] - 0.01)).toBe(true);
+    expect(logic.napKills(T.napRisk[3])).toBe(false);
+    logic.stage = 4;
+    expect(logic.napKills(0.999)).toBe(true);
+  });
+});

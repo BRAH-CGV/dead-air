@@ -150,4 +150,17 @@ describe('NightClock', () => {
     clock.update(75);  // 1.5 hours → 1:30 AM
     expect(clock.timeString).toBe('1:30 AM');
   });
+
+  it('advanceHours(h) jumps the clock h in-game hours, as the time would pass', () => {
+    const c = new NightClock({ nightDuration: 300 });
+    const hours = [];
+    c.onHourChange = h => hours.push(h);
+    c.update(25);                          // 12:30
+    c.advanceHours(1);
+    expect(c.currentTime).toBeCloseTo(1.5);
+    expect(hours).toEqual([1]);
+    c.advanceHours(10);
+    expect(c.currentTime).toBe(6);
+    expect(c.finished).toBe(true);
+  });
 });

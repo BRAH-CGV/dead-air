@@ -8,6 +8,8 @@
 //
 //   start(ctx)  → onStart()   fresh state for a new or retried night
 //   update(dt)                every frame of the night (override)
+//   onNap(rand)               the player lies down to nap mid-shift; return
+//                             true if that ends the night (override)
 //   stop()      → onStop()    hide, silence, forget
 //
 // ctx is the scene's context, one object shared by every threat:
@@ -72,4 +74,6 @@ export class Threat {
   onStart() {}
   onStop() {}
   update(_dt) {}
+  /** @param {() => number} _rand @returns {boolean} the nap ended the night */
+  onNap(_rand) { return false; }
 }

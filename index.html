@@ -169,6 +169,13 @@
       #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
       #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
       /* Oxygen: the stamina bar's twin, shown only while the suit is on. */
+      #hud-coffee {
+        font-size: 11px;
+        color: #c8a878;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      #hud-coffee[data-level="empty"] { color: #6a7888; }
       #hud-oxygen {
         display: none;
         align-items: center;
@@ -280,6 +287,37 @@
         background: rgba(207, 110, 110, 0.15);
       }
 
+      /* ── Fatigue (FatigueOverlay.js) ──────────────────────
+         The tunnel sits under the HUD so the stamina bar stays readable;
+         the lids close over everything but the screen fade. */
+      #fatigue-tunnel {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 80;
+        background: radial-gradient(ellipse at center,
+          transparent 24%, rgba(0,0,0,0.55) 50%, #000 80%);
+      }
+      #fatigue-lids {
+        --lid: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+      #fatigue-lids::before,
+      #fatigue-lids::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 52%;
+        background: #000;
+      }
+      #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
+      #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
+
       /* ── Screen fade (ScreenFade.js sets the duration) ──── */
       #fade {
         position: fixed;
@@ -306,6 +344,7 @@
       <div id="hud-suit">EVA suit on</div>
       <div id="hud-objective"></div>
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
+      <div id="hud-coffee" data-level="ok"></div>
       <div id="hud-oxygen" data-level="ok"><span>Oxygen</span><div id="hud-oxygen-track"><div id="hud-oxygen-fill"></div></div></div>
     </div>
 
@@ -323,6 +362,12 @@
         <span id="signal-save-btn">[S] Save Signal</span>
         <span id="signal-delete-btn">[D] Delete Signal</span>
       </div>
+    </div>
+
+    <!-- Fatigue: the tunnel vignette and the eyelids (FatigueOverlay.js) -->
+    <div id="fatigue">
+      <div id="fatigue-tunnel"></div>
+      <div id="fatigue-lids"></div>
     </div>
 
     <div id="fade"></div>

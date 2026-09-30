@@ -429,3 +429,48 @@ describe('GameController', () => {
     expect(clock.timeString).toBe('6:00 AM');
   });
 });
+
+describe('GameController.nap', () => {
+  let gc, clock, mgr;
+
+  beforeEach(() => {
+    gc = new GameController();
+    clock = new NightClock({ nightDuration: 300 });
+    mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    gc.nightClock = clock;
+    gc.signalManager = mgr;
+    gc.hud = makeHUD();
+    gc.satellite = makeSatellite();
+    gc.autoStart = false;
+    gc.startNight(1);
+  });
+
+  it('sleeps hours of the shift away', () => {
+    gc.onUpdate(50);                       // 1:00
+    expect(gc.nap(2)).toBe(true);
+    expect(clock.currentTime).toBeCloseTo(3);
+    expect(gc.hud.setTime).toHaveBeenLastCalledWith('3:00 AM');
+    expect(gc.state).toBe('playing');
+  });
+
+  it('only during the shift', () => {
+    gc.state = 'morning';
+    expect(gc.nap(1)).toBe(false);
+    gc.state = 'gameOver';
+    expect(gc.nap(1)).toBe(false);
+    expect(clock.currentTime).toBe(0);
+  });
+
+  it('sleeping through 6 AM ends the shift there and then: morning with the quota met …', () => {
+    for (let id = 1; id <= mgr.required; id++) mgr.saveSignal(id);
+    gc.onUpdate(275);                      // 5:30
+    gc.nap(1);
+    expect(gc.state).toBe('morning');
+  });
+
+  it('… and a failed night without it', () => {
+    gc.onUpdate(275);
+    gc.nap(1);
+    expect(gc.state).toBe('gameOver');
+  });
+});

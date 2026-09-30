@@ -261,6 +261,58 @@ export const SOUNDS = {
     return fadeOut(out, 0.4, 0.48);
   }),
 
+  // ── Fatigue ────────────────────────────────
+  // A yawn: a long breath in through the teeth, then a voiced "aaah" that
+  // falls in pitch and rounds to "oh" as the jaw closes. Two formant
+  // bandpasses over a saw voice and breath noise, swept together.
+  'sfx:yawn': shot(2.4, n => {
+    const rand = rng(111);
+    const t = i => i / SAMPLE_RATE;
+    const close = i => Math.min(1, Math.max(0, (t(i) - 0.7) / 1.4));
+    const voice = osc(n, i => 190 - 60 * close(i) + 3 * Math.sin(TAU * 5 * t(i)), 'saw');
+    const source = layers([voice, 0.5], [pink(n, rand), 0.6]);
+    const vowel = layers(
+      [biquad(source, 'bandpass', i => 780 - 280 * close(i), 5), 1],
+      [biquad(source, 'bandpass', i => 1250 - 400 * close(i), 6), 0.6],
+    );
+    const inhale = mul(
+      biquad(white(n, rand), 'bandpass', i => 900 + 500 * Math.min(1, t(i) / 0.7), 3),
+      envelope(n, [[0, 0], [0.2, 0.25], [0.65, 0.4], [0.8, 0]]),
+    );
+    const voiced = envelope(n, [[0, 0], [0.7, 0], [0.95, 1], [1.7, 0.8], [2.2, 0]]);
+    return fadeOut(layers([mul(vowel, voiced), 1], [inhale, 0.5]), 2.2, 2.35);
+  }),
+
+  // A cup from the thermos: a slurp with a few bubbles through it, then the
+  // gulp.
+  'sfx:sip': shot(1.1, n => {
+    const out = new Float32Array(n);
+    const rand = rng(121);
+    const s = samples(0.45);
+    mix(out, mul(bandpass(white(s, rand), 2600, 2), envelope(s, [[0, 0], [0.05, 0.7], [0.3, 1], [0.45, 0]])), 0.5, 0.05);
+    [0.12, 0.2, 0.31].forEach((at, k) => {
+      const b = samples(0.05);
+      const bloop = mul(osc(b, i => 600 + 120 * k + 1800 * i / b), envelope(b, [[0, 0], [0.004, 1], [0.05, 0]]));
+      mix(out, bloop, 0.25, at);
+    });
+    mix(out, thud(n, 240, 130, 0.06), 0.9, 0.62);
+    mix(out, lowpass(burst(n, rand, 10), 900), 0.3, 0.62);
+    return fadeOut(out, 0.95, 1.08);
+  }),
+
+  // Your own heartbeat, near empty: lub-dub at 72 bpm, four beats a loop.
+  // Silent between beats, so it loops without help; the game quickens it
+  // (rate) as stamina runs out.
+  'amb:heartbeat': loop(10 / 3, n => {
+    const out = new Float32Array(n);
+    const beat = n / 4 / SAMPLE_RATE;
+    for (let k = 0; k < 4; k++) {
+      mix(out, lowpass(thud(samples(0.3), 90, 45, 0.07), 300), 1, k * beat + 0.02);
+      mix(out, lowpass(thud(samples(0.3), 110, 55, 0.05), 350), 0.7, k * beat + 0.3);
+    }
+    return out;
+  }),
+
   // ── Threats ────────────────────────────────
   // The sleep demon: slow wet breaths — a wheezing inhale, a growled exhale.
   // Silent at both ends, so it loops without help.

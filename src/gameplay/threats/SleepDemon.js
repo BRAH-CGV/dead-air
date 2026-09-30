@@ -26,6 +26,7 @@ import { terrainHeightAt } from '../../gameobjects/MarsTerrain.js';
 // ─────────────────────────────────────────────
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting.';
+export const SLEEP_DEMON_NAP_KILL = 'You lay down with it in the base. You never woke up.';
 
 /** Stage → [room, anchor, stands outside]. Stage 0 is nowhere and 5 is
  *  computed from the player. */
@@ -85,6 +86,13 @@ export class SleepDemon extends Threat {
   update(dt) {
     this.logic.update(dt, this.ctx?.stamina?.value ?? 1);
     if (this.figure.object3d.visible) this._facePlayer();
+  }
+
+  /** A nap: the nearer it has come, the likelier it takes you asleep. */
+  onNap(rand) {
+    if (!this.logic.napKills(rand())) return false;
+    this.kill(SLEEP_DEMON_NAP_KILL);
+    return true;
   }
 
   /** Is where it would stand at `stage` in the player's view? */

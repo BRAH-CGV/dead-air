@@ -9,7 +9,7 @@ import { makeEngine } from '../../test/fakeRapier.js';
 import { GameObject } from '../../core/GameObject.js';
 import { terrainHeightAt } from '../../gameobjects/MarsTerrain.js';
 import { Stamina } from '../Stamina.js';
-import { SleepDemon, SLEEP_DEMON_KILL } from './SleepDemon.js';
+import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_NAP_KILL } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
 import { fakeAudioSystem } from '../../test/fakeAudio.js';
 
@@ -160,6 +160,17 @@ describe('SleepDemon', () => {
     demon.start(ctx);
     expect(demon.logic.stage).toBe(0);
     expect(figure.object3d.visible).toBe(false);
+  });
+
+  it('a nap with it in the base can be the last: it takes you in your sleep', () => {
+    demon.logic.stage = 4;
+    expect(demon.onNap(() => 0.99)).toBe(true);
+    expect(controller.fail).toHaveBeenCalledWith(SLEEP_DEMON_NAP_KILL);
+  });
+
+  it('a nap while it is nowhere near is safe', () => {
+    expect(demon.onNap(() => 0)).toBe(false);
+    expect(controller.fail).not.toHaveBeenCalled();
   });
 });
 

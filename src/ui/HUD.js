@@ -4,7 +4,7 @@
 // Three classes wrapping DOM elements defined in index.html:
 //
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
-//                      EVA suit indicator, stamina bar, oxygen gauge
+//                      EVA suit indicator, stamina bar, coffee, oxygen gauge
 //   RadarOverlay     – 2D canvas radar display with signal blips
 //   SignalReviewPanel– modal for save/delete after scanning a signal
 //
@@ -29,6 +29,8 @@ export class HUD {
     this._staminaFill = root?.querySelector('#hud-stamina-fill') ?? null;
     this._staminaShown = -1;
     this._staminaLevel = null;
+    this._coffee = root?.querySelector('#hud-coffee') ?? null;
+    this._coffeeShown = null;
     this._oxygen     = root?.querySelector('#hud-oxygen')      ?? null;
     this._oxygenFill = root?.querySelector('#hud-oxygen-fill') ?? null;
     this._oxygenShown = null;    // percent shown, or null while hidden
@@ -91,6 +93,17 @@ export class HUD {
       this._staminaLevel = level;
       this._stamina.dataset.level = level;
     }
+  }
+
+  /** The thermos: cups left, and the key that drinks one. Called every
+   *  frame, so it writes the DOM only when the count changes. */
+  setCoffee(cups, key) {
+    if (!this._coffee) return;
+    const shown = `${cups} ${key}`;
+    if (shown === this._coffeeShown) return;
+    this._coffeeShown = shown;
+    this._coffee.textContent = cups > 0 ? `Coffee ×${cups} [${key}]` : 'Thermos empty';
+    this._coffee.dataset.level = cups > 0 ? 'ok' : 'empty';
   }
 
   /** The suit's oxygen gauge: the tank left (0..1), or null to hide it

@@ -11,6 +11,9 @@ import { Component } from '../core/Component.js';
 //      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
 //      └──fail(reason)─────────▶ gameOver   (a threat caught the player)
 //
+// nap(hours) jumps the shift's clock; a nap through 6 AM ends the shift
+// there and then, on the same quota check.
+//
 // Meeting the quota early doesn't end the shift: the player still has to
 // hold out until 6 AM. From night 3 a saved signal only counts once it is
 // stored at the server console (SignalManager storage): the quota is met by
@@ -139,6 +142,17 @@ export class GameController extends Component {
     this.startNight(this.nightNumber);
   }
 
+  /** Sleep `hours` of the shift away (a nap on the bunk). Only during the
+   *  shift. Waking at or past 6 AM ends it at once, on the quota.
+   *  @returns {boolean} whether the player napped */
+  nap(hours) {
+    if (this.state !== 'playing') return false;
+    this.nightClock?.advanceHours(hours);
+    this._updateHUD();
+    this._checkShiftEnd();
+    return true;
+  }
+
   /** Go to bed. Only the morning after a successful shift: moves to the next
    *  night, or ends the run after the last one.
    *  @returns {boolean} whether the player slept */
@@ -177,12 +191,7 @@ export class GameController extends Component {
 
     // Update HUD every frame
     this._updateHUD();
-
-    // Check shift end
-    if (this.nightClock?.finished) {
-      if (this.signalManager?.isComplete()) this._morning();
-      else this._gameOver();
-    }
+    this._checkShiftEnd();
   }
 
   onDestroy() {
@@ -216,6 +225,13 @@ export class GameController extends Component {
     } else if (!this.satellite?.isScanning) {
       this.hud.setScanProgress(-1);
     }
+  }
+
+  /** 6 AM: morning with the quota met, a failed night without it. */
+  _checkShiftEnd() {
+    if (!this.nightClock?.finished) return;
+    if (this.signalManager?.isComplete()) this._morning();
+    else this._gameOver();
   }
 
   _endShift(state, prompt) {

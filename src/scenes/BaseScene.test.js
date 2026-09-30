@@ -34,6 +34,11 @@ import { Oxygen } from '../gameplay/Oxygen.js';
 import { OxygenSupply, OXYGEN_KILL } from '../components/OxygenSupply.js';
 import { ShadowRefresh } from '../components/ShadowRefresh.js';
 import { coplanarOverlaps } from '../test/coplanar.js';
+import { Thermos, THERMOS } from '../gameplay/Thermos.js';
+import { CoffeeThermos } from '../components/CoffeeThermos.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { Nap } from '../gameplay/Nap.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1277,5 +1282,78 @@ describe('BaseScene far scenery', () => {
         expect(o.castShadow, o.name).toBe(false);
       });
     }
+  });
+});
+
+describe('BaseScene fatigue', () => {
+  let engine, scene, gameplay;
+  const at = c => gameplay.components.indexOf(c);
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+  });
+
+  it("plays fatigue out after the drain, on the scene's stamina, lights and sound", () => {
+    const fx = gameplay.getComponent(FatigueEffects);
+    expect(fx).not.toBeNull();
+    expect(fx.stamina).toBe(scene.stamina);
+    expect(fx.controller).toBe(scene.gameController);
+    expect(fx.lights).toBe(scene.baseLights);
+    expect(fx.audio).toBe(scene.audio);
+    expect(fx.overlay).toBeInstanceOf(FatigueOverlay);
+    expect(at(fx)).toBeGreaterThan(at(gameplay.getComponent(StaminaDrain)));
+    expect(at(fx)).toBeGreaterThan(at(scene.audio));
+  });
+
+  it("writes BaseLights' 'dread' factor, 1 while rested", () => {
+    scene.baseLights.setFactor('dread', 0.5);
+    gameplay.getComponent(FatigueEffects).onUpdate(0.016);
+    expect(scene.baseLights.getFactor('dread')).toBe(1);
+  });
+
+  it('carries a thermos: the drink key takes a cup into the stamina', () => {
+    expect(scene.thermos).toBeInstanceOf(Thermos);
+    const coffee = gameplay.getComponent(CoffeeThermos);
+    expect(coffee.thermos).toBe(scene.thermos);
+    expect(coffee.stamina).toBe(scene.stamina);
+    expect(coffee.hud).toBe(scene.hud);
+
+    engine.keyBinds = { drink: 'KeyF' };
+    engine.input = { keys: {}, pressed: { KeyF: true }, mouse: { dx: 0, dy: 0 } };
+    scene.stamina.value = 0.3;
+    coffee.onUpdate(0.016);
+    expect(scene.thermos.cups).toBe(THERMOS.cups - 1);
+    expect(scene.stamina.value).toBeCloseTo(0.3 + THERMOS.restore);
+  });
+
+  it('fills the thermos again each night', () => {
+    scene.thermos.cups = 0;
+    gameplay.getComponent(StaminaDrain).onNightStart();
+    expect(scene.thermos.cups).toBe(THERMOS.cups);
+  });
+
+  it("lets a tired player nap on the bunk, asking tonight's threats first", () => {
+    const { bed } = scene.rooms.LivingQuarters;
+    expect(bed.nap).toBeInstanceOf(Nap);
+    expect(bed.nap.controller).toBe(scene.gameController);
+    expect(bed.nap.stamina).toBe(scene.stamina);
+    expect(bed.nap.threats).toBe(scene.threatDirector);
+  });
+
+  it('a nap on a night without the demon: an hour or two gone, rested', () => {
+    scene.nights.advance();                    // night 2: the Window Watchers
+    const { bed } = scene.rooms.LivingQuarters;
+    bed.nap.rand = () => 0.99;                 // an hour, no oversleep
+    scene.stamina.value = 0.3;
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toMatch(/Nap/);
+
+    bed.onInteract({});                        // no DOM: the fade goes black at once
+    expect(scene.stamina.value).toBe(1);
+    expect(scene.nightClock.timeString).toBe('1:00 AM');
+    expect(scene.gameController.state).toBe('playing');
   });
 });

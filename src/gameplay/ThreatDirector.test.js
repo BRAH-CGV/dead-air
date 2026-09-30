@@ -177,4 +177,24 @@ describe('ThreatDirector', () => {
     director.onUpdate(0.016);
     expect(director.active).toBe(list);
   });
+
+  it("onNap asks tonight's threats, and only tonight's, whether the nap ends the night", () => {
+    play(1);
+    director.onUpdate(0.016);
+    expect(director.onNap(() => 0)).toBe(false);          // the base Threat never does
+    demon.onNap = vi.fn(() => true);
+    watchers.onNap = vi.fn(() => true);
+    expect(director.onNap(() => 0)).toBe(true);
+    expect(demon.onNap).toHaveBeenCalledOnce();
+    expect(watchers.onNap).not.toHaveBeenCalled();         // not tonight's
+  });
+
+  it('onNap passes its rand to the threat', () => {
+    play(1);
+    director.onUpdate(0.016);
+    const rand = () => 0.5;
+    demon.onNap = vi.fn(() => false);
+    director.onNap(rand);
+    expect(demon.onNap).toHaveBeenCalledWith(rand);
+  });
 });

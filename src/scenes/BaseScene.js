@@ -31,6 +31,11 @@ import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
 import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
+import { Thermos } from '../gameplay/Thermos.js';
+import { Nap } from '../gameplay/Nap.js';
+import { CoffeeThermos } from '../components/CoffeeThermos.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { AudioSystem, dishMotorLevel } from '../audio/AudioSystem.js';
 import { Ambience } from '../audio/Ambience.js';
@@ -178,6 +183,7 @@ export class BaseScene extends Scene {
     this._addAudio();
     this._addOxygen();
     this._addThreats();
+    this._addFatigue();
     this._addCrtScreen();
     this._addShadowRefresh();
 
@@ -416,9 +422,10 @@ export class BaseScene extends Scene {
   }
 
   /** What every night, and every retry of one, puts back: the dispenser's
-   *  refill, the power and the suit's air. */
+   *  refill, the thermos, the power and the suit's air. */
   _startOfNight() {
     this.rooms.MainOffice.rationDispenser?.reset();
+    this.thermos?.refill();
     this.power?.reset();
     this.oxygen?.reset();
   }
@@ -582,6 +589,48 @@ export class BaseScene extends Scene {
     this._addSleepDemon();
     this._addWindowWatchers();
     this._addCameraEntity();
+  }
+
+  /** What low stamina does, and what the player can do about it besides
+   *  eating (Hayden's list):
+   *
+   *    CoffeeThermos   two cups a night on the drink key (F)
+   *    FatigueEffects  the tunnel, the lids, yawns, the heartbeat, and
+   *                    BaseLights' 'dread' factor
+   *    the bunk's nap  an hour or two of the shift for a full stamina bar,
+   *                    if tonight's threats let you wake (ThreatDirector.onNap)
+   *
+   *  After the threats, so the nap can ask the director; the effects read
+   *  the stamina StaminaDrain has just drained. */
+  _addFatigue() {
+    const gameplayGO = this.gameController.gameObject;
+    this.thermos = new Thermos();
+    gameplayGO.addComponent(new CoffeeThermos({
+      thermos:    this.thermos,
+      stamina:    this.stamina,
+      controller: this.gameController,
+      hud:        this.hud,
+      audio:      this.audio,
+      engine:     this.engine,
+    }));
+    this.fatigueEffects = gameplayGO.addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    new FatigueOverlay(),
+      audio:      this.audio,
+      lights:     this.baseLights,
+      listener:   this.engine.camera ?? null,
+      engine:     this.engine,
+    }));
+
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) {
+      bed.nap = new Nap({
+        controller: this.gameController,
+        stamina:    this.stamina,
+        threats:    this.threatDirector,
+      });
+    }
   }
 
   /** The terminal monitor's picture: a CRT radar shader on a plane over

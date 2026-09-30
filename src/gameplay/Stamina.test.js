@@ -53,3 +53,37 @@ describe('Stamina', () => {
     expect(s.value).toBe(1);
   });
 });
+
+describe('Stamina — caffeine', () => {
+  it('caffeinate(seconds) halves the drain for that long', () => {
+    const s = new Stamina({ drainPerSecond: 0.01 });
+    s.caffeinate(10);
+    s.update(10);
+    expect(s.value).toBeCloseTo(1 - 10 * 0.01 * STAMINA.caffeineDrainScale);
+    expect(s.caffeine).toBe(0);
+    s.update(10);
+    expect(s.value).toBeCloseTo(1 - 10 * 0.01 * STAMINA.caffeineDrainScale - 0.1);
+  });
+
+  it('a frame that runs past the caffeine drains at both rates', () => {
+    const s = new Stamina({ drainPerSecond: 0.01 });
+    s.caffeinate(4);
+    s.update(10);                       // 4 s at half, 6 s at full
+    expect(s.value).toBeCloseTo(1 - 4 * 0.005 - 6 * 0.01);
+  });
+
+  it('a second cup adds to what is left of the first', () => {
+    const s = new Stamina();
+    s.caffeinate(45);
+    s.update(15);
+    s.caffeinate(45);
+    expect(s.caffeine).toBeCloseTo(75);
+  });
+
+  it('reset() clears it', () => {
+    const s = new Stamina();
+    s.caffeinate(45);
+    s.reset();
+    expect(s.caffeine).toBe(0);
+  });
+});

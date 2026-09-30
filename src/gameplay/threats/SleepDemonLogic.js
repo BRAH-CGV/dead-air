@@ -35,6 +35,10 @@ export const SLEEP_DEMON = Object.freeze({
   viewMargin: 0.3,
   /** … and nearer than this. */
   viewRange: 40,
+  /** By stage, the chance a nap on the bunk is the last: nothing while it
+   *  is nowhere, a gamble while it is at the window or the quarters'
+   *  corridor end, certain once it is in the office corner or behind you. */
+  napRisk: Object.freeze([0, 0.05, 0.2, 0.5, 1, 1]),
 });
 
 /**
@@ -105,5 +109,11 @@ export class SleepDemonLogic {
       this._killed = true;
       this.onKill();
     }
+  }
+
+  /** The player lies down to nap. Does it take them?
+   *  @param {number} r  a roll, 0 ≤ r < 1 */
+  napKills(r) {
+    return r < this.tuning.napRisk[this.stage];
   }
 }

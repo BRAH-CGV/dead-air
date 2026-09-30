@@ -78,3 +78,70 @@ describe('Bed', () => {
     expect(loose.promptLabel).toBe('');
   });
 });
+
+describe('Bed — a nap during the shift', () => {
+  let controller, fade, nap, bed;
+
+  beforeEach(() => {
+    controller = { state: 'playing', sleep: vi.fn() };
+    fade = { play: vi.fn(onDark => { onDark(); return true; }) };
+    nap = { allowed: true, tired: true, take: vi.fn(() => 1) };
+    bed = new Bed();
+    bed.controller = controller;
+    bed.fade = fade;
+    bed.nap = nap;
+  });
+
+  const label = (dt = 0.016) => { bed.onUpdate(dt); return bed.promptLabel; };
+
+  it('offers a nap to a tired player, and says what it costs', () => {
+    expect(label()).toMatch(/^\[E\] Nap/);
+    expect(label()).toMatch(/hour/);
+  });
+
+  it("won't let a rested player sleep the shift away", () => {
+    nap.allowed = false;
+    nap.tired = false;
+    expect(label()).toMatch(/not tired/i);
+    expect(label()).not.toMatch(/\[E\]/);
+    bed.onInteract();
+    expect(fade.play).not.toHaveBeenCalled();
+  });
+
+  it('naps behind the fade, taking the nap once it is black', () => {
+    bed.onInteract();
+    expect(fade.play).toHaveBeenCalledOnce();
+    expect(nap.take).toHaveBeenCalledOnce();
+    expect(controller.sleep).not.toHaveBeenCalled();
+  });
+
+  it('a second press during the fade naps once', () => {
+    let goBlack;
+    fade.play = vi.fn(onDark => {
+      if (goBlack) return false;
+      goBlack = onDark;
+      return true;
+    });
+    bed.onInteract();
+    bed.onInteract();
+    goBlack();
+    expect(nap.take).toHaveBeenCalledOnce();
+  });
+
+  it('tells you how long you slept for a few seconds on waking', () => {
+    bed.onInteract();
+    expect(label()).toBe('You slept an hour.');
+    expect(label(5)).toMatch(/^\[E\] Nap/);
+
+    nap.take = vi.fn(() => 2);
+    bed.onInteract();
+    expect(label()).toMatch(/overslept/i);
+  });
+
+  it('says nothing about a nap you never woke from', () => {
+    nap.take = vi.fn(() => 0);
+    bed.onInteract();
+    controller.state = 'gameOver';
+    expect(label()).toBe('');
+  });
+});

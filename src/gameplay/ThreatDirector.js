@@ -82,6 +82,17 @@ export class ThreatDirector extends Component {
     for (let i = 0; i < this.active.length; i++) this.active[i].update(dt);
   }
 
+  /** The player lies down to nap. Asks tonight's threats in turn whether
+   *  that ends the night; the first that says so has killed.
+   *  @param {() => number} [rand]
+   *  @returns {boolean} the nap ended the night */
+  onNap(rand = Math.random) {
+    for (let i = 0; i < this.active.length; i++) {
+      if (this.active[i].onNap(rand)) return true;
+    }
+    return false;
+  }
+
   /** Stop everything. BaseScene.dispose() calls this — loadScene never
    *  reaches onDestroy. */
   dispose() {

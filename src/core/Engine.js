@@ -93,6 +93,7 @@ export class Engine {
     jump:     'Space',
     crouch:   'KeyC',
     interact: 'KeyE',
+    drink:    'KeyF',     // a cup from the thermos (Q is taken: it leaves the terminal)
     // Debug keys, in the same table so they remap with everything else.
     debugFly:   'KeyV',   // toggle the noclip fly camera
     fullbright: 'KeyB',   // toggle the unlit lighting mode

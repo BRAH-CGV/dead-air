@@ -77,6 +77,12 @@ export class NightClock {
     }
   }
 
+  /** Jump `hours` in-game hours ahead — a nap — firing the same callbacks
+   *  as that much time passing would. Clamps at endHour like update(). */
+  advanceHours(hours) {
+    this.update(hours * this.nightDuration / (this.endHour - this.startHour));
+  }
+
   pause()  { this.paused = true; }
   resume() { this.paused = false; }
 

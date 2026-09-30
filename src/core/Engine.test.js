@@ -136,3 +136,12 @@ describe('Engine.toggleLevelEditor (F2)', () => {
     expect(engine.levelEditor.enabled).toBe(false);   // open, then closed
   });
 });
+
+describe('Engine.keyBinds.drink', () => {
+  it('is F, a key no other action uses (Q is the terminal\'s exit)', () => {
+    const binds = new Engine().keyBinds;
+    expect(binds.drink).toBe('KeyF');
+    const others = Object.entries(binds).filter(([action]) => action !== 'drink').map(([, code]) => code);
+    expect(others).not.toContain('KeyF');
+  });
+});

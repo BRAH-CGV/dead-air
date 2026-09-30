@@ -303,6 +303,7 @@ const PLACED = {
   'amb:breathing':     { type: 'audio', url: 'assets/audio/breathing.wav' },
   'amb:camera-servo':  { type: 'audio', url: 'assets/audio/camera-servo.wav' },
   'amb:camera-tone':   { type: 'audio', url: 'assets/audio/camera-tone.wav' },
+  'amb:heartbeat':     { type: 'audio', url: 'assets/audio/heartbeat.wav' },
 
   'sfx:scan-tick':     { type: 'audio', url: 'assets/audio/scan-tick.wav' },
   'sfx:scan-lock':     { type: 'audio', url: 'assets/audio/scan-lock.wav' },
@@ -316,6 +317,8 @@ const PLACED = {
   'sfx:power-cut':     { type: 'audio', url: 'assets/audio/power-cut.wav' },
   'sfx:ration':        { type: 'audio', url: 'assets/audio/ration.wav' },
   'sfx:o2-warning':    { type: 'audio', url: 'assets/audio/o2-warning.wav' },
+  'sfx:yawn':          { type: 'audio', url: 'assets/audio/yawn.wav' },
+  'sfx:sip':           { type: 'audio', url: 'assets/audio/sip.wav' },
 };
 
 /**
