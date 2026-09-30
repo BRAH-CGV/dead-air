@@ -2,7 +2,8 @@
 // sounds  –  the recipe for every sound in public/assets/audio/
 // ─────────────────────────────────────────────
 // Each key matches a manifest entry, and its file is
-// assets/audio/<key stem>.wav. `node scripts/make-sounds.mjs` renders them
+// assets/audio/<key stem>.wav. (The .mp3 entries are recordings — the base's
+// hum and the wind outside — and have no recipe here.) `node scripts/make-sounds.mjs` renders them
 // all; change a recipe, re-run it, and the file changes with it.
 //
 //   amb:*  loops — room tones, machines, the threats' breathing and hum.
@@ -129,16 +130,6 @@ export const SOUNDS = {
     )), 1],
     [mul(chord(n, 6, [[45, 0.08], [90, 0.03]]), wobble(n, n, 3, 0.6)), 1],
   )),
-
-  // Outside, through the helmet: wind whose pitch and strength roll in gusts.
-  'amb:wind': loop(8, n => {
-    const centre = i => 380 + 220 * Math.sin(TAU * 2 * i / n) + 140 * Math.sin(TAU * 3 * i / n + 1);
-    return bed(n, 16, (len, r) => layers(
-      [biquad(white(len, r), 'bandpass', centre, 1.6), 1],
-      [biquad(white(len, r), 'bandpass', i => 2.6 * centre(i), 3), 0.25],
-      [lowpass(brown(len, r), 120), 0.8],
-    ), (x, p) => mul(x, wobble(x.length, p, 3, 0.45, 0.5)));
-  }),
 
   // ── Machines (positional) ──────────────────
   // A rack up close: mains hum through a transformer plus its fans.

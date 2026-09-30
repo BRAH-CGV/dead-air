@@ -491,6 +491,38 @@ Which of these was downloaded as `retro_futuristic_computer.glb` (now
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
+## Sounds
+
+Every `.wav` in `public/assets/audio/` is original: synthesised from the
+recipes in `src/audio/sounds.js` by `node scripts/make-sounds.mjs`. The two
+`.mp3` ambience beds are recordings the team supplied. What their files'
+own tags say is below; the source links are still to be recorded.
+
+### Base interior — TODO: source link, author, licence
+
+Tagged with the title "Lost" and nothing else. Supplied as
+`louder-rumbling-ethereal.mpeg`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/base-interior.mp3` |
+| **Manifest key** | `amb:base-interior` |
+| **Used for** | The machinery bed everywhere inside the base (`src/audio/Ambience.js`) |
+| **Modifications** | Renamed from `.mpeg`, otherwise as supplied |
+
+### Outside wind — TODO: source link
+
+Tagged with the artist Jerimee Richir and the licence CC0 (public domain — no
+attribution required, credited anyway). Supplied as
+`quieter-rumbling-windy.mpeg`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/outside-wind.mp3` |
+| **Manifest key** | `amb:outside-wind` |
+| **Used for** | The wind outside the base, and in the airlock while its hatch is open |
+| **Modifications** | Renamed from `.mpeg`, otherwise as supplied |
+
 ## Downloaded but unattributed — TODO
 
 These files sit in `public/assets/models/` with no source link on record.

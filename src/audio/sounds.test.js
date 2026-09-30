@@ -13,10 +13,12 @@ function stepRms(x) {
 }
 
 describe('sound recipes', () => {
-  it('every recipe has a manifest entry under assets/audio/, and every audio entry a recipe', () => {
-    const audio = Object.keys(ASSETS).filter(k => ASSETS[k].type === 'audio').sort();
-    expect(Object.keys(SOUNDS).sort()).toEqual(audio);
-    for (const key of audio) {
+  it('every recipe has a .wav under assets/audio/, and every .wav a recipe (recordings are .mp3)', () => {
+    const wav = Object.keys(ASSETS)
+      .filter(k => ASSETS[k].type === 'audio' && ASSETS[k].url.endsWith('.wav'))
+      .sort();
+    expect(Object.keys(SOUNDS).sort()).toEqual(wav);
+    for (const key of wav) {
       expect(ASSETS[key].url).toBe(`assets/audio/${key.slice(key.indexOf(':') + 1)}.wav`);
     }
   });
@@ -53,13 +55,14 @@ describe('sound recipes', () => {
   });
 
   it('is deterministic: rebuilding gives the same samples', () => {
-    const key = 'amb:wind';
+    const key = 'amb:office';
     expect(renderSound(key)).toEqual(rendered.get(key));
   });
 
   it('covers what package E asks for: rooms, machines, threats and the sting', () => {
+    // The wind outside is the team's recording (amb:outside-wind), not a recipe.
     for (const key of [
-      'amb:office', 'amb:server-room', 'amb:quarters', 'amb:corridor', 'amb:airlock', 'amb:wind',
+      'amb:office', 'amb:server-room', 'amb:quarters', 'amb:corridor', 'amb:airlock',
       'amb:server-hum', 'amb:generator', 'amb:dish-motor', 'sfx:scan-tick', 'sfx:scan-lock',
       'sfx:save', 'sfx:delete', 'sfx:airlock-hiss', 'sfx:airlock-clunk', 'sfx:chime',
       'amb:breathing', 'sfx:glass-tap', 'amb:camera-servo', 'amb:camera-tone', 'sfx:death-sting',

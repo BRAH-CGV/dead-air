@@ -55,7 +55,16 @@ describe('manifest', () => {
     })).toContainEqual(expect.stringContaining("only models can have 'physics'"));
   });
 
-  it('preloads every sound, and keeps them under the 10 MB audio budget in mono', () => {
+  it("the base's two ambience beds are the team's recordings, as .mp3 files", () => {
+    for (const key of ['amb:base-interior', 'amb:outside-wind']) {
+      expect(ASSETS[key], key).toEqual({ type: 'audio', url: `assets/audio/${key.slice(4)}.mp3` });
+      expect(statSync(new URL(`../../public/${ASSETS[key].url}`, import.meta.url)).size, key).toBeGreaterThan(0);
+    }
+    // The outside recording replaced the synthesised wind.
+    expect(ASSETS['amb:wind']).toBeUndefined();
+  });
+
+  it('preloads every sound, and keeps them under the 10 MB download budget', () => {
     const audio = Object.entries(ASSETS).filter(([, e]) => e.type === 'audio');
     expect(audio.length).toBeGreaterThan(0);
     let bytes = 0;

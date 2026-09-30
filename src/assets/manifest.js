@@ -280,12 +280,17 @@ const PLACED = {
   // Original, synthesised by `node scripts/make-sounds.mjs` from the recipes
   // in src/audio/sounds.js — edit a recipe and re-run it, never the .wav.
   // Mono 16-bit WAV, ~3 MB in all. 'amb:' keys loop; 'sfx:' keys play once.
+  //
+  // The two .mp3 beds are recordings, not recipes (see ATTRIBUTIONS.md): the
+  // base's machinery everywhere indoors, and the wind outside. Each room's
+  // own tone plays over them — see src/audio/Ambience.js.
+  'amb:base-interior': { type: 'audio', url: 'assets/audio/base-interior.mp3' },
+  'amb:outside-wind':  { type: 'audio', url: 'assets/audio/outside-wind.mp3' },
   'amb:office':        { type: 'audio', url: 'assets/audio/office.wav' },
   'amb:server-room':   { type: 'audio', url: 'assets/audio/server-room.wav' },
   'amb:quarters':      { type: 'audio', url: 'assets/audio/quarters.wav' },
   'amb:corridor':      { type: 'audio', url: 'assets/audio/corridor.wav' },
   'amb:airlock':       { type: 'audio', url: 'assets/audio/airlock.wav' },
-  'amb:wind':          { type: 'audio', url: 'assets/audio/wind.wav' },
   'amb:server-hum':    { type: 'audio', url: 'assets/audio/server-hum.wav' },
   'amb:generator':     { type: 'audio', url: 'assets/audio/generator.wav' },
   'amb:dish-motor':    { type: 'audio', url: 'assets/audio/dish-motor.wav' },
