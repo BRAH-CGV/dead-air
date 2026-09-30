@@ -142,6 +142,10 @@ export class BaseScene extends Scene {
   transitions = null;
   /** Which monsters run tonight. @type {ThreatDirector|null} */
   threatDirector = null;
+  /** The valley's ground, rocks and belt: millions of triangles, hidden
+   *  while the player is in a room that cannot see out.
+   *  @type {GameObject[]} */
+  farScenery = [];
 
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
@@ -675,6 +679,7 @@ export class BaseScene extends Scene {
     // of the front door step-free.
     terrain.object3d.position.y = -0.01;
     this._outside.addChild(terrain);
+    this.farScenery.push(terrain);
     this._ownResourcesOf(terrain);
   }
 
@@ -781,6 +786,7 @@ export class BaseScene extends Scene {
       // know about them or they survive a scene reload.
       this._ownResourcesOf(field);
     }
+    this.farScenery.push(rocks, belt);
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
@@ -874,6 +880,30 @@ export class BaseScene extends Scene {
   /** The player moved between rooms (null = a corridor or outside). */
   _onRoomChange(room, _previous) {
     this._applyRoomFog(room);
+    this._showFarScenery(room);
+  }
+
+  /** The belt is instanced across the whole valley, so its bounds sit in
+   *  every view frustum and frustum culling never drops it: from anywhere in
+   *  the base, three million triangles are drawn behind the walls. A room
+   *  that cannot see out skips them. Nothing in farScenery casts a shadow or
+   *  gives light, so hiding it redraws no shadow map and recompiles nothing. */
+  _showFarScenery(room) {
+    const visible = this._seesValley(room);
+    for (const go of this.farScenery) go.object3d.visible = visible;
+  }
+
+  /** Corridors and outside (room = null), a room with a window, and the
+   *  airlock, whose hatch opens onto the valley. The side rooms' doorways
+   *  line up with the office's side doors, never with its window, so they
+   *  are the rooms that see nothing. */
+  _seesValley(room) {
+    return !room || this._hasWindow(room) || !!room.hatch;
+  }
+
+  /** A sill above the floor makes an opening a window (Room's schema). */
+  _hasWindow(room) {
+    return !!room.openings?.some(o => (o.sill ?? 0) > 0);
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the
@@ -895,7 +925,7 @@ export class BaseScene extends Scene {
    *  fog follows; nobody has to remember this function exists. */
   _fogDensityFor(room) {
     if (!room) return OUTDOOR_FOG_DENSITY;
-    if (room.openings?.some(o => (o.sill ?? 0) > 0)) return OUTDOOR_FOG_DENSITY;
+    if (this._hasWindow(room)) return OUTDOOR_FOG_DENSITY;
     return ROOM_FOG_DENSITY[room.name] ?? OUTDOOR_FOG_DENSITY;
   }
 

@@ -1194,3 +1194,57 @@ describe('BaseScene shadows', () => {
     expect(ceiling.shadow.needsUpdate).toBe(true);
   });
 });
+
+// The valley's grass, trees, rocks and ground are over three million
+// triangles, drawn from anywhere in the base: instanced across the whole
+// belt, they sit in every view frustum, walls or no walls. From a room that
+// cannot see out they are pure cost.
+describe('BaseScene far scenery', () => {
+  let engine, scene, sys;
+
+  const shown = () => scene.farScenery.map(go => go.object3d.visible);
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    sys = engine.player.getComponent(RoomTransitionSystem);
+  });
+
+  it('is the valley floor and what grows and lies on it: the terrain, the rocks and the belt', () => {
+    expect(scene.farScenery.map(go => go.name)).toEqual(['MarsTerrain', 'MarsRocks', 'MarsVegetation']);
+    expect(shown()).toEqual([true, true, true]);
+  });
+
+  it('hides it in a room with no view out, and shows it again on the way back out', () => {
+    sys.onRoomChange(scene.rooms.ServerRoom, null);
+    expect(shown()).toEqual([false, false, false]);
+    sys.onRoomChange(null, scene.rooms.ServerRoom);
+    expect(shown()).toEqual([true, true, true]);
+    sys.onRoomChange(scene.rooms.LivingQuarters, null);
+    expect(shown()).toEqual([false, false, false]);
+  });
+
+  it('keeps it wherever the valley is in view: the office window, the airlock hatch, corridors and outside', () => {
+    for (const room of [scene.rooms.MainOffice, scene.rooms.Airlock, null]) {
+      sys.onRoomChange(scene.rooms.ServerRoom, null);
+      sys.onRoomChange(room, scene.rooms.ServerRoom);
+      expect(shown(), room?.name ?? 'corridor or outside').toEqual([true, true, true]);
+    }
+  });
+
+  it('reads the view off the room: give a sealed room a window and the valley stays', () => {
+    scene.rooms.ServerRoom.openings.push({ side: 'back', width: 2, height: 1.2, sill: 1 });
+    sys.onRoomChange(scene.rooms.ServerRoom, null);
+    expect(shown()).toEqual([true, true, true]);
+  });
+
+  it('holds no light and nothing that casts a shadow, so hiding it redraws no shadow and recompiles no shader', () => {
+    for (const go of scene.farScenery) {
+      go.object3d.traverse(o => {
+        expect(o.isLight ?? false, o.name).toBe(false);
+        expect(o.castShadow, o.name).toBe(false);
+      });
+    }
+  });
+});
