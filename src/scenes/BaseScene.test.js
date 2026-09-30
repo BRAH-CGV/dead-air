@@ -26,6 +26,9 @@ import { StaminaDrain } from '../components/StaminaDrain.js';
 import { AudioSystem } from '../audio/AudioSystem.js';
 import { Ambience } from '../audio/Ambience.js';
 import { SoundCues } from '../audio/SoundCues.js';
+import { BaseLights } from '../gameplay/BaseLights.js';
+import { Power, EMERGENCY_LEVEL } from '../gameplay/Power.js';
+import { GeneratorSwitch, RESTORE_POWER } from '../components/GeneratorSwitch.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -248,14 +251,16 @@ describe('BaseScene', () => {
     expect(-cam.left).toBeGreaterThanOrEqual(extent);
   });
 
-  it('builds the outside area: satellite and generator stand-in, outside every room', () => {
+  it('builds the outside area: satellite and generator, outside every room', () => {
     const outside = sceneRoot.find('Outside');
     const satCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:dish-tower');
     expect(satCall[1].type).toBe(Satellite);
     expect(outside.find('Satellite')).not.toBeNull();
 
+    const genCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:generator');
+    expect(genCall[1].name).toBe('Generator');
     const generator = outside.find('Generator');
-    expect(generator.placeholderFor).toBe('generator.glb');
+    expect(generator).toBe(scene.generator);
     for (const room of Object.values(scene.rooms)) {
       expect(room.containsPoint(worldPos(generator)), room.name).toBe(false);
     }
@@ -289,17 +294,17 @@ describe('BaseScene', () => {
     }
   });
 
-  it('the generator is a raycastable Interactable stub that toggles power (phase 10)', () => {
+  it("the generator is a raycastable lever on the base's power", () => {
     const generator = sceneRoot.find('Outside').find('Generator');
-    const interactable = generator.getComponent(Interactable);
-    expect(interactable).not.toBeNull();
+    const lever = generator.getComponent(Interactable);
+    expect(lever).toBeInstanceOf(GeneratorSwitch);
     expect(engine._bodyToGO.get(generator.rigidBody.handle)).toBe(generator);
 
-    expect(generator.powerOn).toBe(true);
-    interactable.onInteract({});
-    expect(generator.powerOn).toBe(false);
-    interactable.onInteract({});
-    expect(generator.powerOn).toBe(true);
+    expect(scene.power.on).toBe(true);
+    lever.onInteract({});
+    expect(scene.power.on).toBe(false);
+    lever.onInteract({});
+    expect(scene.power.on).toBe(true);
   });
 
   it('opens every interior door from night 1, and keeps them open every night', () => {
@@ -856,7 +861,7 @@ describe('BaseScene audio', () => {
     expect(generator.level).toBe(1);
     expect(dishMotor.level).toBe(0);
 
-    scene.generator.powerOn = false;
+    scene.power.set(false);
     scene.satellite.velYaw = scene.satellite.maxRotationSpeed / 2;
     scene.audio.onUpdate(1 / 60);
     expect(generator.level).toBe(0);
@@ -885,5 +890,113 @@ describe('BaseScene audio', () => {
     const dispose = vi.spyOn(scene.audio, 'dispose');
     scene.dispose();
     expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene power', () => {
+  let engine, scene, gameplay;
+
+  const runPower = seconds => {
+    for (let t = 0; t < seconds; t += 1 / 60) scene.power.onUpdate(1 / 60);
+  };
+  const pointLight = (room, group) => room.root.find(group).object3d.children.find(o => o.isPointLight);
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+  });
+
+  it('puts every light the rooms and corridors run off the power on one BaseLights, and hands it to the threats', () => {
+    expect(scene.baseLights).toBeInstanceOf(BaseLights);
+    let count = 0;
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      for (const obj of part.lights) {
+        expect(scene.baseLights.has(obj), `${part.name}: ${obj.type}`).toBe(true);
+        count++;
+      }
+    }
+    expect(count).toBeGreaterThan(10);
+    expect(scene.baseLights.has(scene.rooms.Airlock.beacon)).toBe(false);
+    expect(scene.threatContext.lights).toBe(scene.baseLights);
+  });
+
+  it('runs the Power on GameplaySystems, driving that BaseLights, ahead of the threats', () => {
+    expect(scene.power).toBeInstanceOf(Power);
+    expect(gameplay.getComponent(Power)).toBe(scene.power);
+    expect(scene.power.lights).toBe(scene.baseLights);
+    expect(gameplay.components.indexOf(scene.power))
+      .toBeLessThan(gameplay.components.indexOf(scene.threatDirector));
+  });
+
+  it('the lever cuts the base to its emergency lights, and brings them back', () => {
+    const ceiling = pointLight(scene.rooms.MainOffice, 'CeilingLight');
+    const full = ceiling.intensity;
+    const beacon = scene.rooms.Airlock.beacon.intensity;
+    const lever = scene.generator.getComponent(GeneratorSwitch);
+    expect(lever.power).toBe(scene.power);
+
+    lever.onInteract({});
+    runPower(1);
+    expect(ceiling.intensity).toBeCloseTo(full * EMERGENCY_LEVEL);
+    expect(scene.rooms.Airlock.beacon.intensity).toBe(beacon);
+    expect(lever.promptLabel).toBe(RESTORE_POWER);
+
+    lever.onInteract({});
+    runPower(1);
+    expect(ceiling.intensity).toBe(full);
+  });
+
+  it('with no power the terminal will not start and the dish stops, until it comes back', () => {
+    scene.power.set(false);
+    expect(scene.terminal.powered).toBe(false);
+    expect(scene.satellite.powered).toBe(false);
+    scene.terminal.enter();
+    expect(scene.terminal.state).toBe('idle');
+
+    scene.power.set(true);
+    expect(scene.terminal.powered).toBe(true);
+    expect(scene.satellite.powered).toBe(true);
+  });
+
+  it('the airlock still cycles with the power off: it runs on its own battery', () => {
+    const airlock = scene.rooms.Airlock;
+    scene.power.set(false);
+    runPower(1);
+    scene.suit.toggle();
+    for (let i = 0; i < 60 * 3; i++) airlock.update(1 / 60);
+    expect(airlock.state).toBe('depressurised');
+    expect(airlock.hatch.locked).toBe(false);
+
+    scene.suit.toggle();
+    for (let i = 0; i < 60 * 3; i++) airlock.update(1 / 60);
+    expect(airlock.state).toBe('pressurised');
+  });
+
+  it('a cut sounds from the generator; putting it back does not', () => {
+    const play = vi.spyOn(scene.audio, 'play');
+    scene.power.set(false);
+    expect(play).toHaveBeenCalledWith('sfx:power-cut', expect.objectContaining({ at: scene.generator.object3d }));
+    play.mockClear();
+    scene.power.set(true);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it('a new night, or a retry, starts with the power on', () => {
+    scene.power.set(false);
+    runPower(1);
+    gameplay.getComponent(StaminaDrain).onNightStart();
+    expect(scene.power.on).toBe(true);
+    expect(scene.baseLights.getFactor('power')).toBe(1);
+  });
+
+  it('dispose() hands every light its full brightness back', () => {
+    const ceiling = pointLight(scene.rooms.MainOffice, 'CeilingLight');
+    const full = ceiling.intensity;
+    scene.power.set(false);
+    runPower(1);
+    scene.dispose();
+    expect(ceiling.intensity).toBe(full);
   });
 });

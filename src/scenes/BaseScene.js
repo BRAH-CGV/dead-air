@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { Satellite } from '../gameobjects/Satellite.js';
@@ -11,7 +10,6 @@ import { createCommTowers } from '../gameobjects/CommTowers.js';
 import { createPerimeterFence, FENCE } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
-import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
@@ -37,6 +35,9 @@ import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { AudioSystem, dishMotorLevel } from '../audio/AudioSystem.js';
 import { Ambience } from '../audio/Ambience.js';
 import { SoundCues } from '../audio/SoundCues.js';
+import { BaseLights } from '../gameplay/BaseLights.js';
+import { Power } from '../gameplay/Power.js';
+import { GeneratorSwitch } from '../components/GeneratorSwitch.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -159,6 +160,7 @@ export class BaseScene extends Scene {
     this._buildOutside();
     this._spawnPlayer();
     this._addGameplaySystems();
+    this._addPower();
     this._addSignalStorage();
     this._addStamina();
     this._addAudio();
@@ -183,6 +185,7 @@ export class BaseScene extends Scene {
   dispose() {
     this.threatDirector?.dispose();
     this.audio?.dispose();
+    this.baseLights?.restore();
     this._offNightStart?.();
     this._offSuitHud?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
@@ -392,8 +395,42 @@ export class BaseScene extends Scene {
       stamina:      this.stamina,
       controller:   this.gameController,
       hud:          this.hud,
-      onNightStart: () => rationDispenser?.reset(),
+      onNightStart: () => this._startOfNight(),
     }));
+  }
+
+  /** What every night, and every retry of one, puts back: the dispenser's
+   *  refill and the power. */
+  _startOfNight() {
+    this.rooms.MainOffice.rationDispenser?.reset();
+    this.power?.reset();
+  }
+
+  // ──────────────────────────────────────────
+  // Power
+  // ──────────────────────────────────────────
+  /** The generator feeds the base. Every room's and corridor's lights go on
+   *  one BaseLights; Power drives its 'power' factor, and the generator's
+   *  lever switches it. A cut leaves the emergency glow, kills the terminal
+   *  and parks the dish. The airlock runs on its own battery (its beacon is
+   *  not registered, and nothing here touches its doors), so a cut can never
+   *  shut the player outside. On GameplaySystems before the threats, which
+   *  read the lights. */
+  _addPower() {
+    const lights = this.baseLights = new BaseLights();
+    for (const part of [...Object.values(this.rooms), ...Object.values(this.corridors)]) {
+      lights.register(part.lights);
+    }
+
+    const power = this.power = this.gameController.gameObject.addComponent(new Power({ lights }));
+    this.generator.addComponent(new GeneratorSwitch()).bind(power);
+
+    const cut = { at: this.generator.object3d };
+    power.onChange(on => {
+      this.terminal.setPowered(on);
+      this.satellite.powered = on;
+      if (!on) this.audio?.play('sfx:power-cut', cut);
+    });
   }
 
   // ──────────────────────────────────────────
@@ -436,7 +473,7 @@ export class BaseScene extends Scene {
       { volume: 0.5, refDistance: 3 }).setLevel(1);
     const generator = audio.positional('amb:generator', this.generator.object3d,
       { volume: 0.8, refDistance: 4 });
-    audio.follow(generator, { level: () => (this.generator.powerOn ? 1 : 0) });
+    audio.follow(generator, { level: () => (this.power.on ? 1 : 0) });
     const dishMotor = audio.positional('amb:dish-motor', this.satellite.object3d,
       { volume: 0.7, refDistance: 12 });
     audio.follow(dishMotor, { level: () => dishMotorLevel(this.satellite) });
@@ -471,7 +508,7 @@ export class BaseScene extends Scene {
       hud:         this.hud,
       stamina:     this.stamina,
       audio:       this.audio,
-      lights:      null,
+      lights:      this.baseLights,
     };
     this.threatDirector = new ThreatDirector({
       controller: this.gameController,
@@ -690,18 +727,10 @@ export class BaseScene extends Scene {
     // lintel. Position and heading placed by hand in the level editor (F2).
     this._addBuggy([-7.79, 10.01], THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). Out
-    // the office's front door, where the player has to go to cut power.
-    const generator = this.generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
-    generator.powerOn = true;
-    generator.addComponent(new class extends Interactable {
-      promptLabel = '[E] Cut power';
-      onInteract() {
-        generator.powerOn = !generator.powerOn;
-        // TODO: cut every room's lights when powerOn is false (breaker panel).
-        console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
-      }
-    }());
+    // The generator, out the office's front door: the player has to suit
+    // up and go out to cut the power. Its lever is wired in _addPower.
+    this.generator = engine.spawnModel('model:generator', { name: 'Generator', position: [7, 0, 9] });
+    this._adopt(this._outside, this.generator);
   }
 
   /** Half extents of the built base on the ground, for the scenery to clear.
@@ -740,31 +769,6 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
-  }
-
-  /** Solid box standing in for a model that hasn't been sourced yet. */
-  _addStandIn(name, file, position, size, color) {
-    const { world } = this.engine;
-    const go = new GameObject(name);
-    go.object3d.position.set(...position);
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(...size)),
-      this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.3 })),
-    );
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...position));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2), body);
-    go.rigidBody = body;
-    go.collider  = collider;
-    go.colliders = [collider];
-    go._originalSize = [...size];
-    go.placeholderFor = file;
-    this.engine._bodyToGO?.set(body.handle, go);
-
-    this._outside.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────

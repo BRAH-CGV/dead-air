@@ -102,6 +102,17 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  */
 const PLACED = {
   // ── Models ──────────────────────────────────
+  // Outside the front door; its lever cuts the base's power. Downloaded
+  // 4.52 × 2.80 × 2.00 units with its origin 0.2 above the floor: scaled
+  // to 2.4 × 1.48 × 1.06 m, a skid-mounted set a person stands beside,
+  // and its pivot dropped to the floor.
+  'model:generator': {
+    type: 'model',
+    url: 'assets/models/generator.glb',
+    physics: 'static',
+    scale: 0.53,
+    origin: 'floor',
+  },
   'model:colony-rover': {
     type: 'model',
     url: 'assets/models/colony-rover.glb',
@@ -378,11 +389,6 @@ const LIBRARY = {
   'model:door-interior': {
     type: 'model',
     url: 'assets/models/door-interior.glb',
-    physics: 'static',
-  },
-  'model:generator': {
-    type: 'model',
-    url: 'assets/models/generator.glb',
     physics: 'static',
   },
   'model:light-ceiling': {
