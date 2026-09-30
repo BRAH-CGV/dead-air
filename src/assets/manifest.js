@@ -377,11 +377,6 @@ const LIBRARY = {
     type: 'model',
     url: 'assets/models/bush.glb',
   },
-  'model:break-panel': {
-    type: 'model',
-    url: 'assets/models/break-panel.glb',
-    physics: 'static',
-  },
   'model:crate': {
     type: 'model',
     url: 'assets/models/crate.glb',

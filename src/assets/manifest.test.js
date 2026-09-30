@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { statSync } from 'node:fs';
+import { statSync, readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
 
@@ -78,6 +79,37 @@ describe('manifest', () => {
 
   it('has no validation problems', () => {
     expect(validateManifest(ASSETS)).toEqual([]);
+  });
+});
+
+// Everything under public/ ships in the Moodle zip, so a file nothing loads
+// is dead weight in it. Sources kept for later (unused models, the monster
+// downloads) live in source-assets/ instead.
+describe('what ships in public/', () => {
+  const PUBLIC = new URL('../../public/', import.meta.url);
+  /** Every file under public/, as a url relative to it. */
+  const shipped = readdirSync(PUBLIC, { recursive: true, withFileTypes: true })
+    .filter(d => d.isFile())
+    .map(d => `${d.parentPath ?? d.path}/${d.name}`.replaceAll('\\', '/').split('/public/').pop());
+  /** Loaded by path rather than by key: the signal images, numbered. */
+  const LOADED_BY_PATH = /^assets\/signals\/signal-\d+\.png$/;
+
+  it('is only what the game loads: every file is a manifest url or a signal image', () => {
+    const urls = new Set(Object.values(ASSETS).map(e => e.url));
+    expect(shipped.length).toBeGreaterThan(0);
+    const unused = shipped.filter(f => !urls.has(f) && !LOADED_BY_PATH.test(f));
+    expect(unused).toEqual([]);
+  });
+
+  it('holds no two identical files', () => {
+    const seen = new Map();
+    const duplicates = [];
+    for (const file of shipped) {
+      const hash = createHash('sha1').update(readFileSync(new URL(file, PUBLIC))).digest('hex');
+      if (seen.has(hash)) duplicates.push(`${file} = ${seen.get(hash)}`);
+      else seen.set(hash, file);
+    }
+    expect(duplicates).toEqual([]);
   });
 });
 
