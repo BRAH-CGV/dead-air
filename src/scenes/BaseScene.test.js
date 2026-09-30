@@ -23,6 +23,9 @@ import { CameraEntity } from '../gameplay/threats/CameraEntity.js';
 import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
+import { AudioSystem } from '../audio/AudioSystem.js';
+import { Ambience } from '../audio/Ambience.js';
+import { SoundCues } from '../audio/SoundCues.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -799,5 +802,88 @@ describe('BaseScene threats', () => {
     const stop = vi.spyOn(scene.threatDirector, 'dispose');
     scene.dispose();
     expect(stop).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene audio', () => {
+  let engine, scene, gameplay;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+  });
+
+  it('runs one AudioSystem on GameplaySystems, before the threats, and hands it to them', () => {
+    expect(scene.audio).toBeInstanceOf(AudioSystem);
+    expect(gameplay.getComponent(AudioSystem)).toBe(scene.audio);
+    expect(scene.threatContext.audio).toBe(scene.audio);
+    expect(gameplay.components.indexOf(scene.audio))
+      .toBeLessThan(gameplay.components.indexOf(scene.threatDirector));
+  });
+
+  it("follows the player with the ambience, and cues the terminal, the shift and the airlock", () => {
+    const ambience = gameplay.getComponent(Ambience);
+    expect(ambience.audio).toBe(scene.audio);
+    expect(ambience.transitions).toBe(scene.transitions);
+    expect(ambience.airlock).toBe(scene.rooms.Airlock);
+
+    const player = engine.player.object3d.position;
+    const standIn = where => {
+      player.copy(where);
+      scene.transitions.onUpdate(1 / 60);
+      ambience.onUpdate(1 / 60);
+    };
+    standIn(scene.corridors.OfficeToServer.bounds().getCenter(new THREE.Vector3()));
+    expect(scene.audio.ambience).toEqual({ bed: 'amb:base-interior', room: 'amb:corridor' });
+    standIn(scene.rooms.ServerRoom.bounds().getCenter(new THREE.Vector3()));
+    expect(scene.audio.ambience).toEqual({ bed: 'amb:base-interior', room: 'amb:server-room' });
+    standIn(scene.satellite.object3d.position);
+    expect(scene.audio.ambience).toEqual({ bed: 'amb:outside-wind', room: null });
+
+    const cues = gameplay.getComponent(SoundCues);
+    expect(cues.audio).toBe(scene.audio);
+    expect(cues.terminal).toBe(scene.terminal);
+    expect(cues.controller).toBe(scene.gameController);
+    expect(cues.airlock).toBe(scene.rooms.Airlock);
+  });
+
+  it('the machines hum as hard as they work: the racks always, the generator while on, the dish as it slews', () => {
+    const { serverHum, generator, dishMotor } = scene.audioEmitters;
+    scene.audio.onUpdate(1 / 60);
+    expect(serverHum.level).toBe(1);
+    expect(generator.level).toBe(1);
+    expect(dishMotor.level).toBe(0);
+
+    scene.generator.powerOn = false;
+    scene.satellite.velYaw = scene.satellite.maxRotationSpeed / 2;
+    scene.audio.onUpdate(1 / 60);
+    expect(generator.level).toBe(0);
+    expect(dishMotor.level).toBeCloseTo(0.5);
+  });
+
+  it('blips on save and delete, and the dispenser sounds a ration from where it stands', () => {
+    const play = vi.spyOn(scene.audio, 'play');
+    for (const [obj, fn] of [
+      [scene.terminal, 'saveSignal'], [scene.terminal, 'deleteSignal'],
+      [scene.gameController, 'onSignalSaved'], [scene.gameController, 'onSignalDeleted'],
+    ]) vi.spyOn(obj, fn).mockImplementation(() => {});
+
+    scene.reviewPanel._saveCb();
+    expect(play.mock.calls.at(-1)[0]).toBe('sfx:save');
+    scene.reviewPanel._deleteCb();
+    expect(play.mock.calls.at(-1)[0]).toBe('sfx:delete');
+
+    const dispenser = scene.rooms.MainOffice.rationDispenser;
+    dispenser.stamina.value = 0.2;
+    dispenser.onInteract({});
+    expect(play).toHaveBeenLastCalledWith('sfx:ration', expect.objectContaining({ at: dispenser.transform }));
+  });
+
+  it('silences everything on dispose', () => {
+    const dispose = vi.spyOn(scene.audio, 'dispose');
+    scene.dispose();
+    expect(dispose).toHaveBeenCalled();
   });
 });

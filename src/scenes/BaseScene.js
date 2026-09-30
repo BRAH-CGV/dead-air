@@ -34,6 +34,9 @@ import { SleepDemon } from '../gameplay/threats/SleepDemon.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { AudioSystem, dishMotorLevel } from '../audio/AudioSystem.js';
+import { Ambience } from '../audio/Ambience.js';
+import { SoundCues } from '../audio/SoundCues.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -158,6 +161,7 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addSignalStorage();
     this._addStamina();
+    this._addAudio();
     this._addThreats();
 
     console.timeEnd('BaseScene.build');
@@ -178,6 +182,7 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this.threatDirector?.dispose();
+    this.audio?.dispose();
     this._offNightStart?.();
     this._offSuitHud?.();
     // Scene teardown never resets scene.fog, so hand back what _addSky
@@ -321,10 +326,12 @@ export class BaseScene extends Scene {
     this.reviewPanel.onSave(() => {
       this.terminal.saveSignal();
       this.gameController.onSignalSaved();
+      this.audio?.play('sfx:save', { volume: 0.6 });
     });
     this.reviewPanel.onDelete(() => {
       this.terminal.deleteSignal();
       this.gameController.onSignalDeleted();
+      this.audio?.play('sfx:delete', { volume: 0.6 });
     });
 
     // One night number across the scene. NightManager owns it; the
@@ -390,6 +397,59 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Sound
+  // ──────────────────────────────────────────
+  /** One AudioSystem for the scene, on GameplaySystems before the threats
+   *  so they find it in their context. Around it:
+   *
+   *    Ambience   the base's machinery or the wind, with the room's tone over it
+   *    SoundCues  the scanner, the shift's end and the airlock, off their state
+   *    emitters   the racks, the generator and the dish drive, each as loud
+   *               as it is working
+   *
+   *  Without Web Audio (tests, a locked-down browser) every call is a no-op. */
+  _addAudio() {
+    const gameplayGO = this.gameController.gameObject;
+    const audio = this.audio = gameplayGO.addComponent(new AudioSystem({
+      camera: this.engine.camera ?? null,
+      assets: this.engine.assets,
+    }));
+    const { Airlock: airlock } = this.rooms;
+
+    gameplayGO.addComponent(new Ambience({
+      audio,
+      transitions: this.transitions,
+      corridors:   Object.values(this.corridors),
+      player:      this.engine.player.object3d,
+      airlock,
+    }));
+    gameplayGO.addComponent(new SoundCues({
+      audio,
+      terminal:   this.terminal,
+      controller: this.gameController,
+      airlock,
+      airlockAt:  airlock?.root.object3d ?? null,
+    }));
+
+    const rack = this.rooms.ServerRoom.root.find('ServerRack_2');
+    const serverHum = audio.positional('amb:server-hum', (rack ?? this.rooms.ServerRoom.root).object3d,
+      { volume: 0.5, refDistance: 3 }).setLevel(1);
+    const generator = audio.positional('amb:generator', this.generator.object3d,
+      { volume: 0.8, refDistance: 4 });
+    audio.follow(generator, { level: () => (this.generator.powerOn ? 1 : 0) });
+    const dishMotor = audio.positional('amb:dish-motor', this.satellite.object3d,
+      { volume: 0.7, refDistance: 12 });
+    audio.follow(dishMotor, { level: () => dishMotorLevel(this.satellite) });
+    this.audioEmitters = { serverHum, generator, dishMotor };
+
+    const { rationDispenser } = this.rooms.MainOffice;
+    if (rationDispenser) {
+      const eat = { at: rationDispenser.transform };
+      rationDispenser.onEat = () => audio.play('sfx:ration', eat);
+    }
+  }
+
+  // ──────────────────────────────────────────
   // Threats (one per night — ThreatDirector's table)
   // ──────────────────────────────────────────
   /** The monsters and the director that runs them. The director goes on
@@ -410,7 +470,7 @@ export class BaseScene extends Scene {
       transitions: this.transitions,
       hud:         this.hud,
       stamina:     this.stamina,
-      audio:       null,
+      audio:       this.audio,
       lights:      null,
     };
     this.threatDirector = new ThreatDirector({
@@ -632,7 +692,7 @@ export class BaseScene extends Scene {
 
     // Generator stand-in until generator.glb arrives (asset list, P1). Out
     // the office's front door, where the player has to go to cut power.
-    const generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
+    const generator = this.generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
     generator.powerOn = true;
     generator.addComponent(new class extends Interactable {
       promptLabel = '[E] Cut power';
