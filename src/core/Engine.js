@@ -281,6 +281,11 @@ export class Engine {
    *
    *  @param {typeof import('./Scene.js').Scene} SceneClass */
   loadScene(SceneClass) {
+    // A fly camera left on would keep the old player, and V would put the
+    // camera back on a player that is no longer in the scene (BUG-R3).
+    // Landing it first starts the new scene in first person.
+    this.debugCamera?.disable();
+
     // ── Tear down the old scene ──
     this._teardownScene();
 
