@@ -8,9 +8,9 @@ import { dimmedMaterial } from './ModelUtils.js';
 // ─────────────────────────────────────────────
 // KHR_materials_pbrSpecularGlossiness  (BUG-008)
 // ─────────────────────────────────────────────
-// three dropped this extension in r147, and three of our downloads keep
-// every colour and texture inside it: tree-fantasy, tree-dead and the
-// chain-link fence. Without it they loaded white, fully metallic and bare.
+// three dropped this extension in r147, and two of our shipped downloads keep
+// every colour and texture inside it: tree-dead and the chain-link fence.
+// Without it they loaded white, fully metallic and bare.
 
 const EXT = 'KHR_materials_pbrSpecularGlossiness';
 

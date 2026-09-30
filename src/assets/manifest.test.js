@@ -30,7 +30,8 @@ describe('manifest', () => {
     // These lived in LIBRARY, which is fetched on demand — so assets.get()
     // came back empty during build and the belt grew grass and no trees at
     // all. Nothing failed loudly; the trees were simply absent.
-    for (const key of ['model:tree-birch', 'model:tree-pine', 'model:tree-fantasy', 'model:tree-dead']) {
+    // The scrub is built rather than loaded, so it has no key here.
+    for (const key of ['model:tree-birch', 'model:tree-pine', 'model:tree-dead']) {
       expect(PRELOAD, key).toContain(key);
     }
   });

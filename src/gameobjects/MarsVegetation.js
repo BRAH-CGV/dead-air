@@ -31,7 +31,15 @@ import { makeYard, yardDistance, makeYardRadiusLookup } from './BaseYard.js';
 // they are closer to the part than their keys suggest. They are stretched
 // taller and thinner than they were modelled, tinted toward the ground they
 // stand in, and leaned a few degrees off vertical — all of it away from what a
-// tree on Earth does, so they stay wrong at a glance.
+// tree on Earth does, so they stay wrong at a glance. The knee-high scrub
+// among them is built here, not loaded (makeScrubGeometry).
+//
+// ── Cells ──
+// Every field is cut into square cells, one InstancedMesh each, so the camera
+// culls whatever is behind it. As one mesh a field's bounding sphere held the
+// whole basin, and the belt drew 2.8 M triangles from anywhere, walls and all
+// (docs/PERFORMANCE-PLAN.md). A grass cell also has a flat twin that
+// GrassField shows in its place once the camera is far enough off.
 //
 // ── Clearings ──
 // A handful of circles inside the belt where nothing grows at all. Unlike the
@@ -58,9 +66,16 @@ export const VEGETATION = {
   /** Nothing was planted far from the base. Someone terraforming a site this
    *  small works outward from the door and stops where the walk gets long. */
   outerRadius: 150,
-  /** Tufts attempted across the belt. Rejections — lanes, clearings, slope,
-   *  thinning — take roughly a third, and each tuft is three blades. */
-  tuftCount: 150000,
+  /** Grass stops this many metres past the yard's edge; only the trees run
+   *  on to outerRadius, since they are what closes the horizon. Past about
+   *  fifty metres grass stops reading as anything but texture, and running
+   *  out to outerRadius it was 1.3 M triangles, the scene's biggest cost. */
+  grassReach: 50,
+  /** Tufts attempted within grassReach. Rejections — lanes, clearings, slope,
+   *  thinning — take about half, and each tuft is three blades. Sized with
+   *  the reach so the ground by the base is as thick as when 150,000 were
+   *  spread out to outerRadius: about two thirds of those fell inside it. */
+  tuftCount: 102000,
   /** How hard growth crowds the base. Higher packs more of the belt into the
    *  first thirty metres and leaves the outer edge sparse. */
   inwardBias: 2.5,
@@ -100,6 +115,18 @@ export const VEGETATION = {
   strayTreeShare: 0.22,
   /** Blades stop where the ground gets too steep to hold soil. */
   maxSlope: 0.82,
+  /** Metres on a side of the square cells each field is cut into. Every cell
+   *  is a draw call per mesh, so the trees, with a mesh per species and part,
+   *  get cells wide enough that the belt stays a few dozen calls. Smaller
+   *  cells cull closer and cost more calls: at 64 m the trees took 64 calls
+   *  from the hatch, at 80 m 54, and 20 k more triangles on average. */
+  grassCell: 24,
+  treeCell: 80,
+  /** A grass cell whose nearest edge is further than this from the camera
+   *  draws each blade as one flat triangle instead of three curved segments.
+   *  That is a fifth of the cost, and out there a blade is a pixel or two
+   *  wide. */
+  grassDetailDistance: 16,
 };
 
 /** Root to tip. Near-black at the base, dusty violet where the light catches
@@ -111,15 +138,19 @@ const BLADE_TIP  = new THREE.Color(0x6b4f7a);
  *  stand in and away from anything that reads as foliage. */
 const TREE_TINTS = [0x6b4436, 0x7a4a52, 0x5c3a46, 0x84543f];
 
+/** The species key of the built scrub. */
+const SCRUB = 'scrub';
+
 /** Sized per species, since the models are nothing like each other in scale or
  *  build. The manifest keys are misleading: tree-birch and tree-pine are
- *  red-tree1 and red-tree2, and tree-fantasy is dead-tree1 — a tangled thing
- *  that reads as scrub, so it is planted at bush height rather than as a tree. */
+ *  red-tree1 and red-tree2. The scrub has no model; it is built by
+ *  makeScrubGeometry. It stands where the tree-fantasy model stood, fourth,
+ *  so the belt's random stream picks every species where it always did. */
 const TREE_SPECIES = [
   { key: 'model:tree-birch',   height: [3.5, 7.0] },   // red-tree1
   { key: 'model:tree-pine',    height: [6.0, 13.0] },  // red-tree2
   { key: 'model:tree-dead',    height: [5.0, 11.0] },  // dead_tree1
-  { key: 'model:tree-fantasy', height: [1.2, 2.6] },   // dead-tree1, kept scrubby
+  { key: SCRUB,                height: [1.2, 2.6] },   // built, kept scrubby
 ];
 
 export { TREE_SPECIES };
@@ -140,7 +171,7 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {number[]} [opts.lanes]  extra lane bearings in radians, on top of the
  *        seeded ones — pass the direction of anything that must stay drivable
  * @param {(x: number, z: number) => number} [opts.heightAt]
- * @returns {GameObject} a group carrying the grass and one mesh per tree part
+ * @returns {GameObject} a group carrying the grass, scrub and tree cells
  */
 export function createMarsVegetation(opts = {}) {
   const {
@@ -174,11 +205,13 @@ export function createMarsVegetation(opts = {}) {
   const trees  = plantTrees(site, rand);
 
   const time = { value: 0 };
-  if (blades.length > 0) {
-    vegetation.object3d.add(buildGrass(blades, time));
-    // The sway is a shader clock, so something has to advance it. Keeping the
-    // component here means the scene only has to add the group.
-    vegetation.addComponent(new SwayClock(time));
+  const grass = buildGrass(blades, time);
+  for (const cell of grass) vegetation.object3d.add(cell.near, cell.far);
+  if (grass.length > 0) {
+    // The sway is a shader clock and the detail follows the camera, so
+    // something has to run them. Keeping the component here means the scene
+    // only has to add the group.
+    vegetation.addComponent(new GrassField(time, grass));
   }
   for (const mesh of buildTrees(trees, assets, rand)) vegetation.object3d.add(mesh);
 
@@ -189,10 +222,51 @@ export function createMarsVegetation(opts = {}) {
   return vegetation;
 }
 
-/** Advances the grass sway. One uniform shared by every blade. */
-class SwayClock extends Component {
-  constructor(time) { super(); this.time = time; }
-  onUpdate(dt) { this.time.value += dt; }
+/**
+ * Runs the grass: advances the sway clock every blade shares, and shows each
+ * cell in full near the camera and flat further off.
+ */
+export class GrassField extends Component {
+  /** Reused every frame. */
+  _eye = new THREE.Vector3();
+
+  /**
+   * @param {{value: number}} time  the sway shader's uTime
+   * @param {Array<{near: THREE.InstancedMesh, far: THREE.InstancedMesh,
+   *         bounds: {minX: number, maxX: number, minZ: number, maxZ: number}}>} cells
+   */
+  constructor(time, cells) {
+    super();
+    this.time = time;
+    this.cells = cells;
+  }
+
+  onUpdate(dt) {
+    this.time.value += dt;
+
+    const camera = this.scene?.userData?.engine?.camera;
+    if (!camera) return;
+    // World position, since the camera rides the player (or the fly camera),
+    // then into the belt's own space, which is the cells'.
+    camera.getWorldPosition(this._eye);
+    this.transform.worldToLocal(this._eye);
+    this.showDetailNear(this._eye);
+  }
+
+  /** Show every cell whose footprint comes within grassDetailDistance of
+   *  `point` in full, and every other one flat. `point` is in the belt's own
+   *  space. Measured to the cell's nearest edge, so the ground you stand on
+   *  is always drawn in full, however big the cells are. */
+  showDetailNear(point) {
+    const reach = VEGETATION.grassDetailDistance ** 2;
+    for (const { near, far, bounds } of this.cells) {
+      const dx = Math.max(bounds.minX - point.x, 0, point.x - bounds.maxX);
+      const dz = Math.max(bounds.minZ - point.z, 0, point.z - bounds.maxZ);
+      const close = dx * dx + dz * dz <= reach;
+      near.visible = close;
+      far.visible = !close;
+    }
+  }
 }
 
 /** The lanes cut through the belt. Each is a bearing out from the base plus a
@@ -307,8 +381,9 @@ function thickness(x, z, site) {
   return 0.7 + 0.3 * clump;
 }
 
-/** Pick a point in the belt, crowded toward the base. */
-function samplePoint(rand, yardAt, bias = VEGETATION.inwardBias) {
+/** Pick a point in the belt, crowded toward the base and no more than
+ *  `reach` metres past the yard's edge. */
+function samplePoint(rand, yardAt, bias = VEGETATION.inwardBias, reach = Infinity) {
   // The bearing comes first, because the yard's edge depends on it: the belt
   // starts fifteen metres off the back wall and twenty-six off the wings. With
   // a single inner radius for every bearing, inwardBias would crowd growth
@@ -316,7 +391,8 @@ function samplePoint(rand, yardAt, bias = VEGETATION.inwardBias) {
   // wings would land in the yard and be thrown away.
   const angle = rand() * Math.PI * 2;
   const inner = yardAt(angle);
-  const radius = inner + (VEGETATION.outerRadius - inner) * Math.pow(rand(), bias);
+  const outer = Math.min(VEGETATION.outerRadius, inner + reach);
+  const radius = inner + (outer - inner) * Math.pow(rand(), bias);
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius, radius };
 }
 
@@ -325,7 +401,7 @@ function plantGrass(site, rand) {
   const blades = [];
 
   for (let i = 0; i < VEGETATION.tuftCount; i++) {
-    const { x, z } = samplePoint(rand, site.yardAt);
+    const { x, z } = samplePoint(rand, site.yardAt, VEGETATION.inwardBias, VEGETATION.grassReach);
     if (rand() > openness(x, z, site) * thickness(x, z, site)) continue;
 
     const normal = groundNormal(x, z, site.heightAt);
@@ -434,12 +510,14 @@ function plantTrees(site, rand) {
  *  clump has depth. Tufts rather than single blades because that is how grass
  *  actually grows, and because it triples what you see per instance — a matrix
  *  and a bounding-sphere entry per blade would cost far more for the same
- *  thickness. Four segments is enough to read as a curve at this size. */
-function makeBladeGeometry() {
-  // Three segments, not four. At this density the grass is the scene's biggest
-  // triangle cost by far, and a blade a few pixels wide reads the same either
-  // way — the saving is a quarter of it.
-  const segments = 3;
+ *  thickness.
+ *
+ *  Three segments up close, not four: a blade a few pixels wide reads the
+ *  same either way, and the saving is a quarter. One segment far off, which
+ *  is a single triangle from the root to the tip. The top segment tapers to a
+ *  point, so it is one triangle too, not a quad with a second one of no
+ *  area. */
+function makeBladeGeometry(segments = 3) {
   const width = 0.035;
   const positions = [];
   const colors = [];
@@ -463,13 +541,16 @@ function makeBladeGeometry() {
       // Taper to a point, and lean further out the higher it goes.
       const w0 = width * (1 - t0) ** 0.7;
       const w1 = width * (1 - t1) ** 0.7;
+      const tip = i === segments - 1;
       const corners = [
         [-w0, t0, t0 * t0 * 0.18 + t0 * blade.lean],
         [ w0, t0, t0 * t0 * 0.18 + t0 * blade.lean],
         [ w1, t1, t1 * t1 * 0.18 + t1 * blade.lean],
-        [-w0, t0, t0 * t0 * 0.18 + t0 * blade.lean],
-        [ w1, t1, t1 * t1 * 0.18 + t1 * blade.lean],
-        [-w1, t1, t1 * t1 * 0.18 + t1 * blade.lean],
+        ...(tip ? [] : [
+          [-w0, t0, t0 * t0 * 0.18 + t0 * blade.lean],
+          [ w1, t1, t1 * t1 * 0.18 + t1 * blade.lean],
+          [-w1, t1, t1 * t1 * 0.18 + t1 * blade.lean],
+        ]),
       ];
 
       for (const [cx, cy, cz] of corners) {
@@ -479,7 +560,7 @@ function makeBladeGeometry() {
           cx * sin + cz * cos + blade.offset[1],
         );
       }
-      for (const t of [t0, t0, t1, t0, t1, t1]) {
+      for (const t of (tip ? [t0, t0, t1] : [t0, t0, t1, t0, t1, t1])) {
         color.copy(BLADE_ROOT).lerp(BLADE_TIP, t);
         colors.push(color.r, color.g, color.b);
       }
@@ -493,32 +574,79 @@ function makeBladeGeometry() {
   return geometry;
 }
 
-/** Every blade in one InstancedMesh — one draw call for the lot. */
+/**
+ * The grass, cell by cell. Each cell is two InstancedMeshes over the same
+ * tufts: `near` with curved blades and `far` with flat ones, sharing one
+ * instance buffer, so a cell uploads its matrices once and draws one of the
+ * two. Every cell shares the material and the blade vertices; only the phase
+ * attribute is a cell's own.
+ */
 function buildGrass(blades, time) {
-  const geometry = makeBladeGeometry();
-  const phases = new Float32Array(blades.length);
-  blades.forEach((b, i) => { phases[i] = b.phase; });
-  geometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phases, 1));
-
+  const detailed = makeBladeGeometry(3);
+  const flat = makeBladeGeometry(1);
   const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
   });
   addSway(material, time);
 
-  const mesh = new THREE.InstancedMesh(geometry, material, blades.length);
-  mesh.name = 'MarsGrass';
-  mesh.castShadow = false;
-  mesh.receiveShadow = false;
-
   const matrix = new THREE.Matrix4();
-  blades.forEach((b, i) => {
-    matrix.compose(b.position, b.quaternion, b.scale);
-    mesh.setMatrixAt(i, matrix);
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.computeBoundingSphere();
-  return mesh;
+  const cells = [];
+  for (const { items, bounds } of cellsOf(blades, VEGETATION.grassCell)) {
+    const phases = new Float32Array(items.length);
+    items.forEach((b, i) => { phases[i] = b.phase; });
+    const phase = new THREE.InstancedBufferAttribute(phases, 1);
+
+    const near = new THREE.InstancedMesh(withPhase(detailed, phase), material, items.length);
+    items.forEach((b, i) => near.setMatrixAt(i, matrix.compose(b.position, b.quaternion, b.scale)));
+    near.instanceMatrix.needsUpdate = true;
+
+    const far = new THREE.InstancedMesh(withPhase(flat, phase), material, items.length);
+    far.instanceMatrix = near.instanceMatrix;
+    far.visible = false;
+
+    near.name = `MarsGrass_${cells.length}`;
+    far.name = `MarsGrassFar_${cells.length}`;
+    for (const mesh of [near, far]) {
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.computeBoundingSphere();
+    }
+    cells.push({ near, far, bounds });
+  }
+  return cells;
+}
+
+/** A cell's own geometry over the shared blade: the blade's attributes, which
+ *  upload once however many cells use them, plus the cell's phases. */
+function withPhase(blade, phase) {
+  const geometry = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) {
+    geometry.setAttribute(name, blade.getAttribute(name));
+  }
+  geometry.setAttribute('aPhase', phase);
+  return geometry;
+}
+
+/** Sort placements into square cells `size` metres on a side, keeping each
+ *  cell's placements in planting order, with the cell's footprint. */
+function cellsOf(placements, size) {
+  const cells = new Map();
+  for (const placement of placements) {
+    const i = Math.floor(placement.position.x / size);
+    const j = Math.floor(placement.position.z / size);
+    const key = `${i},${j}`;
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = {
+        items: [],
+        bounds: { minX: i * size, maxX: (i + 1) * size, minZ: j * size, maxZ: (j + 1) * size },
+      };
+      cells.set(key, cell);
+    }
+    cell.items.push(placement);
+  }
+  return [...cells.values()];
 }
 
 /** Bend each blade by its own phase, hardest at the tip. Injected rather than
@@ -542,13 +670,16 @@ function addSway(material, time) {
 }
 
 /**
- * Instance the tree models. A .glb is a little scene graph, so each mesh in it
- * becomes its own InstancedMesh carrying that mesh's own transform baked in.
- * Materials are cloned before tinting: the AssetManager hands out shared
+ * Instance the trees and the scrub, cell by cell. A .glb is a little scene
+ * graph, so each mesh in it becomes its own InstancedMesh per cell, carrying
+ * that mesh's own transform baked in. Materials are cloned before tinting,
+ * once per part and shared by every cell: the AssetManager hands out shared
  * materials, and colouring one in place would repaint every copy in the level.
  */
 function buildTrees(trees, assets, rand) {
-  if (!assets || trees.length === 0) return [];
+  // One shade per tree, rolled in planting order before the cells reorder
+  // them, so a tree's parts match and the colours don't depend on the cells.
+  for (const tree of trees) tree.shade = randRange(rand, 0.8, 1.15);
 
   const byKey = new Map();
   for (const tree of trees) {
@@ -559,48 +690,170 @@ function buildTrees(trees, assets, rand) {
   const meshes = [];
   const local = new THREE.Matrix4();
   const world = new THREE.Matrix4();
+  const scale = new THREE.Vector3();
   const tint = new THREE.Color();
 
   for (const [key, placements] of byKey) {
-    const parts = flattenModelParts(key, assets);
-    if (parts.length === 0) continue;
+    const model = key === SCRUB ? scrubModel() : loadedModel(key, assets);
+    if (!model) continue;
 
-    // Normalise by the model's own height, so mixing models of wildly
-    // different export scales still gives trees of the size we asked for.
-    const bounds = assets.getCollision?.(key)?.bounds;
-    const modelHeight = bounds ? bounds.size[1] : 1;
+    for (const { items } of cellsOf(placements, VEGETATION.treeCell)) {
+      for (const part of model.parts) {
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, items.length);
+        mesh.name = `${model.name}_${meshes.length}`;
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
 
-    for (const part of parts) {
-      const mesh = new THREE.InstancedMesh(
-        part.geometry,
-        dimmedMaterial(part.material),
-        placements.length,
-      );
-      mesh.name = `MarsTree_${key.replace('model:', '')}_${meshes.length}`;
-      mesh.castShadow = false;
-      mesh.receiveShadow = true;
+        items.forEach((tree, i) => {
+          const size = tree.height / model.height;
+          world.compose(tree.position, tree.quaternion,
+            scale.set(size * tree.pinch, size, size * tree.pinch));
+          mesh.setMatrixAt(i, local.multiplyMatrices(world, part.matrix));
+          mesh.setColorAt(i, tint.setHex(tree.tint).multiplyScalar(tree.shade));
+        });
 
-      placements.forEach((tree, i) => {
-        const scale = tree.height / (modelHeight || 1);
-        world.compose(
-          tree.position,
-          tree.quaternion,
-          new THREE.Vector3(scale * tree.pinch, scale, scale * tree.pinch),
-        );
-        mesh.setMatrixAt(i, local.multiplyMatrices(world, part.matrix));
-        mesh.setColorAt(i, tint.setHex(tree.tint).multiplyScalar(randRange(rand, 0.8, 1.15)));
-      });
-
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.computeBoundingSphere();
-      meshes.push(mesh);
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        meshes.push(mesh);
+      }
     }
   }
 
   return meshes;
 }
 
-/** Every mesh inside a cached model, with its transform relative to the root. */
+/** A loaded tree model's parts, each with its own dimmed material, and its
+ *  height; null if it isn't loaded. */
+function loadedModel(key, assets) {
+  if (!assets) return null;
+  const parts = flattenModelParts(key, assets);
+  if (parts.length === 0) return null;
+
+  // Normalise by the model's own height, so mixing models of wildly
+  // different export scales still gives trees of the size we asked for.
+  const bounds = assets.getCollision?.(key)?.bounds;
+  return {
+    name: `MarsTree_${key.replace('model:', '')}`,
+    height: (bounds ? bounds.size[1] : 1) || 1,
+    parts: parts.map(part => ({ ...part, material: dimmedMaterial(part.material) })),
+  };
+}
+
+/** The built scrub, as a one-part model a metre tall. */
+function scrubModel() {
+  return {
+    name: 'MarsScrub',
+    height: 1,
+    parts: [{
+      geometry: makeScrubGeometry(),
+      // Matches dimmedMaterial's dimming of the models around it. The tint
+      // comes per plant, through the instance colour.
+      material: new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xcccccc }),
+      matrix: new THREE.Matrix4(),
+    }],
+  };
+}
+
+/**
+ * The scrub: a knot of bare stalks forked out of one root, a metre tall, which
+ * the planting scales and tints like any tree. It is built rather than loaded.
+ * The model it replaced (tree-fantasy) was 7,596 triangles a bush, a million
+ * across the belt, for something knee-high in the dark; this is 120.
+ *
+ * Each stalk and fork is a three-sided spike, and the shape comes from its own
+ * seed, so it is the same every build and leaves the belt's stream alone.
+ */
+function makeScrubGeometry() {
+  const rand = makeRandom(0x5c7b);
+  const positions = [];
+
+  /** A three-sided spike from `base`, `radius` thick, tapering in `segments`
+   *  lengths to a point at `tip`. Wound so its faces point out. */
+  const spike = (base, tip, radius, segments) => {
+    const axis = new THREE.Vector3().subVectors(tip, base);
+    const dir = axis.clone().normalize();
+    const u = new THREE.Vector3(0, 1, 0);
+    if (Math.abs(dir.y) > 0.9) u.set(1, 0, 0);
+    u.cross(dir).normalize();
+    const v = new THREE.Vector3().crossVectors(dir, u);
+
+    const rings = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const centre = base.clone().addScaledVector(axis, t);
+      rings.push([0, 1, 2].map(k => {
+        const a = (k / 3) * Math.PI * 2;
+        return centre.clone()
+          .addScaledVector(u, Math.cos(a) * radius * (1 - t))
+          .addScaledVector(v, Math.sin(a) * radius * (1 - t));
+      }));
+    }
+
+    const push = (...points) => { for (const p of points) positions.push(p.x, p.y, p.z); };
+    for (let i = 0; i < segments; i++) {
+      for (let k = 0; k < 3; k++) {
+        const a = rings[i][k];
+        const b = rings[i][(k + 1) % 3];
+        const c = rings[i + 1][(k + 1) % 3];
+        const d = rings[i + 1][k];
+        // The top ring is a single point, so the last length is triangles.
+        if (i === segments - 1) push(a, b, c);
+        else push(a, b, c, a, c, d);
+      }
+    }
+  };
+
+  const stalks = 8;
+  const thickness = 0.028;
+  for (let s = 0; s < stalks; s++) {
+    // The first stands up the middle; the rest splay out round it.
+    const yaw = (s + rand() * 0.6) * (Math.PI * 2 / stalks);
+    const lean = s === 0 ? 0.08 : randRange(rand, 0.25, 0.75);
+    const length = s === 0 ? 1 : randRange(rand, 0.55, 0.95);
+    const direction = new THREE.Vector3(
+      Math.sin(lean) * Math.cos(yaw), Math.cos(lean), Math.sin(lean) * Math.sin(yaw));
+    const base = new THREE.Vector3(Math.cos(yaw) * 0.03, 0, Math.sin(yaw) * 0.03);
+    const tip = base.clone().addScaledVector(direction, length);
+    spike(base, tip, thickness, 2);
+
+    // Two forks off each, bent further out than the stalk they grow from.
+    for (let f = 0; f < 2; f++) {
+      const t = randRange(rand, 0.3, 0.7);
+      const from = base.clone().lerp(tip, t);
+      const turn = yaw + randRange(rand, -1.2, 1.2);
+      const bend = Math.min(1.35, lean + randRange(rand, 0.35, 0.8));
+      const twig = new THREE.Vector3(
+        Math.sin(bend) * Math.cos(turn), Math.cos(bend), Math.sin(bend) * Math.sin(turn));
+      spike(from, from.clone().addScaledVector(twig, length * randRange(rand, 0.25, 0.45)),
+        thickness * (1 - t) * 0.7, 1);
+    }
+  }
+
+  // Stood on the ground and scaled to exactly a metre, so a plant's height is
+  // its scale. The leaning stalks' bottom rings tip a little below their
+  // bases, so the lowest point is lifted to zero first.
+  let bottom = Infinity;
+  let top = -Infinity;
+  for (let i = 1; i < positions.length; i += 3) {
+    bottom = Math.min(bottom, positions[i]);
+    top = Math.max(top, positions[i]);
+  }
+  for (let i = 1; i < positions.length; i += 3) positions[i] -= bottom;
+  for (let i = 0; i < positions.length; i++) positions[i] /= top - bottom;
+
+  // Dark at the root and pale at the tips; the instance colour tints it.
+  const colors = [];
+  for (let i = 1; i < positions.length; i += 3) {
+    const shade = 0.45 + 0.55 * positions[i];
+    colors.push(shade, shade, shade);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 /** Ground normal by finite differences. No seed is passed: the height
  *  function owns the valley's seed. */

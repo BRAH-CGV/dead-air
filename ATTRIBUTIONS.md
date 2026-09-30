@@ -278,19 +278,6 @@ by BitGem is licensed under Creative Commons Attribution
 | **Used for** | Exterior foliage |
 | **Modifications** | None recorded |
 
-### Fantasy tree
-
-"fantasy tree 1" (https://sketchfab.com/3d-models/fantasy-tree-1-fee2b59583084ae1a755a1b02133a42c)
-by DJMaesen (bumstrum) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/tree-fantasy.glb` |
-| **Manifest key** | `model:tree-fantasy` |
-| **Used for** | Dead / exterior tree foliage |
-| **Modifications** | None recorded |
-
 ### Low poly dead tree
 
 "Low Poly: Dead Tree"
@@ -604,6 +591,7 @@ What each file records about itself:
 | `source-assets/models/ragno_monster.glb` | "Ragno (Monster)", Hobu (Hobu_Coffee), CC BY 4.0 | https://sketchfab.com/3d-models/ragno-monster-2e1a422e6f0048f98a786ceecac423d7 |
 | `source-assets/models/the_boiled_one_horror_game_-_boiled_one.glb` | "The Boiled One: Horror Game - Boiled One", MG Rips (MG_GameRips), **CC BY-NC 4.0** | https://sketchfab.com/3d-models/the-boiled-one-horror-game-boiled-one-64ce66c413fe4e5e92a48e8e02a83590 |
 | `source-assets/models/office-scene.glb` | Exported from Blender, with no source recorded | — |
+| `source-assets/models/tree-fantasy.glb` | "fantasy tree 1", DJMaesen (bumstrum), CC BY 4.0. It was the belt's scrub until the scrub was built in code (`makeScrubGeometry`): at 7,596 triangles a bush it was a million triangles of the frame | https://sketchfab.com/3d-models/fantasy-tree-1-fee2b59583084ae1a755a1b02133a42c |
 
 Before any of these ships, give it a full entry above. The Boiled One needs
 more than that: its uploader's name says it was ripped from a commercial

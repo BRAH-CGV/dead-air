@@ -141,11 +141,6 @@ const PLACED = {
     url: 'assets/models/tree-pine.glb',
     physics: 'static',
   },
-  'model:tree-fantasy': {
-    type: 'model',
-    url: 'assets/models/tree-fantasy.glb',
-    physics: 'static',
-  },
   'model:tree-dead': {
     type: 'model',
     url: 'assets/models/tree-dead.glb',

@@ -164,13 +164,48 @@ Where the triangles go (per mesh, instances counted):
 | `MarsTerrain > MarsTerrainMesh` | 131 k |
 | `MarsRocks > *` | ~0.26 M |
 
-**Next, for whoever owns the vegetation (Ryan):**
+**Done since (the vegetation belt).** All three steps these readings pointed
+to are in `MarsVegetation.js`, tested in `MarsVegetation.test.js`:
 
-- The grass's own comment says it stops reading past about 50 m, so give it
-  a radius around the base.
-- Split each instanced field into spatial chunks, so frustum culling can drop
-  the ones behind the camera.
-- Swap the 7,596-triangle scrub for a lighter model.
+- **The grass stops `grassReach` (50 m) past the yard's edge.** Only the
+  trees run on to `outerRadius`. `tuftCount` went from 150,000 to 102,000,
+  so the ground by the base is as thick as before.
+- **Every field is cut into square cells, one `InstancedMesh` each**, so
+  frustum culling drops what is behind the camera. The grass is in 24 m
+  cells and the trees and scrub in 80 m ones (`grassCell`, `treeCell`).
+- **A grass cell further than 16 m from the camera draws flat.** Each such
+  cell has a twin that draws a blade as one triangle rather than five, and
+  shares the near cell's instance matrices. `GrassField` swaps them each
+  frame.
+- **The scrub is built, not loaded** (`makeScrubGeometry`). It is 120
+  triangles a bush instead of 7,596. `tree-fantasy.glb` moved to
+  `source-assets/`.
+
+Measured in the test's frustum over the views it checks (the office window,
+and the hatch and the dish looking four ways), with the real models'
+triangle counts:
+
+| | Before | After |
+|---|---|---|
+| Belt triangles in view | 2.79 M from everywhere | 300–614 k (451 k average) |
+| Belt draw calls | 5 | 29–54 (39 average) |
+| Office window | 2.79 M in 5 calls | 377 k in 40 calls |
+
+The belt is still over its share of the 500 k frame. With the terrain and
+rocks (about 390 k) and the base in view too, a frame that sees the valley
+is about 0.8–1.1 M. What is left is mostly the three tree models, at 900–1,900
+triangles each however far off they stand.
+
+**Next, if the lab hardware says triangles are the problem:**
+
+- Give the far tree cells lighter stand-ins, the way the grass has a flat
+  twin. `SimplifyModifier` (in three's examples, so no new dependency) could
+  make them from the loaded models at build time, if it's quick enough.
+- Cut `MarsRocks` into cells as well. It is 260 k and still one mesh per
+  variant and band, so it is never culled.
+- The belt's draw calls went from 5 to up to 54, and outside was already
+  185 held. If the draw-call count is what's over, raise `treeCell` first:
+  at 100 m it is 49 calls, for about 15 k more triangles on average.
 
 Then read the office window view on the lab hardware at render scale 1 and
 0.75 before touching anything else.
@@ -201,8 +236,8 @@ pixels.
 **Model textures.** Audited (30 Sept 2026): the largest embedded texture in
 any shipped `.glb` is 1024², so there is nothing to resize. The biggest
 files, all 1024² PNG-textured, are switchboard 10.7 MB (spawned only by the
-old `OfficeScene`), tree-fantasy 8.8 MB, barrel 5.4 MB, retro-computer
-5.4 MB and fire-extinguisher 4.6 MB. The generator (3.2 MB) is now
+old `OfficeScene`), barrel 5.4 MB, retro-computer 5.4 MB and
+fire-extinguisher 4.6 MB. tree-fantasy (8.8 MB) no longer ships. The generator (3.2 MB) is now
 preloaded, because the base places it outside.
 
 **Load time and memory from audio.** The two ambience beds are MP3s. Web

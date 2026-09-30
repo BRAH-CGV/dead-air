@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // The older glTF material model: a diffuse colour, a specular colour and a
 // glossiness, instead of base colour, metalness and roughness. three.js
 // dropped it in r147, but some downloads still keep every colour and texture
-// inside it (tree-fantasy, tree-dead, the chain-link fence). Unread, they
+// inside it (tree-dead and the chain-link fence). Unread, they
 // fall back to glTF's defaults: white, fully metallic, no texture.
 //
 // This reads it as a MeshStandardMaterial, which is as close as a
