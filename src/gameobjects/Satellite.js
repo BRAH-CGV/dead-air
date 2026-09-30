@@ -16,6 +16,10 @@ import { GameObject } from '../core/GameObject.js';
 //   });
 //   dish.targetYaw = Math.PI / 4;   // steer at any time, from any system
 //   dish.isRotating();              // false once both axes are on target
+//
+// With `powered` false (the generator cut) the motors are dead: it stops
+// where it is, keeps its target for when the power is back, and a scan in
+// progress pauses as if the dish had drifted off.
 // ─────────────────────────────────────────────
 
 /** The dish's default slew limit, radians per second: π/8 = 22.5°/s. A half
@@ -28,6 +32,9 @@ export class Satellite extends GameObject {
 
   /** Slew limit shared by both axes, radians per second. */
   maxRotationSpeed = DISH_SLEW_RATE;
+
+  /** False with the generator off: no slewing, no scanning. */
+  powered = true;
 
   /** Angle the neck is slewing toward, radians around Y. */
   targetYaw = 0;
@@ -83,6 +90,12 @@ export class Satellite extends GameObject {
    *  children tick before we re-aim them. */
   _update(dt) {
     super._update(dt);
+
+    if (!this.powered) {
+      this.velYaw = this.velPitch = 0;
+      this.isScanning = false;
+      return;
+    }
 
     // Scan logic (runs regardless of terminal state)
     if (this.isScanning && this.scanTarget) {

@@ -290,3 +290,50 @@ describe('Satellite', () => {
     expect(sat.isScanning).toBe(false);
   });
 });
+
+describe('Satellite power', () => {
+  it('is powered to begin with', () => {
+    expect(Satellite.fromObject3D(buildTower().root).powered).toBe(true);
+  });
+
+  it('with the power cut it stops dead where it is, and keeps its target', () => {
+    const { root, neck } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.targetYaw = Math.PI / 2;
+    sat._update(0.5);
+    const where = neck.rotation.y;
+    expect(sat.velYaw).toBeGreaterThan(0);
+
+    sat.powered = false;
+    for (let i = 0; i < 60; i++) sat._update(1 / 60);
+    expect(neck.rotation.y).toBe(where);
+    expect(sat.velYaw).toBe(0);
+    expect(sat.targetYaw).toBe(Math.PI / 2);
+  });
+
+  it('picks the slew back up when the power returns', () => {
+    const { root, neck } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.targetYaw = Math.PI / 2;
+    sat.powered = false;
+    sat._update(1);
+    expect(neck.rotation.y).toBe(0);
+    sat.powered = true;
+    for (let i = 0; i < 600; i++) sat._update(1 / 60);
+    expect(neck.rotation.y).toBeCloseTo(Math.PI / 2, 2);
+  });
+
+  it('a scan stops with the power, keeping the progress it had', () => {
+    const { root } = buildTower();
+    const sat = Satellite.fromObject3D(root);
+    sat.scanTarget = { yaw: 0, pitch: 0, tolerance: 0.2, scanTime: 5, scanned: false };
+    sat.isScanning = true;
+    sat._update(1);
+    expect(sat.scanProgress).toBeCloseTo(1);
+    sat.powered = false;
+    sat._update(1);
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanProgress).toBeCloseTo(1);
+    expect(sat.scanTarget.scanned).toBe(false);
+  });
+});
