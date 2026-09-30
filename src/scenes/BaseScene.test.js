@@ -30,6 +30,8 @@ import { BaseLights } from '../gameplay/BaseLights.js';
 import { Power, EMERGENCY_LEVEL } from '../gameplay/Power.js';
 import { GeneratorSwitch, RESTORE_POWER } from '../components/GeneratorSwitch.js';
 import { CrtScreen } from '../components/CrtScreen.js';
+import { Oxygen } from '../gameplay/Oxygen.js';
+import { OxygenSupply, OXYGEN_KILL } from '../components/OxygenSupply.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1057,5 +1059,76 @@ describe('BaseScene CRT screen', () => {
     const freed = vi.spyOn(mesh.material, 'dispose');
     scene.dispose();
     expect(freed).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene oxygen', () => {
+  let engine, scene, gameplay, supply;
+
+  const standAt = p => engine.player.object3d.position.copy(p);
+  /** Standing height inside a room or corridor: its middle, a body's height up. */
+  const insidePart = part => {
+    const box = part.bounds();
+    return box.getCenter(new THREE.Vector3()).setY(box.min.y + 1);
+  };
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    supply = gameplay.getComponent(OxygenSupply);
+  });
+
+  it('runs an OxygenSupply on GameplaySystems, for the suit, the controller, the HUD and the sound', () => {
+    expect(scene.oxygen).toBeInstanceOf(Oxygen);
+    expect(supply).toBeInstanceOf(OxygenSupply);
+    expect(supply.oxygen).toBe(scene.oxygen);
+    expect(supply.suit).toBe(scene.suit);
+    expect(supply.controller).toBe(scene.gameController);
+    expect(supply.hud).toBe(scene.hud);
+    expect(supply.audio).toBe(scene.audio);
+    expect(gameplay.components.indexOf(supply))
+      .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
+  });
+
+  it('counts the player outside only off the base: out by the generator, never in a room or corridor', () => {
+    standAt(worldPos(scene.generator).setY(1));
+    expect(supply.isOutside()).toBe(true);
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      standAt(insidePart(part));
+      expect(supply.isOutside(), part.name).toBe(false);
+    }
+  });
+
+  it('refills in the airlock, and only once it is pressurised', () => {
+    const airlock = scene.rooms.Airlock;
+    scene.transitions.currentRoom = airlock;
+    expect(airlock.state).toBe('pressurised');
+    expect(supply.isRefilling()).toBe(true);
+    for (const state of ['depressurising', 'depressurised', 'pressurising']) {
+      airlock.state = state;
+      expect(supply.isRefilling(), state).toBe(false);
+    }
+    airlock.state = 'pressurised';
+    scene.transitions.currentRoom = scene.rooms.MainOffice;
+    expect(supply.isRefilling()).toBe(false);
+  });
+
+  it('a trip outside in the suit spends the tank, and running dry ends the night', () => {
+    scene.gameController.state = 'playing';
+    scene.suit.putOn();
+    standAt(worldPos(scene.generator).setY(1));
+    supply.onUpdate(45);
+    expect(scene.oxygen.value).toBeCloseTo(0.5);
+    supply.onUpdate(46);
+    expect(scene.gameController.state).toBe('gameOver');
+    expect(scene.gameController.failReason).toBe(OXYGEN_KILL);
+  });
+
+  it('a new night, or a retry, starts with a full tank', () => {
+    scene.oxygen.value = 0.1;
+    gameplay.getComponent(StaminaDrain).onNightStart();
+    expect(scene.oxygen.value).toBe(1);
   });
 });

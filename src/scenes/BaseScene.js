@@ -40,6 +40,11 @@ import { Power } from '../gameplay/Power.js';
 import { GeneratorSwitch } from '../components/GeneratorSwitch.js';
 import { CrtScreen, createCrtScreenMesh, RETRO_COMPUTER_SCREEN } from '../components/CrtScreen.js';
 import { createCrtMaterial } from '../shaders/CrtScreen.js';
+import { Oxygen } from '../gameplay/Oxygen.js';
+import { OxygenSupply } from '../components/OxygenSupply.js';
+
+/** Scratch for the player's world position (read every frame, never kept). */
+const _playerPos = new THREE.Vector3();
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -166,6 +171,7 @@ export class BaseScene extends Scene {
     this._addSignalStorage();
     this._addStamina();
     this._addAudio();
+    this._addOxygen();
     this._addThreats();
     this._addCrtScreen();
 
@@ -404,10 +410,38 @@ export class BaseScene extends Scene {
   }
 
   /** What every night, and every retry of one, puts back: the dispenser's
-   *  refill and the power. */
+   *  refill, the power and the suit's air. */
   _startOfNight() {
     this.rooms.MainOffice.rationDispenser?.reset();
     this.power?.reset();
+    this.oxygen?.reset();
+  }
+
+  /** The EVA suit's air: it drains while the suit is worn outside and
+   *  refills in the pressurised airlock. RoomTransitionSystem can't tell a
+   *  corridor from outside (both are null), so "outside" is its own test:
+   *  not inside any room's or corridor's shell. Those never move, so their
+   *  boxes are measured once here. On GameplaySystems after the audio, whose
+   *  helmet beep it plays. */
+  _addOxygen() {
+    const shells = [...Object.values(this.rooms), ...Object.values(this.corridors)]
+      .map(part => part.bounds());
+    const player = this.engine.player;
+    const airlock = this.rooms.Airlock;
+
+    this.oxygen = new Oxygen();
+    this.gameController.gameObject.addComponent(new OxygenSupply({
+      oxygen:      this.oxygen,
+      suit:        this.suit,
+      controller:  this.gameController,
+      hud:         this.hud,
+      audio:       this.audio,
+      isOutside:   () => {
+        player.object3d.getWorldPosition(_playerPos);
+        return !shells.some(box => box.containsPoint(_playerPos));
+      },
+      isRefilling: () => this.transitions.currentRoom === airlock && airlock.state === 'pressurised',
+    }));
   }
 
   // ──────────────────────────────────────────
