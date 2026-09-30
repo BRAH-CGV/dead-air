@@ -111,6 +111,49 @@ describe('what ships in public/', () => {
     }
     expect(duplicates).toEqual([]);
   });
+
+  // The credits screen is built from ATTRIBUTIONS.md, so it has to name what
+  // actually ships — not the candidate link someone meant to download.
+  describe('ATTRIBUTIONS.md', () => {
+    const doc = readFileSync(new URL('../../ATTRIBUTIONS.md', import.meta.url), 'utf8');
+    /** Every `public/…` file the doc names, as a pattern — `*` is a wildcard. */
+    const named = [...doc.matchAll(/`public\/([^`]+\.[a-z0-9]+)`/g)].map(m => m[1]);
+    const matches = (pattern, file) =>
+      new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '[^/]*')}$`).test(file);
+    /** The `### ` section that names `file` by its exact path. */
+    const sectionFor = file => doc.split(/^### /m).filter(s => s.includes(`\`public/${file}\``));
+    /** A .glb's asset block: Sketchfab writes the download's source into its extras. */
+    const glbAsset = file => {
+      const bytes = readFileSync(new URL(file, PUBLIC));
+      return JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()).asset ?? {};
+    };
+
+    it('names every shipped file, except the synthesised .wav sounds', () => {
+      const unnamed = shipped.filter(f => !f.endsWith('.wav') && !named.some(p => matches(p, f)));
+      expect(unnamed).toEqual([]);
+    });
+
+    it('names no file that does not ship', () => {
+      const stale = named.filter(p => !shipped.some(f => matches(p, f)));
+      expect(stale).toEqual([]);
+    });
+
+    it("credits each Sketchfab download with the source, author and licence its own file records", () => {
+      const wrong = [];
+      for (const file of shipped.filter(f => f.endsWith('.glb'))) {
+        const extras = glbAsset(file).extras;
+        if (!extras?.source) continue;
+        const sections = sectionFor(file);
+        const author = extras.author.replace(/\s*\(https?:[^)]*\)$/, '');
+        const licence = extras.license.match(/\((https?:[^)]+)\)/)[1];
+        if (sections.length !== 1) { wrong.push(`${file}: ${sections.length} entries`); continue; }
+        for (const [what, text] of [['source', extras.source], ['author', author], ['licence', licence]]) {
+          if (!sections[0].includes(text)) wrong.push(`${file}: ${what} ${text}`);
+        }
+      }
+      expect(wrong).toEqual([]);
+    });
+  });
 });
 
 describe("model:retro-computer's compound collider (phase 11, AGENTS.md worked example)", () => {

@@ -13,6 +13,16 @@ the in-game credits provide). Then fill the table: which file it became,
 where it is used, and anything we changed. Only link assets that are actually
 downloadable — the Sketchfab filter does not remove all undownloadable ones.
 
+**Copy the credit from the downloaded file, not from the link.** Sketchfab
+writes the model's title, author, licence and source URL into every `.glb`
+it serves, under `asset.extras` in the file's JSON chunk. Those four are what
+actually shipped. Ten entries here once credited the candidate someone had
+meant to download rather than the model that landed, so
+`src/assets/manifest.test.js` now reads every shipped `.glb` and fails if its
+entry here names a different source, author or licence. It also fails for any
+file under `public/` this page doesn't name, and for any file it names that
+no longer ships.
+
 ## Models
 
 ### Satellite dish tower
@@ -28,22 +38,11 @@ licensed under Creative Commons Attribution
 | **Used for** | The satellite dish outside the office |
 | **Modifications** | Created a base that the dish sits on and moves with |
 
-### Server V2 + console
-
-"Server V2 +console" (https://skfb.ly/ADNW) by FlevasGR is licensed under
-Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/server_v2_console.glb` |
-| **Manifest key** | — (downloaded, not yet wired into the manifest) |
-| **Used for** | Server rack candidate — model includes a console/terminal |
-| **Modifications** | None recorded |
-
 ### Server
 
-"Server" (https://skfb.ly/pqAAP) by //A (A87Models) is licensed under
-Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+"Server" (https://sketchfab.com/3d-models/server-884903cc15fc441ebb9075c9d84a767b)
+by //A (Demonxp) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
@@ -111,7 +110,7 @@ by PolyDavid is licensed under Creative Commons Attribution
 ### Bunk bed
 
 "bunk bed" (https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
-by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
+by Tomas Anglim (tomas.anglim.811) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -123,8 +122,8 @@ by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
 
 ### Couch
 
-"Old Couch" (https://sketchfab.com/3d-models/old-couch-443d9bb95e944afe8ebc4ff489e2886c)
-by oisougabo is licensed under Creative Commons Attribution
+"Old Couch" (https://sketchfab.com/3d-models/old-couch-8da7e0d122f544e2862b4e592988e183)
+by Oliver Triplett (OliverTriplett) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -136,9 +135,9 @@ by oisougabo is licensed under Creative Commons Attribution
 
 ### Locker
 
-"Metal Painted Rusty Wardrobe Lockers"
-(https://sketchfab.com/3d-models/metal-painted-rusty-wardrobe-lockers-f2a7e2593f884ae4bb6aa59c575b2dc4)
-by Ottto3d is licensed under Creative Commons Attribution
+"Game Ready - Rusted Locker"
+(https://sketchfab.com/3d-models/game-ready-rusted-locker-c3a4c76c7d22483eb91aa6fd949cf157)
+by Allan-Jay Branscombe (AllanJayBranscombe) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -148,10 +147,10 @@ by Ottto3d is licensed under Creative Commons Attribution
 | **Used for** | Metal storage locker prop |
 | **Modifications** | None recorded |
 
-### Metal barrel
+### Fuel barrel
 
-"Rusty metal barrel" (https://sketchfab.com/3d-models/rusty-metal-barrel-419a6272e7a94367a5fea7b23383a811)
-by pgonarg is licensed under Creative Commons Attribution
+"Fuel Barrel" (https://sketchfab.com/3d-models/fuel-barrel-55f313a9dfee4946b0a0dcb59704c2cb)
+by Emil Gilmutdinov (Emil_Gilmutdinov) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -163,9 +162,9 @@ by pgonarg is licensed under Creative Commons Attribution
 
 ### Shelf
 
-"Metal Shelf - 5MB"
-(https://sketchfab.com/3d-models/metal-shelf-5mb-1621362eb54d4571a49323ceb74f80fb)
-by Mehdi Shahsavan (ahmagh2e) is licensed under Creative Commons Attribution
+"Low-Poly Metal Shelf"
+(https://sketchfab.com/3d-models/low-poly-metal-shelf-d9f0169a2a254d5a8668d4cf598c743e)
+by Ronstu is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -308,8 +307,9 @@ by ClintonAbbott.Art is licensed under Creative Commons Attribution
 
 ### Fire extinguisher
 
-"Fire Extinguisher" (https://sketchfab.com/3d-models/fire-extinguisher-e3316e8c891843fab3eb09b87b5840e7)
-by wasabicats is licensed under Creative Commons Attribution
+"Fire Extingusher Low Poly" (sic)
+(https://sketchfab.com/3d-models/fire-extingusher-low-poly-88dffd0ed79548c589344788956233c6)
+by r.m.kowalewski is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -362,8 +362,9 @@ by Gamedirection is licensed under Creative Commons Attribution
 
 ### Simple desk
 
-"Computer Desk" (https://sketchfab.com/3d-models/computer-desk-05353724b7884bfb81211c7033a57fd4)
-by felixawani is licensed under Creative Commons Attribution
+"Old Metal Table (Low Poly)"
+(https://sketchfab.com/3d-models/old-metal-table-low-poly-92a14c8d231b4812bc7b97d03da6ddd9)
+by Berk Gedik (berkgedik) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -375,22 +376,23 @@ by felixawani is licensed under Creative Commons Attribution
 
 ### Generator
 
-"generator" (https://sketchfab.com/3d-models/generator-33af87b9605e4c8a936a91da6dd5a86b)
-by AnaCi (zuciwien) is licensed under Creative Commons Attribution
+"Game asset "Generator""
+(https://sketchfab.com/3d-models/game-asset-generator-d225389de8c24d1c9cf7102c740eccf9)
+by Daniel_Bakunin (Daniel_Baku) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
 | **File** | `public/assets/models/generator.glb` |
 | **Manifest key** | `model:generator` |
-| **Used for** | Backup generator prop |
+| **Used for** | The generator outside the base — the power you restart after a blackout |
 | **Modifications** | None recorded |
 
 ### Metal chair
 
-"Metal Folding Chair"
-(https://sketchfab.com/3d-models/metal-folding-chair-7a99fce4bdbd40e1b2949cdeb39a8fba)
-by Chen CheHsuan (jn930194) is licensed under Creative Commons Attribution
+"Folding Chair - Low Poly"
+(https://sketchfab.com/3d-models/folding-chair-low-poly-54bd0acd7c524d678128367a25a0f504)
+by Jeremy E. Grayson (JeremyGrayson) is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -402,8 +404,9 @@ by Chen CheHsuan (jn930194) is licensed under Creative Commons Attribution
 
 ### Trash bin
 
-"Metal Garbage Bin" (https://sketchfab.com/3d-models/metal-garbage-bin-acf11a0d63cb4955b554d7f2e9bfc182)
-by Alexander Korn is licensed under Creative Commons Attribution
+"PS2 Style Rusty Trash Bin"
+(https://sketchfab.com/3d-models/ps2-style-rusty-trash-bin-036b2bcc27aa4d2e9b2168f83006aa4d)
+by TetsuoTetsuo is licensed under Creative Commons Attribution
 (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
@@ -442,9 +445,8 @@ by ribot02 is licensed under Creative Commons Attribution
 
 ### Interior door
 
-"Aluminum door" (https://sketchfab.com/3d-models/aluminum-door-4200759a99154a9fbc6c74fd132371cb)
-by Paule Gennadievich (PauleMenson) is licensed under Creative Commons
-Attribution (http://creativecommons.org/licenses/by/4.0/).
+"Metal Door" (https://sketchfab.com/3d-models/metal-door-8d56d78187684f54a5c38319b43a5b1d)
+by Spellkaze is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
@@ -453,43 +455,82 @@ Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **Used for** | Interior door prop |
 | **Modifications** | None recorded |
 
-### Radar terminal — TODO: resolve
+### Radar terminal
 
-Which of these was downloaded as `industrial_terminal.glb` (now
-`radar-terminal.glb`)? One entry, drop the loser.
-
-- https://skfb.ly/oNDNS
-- https://skfb.ly/pISt8 (noted: poly count on the higher side)
+"Industrial Terminal"
+(https://sketchfab.com/3d-models/industrial-terminal-846bb4773f74406bb8a24fcf2f17cf22)
+by Vaportrash (vaportrash) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/models/radar-terminal.glb` |
+| **File** | `public/assets/models/radar-terminal.glb` (downloaded as `industrial_terminal.glb`) |
 | **Manifest key** | `model:radar-terminal` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The radar console in the server room |
+| **Modifications** | None to the file |
 
-### Desk with computer — TODO: resolve
+### Desk with computer
 
-Which of these was downloaded as `retro_futuristic_computer.glb` (now
-`retro-computer.glb`)?
-
-- https://skfb.ly/ozTNu
-- https://skfb.ly/oTuU9
+"Retro Futuristic Computer"
+(https://sketchfab.com/3d-models/retro-futuristic-computer-a197548492214728929d897245dab32a)
+by heslachris is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/models/retro-computer.glb` |
+| **File** | `public/assets/models/retro-computer.glb` (downloaded as `retro_futuristic_computer.glb`) |
 | **Manifest key** | `model:retro-computer` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The signal computer's desk in the main office |
+| **Modifications** | None to the file. In game, the CRT shader (`src/shaders/CrtScreen.js`) draws a screen over its monitor, and the manifest gives it a hand-made collider with an open kneehole |
 
-### Security camera — TODO: resolve
+### Security camera — ⚠ Sketchfab Standard licence
 
-- https://skfb.ly/oKtDJ
+"Security Camera"
+(https://sketchfab.com/3d-models/security-camera-7a4d8b033982421e8a1de6b52e979176)
+by Llop (llopestepari) is licensed under the **Sketchfab Standard** licence
+(https://sketchfab.com/licenses) — **not** Creative Commons, unlike everything
+else in this file.
+
+**Needs a decision.** The Standard licence lets a model be used inside a
+project but not handed on as a file in its own right, and a web game ships
+its `.glb` where any visitor can download it. The team should read the
+licence and either keep the camera, as it did the poster, or swap in a CC BY
+one.
 
 | | |
 |---|---|
 | **File** | `public/assets/models/security-camera.glb` |
 | **Manifest key** | `model:security-camera` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The server room's security camera, the night-3 threat |
+| **Modifications** | None to the file |
+
+### Switchboard
+
+"Switchboard USSR"
+(https://sketchfab.com/3d-models/switchboard-ussr-c3f198e379a2430cb35c6ded2bfe6fcb)
+by AlexJJ is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/switchboard.glb` (downloaded as `switchboard_ussr.glb`) |
+| **Manifest key** | `model:switchboard` |
+| **Used for** | The power box in the old `OfficeScene` only; the base does not spawn it |
+| **Modifications** | None. A byte-identical copy that shipped as `break-panel.glb` was removed |
+
+### Bush
+
+"George W. Bush in a Bush"
+(https://sketchfab.com/3d-models/george-w-bush-in-a-bush-51db4066b4f44f3797ba499c39905c0d)
+by MSEECS 298 (mseecs298) is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bush.glb` (downloaded as `best-bush.glb`) |
+| **Manifest key** | `model:bush` |
+| **Used for** | Nothing in the game spawns it; the manifest keeps it for the level editor's library |
+| **Modifications** | None |
 
 ## Sounds
 
@@ -523,19 +564,50 @@ attribution required, credited anyway). Supplied as
 | **Used for** | The wind outside the base, and in the airlock while its hatch is open |
 | **Modifications** | Renamed from `.mpeg`, otherwise as supplied |
 
-## Downloaded but unattributed — TODO
+## Images
 
-These files sit in `public/assets/models/` with no source link on record.
-If any is downloaded rather than made by us, it needs a full entry above
-before submission (the credits screen must list all non-original work):
+### Signal images — TODO: which tool
 
-- `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
-- `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
-- `break-panel.glb` (`model:break-panel`)
-- `office-scene.glb` (not in the manifest)
-- `retro_command_console_aged.glb` (not in the manifest)
-- `ragno_monster.glb` (not in the manifest)
-- `the_boiled_one_horror_game_-_boiled_one.glb` (not in the manifest)
+`public/assets/signals/signal-*.png`, eight 1024 × 768 images that the
+computer shows for a decoded signal. They were added as placeholders
+(Haydn, 10 Sept 2026). Each file carries a TC260 `AIGC` label in its XMP
+metadata, which marks it as AI-generated content, so they were not drawn or
+photographed by the team.
+
+**TODO (Haydn):** record which image generator made them, check that its
+terms allow them in a published game, and credit the tool on the credits
+screen.
+
+## Original work that ships
+
+Made by the team; listed so every file under `public/` is accounted for.
+
+- `public/assets/models/desk.glb` — a stand-in desk built from primitives
+  (`model:desk`, the living quarters' desk).
+- `public/assets/textures/floor-basecolor.png` and
+  `public/assets/textures/floor-normal.png` — a seamless procedural
+  concrete-tile pair.
+- Every `.wav` in `public/assets/audio/`; see Sounds.
+- `public/assets/models/dish-tower.glb` is a download with a base the team
+  added in Blender; its entry is at the top.
+
+## Kept in `source-assets/` — not shipped
+
+Downloads nothing in the game loads. They stay in git (the monsters may
+become enemies) but sit outside `public/`, so the build leaves them out.
+What each file records about itself:
+
+| File | Title, author, licence | Source |
+|---|---|---|
+| `source-assets/models/server_v2_console.glb` | "Server V2 +console", FlevasGR, CC BY 4.0 | https://sketchfab.com/3d-models/server-v2-console-f24594ece9634cec9c1210c041838371 |
+| `source-assets/models/retro_command_console_aged.glb` | "Retro Command Console Aged", cgwhiteford, CC BY 4.0 | https://sketchfab.com/3d-models/retro-command-console-aged-d9242c3047234734910e2a3082c4ffea |
+| `source-assets/models/ragno_monster.glb` | "Ragno (Monster)", Hobu (Hobu_Coffee), CC BY 4.0 | https://sketchfab.com/3d-models/ragno-monster-2e1a422e6f0048f98a786ceecac423d7 |
+| `source-assets/models/the_boiled_one_horror_game_-_boiled_one.glb` | "The Boiled One: Horror Game - Boiled One", MG Rips (MG_GameRips), **CC BY-NC 4.0** | https://sketchfab.com/3d-models/the-boiled-one-horror-game-boiled-one-64ce66c413fe4e5e92a48e8e02a83590 |
+| `source-assets/models/office-scene.glb` | Exported from Blender, with no source recorded | — |
+
+Before any of these ships, give it a full entry above. The Boiled One needs
+more than that: its uploader's name says it was ripped from a commercial
+game, and an uploader can't license a character they don't own.
 
 ## Candidate links — upcoming assets
 
