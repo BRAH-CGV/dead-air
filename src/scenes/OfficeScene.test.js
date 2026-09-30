@@ -260,3 +260,92 @@ describe('OfficeScene ground', () => {
     expect(mockEngine.scene.fog.color.getHex()).toBe(before);
   });
 });
+
+// ─────────────────────────────────────────────
+// Bugs from docs/BUG-TRACKER.md. The editor's scene switcher ships in the
+// production build, so this scene is still reachable there.
+// ─────────────────────────────────────────────
+
+/** An engine whose spawnModel registers the model as a root object, the way
+ *  the real Engine.spawnModel does, and whose buildPlayer remembers where it
+ *  put the player. Every static box's name, centre and size is recorded. */
+function bugEngine(SceneClass) {
+  const engine = {
+    scene: new THREE.Scene(),
+    world: {
+      createRigidBody: vi.fn(() => ({ handle: Math.random(), bodyType: vi.fn(() => 'fixed'), setTranslation: vi.fn(), setRotation: vi.fn() })),
+      createCollider: vi.fn(() => ({ handle: Math.random() })),
+    },
+    assets: { get: vi.fn(() => null) },
+    _rootObjects: [],
+    rigidBodyMap: new Map(),
+    _bodyToGO: new Map(),
+    spawnModel: vi.fn((key, opts = {}) => {
+      const go = new GameObject(opts.name || key);
+      go.object3d.position.set(...(opts.position || [0, 0, 0]));
+      engine._rootObjects.push(go);
+      return go;
+    }),
+    buildPlayer: vi.fn(({ position = [0, 1, 5] } = {}) => {
+      engine.spawn = position;
+      const player = new GameObject('Player');
+      engine._rootObjects.push(player);
+      return player;
+    }),
+  };
+  engine.boxes = [];
+  const add = SceneClass.prototype._addStaticBox;
+  vi.spyOn(SceneClass.prototype, '_addStaticBox').mockImplementation(function (name, position, size, ...rest) {
+    engine.boxes.push({ name, position, size });
+    return add.call(this, name, position, size, ...rest);
+  });
+  return engine;
+}
+
+/** Does a standing player's capsule at `spawn` (its centre) overlap `box`? */
+function overlaps(spawn, box, radius = 0.3, halfHeight = 0.675) {
+  const reach = [radius, halfHeight, radius];
+  return [0, 1, 2].every(axis =>
+    Math.abs(spawn[axis] - box.position[axis]) < box.size[axis] / 2 + reach[axis]);
+}
+
+describe('OfficeScene bugs', () => {
+  let engine;
+  let scene;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    engine = bugEngine(OfficeScene);
+    scene = new OfficeScene(engine);
+    scene.build();
+  });
+
+  // BUG-001: the engine updated each prop once as a root object and again as
+  // a child of the Office group — the dish slewed at double speed.
+  it('updates each prop once: nothing it parents is still a root object', () => {
+    const doubled = engine._rootObjects.filter(go => go.parent).map(go => go.name);
+    expect(doubled).toEqual([]);
+  });
+
+  // BUG-002: the default spawn, z = 5, is the front wall's line, and the
+  // doorway is at x = 2, not x = 0.
+  it('starts the player clear of every wall', () => {
+    const inside = engine.boxes.filter(box => overlaps(engine.spawn, box)).map(box => box.name);
+    expect(inside).toEqual([]);
+  });
+
+  it('starts the player inside the office, not out in the valley', () => {
+    const [x, , z] = engine.spawn;
+    expect(Math.abs(x)).toBeLessThan(4);
+    expect(Math.abs(z)).toBeLessThan(5);
+  });
+
+  // BUG-005: the cylinder is already a flat disc along Y; turning it 90°
+  // stood it on edge like a wall plate.
+  it('hangs the ceiling-light fixture flat against the ceiling', () => {
+    const light = engine._rootObjects.find(go => go.name === 'SceneRoot').find('CeilingLight');
+    const fixture = light.object3d.children.find(child => child.isMesh);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(fixture.quaternion);
+    expect(up.y).toBeCloseTo(1, 6);
+  });
+});

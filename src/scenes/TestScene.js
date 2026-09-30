@@ -158,7 +158,7 @@ export class TestScene extends Scene {
       rotationY: Math.PI,
       scale: 0.333,
     });
-    this._corridor.addChild(server);
+    this._adopt(this._corridor, server);
 
     // Radar terminal against the left wall
     const radar = this.engine.spawnModel('model:radar-terminal', {
@@ -167,7 +167,7 @@ export class TestScene extends Scene {
       rotationY: Math.PI / 2,
       scale: 0.478,
     });
-    this._corridor.addChild(radar);
+    this._adopt(this._corridor, radar);
 
     // Security camera looking down the corridor
     const cam = this.engine.spawnModel('model:security-camera', {
@@ -177,7 +177,18 @@ export class TestScene extends Scene {
       physics: 'none',
     });
     cam.object3d.rotation.set(Math.PI / 4, 0, 0);
-    this._corridor.addChild(cam);
+    this._adopt(this._corridor, cam);
+  }
+
+  /** Parent a spawned model under `parent`, and take it off the engine's
+   *  root list: spawnModel registers every model as a root object, and a
+   *  model that is both a root and a child is updated twice a frame
+   *  (BUG-001). Same as OfficeScene._adopt. */
+  _adopt(parent, go) {
+    const roots = this.engine._rootObjects;
+    const i = roots.indexOf(go);
+    if (i !== -1) roots.splice(i, 1);
+    parent.addChild(go);
   }
 
   // ──────────────────────────────────────────

@@ -62,14 +62,16 @@ export class OfficeScene extends Scene {
       scale: 0.137,
       type: Satellite,
     });
-    this._outside.addChild(this.satellite);
+    this._adopt(this._outside, this.satellite);
     // Aim it off the shipped pose so the slew plays out on load. Gameplay
     // (the radar terminal) will steer these later.
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
 
     // ── Player (shared across all scenes) ──
-    this.engine.buildPlayer();
+    // Inside the office, between the desk and the front door. The engine's
+    // default, z = 5, is the front wall's own line (BUG-002).
+    this.engine.buildPlayer({ position: [0, 1, 2] });
 
     // ── Gameplay systems ──
     this._addGameplaySystems();
@@ -199,8 +201,8 @@ export class OfficeScene extends Scene {
         emissiveIntensity: 1.8,
       }),
     );
+    // A cylinder is already a flat disc along Y, flush with the ceiling.
     fixture.position.copy(ceilingLight.position);
-    fixture.rotation.x = Math.PI / 2;
     ceilingLightGO.object3d.add(fixture);
   
     const deskGlowGO = new GameObject('DeskGlow');
@@ -346,7 +348,7 @@ export class OfficeScene extends Scene {
       rotationY: 0,
       scale: 0.016,
     });
-    this._office.addChild(computer);
+    this._adopt(this._office, computer);
       
     const server = this.engine.spawnModel('model:server-rack', { 
       name: 'ServerRack', 
@@ -354,7 +356,7 @@ export class OfficeScene extends Scene {
       rotationY: -Math.PI / 2,
       scale: 0.333,
     });
-    this._office.addChild(server);
+    this._adopt(this._office, server);
       
     const radar = this.engine.spawnModel('model:radar-terminal', { 
       name: 'RadarTerminal', 
@@ -362,7 +364,7 @@ export class OfficeScene extends Scene {
       rotationY: Math.PI / 2,
       scale: 0.478,
     });
-    this._office.addChild(radar);
+    this._adopt(this._office, radar);
       
     const switchboard = this.engine.spawnModel('model:switchboard', { 
       name: 'Switchboard', 
@@ -370,7 +372,7 @@ export class OfficeScene extends Scene {
       rotationY: -Math.PI / 2,
       scale: 0.638,
     });
-    this._office.addChild(switchboard);
+    this._adopt(this._office, switchboard);
   
     const cameras = [
       { name: 'SecurityCamera_Window', position: [-2.2, 2.75, -4.65], rotation: [Math.PI / 5, -Math.PI / 8, 0] },
@@ -386,10 +388,21 @@ export class OfficeScene extends Scene {
         physics: 'none',
       });
       go.object3d.rotation.set(...camera.rotation);
-      this._office.addChild(go);
+      this._adopt(this._office, go);
     }
   }
   
+  /** Parent a spawned model under `parent`, and take it off the engine's
+   *  root list: spawnModel registers every model as a root object, and a
+   *  model that is both a root and a child is updated twice a frame
+   *  (BUG-001). Mirrors BaseScene._adopt. */
+  _adopt(parent, go) {
+    const roots = this.engine._rootObjects;
+    const i = roots.indexOf(go);
+    if (i !== -1) roots.splice(i, 1);
+    parent.addChild(go);
+  }
+
   /** Helper: add static procedural room geometry with matching collision.
    *  Returns the GameObject so callers can parent it into the hierarchy. */
   _addStaticBox(name, position, size, material, parent) {
