@@ -250,6 +250,17 @@ export const SOUNDS = {
     return fadeOut(out, 0.9, 0.98);
   }),
 
+  // ── Suit ───────────────────────────────────
+  // Low air: the helmet's two-tone alarm, high then low, a little muffled.
+  'sfx:o2-warning': shot(0.5, n => {
+    const out = new Float32Array(n);
+    const beep = f => mul(lowpass(osc(samples(0.14), f, 'square'), 3000),
+      envelope(samples(0.14), [[0, 0], [0.005, 1], [0.12, 0.8], [0.14, 0]]));
+    mix(out, beep(1250), 0.6);
+    mix(out, beep(940), 0.6, 0.18);
+    return fadeOut(out, 0.4, 0.48);
+  }),
+
   // ── Threats ────────────────────────────────
   // The sleep demon: slow wet breaths — a wheezing inhale, a growled exhale.
   // Silent at both ends, so it loops without help.

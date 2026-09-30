@@ -168,6 +168,32 @@
       }
       #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
       #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
+      /* Oxygen: the stamina bar's twin, shown only while the suit is on. */
+      #hud-oxygen {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #8898a8;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      #hud-oxygen-track {
+        width: 120px;
+        height: 5px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #hud-oxygen-fill {
+        width: 100%;
+        height: 100%;
+        background: #6ab8e8;
+        transition: background 0.4s ease;
+      }
+      #hud-oxygen[data-level="low"] { color: #e0503c; }
+      #hud-oxygen[data-level="low"] #hud-oxygen-fill { background: #e0503c; }
       #hud-objective {
         display: none;
         max-width: 280px;
@@ -280,6 +306,7 @@
       <div id="hud-suit">EVA suit on</div>
       <div id="hud-objective"></div>
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
+      <div id="hud-oxygen" data-level="ok"><span>Oxygen</span><div id="hud-oxygen-track"><div id="hud-oxygen-fill"></div></div></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->

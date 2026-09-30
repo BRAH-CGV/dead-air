@@ -188,3 +188,51 @@ describe('HUD stamina bar', () => {
     expect(() => new HUD(null).setStamina(0.5, 'ok')).not.toThrow();
   });
 });
+
+// ── Oxygen gauge ──────────────────────────────────────────
+describe('HUD oxygen gauge', () => {
+  function fakeRoot() {
+    const bar = { style: {}, dataset: {} };
+    const fill = { style: {} };
+    const els = { '#hud-oxygen': bar, '#hud-oxygen-fill': fill };
+    return { bar, fill, root: { style: {}, querySelector: sel => els[sel] ?? null } };
+  }
+
+  it('shows the tank left while the suit is on', () => {
+    const { bar, fill, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setOxygen(0.6);
+    expect(bar.style.display).toBe('flex');
+    expect(fill.style.width).toBe('60%');
+    expect(bar.dataset.level).toBe('ok');
+  });
+
+  it('turns to the warning colour below a quarter', () => {
+    const { bar, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setOxygen(0.2);
+    expect(bar.dataset.level).toBe('low');
+  });
+
+  it('hides for null (no suit on)', () => {
+    const { bar, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setOxygen(0.5);
+    hud.setOxygen(null);
+    expect(bar.style.display).toBe('none');
+  });
+
+  it('only touches the DOM when what it shows changes (it is called every frame)', () => {
+    const { bar, fill, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setOxygen(0.5);
+    fill.style = new Proxy({}, { set() { throw new Error('wrote the DOM'); } });
+    bar.style = new Proxy({}, { set() { throw new Error('wrote the DOM'); } });
+    bar.dataset = new Proxy({}, { set() { throw new Error('wrote the DOM'); } });
+    expect(() => hud.setOxygen(0.501)).not.toThrow();
+  });
+
+  it('does nothing without the markup', () => {
+    expect(() => new HUD(null).setOxygen(0.5)).not.toThrow();
+  });
+});

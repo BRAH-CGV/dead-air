@@ -4,7 +4,7 @@
 // Three classes wrapping DOM elements defined in index.html:
 //
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
-//                      EVA suit indicator, stamina bar
+//                      EVA suit indicator, stamina bar, oxygen gauge
 //   RadarOverlay     – 2D canvas radar display with signal blips
 //   SignalReviewPanel– modal for save/delete after scanning a signal
 //
@@ -29,6 +29,10 @@ export class HUD {
     this._staminaFill = root?.querySelector('#hud-stamina-fill') ?? null;
     this._staminaShown = -1;
     this._staminaLevel = null;
+    this._oxygen     = root?.querySelector('#hud-oxygen')      ?? null;
+    this._oxygenFill = root?.querySelector('#hud-oxygen-fill') ?? null;
+    this._oxygenShown = null;    // percent shown, or null while hidden
+    this._oxygenLevel = null;
   }
 
   show() { if (this.root) this.root.style.display = 'block'; }
@@ -86,6 +90,26 @@ export class HUD {
     if (level !== this._staminaLevel && this._stamina) {
       this._staminaLevel = level;
       this._stamina.dataset.level = level;
+    }
+  }
+
+  /** The suit's oxygen gauge: the tank left (0..1), or null to hide it
+   *  (no suit on). Turns to the warning colour below a quarter. Called
+   *  every frame, so it writes the DOM only when what it shows changes. */
+  setOxygen(value) {
+    if (!this._oxygen || !this._oxygenFill) return;
+    const percent = value == null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100);
+    if (percent === this._oxygenShown) return;
+    if ((percent === null) !== (this._oxygenShown === null)) {
+      this._oxygen.style.display = percent === null ? 'none' : 'flex';
+    }
+    this._oxygenShown = percent;
+    if (percent === null) return;
+    this._oxygenFill.style.width = `${percent}%`;
+    const level = percent < 25 ? 'low' : 'ok';
+    if (level !== this._oxygenLevel) {
+      this._oxygenLevel = level;
+      this._oxygen.dataset.level = level;
     }
   }
 

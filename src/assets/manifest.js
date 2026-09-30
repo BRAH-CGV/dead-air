@@ -320,6 +320,7 @@ const PLACED = {
   'sfx:death-sting':   { type: 'audio', url: 'assets/audio/death-sting.wav' },
   'sfx:power-cut':     { type: 'audio', url: 'assets/audio/power-cut.wav' },
   'sfx:ration':        { type: 'audio', url: 'assets/audio/ration.wav' },
+  'sfx:o2-warning':    { type: 'audio', url: 'assets/audio/o2-warning.wav' },
 };
 
 /**
