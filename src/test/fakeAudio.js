@@ -156,3 +156,26 @@ export function fakeDocument() {
   };
   return doc;
 }
+
+/**
+ * A stand-in for AudioSystem, for code that only asks it for sounds:
+ * `play` is a spy, and each `positional` emitter is recorded in `loops`
+ * with its key, the object it rides and its current level and rate.
+ */
+export function fakeAudioSystem(vi) {
+  const loops = [];
+  return {
+    loops,
+    loop: key => loops.find(e => e.key === key),
+    play: vi.fn(),
+    positional: vi.fn((key, object3d, opts = {}) => {
+      const emitter = {
+        key, object3d, opts, level: 0, rate: 1,
+        setLevel(level) { this.level = Math.min(1, Math.max(0, level)); return this; },
+        setRate(rate) { this.rate = rate; return this; },
+      };
+      loops.push(emitter);
+      return emitter;
+    }),
+  };
+}

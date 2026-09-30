@@ -5,6 +5,7 @@ import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { createMonsterFigure } from '../../gameobjects/MonsterFigure.js';
 import { WindowWatchers, WINDOW_WATCHER_KILL } from './WindowWatchers.js';
 import { WINDOW_WATCHERS as T } from './WindowWatcherLogic.js';
+import { fakeAudioSystem } from '../../test/fakeAudio.js';
 
 // MarsTerrain (ground height) imports Rapier, whose WASM won't load here.
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
@@ -145,5 +146,29 @@ describe('WindowWatchers', () => {
     threat.start(ctx);
     expect(threat.logic.phase).toBe('idle');
     expect(figure.object3d.visible).toBe(false);
+  });
+});
+
+describe('WindowWatchers sound', () => {
+  it('taps on the glass, from the glass, the moment it looks in, and only then', () => {
+    const office = makeOffice();
+    const camera = new THREE.PerspectiveCamera();
+    place(camera, UNDER_DESK, INTO_ROOM);
+    const figure = createMonsterFigure({ name: 'WindowWatcher' });
+    const audio = fakeAudioSystem(vi);
+    const threat = new WindowWatchers({ figure, rand: () => 0 });
+    threat.start({
+      engine: { camera }, rooms: { MainOffice: office },
+      transitions: { currentRoom: office }, controller: { fail: vi.fn() }, audio,
+    });
+
+    run(threat, 25 + T.approachTime - 0.1);
+    expect(audio.play).not.toHaveBeenCalled();
+    run(threat, 0.2);
+    expect(threat.logic.phase).toBe('peer');
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(audio.play).toHaveBeenCalledWith('sfx:glass-tap', expect.objectContaining({ at: figure.object3d }));
+    run(threat, T.peerTime + T.leaveTime);
+    expect(audio.play).toHaveBeenCalledTimes(1);
   });
 });

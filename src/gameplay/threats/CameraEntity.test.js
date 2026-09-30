@@ -7,6 +7,7 @@ import { ServerRoom } from '../../scenes/rooms/ServerRoom.js';
 import { makeEngine } from '../../test/fakeRapier.js';
 import { CameraEntity, CAMERA_ENTITY_KILL } from './CameraEntity.js';
 import { CAMERA_ENTITY as T } from './CameraEntityLogic.js';
+import { fakeAudioSystem } from '../../test/fakeAudio.js';
 
 // A real ServerRoom, moved off the origin so every point goes through its
 // transform. Its rig starts at the racks (minYaw) and sweeps to the console.
@@ -151,6 +152,42 @@ describe('CameraEntity', () => {
     expect(threat.exposure.exposure).toBe(0);
     expect(rig.yaw).toBeCloseTo(rig.minYaw);
     expect(threat.sweep.time).toBe(0);
+  });
+
+  describe('sound', () => {
+    let audio, servo, tone;
+    beforeEach(() => {
+      audio = fakeAudioSystem(vi);
+      threat.start({ ...ctx, audio });
+      servo = audio.loop('amb:camera-servo');
+      tone = audio.loop('amb:camera-tone');
+    });
+
+    it('both ride the rig', () => {
+      expect(servo.object3d).toBe(rig.object3d);
+      expect(tone.object3d).toBe(rig.object3d);
+    });
+
+    it('the servo whines while the rig turns, and not in the pauses at either end', () => {
+      threat.update(1 / 30);
+      expect(servo.level).toBe(0);                      // pausing at the racks
+      run(threat, T.pauseTime + T.sweepTime / 2);
+      expect(servo.level).toBeGreaterThan(0);
+      run(threat, T.sweepTime / 2 + 0.2);               // arrived: pausing at the console
+      expect(servo.level).toBe(0);
+    });
+
+    it('the tone rises in level and pitch as it sees the player, and dies with stop()', () => {
+      threat.update(1 / 30);
+      expect(tone.level).toBe(0);
+      stand(AT_CONSOLE);
+      untilLocked();
+      expect(tone.level).toBeCloseTo(threat.exposure.exposure);
+      expect(tone.rate).toBeGreaterThan(1);
+      threat.stop();
+      expect(tone.level).toBe(0);
+      expect(servo.level).toBe(0);
+    });
   });
 
   describe('default line of sight', () => {

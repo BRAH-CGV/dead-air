@@ -17,6 +17,9 @@ import { terrainHeightAt } from '../../gameobjects/MarsTerrain.js';
 //             be is enough to hold it. While the terminal's radar or review
 //             screen is up the player is looking at that, not the room.
 //
+// It breathes: a loop on the figure, silent while it is nowhere and louder
+// with every stage closer, on top of the distance falloff.
+//
 // The figure is a hidden, body-less GameObject the scene builds and owns.
 // Ambiguous on purpose — the protagonist is an insomniac, and nothing it
 // does can be told apart from a tired mind until it is too late.
@@ -70,6 +73,8 @@ export class SleepDemon extends Threat {
   onStart() {
     this.logic.start();
     this.figure.object3d.visible = false;
+    this._breath = this.loop('amb:breathing', this.figure.object3d, { volume: 0.8, refDistance: 1.5 });
+    this._breath?.setLevel(0);
     this._readAnchors();
   }
 
@@ -146,10 +151,10 @@ export class SleepDemon extends Threat {
 
   _onMove(stage) {
     const o = this.figure.object3d;
-    if (stage === 0) { o.visible = false; return; }
-    const spot = stage === this._spots.length - 1
-      ? this._behindPlayer(this._spots[stage])
+    const spot = stage === 0 ? null
+      : stage === this._spots.length - 1 ? this._behindPlayer(this._spots[stage])
       : this._spotFor(stage);
+    this._breath?.setLevel(spot ? stage / this.tuning.stages : 0);
     if (!spot) { o.visible = false; return; }
     o.position.copy(spot);
     o.visible = true;

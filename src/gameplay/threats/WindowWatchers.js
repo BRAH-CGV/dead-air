@@ -18,6 +18,8 @@ import { makeRandom } from '../../core/Random.js';
 //             and back, both read room-local and taken through the office's
 //             transform — nothing here knows where the office is
 //
+// It taps on the glass as it arrives to look in — the cue to hide.
+//
 // The figure is a hidden, body-less GameObject the scene builds and owns.
 // ─────────────────────────────────────────────
 
@@ -48,6 +50,7 @@ export class WindowWatchers extends Threat {
     this._glass  = new THREE.Vector3();
     this._far    = new THREE.Vector3();
     this._lookIn = new THREE.Vector3();
+    this._tap = { at: figure.object3d, volume: 0.9 };
     this.logic = new WindowWatcherLogic({
       rand, tuning,
       isSeen:    () => this.isSeen(),
@@ -105,6 +108,7 @@ export class WindowWatchers extends Threat {
 
   _onPhase(phase) {
     if (phase === 'approach') this._pickPoints();
+    if (phase === 'peer') this.ctx?.audio?.play('sfx:glass-tap', this._tap);
     this.figure.object3d.visible = this.logic.visible;
   }
 

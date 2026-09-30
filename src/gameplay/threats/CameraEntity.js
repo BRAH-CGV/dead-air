@@ -14,6 +14,8 @@ import { CAMERA_ENTITY, CameraSweep, CameraExposure, inCone, turnToward } from '
 //               lens to the eye hits nothing solid — racks are the cover
 //   lock-on     past 0.6 exposure the sweep waits and the rig turns to
 //               follow the eye until exposure has decayed away
+//   sound       a servo whine as loud as the rig is turning, and a tone
+//               that rises in level and pitch with exposure
 //
 // Night 3 is also when saved signals have to be stored at the console in
 // this room (SignalManager storage), which is what brings the player in.
@@ -66,6 +68,10 @@ export class CameraEntity extends Threat {
     rig.yaw = this.sweep.yaw;
     rig.tilt = rig.restTilt;
     rig.setActive(true);
+    this._servo = this.loop('amb:camera-servo', rig.object3d, { volume: 0.5, refDistance: 2 });
+    this._tone  = this.loop('amb:camera-tone',  rig.object3d, { volume: 0.6, refDistance: 3 });
+    this._servo?.setLevel(0);
+    this._tone?.setLevel(0).setRate(1);
   }
 
   onStop() {
@@ -94,9 +100,17 @@ export class CameraEntity extends Threat {
       tilt = rig.restTilt;
     }
     const step = this.tuning.turnRate * dt;
+    const yawWas = rig.yaw, tiltWas = rig.tilt;
     rig.yaw = turnToward(rig.yaw, yaw, step);
     rig.tilt = turnToward(rig.tilt, tilt, step);
-    rig.setAlert(this.exposure.exposure);
+    const exposure = this.exposure.exposure;
+    rig.setAlert(exposure);
+
+    if (this._servo && step > 0) {
+      const turned = Math.max(Math.abs(rig.yaw - yawWas), Math.abs(rig.tilt - tiltWas));
+      this._servo.setLevel(turned / step);
+    }
+    this._tone?.setLevel(exposure).setRate(1 + 0.5 * exposure);
   }
 
   /** In the aisle, in the cone, and nothing solid between. The cheap tests

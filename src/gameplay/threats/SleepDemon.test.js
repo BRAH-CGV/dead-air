@@ -11,6 +11,7 @@ import { terrainHeightAt } from '../../gameobjects/MarsTerrain.js';
 import { Stamina } from '../Stamina.js';
 import { SleepDemon, SLEEP_DEMON_KILL } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
+import { fakeAudioSystem } from '../../test/fakeAudio.js';
 
 // Real rooms, moved off the origin so every anchor goes through a transform.
 const OFFICE = [5, 0, -3];
@@ -159,5 +160,44 @@ describe('SleepDemon', () => {
     demon.start(ctx);
     expect(demon.logic.stage).toBe(0);
     expect(figure.object3d.visible).toBe(false);
+  });
+});
+
+describe('SleepDemon sound', () => {
+  it('breathes from the figure: nothing while it is nowhere, louder with each step closer', () => {
+    const office = new MainOffice(makeEngine(), { position: OFFICE });
+    office.build();
+    const quarters = new LivingQuarters(makeEngine(), { position: QUARTERS, doorOffset: 1 });
+    quarters.build();
+    for (const r of [office, quarters]) r.root.object3d.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
+    camera.position.set(OFFICE[0], EYE, OFFICE[2]);
+    camera.lookAt(OFFICE[0] + 10, EYE, OFFICE[2]);
+    camera.updateMatrixWorld(true);
+    const figure = new GameObject('SleepDemon');
+    const stamina = new Stamina();
+    const audio = fakeAudioSystem(vi);
+    const demon = new SleepDemon({ figure });
+    demon.start({
+      engine: { camera }, rooms: { MainOffice: office, LivingQuarters: quarters },
+      stamina, controller: { fail: vi.fn() }, scene: { terminal: { state: 'idle' } }, audio,
+    });
+    const run = seconds => { for (let t = 0; t < seconds - 1e-9; t += 0.1) demon.update(0.1); };
+
+    const breath = audio.loop('amb:breathing');
+    expect(breath.object3d).toBe(figure.object3d);
+    expect(breath.level).toBe(0);
+
+    stamina.value = 0.3;
+    run(T.moveInterval + 0.2);
+    expect(demon.logic.stage).toBe(1);
+    const far = breath.level;
+    expect(far).toBeGreaterThan(0);
+    run(2 * (T.moveInterval + 0.2));
+    expect(demon.logic.stage).toBe(3);
+    expect(breath.level).toBeGreaterThan(far);
+
+    demon.stop();
+    expect(breath.level).toBe(0);
   });
 });
