@@ -233,15 +233,37 @@ describe('ComputerTerminal', () => {
     expect(term._hoveredSignal).toBe(sig2);
   });
 
+  // Signals are scattered at random, so the other four have to be placed:
+  // left where startNight put them, one lands within reach of the cursor
+  // about one run in twelve, and is rightly hovered.
   it('hover ignores resolved signals', () => {
     term.enter();
     const sig = mgr.signals[0];
-    mgr.saveSignal(sig.id);  // mark as resolved
+    for (const other of mgr.signals) {
+      other.yaw = sig.yaw;
+      other.pitch = sig.pitch;
+    }
+    mgr.saveSignal(mgr.signals[0].id);
+    mgr.saveSignal(mgr.signals[1].id);
+    for (const other of mgr.signals.slice(2)) mgr.deleteSignal(other.id);
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
     term._cursorY = cur.y;
     term._updateHover();
     expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('a resolved signal does not hide a live one on the same spot', () => {
+    term.enter();
+    const [sig, live] = mgr.signals;
+    live.yaw = sig.yaw;
+    live.pitch = sig.pitch;
+    mgr.saveSignal(sig.id);
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(live);
   });
 
   it('hover is null when cursor is far from any signal', () => {
