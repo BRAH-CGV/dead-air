@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { SpecularGlossinessExtension } from './SpecularGlossiness.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { ASSETS, validateManifest } from '../assets/manifest.js';
 import {
@@ -63,6 +64,9 @@ export class AssetManager {
 
     this.manager = new THREE.LoadingManager();
     this.gltfLoader = new GLTFLoader(this.manager);
+    // Some downloads keep their colours in the older spec-gloss material
+    // model, which three no longer reads (BUG-008).
+    this.gltfLoader.register(parser => new SpecularGlossinessExtension(parser));
     this.textureLoader = new THREE.TextureLoader(this.manager);
     this.audioLoader = new THREE.AudioLoader(this.manager);
 
