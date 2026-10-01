@@ -310,11 +310,35 @@ describe('ComputerTerminal', () => {
     expect(term._hoveredSignal).toBeNull();
   });
 
-  it('hover ignores signals still fading in', () => {
+  it('hover catches a signal while it is still fading in', () => {
     term.enter();
     const sig = mgr.signals[0];
     sig.appeared = true;
     sig.fadeElapsed = sig.fadeSeconds * 0.5;   // visible but half-transparent
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+  });
+
+  it('hover catches a signal while it is fading back out', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.lifeSeconds - sig.fadeSeconds * 0.5;  // half-gone
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+  });
+
+  it('hover ignores signals that have completely faded out', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.lifeSeconds;   // window over, dot invisible
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
     term._cursorY = cur.y;

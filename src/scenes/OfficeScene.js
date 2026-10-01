@@ -12,6 +12,7 @@ import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { SignalAlertLight } from '../gameobjects/SignalAlertLight.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 
 // ─────────────────────────────────────────────
@@ -148,6 +149,13 @@ export class OfficeScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     gameplayGO.addComponent(this.gameController);
+
+    // The placeholder warning lamp over the desk: dark until a signal window
+    // opens, so the player can tell from across the room that one has.
+    if (this.signalLight) {
+      this.signalLight.signalManager  = this.signalManager;
+      this.signalLight.gameController = this.gameController;
+    }
 
     // Wire review panel callbacks into the terminal.
     this.reviewPanel.onSave(() => {
@@ -352,6 +360,13 @@ export class OfficeScene extends Scene {
       scale: 0.016,
     });
     this._office.addChild(computer);
+
+    // Placeholder warning lamp above the desk (a real model later): blinks
+    // red while an unscanned signal is visible, wired up in
+    // _addGameplaySystems.
+    this.signalLight = new SignalAlertLight();
+    this.signalLight.object3d.position.set(0, 1.3, -2.45);
+    this._office.addChild(this.signalLight);
       
     const server = this.engine.spawnModel('model:server-rack', { 
       name: 'ServerRack', 

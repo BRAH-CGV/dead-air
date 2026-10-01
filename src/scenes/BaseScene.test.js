@@ -605,6 +605,12 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
   });
 
+  it('wires the office signal lamp to the manager and the controller', () => {
+    const light = scene.rooms.MainOffice.signalLight;
+    expect(light.signalManager).toBe(scene.signalManager);
+    expect(light.gameController).toBe(scene.gameController);
+  });
+
   it('turns the night to day and back with the controller — sky, lights and fog', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const daylight = gameplay.getComponent(Daylight);

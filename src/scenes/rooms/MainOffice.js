@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
+import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -21,12 +22,17 @@ import { WallClock } from '../../gameobjects/WallClock.js';
 //
 // A wall clock hangs right of the window. The room builds it; the scene
 // hands it the NightClock (`wallClock.clock`), since rooms don't know about
-// gameplay.
+// gameplay. Same for the red signal lamp above the computer desk: the room
+// perches it, the scene wires it to the SignalManager and GameController
+// (`signalLight.signalManager` / `.gameController`).
 // ─────────────────────────────────────────────
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
   wallClock = null;
+
+  /** Perched by buildProps(). @type {SignalAlertLight|null} */
+  signalLight = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -83,6 +89,7 @@ export class MainOffice extends Room {
   buildProps() {
     this._buildWindowFrame();
     this._buildWallClock();
+    this._buildSignalLight();
 
     // rotationY 0 seats the desk facing the back window — the dish tower is
     // out there, and the terminal's whole job is aiming it. The kneehole
@@ -165,6 +172,14 @@ export class MainOffice extends Room {
     this.wallClock = this._own(new WallClock());
     this.wallClock.object3d.position.set(5.15, 1.95, -4.9);
     this.root.addChild(this.wallClock);
+  }
+
+  /** Above the computer desk, where it reads from anywhere in the room. A
+   *  placeholder sphere until a proper warning-lamp model is sourced. */
+  _buildSignalLight() {
+    this.signalLight = this._own(new SignalAlertLight());
+    this.signalLight.object3d.position.set(0, 1.3, -2.45);
+    this.root.addChild(this.signalLight);
   }
 
   /** Frame around the back-wall opening. Left clear of glass: imported desk

@@ -327,8 +327,12 @@ export class BaseScene extends Scene {
     }));
 
     // Rooms build the clock and the bed; gameplay is handed to them here.
-    const { wallClock } = this.rooms.MainOffice;
+    const { wallClock, signalLight } = this.rooms.MainOffice;
     if (wallClock) wallClock.clock = this.nightClock;
+    if (signalLight) {
+      signalLight.signalManager  = this.signalManager;
+      signalLight.gameController = this.gameController;
+    }
     this.screenFade = new ScreenFade();
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {

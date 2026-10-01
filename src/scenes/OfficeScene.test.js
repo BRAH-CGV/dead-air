@@ -17,6 +17,7 @@ vi.mock('@dimforge/rapier3d', () => {
 
 import { OfficeScene } from './OfficeScene.js';
 import { GameObject } from '../core/GameObject.js';
+import { SignalAlertLight } from '../gameobjects/SignalAlertLight.js';
 
 describe('OfficeScene hierarchy', () => {
   let scene;
@@ -126,6 +127,23 @@ describe('OfficeScene hierarchy', () => {
     
     // buildPlayer is called, which adds Player to _rootObjects
     expect(mockEngine.buildPlayer).toHaveBeenCalled();
+  });
+
+  it('perches the signal alert lamp above the computer desk, wired to gameplay', () => {
+    scene.build();
+
+    const light = scene.signalLight;
+    expect(light).toBeInstanceOf(SignalAlertLight);
+    expect(light.parent).toBe(scene._office);
+    expect(light.signalManager).toBe(scene.signalManager);
+    expect(light.gameController).toBe(scene.gameController);
+
+    const pos = light.object3d.position;
+    expect(Math.abs(pos.x)).toBeLessThan(0.5);       // over the desk…
+    expect(pos.z).toBeGreaterThan(-3.05);            // …which stands at z −2.55
+    expect(pos.z).toBeLessThan(-2.05);
+    expect(pos.y).toBeGreaterThan(1.0);              // clear of the monitor
+    expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
   });
 
   it('ground exposes its rigid body and collider for scene teardown', () => {

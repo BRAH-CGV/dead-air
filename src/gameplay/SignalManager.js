@@ -8,8 +8,10 @@ import { SignalTarget } from './SignalTarget.js';
 // scales with night number.
 //
 // Signals are not all visible at 12:00: each one carries an appearAt shift
-// fraction spread across [APPEAR_START, APPEAR_BY], and fades in over
-// SIGNAL_FADE_SECONDS once the night reaches it — the sky is often empty.
+// fraction spread across [APPEAR_START, APPEAR_BY], and pops in for a
+// short window once the night reaches it — fade in over
+// SIGNAL_FADE_SECONDS, hold VISIBLE_SECONDS, fade back out. The sky is
+// often empty, and a missed window is gone for the night.
 //
 // Usage:
 //   const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: urls });
@@ -40,8 +42,13 @@ export const APPEAR_START = 0.05;
  *  night left to scan the quota. */
 export const APPEAR_BY = 0.75;
 
-/** Real seconds a signal's radar dot takes to fade fully in. */
+/** Real seconds a signal's radar dot takes to fade fully in (and out). */
 export const SIGNAL_FADE_SECONDS = 3;
+
+/** Real seconds a signal holds at full brightness before fading back out.
+ *  Windows are short on purpose — the alert lamp exists to drag the
+ *  player to the terminal the moment one opens. */
+export const VISIBLE_SECONDS = 15;
 
 export class SignalManager {
   /** @type {SignalTarget[]} */
@@ -107,6 +114,7 @@ export class SignalManager {
         payloadUrl,
         appearAt,
         fadeSeconds: SIGNAL_FADE_SECONDS,
+        visibleSeconds: VISIBLE_SECONDS,
       }));
     }
   }
@@ -122,8 +130,8 @@ export class SignalManager {
 
     for (const sig of this.signals) {
       if (sig.appeared) {
-        if (sig.fadeElapsed < sig.fadeSeconds) {
-          sig.fadeElapsed = Math.min(sig.fadeSeconds, sig.fadeElapsed + dt);
+        if (sig.fadeElapsed < sig.lifeSeconds) {
+          sig.fadeElapsed = Math.min(sig.lifeSeconds, sig.fadeElapsed + dt);
         }
         continue;
       }

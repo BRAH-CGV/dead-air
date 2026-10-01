@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS } from './SignalManager.js';
+import { SignalManager, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
 
 const POOL = [
   'assets/signals/signal-1.png',
@@ -272,5 +272,42 @@ describe('SignalManager signal appearance', () => {
     for (const sig of mgr.signals) {
       expect(sig.appeared).toBe(false);
     }
+  });
+
+  it('gives every signal the shared visible window', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(1);
+
+    for (const sig of mgr.signals) {
+      expect(sig.visibleSeconds).toBe(VISIBLE_SECONDS);
+    }
+  });
+
+  it('fades a signal back out after its visible window and lets it expire', () => {
+    const mgr = new SignalManager({ signalsPerNight: 2, payloadPool: POOL });
+    mgr.startNight(1);
+    const sig = mgr.signals[0];
+    sig.appearAt = 0;   // poke for determinism
+    const clock = stubClock(0.1);
+
+    mgr.update(0.1, clock);                      // appeared
+    mgr.update(SIGNAL_FADE_SECONDS, clock);      // fadeElapsed 3 → full
+    expect(sig.revealed).toBe(true);
+
+    mgr.update(VISIBLE_SECONDS, clock);          // fadeElapsed 18 → still full
+    expect(sig.opacity).toBe(1);
+
+    mgr.update(SIGNAL_FADE_SECONDS / 2, clock);  // fadeElapsed 19.5 → half-gone
+    expect(sig.opacity).toBeCloseTo(0.5);
+
+    mgr.update(SIGNAL_FADE_SECONDS, clock);      // clamps at life (21) → gone
+    expect(sig.opacity).toBe(0);
+    expect(sig.expired).toBe(true);
+
+    // Further ticking clamps fadeElapsed at the lifetime — opacity stays 0.
+    const clamped = sig.fadeElapsed;
+    mgr.update(60, clock);
+    expect(sig.fadeElapsed).toBe(clamped);
+    expect(sig.opacity).toBe(0);
   });
 });
