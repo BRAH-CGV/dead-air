@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows,
-  partitionInstances, collectHideable,
+  partitionInstances, collectHideable, hiddenFromRegion, splitInstances,
 } from './Sightlines.js';
 
 // ─────────────────────────────────────────────
@@ -185,5 +185,108 @@ describe('collectHideable', () => {
     a.add(b, shade);
     root.add(a);
     expect(collectHideable(root, () => false)).toEqual([lens, shade]);
+  });
+});
+
+describe('hiddenFromRegion — the building as an occluder, seen from the yard', () => {
+  // A slab where every part of the base overlaps: 30 m wide, 3 m tall,
+  // 2 m deep. The yard (eye region) is in front of it, the window side behind.
+  const occluder = new THREE.Box3(new THREE.Vector3(-15, 0, 2), new THREE.Vector3(15, 3, 4));
+  const eyes = new THREE.Box3(new THREE.Vector3(-15, 0.3, 4.5), new THREE.Vector3(15, 2.6, 17));
+  const sphereAt = (x, y, z, r = 0.3) => new THREE.Sphere(new THREE.Vector3(x, y, z), r);
+
+  it('grass right behind the building is hidden from everywhere in the yard', () => {
+    expect(hiddenFromRegion(sphereAt(0, 0.3, -2), eyes, occluder)).toBe(true);
+  });
+
+  it('something taller than the roof line still shows over it', () => {
+    expect(hiddenFromRegion(sphereAt(0, 8, -25, 1), eyes, occluder)).toBe(false);   // the dish
+  });
+
+  it('far enough back, even a low thing rises above the roof line from the back of the yard', () => {
+    // Seen from z = 17 at 2.6 m, the roof edge at z = 2 hides only what sits
+    // below the line through it — which climbs with distance behind.
+    // From z = 17 at 2.6 m, the line over the roof edge is ~4.7 m up by z = -60.
+    expect(hiddenFromRegion(sphereAt(0, 3, -60, 0.5), eyes, occluder)).toBe(true);
+    expect(hiddenFromRegion(sphereAt(0, 6, -60, 0.5), eyes, occluder)).toBe(false);
+  });
+
+  it('past the end of the building nothing hides it', () => {
+    expect(hiddenFromRegion(sphereAt(25, 0.3, -2), eyes, occluder)).toBe(false);
+  });
+
+  it('anything on the yard side of the occluder is never hidden by it', () => {
+    expect(hiddenFromRegion(sphereAt(0, 0.3, 10), eyes, occluder)).toBe(false);
+  });
+
+  it('a box is judged by its corners the same way', () => {
+    const low = new THREE.Box3(new THREE.Vector3(-1, 0, -3), new THREE.Vector3(1, 0.5, -1));
+    const tall = new THREE.Box3(new THREE.Vector3(-1, 0, -3), new THREE.Vector3(1, 12, -1));
+    expect(hiddenFromRegion(low, eyes, occluder)).toBe(true);
+    expect(hiddenFromRegion(tall, eyes, occluder)).toBe(false);
+  });
+});
+
+describe('splitInstances', () => {
+  function field(zs) {
+    const group = new THREE.Group();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial(), zs.length);
+    mesh.name = 'Grass';
+    zs.forEach((z, i) => mesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(0, 0, z)));
+    group.add(mesh);
+    group.updateMatrixWorld(true);
+    return { group, mesh };
+  }
+  const bucket = s => (s.center.z < -10 ? 'far' : s.center.z < 0 ? 'near' : 'front');
+
+  it('splits into one mesh per bucket, named for it, in place of the original', () => {
+    const { group, mesh } = field([-20, -5, 3, -15, 7]);
+    const parts = splitInstances(mesh, bucket);
+    expect([...parts.keys()].sort()).toEqual(['far', 'front', 'near']);
+    expect(parts.get('far').count).toBe(2);
+    expect(parts.get('near').count).toBe(1);
+    expect(parts.get('front').count).toBe(2);
+    expect(parts.get('near').name).toBe('Grass:near');
+    expect(group.children).toEqual([...parts.values()]);
+    expect(mesh.parent).toBeNull();
+  });
+
+  it('a mesh that lands in one bucket is handed back untouched', () => {
+    const { group, mesh } = field([-20, -30]);
+    const parts = splitInstances(mesh, bucket);
+    expect([...parts.entries()]).toEqual([['far', mesh]]);
+    expect(group.children).toEqual([mesh]);
+  });
+});
+
+describe('hiddenFromRegion with several occluders', () => {
+  // A shallow middle block between two deep end blocks, flush where they meet
+  // — the office, corridors and side rooms seen from above, simplified.
+  const middle = new THREE.Box3(new THREE.Vector3(-10, 0, 2), new THREE.Vector3(10, 3, 4));
+  const left   = new THREE.Box3(new THREE.Vector3(-16, 0, -4), new THREE.Vector3(-10, 3, 4));
+  const right  = new THREE.Box3(new THREE.Vector3(10, 0, -4), new THREE.Vector3(16, 3, 4));
+  const eyes = new THREE.Box3(new THREE.Vector3(-16, 0.5, 4.5), new THREE.Vector3(16, 2.4, 17));
+  const grass = new THREE.Sphere(new THREE.Vector3(12, 0.3, -6), 0.3);
+
+  it('blocked by whichever box each sightline meets — the union does what no one box can', () => {
+    expect(hiddenFromRegion(grass, eyes, middle)).toBe(false);   // slips past the shallow block's end
+    expect(hiddenFromRegion(grass, eyes, [middle, left, right])).toBe(true);
+  });
+
+  it('still sees past the end of the whole building', () => {
+    expect(hiddenFromRegion(new THREE.Sphere(new THREE.Vector3(22, 0.3, -6), 0.3), eyes, [middle, left, right])).toBe(false);
+  });
+});
+
+describe('splitInstances classify gets the instance index too', () => {
+  it('so a caller can label instances in a first pass and split on those labels', () => {
+    const group = new THREE.Group();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 4);
+    for (let i = 0; i < 4; i++) mesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(i, 0, 0));
+    group.add(mesh);
+    const labels = ['a', 'b', 'a', 'b'];
+    const parts = splitInstances(mesh, (_sphere, i) => labels[i]);
+    expect(parts.get('a').count).toBe(2);
+    expect(parts.get('b').count).toBe(2);
   });
 });

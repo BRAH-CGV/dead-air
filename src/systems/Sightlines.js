@@ -19,7 +19,10 @@ import * as THREE from 'three';
 //   windowHalfSpaces(rooms)         one half-space per window
 //   sphereSeenThroughWindows(...)   could this be on screen from inside?
 //   boxSeenThroughWindows(...)
-//   partitionInstances(mesh, keep)  split one InstancedMesh in two by that test
+//   hiddenFromRegion(v, eyes, occ)  is it behind the building from everywhere in the yard?
+//   forEachInstanceSphere(mesh, fn) each instance's world bounding sphere
+//   splitInstances(mesh, classify)  split one InstancedMesh by a label per instance
+//   partitionInstances(mesh, keep)  …in two, by a yes/no test
 //   collectHideable(root, isFixed)  the parts of a room that can be hidden
 // ─────────────────────────────────────────────
 
@@ -83,51 +86,127 @@ const _sphere = new THREE.Sphere();
 const _color = new THREE.Color();
 
 /**
- * Split an InstancedMesh into the instances `keep` accepts and the rest, as
- * two meshes sharing the original's geometry and material — one more draw
- * call at most, and nothing uploaded twice. Each instance is judged by its
- * world-space bounding sphere, so a tree whose canopy leans over the line
- * counts as over it.
+ * Split an InstancedMesh by a label per instance — one mesh per label, all
+ * sharing the original's geometry and material, so nothing is uploaded
+ * twice. Each instance is judged by its world-space bounding sphere, so a
+ * tree whose canopy leans over a line counts as over it.
  *
- * The halves replace the original under its parent (the original is
- * detached); if every instance lands on one side, the mesh is left alone.
- * Call before the first render, so the original's instance buffer was never
- * uploaded.
+ * The parts replace the original under its parent, where it stood (the
+ * original is detached). If every instance gets the same label, the mesh is
+ * handed back untouched. Call before the first render, so the original's
+ * instance buffer was never uploaded.
+ *
+ * @param {THREE.InstancedMesh} mesh
+ * @param {(sphere: THREE.Sphere, index: number) => string} classify
+ * @returns {Map<string, THREE.InstancedMesh>}  In order of first appearance.
+ */
+export function splitInstances(mesh, classify) {
+  const buckets = new Map();
+  forEachInstanceSphere(mesh, (sphere, i) => {
+    const key = classify(sphere, i);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(i);
+  });
+
+  if (buckets.size <= 1) return new Map([...buckets.keys()].map(key => [key, mesh]));
+
+  const parts = new Map();
+  for (const [key, indices] of buckets) parts.set(key, copyInstances(mesh, indices, `${mesh.name}:${key}`));
+
+  const parent = mesh.parent;
+  if (parent) {
+    const at = parent.children.indexOf(mesh);
+    parent.remove(mesh);
+    const added = [...parts.values()];
+    parent.add(...added);
+    // add() appends; put the parts where the original was, so sibling
+    // order (and anything relying on it) is unchanged.
+    parent.children.splice(parent.children.length - added.length, added.length);
+    parent.children.splice(at, 0, ...added);
+  }
+  return parts;
+}
+
+/**
+ * Call `fn(sphere, index)` with every instance's world-space bounding
+ * sphere. The sphere is reused between calls — copy it to keep it.
+ * @param {THREE.InstancedMesh} mesh
+ * @param {(sphere: THREE.Sphere, index: number) => void} fn
+ */
+export function forEachInstanceSphere(mesh, fn) {
+  mesh.updateWorldMatrix(true, false);
+  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+  const local = mesh.geometry.boundingSphere;
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, _instance);
+    _world.multiplyMatrices(mesh.matrixWorld, _instance);
+    _sphere.copy(local).applyMatrix4(_world);
+    fn(_sphere, i);
+  }
+}
+
+/**
+ * Split an InstancedMesh in two: the instances `keep` accepts and the rest.
+ * See splitInstances; the kept half keeps the original's name.
  *
  * @param {THREE.InstancedMesh} mesh
  * @param {(sphere: THREE.Sphere) => boolean} keep
  * @returns {{ kept: THREE.InstancedMesh|null, moved: THREE.InstancedMesh|null }}
  */
 export function partitionInstances(mesh, keep) {
-  mesh.updateWorldMatrix(true, false);
-  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-  const local = mesh.geometry.boundingSphere;
+  const name = mesh.name;
+  const parts = splitInstances(mesh, sphere => (keep(sphere) ? 'kept' : 'moved'));
+  const kept = parts.get('kept') ?? null;
+  const moved = parts.get('moved') ?? null;
+  if (kept) kept.name = name;
+  return { kept, moved };
+}
 
-  const kept = [];
-  const moved = [];
-  for (let i = 0; i < mesh.count; i++) {
-    mesh.getMatrixAt(i, _instance);
-    _world.multiplyMatrices(mesh.matrixWorld, _instance);
-    _sphere.copy(local).applyMatrix4(_world);
-    (keep(_sphere) ? kept : moved).push(i);
+const _ray = new THREE.Ray();
+const _hit = new THREE.Vector3();
+const _corner = new THREE.Vector3();
+const _eye = new THREE.Vector3();
+const _volume = new THREE.Box3();
+
+/**
+ * Is `volume` hidden behind the occluders from everywhere in the `eyes`
+ * box — does every sightline from an eye to it hit one of them?
+ *
+ * The building, seen from the fenced yard: one box per room and corridor
+ * (flush where they join, so the union has no gaps), the eye box the yard
+ * from a crouch to the top of a jump. Tested on the corners of the eye box
+ * and the volume's box — the extreme sightlines; shrink the occluders'
+ * outer faces by a margin for the ones in between. The eye box must not
+ * overlap an occluder: a ray starting inside one counts as blocked.
+ *
+ * @param {THREE.Sphere|THREE.Box3} volume  World space
+ * @param {THREE.Box3} eyes
+ * @param {THREE.Box3|THREE.Box3[]} occluders
+ */
+export function hiddenFromRegion(volume, eyes, occluders) {
+  const boxes = Array.isArray(occluders) ? occluders : [occluders];
+  if (volume.isSphere) volume.getBoundingBox(_volume);
+  else _volume.copy(volume);
+
+  for (let e = 0; e < 8; e++) {
+    cornerOf(eyes, e, _eye);
+    for (let c = 0; c < 8; c++) {
+      cornerOf(_volume, c, _corner);
+      const length = _eye.distanceTo(_corner);
+      _ray.origin.copy(_eye);
+      _ray.direction.subVectors(_corner, _eye).normalize();
+      if (!boxes.some(box => _ray.intersectBox(box, _hit) && _eye.distanceTo(_hit) <= length)) return false;
+    }
   }
+  return true;
+}
 
-  if (moved.length === 0) return { kept: mesh, moved: null };
-  if (kept.length === 0) return { kept: null, moved: mesh };
-
-  const parent = mesh.parent;
-  const keptMesh = copyInstances(mesh, kept, mesh.name);
-  const movedMesh = copyInstances(mesh, moved, `${mesh.name}:moved`);
-  if (parent) {
-    const at = parent.children.indexOf(mesh);
-    parent.remove(mesh);
-    parent.add(keptMesh, movedMesh);
-    // add() appends; put the halves where the original was, so sibling
-    // order (and anything relying on it) is unchanged.
-    parent.children.splice(parent.children.length - 2, 2);
-    parent.children.splice(at, 0, keptMesh, movedMesh);
-  }
-  return { kept: keptMesh, moved: movedMesh };
+function cornerOf(box, i, out) {
+  return out.set(
+    i & 1 ? box.max.x : box.min.x,
+    i & 2 ? box.max.y : box.min.y,
+    i & 4 ? box.max.z : box.min.z,
+  );
 }
 
 function copyInstances(source, indices, name) {

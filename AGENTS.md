@@ -377,7 +377,9 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   into every lit shader, so it recompiles the scene. Zero its intensity.
 - **Occlusion zones** (`BaseScene._buildOcclusion`): room furnishings go
   undrawn while the player is outside, and outdoor things no window can see
-  go undrawn while they're inside. New props are picked up automatically.
+  go undrawn while they're inside. Low scenery behind the building, which
+  the roof hides from the whole yard, is drawn only from inside. New props
+  are picked up automatically.
   When the office is redesigned, keep anything meant to be seen from the
   yard out of the rooms' furnishings, and don't add a window the fenced yard
   can see — see `docs/PERFORMANCE-PLAN.md` §3. In DevTools (dev builds),

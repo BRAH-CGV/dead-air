@@ -8,7 +8,7 @@ import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
-import { createPerimeterFence, yardRect } from '../gameobjects/PerimeterFence.js';
+import { createPerimeterFence, yardRect, FENCE } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
@@ -29,9 +29,10 @@ import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
-  windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, partitionInstances, collectHideable,
+  windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
 } from '../systems/Sightlines.js';
 import { AirlockPortal } from '../components/AirlockPortal.js';
+import { PLAYER_BODY } from '../components/PlayerBody.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -111,6 +112,20 @@ const DISH_LANE = Math.atan2(-25, 0);
  *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
  *  it and the building. Three quarters puts the roof just above the lintel. */
 const BUGGY_SCALE = 0.75;
+
+/** Metres the building-as-occluder is shrunk by on every side, for the
+ *  sightlines between the corners hiddenFromRegion samples. */
+const OCCLUDER_MARGIN = 0.3;
+
+/** An inside-only or unseen group of instances smaller than this stays in
+ *  its mesh's always-drawn part: splitting it off costs a draw call, which a
+ *  few thousand triangles aren't worth. The yard split has no floor — it
+ *  saves work on every frame indoors, where the player spends the night. */
+const MIN_SPLIT_TRIANGLES = 8000;
+
+/** Highest an eye gets in the yard: standing, at the top of a jump (Engine
+ *  jumps at 4 m/s, so v²/2g ≈ 0.82 m), plus margin for a low step. */
+const EYE_TOP = PLAYER_BODY.standEyeHeight + (4 * 4) / (2 * 9.81) + 0.4;
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
@@ -580,13 +595,24 @@ export class BaseScene extends Scene {
       zones.add('interior', collectHideable(part.root.object3d, isShell));
     }
 
-    const windows = windowHalfSpaces(Object.values(this.rooms));
-    const yard = [];
+    // Each outdoor thing (each instance, for the instanced scenery) is asked
+    // two questions — can a window see it, can the yard see it — and sorted:
+    //   both     drawn always
+    //   yard     'yard'      drawn only outside
+    //   window   'interior'  drawn only inside: low things behind the
+    //                        building, which hides them from the yard
+    //   neither  'unseen'    never drawn (the debug views still show it)
+    this.yardView = this._yardView();
+    const view = { windows: windowHalfSpaces(Object.values(this.rooms)), ...this.yardView };
+    const sorted = { yard: [], interior: [], unseen: [] };
     for (const child of [...this._outside.object3d.children]) {
       if (child.name === 'MarsTerrain') continue;   // the ground under everything
-      yard.push(...outOfWindowView(child, windows));
+      sortOutdoors(child, view, sorted);
     }
-    zones.add('yard', yard);
+    zones.add('yard', sorted.yard);
+    zones.add('interior', sorted.interior);
+    zones.add('unseen', sorted.unseen);
+    zones.hide('unseen');
     this.zones = zones;
 
     this.portal = new AirlockPortal({ airlock: this.rooms.Airlock, zones });
@@ -598,6 +624,49 @@ export class BaseScene extends Scene {
     this._offShadowHooks = [zones.onChange(redraw), this.rooms.Airlock.onStateChange(redraw)];
     // The dish slews; its shadow follows it.
     if (this.satellite && this.moonLight) engine.shadows?.watch(this.satellite.object3d, [this.moonLight]);
+  }
+
+  /**
+   * The building as an occluder, and where it is seen from.
+   *
+   *   occluders  one box per room and corridor (not the airlock, whose
+   *              hatch opens): its shell, shrunk by a margin on its outer
+   *              faces — the top, front and back, and the two end walls —
+   *              for the sightlines the corner test doesn't sample. Joins
+   *              between parts are left flush, so the union has no gap to
+   *              see through. Inside the real walls everywhere, so it can
+   *              only ever under-hide.
+   *   eyes       where the player's eye can be in the fenced yard: wherever
+   *              the capsule can stand inside the fence, from a crouch to
+   *              the top of a jump, in front of every occluder.
+   *
+   * Read off the rooms, corridors and fence, so it follows a redesign.
+   */
+  _yardView() {
+    const parts = [
+      this.rooms.MainOffice, this.rooms.ServerRoom, this.rooms.LivingQuarters,
+      ...Object.values(this.corridors),
+    ];
+    const bounds = parts.map(part => part.bounds());
+    const westEnd = Math.min(...bounds.map(b => b.min.x));
+    const eastEnd = Math.max(...bounds.map(b => b.max.x));
+    const m = OCCLUDER_MARGIN;
+    const occluders = bounds.map((b, i) => new THREE.Box3(
+      new THREE.Vector3(b.min.x <= westEnd + 1e-6 ? b.min.x + m : b.min.x, 0, b.min.z + m),
+      new THREE.Vector3(b.max.x >= eastEnd - 1e-6 ? b.max.x - m : b.max.x, parts[i].height - m, b.max.z - m),
+    ));
+
+    // The capsule stops a radius short of the fence's collider, and a radius
+    // off the building's nearest front face (a corridor's, set back).
+    const { rect } = this.fence;
+    const inset = FENCE.colliderThickness / 2 + PLAYER_BODY.radius;
+    const front = Math.min(...bounds.map(b => b.max.z)) + PLAYER_BODY.radius;
+    const clearOfOccluders = Math.max(...occluders.map(o => o.max.z)) + 0.01;
+    const eyes = new THREE.Box3(
+      new THREE.Vector3(rect.minX + inset, PLAYER_BODY.crouchEyeHeight, Math.max(front, clearOfOccluders)),
+      new THREE.Vector3(rect.maxX - inset, EYE_TOP, rect.maxZ - inset),
+    );
+    return { occluders, eyes };
   }
 
   /** Half extents of the built base on the ground, for the scenery to clear.
@@ -742,23 +811,47 @@ export class BaseScene extends Scene {
 
 const _box = new THREE.Box3();
 
+/** Which zone a thing belongs in, from who can see it — null for both. */
+function zoneFor(seenInside, seenOutside) {
+  if (seenInside) return seenOutside ? null : 'interior';
+  return seenOutside ? 'yard' : 'unseen';
+}
+
 /**
- * The parts of `object` no window can see, for the yard zone. An
- * InstancedMesh is split along the window's sightline (partitionInstances),
- * so the half out of view can go on its own; anything else is taken whole if
- * its bounds are out of view, or opened up if not, so a group straddling the
- * line still gives up the children that aren't. A light is never taken — it
- * would recompile every lit shader (see collectHideable).
+ * Sort `object` into the zones (see _buildOcclusion). An InstancedMesh is
+ * split instance by instance (splitInstances), so a ring of grass gives up
+ * just the blades behind the building. Anything else goes whole if its
+ * bounds settle it, or is opened up if both sides can see it, so a group
+ * straddling a line still gives up the children that don't. A light is
+ * never taken — it would recompile every lit shader (see collectHideable).
  *
  * @param {THREE.Object3D} object
- * @param {import('../systems/Sightlines.js').HalfSpace[]} windows
- * @returns {THREE.Object3D[]}
+ * @param {{ windows: import('../systems/Sightlines.js').HalfSpace[],
+ *           eyes: THREE.Box3, occluders: THREE.Box3[] }} view
+ * @param {{ yard: THREE.Object3D[], interior: THREE.Object3D[], unseen: THREE.Object3D[] }} out
  */
-function outOfWindowView(object, windows) {
-  if (object.isLight) return [];
+function sortOutdoors(object, view, out) {
+  const { windows, eyes, occluders } = view;
+  if (object.isLight) return;
   if (object.isInstancedMesh) {
-    const { moved } = partitionInstances(object, sphere => sphereSeenThroughWindows(sphere, windows));
-    return moved ? [moved] : [];
+    // Label every instance, then let a small inside-only or unseen group go
+    // back to 'always': splitting it off costs a draw call of its own, and
+    // for a handful of instances that costs more than drawing them does.
+    const labels = [];
+    forEachInstanceSphere(object, (sphere) => {
+      labels.push(zoneFor(sphereSeenThroughWindows(sphere, windows), !hiddenFromRegion(sphere, eyes, occluders)) ?? 'always');
+    });
+    const g = object.geometry;
+    const perInstance = (g.index ? g.index.count : g.attributes.position.count) / 3;
+    for (const zone of ['interior', 'unseen']) {
+      const count = labels.filter(l => l === zone).length;
+      if (count && count * perInstance < MIN_SPLIT_TRIANGLES) {
+        for (let i = 0; i < labels.length; i++) if (labels[i] === zone) labels[i] = 'always';
+      }
+    }
+    const parts = splitInstances(object, (_sphere, i) => labels[i]);
+    for (const [zone, mesh] of parts) if (zone !== 'always') out[zone].push(mesh);
+    return;
   }
 
   let special = false;
@@ -766,8 +859,12 @@ function outOfWindowView(object, windows) {
   if (!special) {
     object.updateWorldMatrix(true, true);
     _box.setFromObject(object);
-    if (_box.isEmpty()) return [];
-    if (!boxSeenThroughWindows(_box, windows)) return [object];
+    if (_box.isEmpty()) return;
+    const zone = zoneFor(boxSeenThroughWindows(_box, windows), !hiddenFromRegion(_box, eyes, occluders));
+    if (zone) {
+      out[zone].push(object);
+      return;
+    }
   }
-  return [...object.children].flatMap(child => outOfWindowView(child, windows));
+  for (const child of [...object.children]) sortOutdoors(child, view, out);
 }

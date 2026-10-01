@@ -84,6 +84,16 @@ never on screen together:
 - `yard` — every outdoor object no window can see. Windows are read off the
   rooms' `openings`; instanced scenery is split along that line.
 
+The building also hides things *from the yard*: low grass and short trees
+behind it, below the roof line from every eye position inside the fence
+(`hiddenFromRegion`, one occluder box per room and corridor — see
+`BaseScene._yardView`). Those join `interior` (drawn only from inside, where
+the window sees them); anything neither side can see goes in an `unseen`
+zone that is never drawn. A group under 8k triangles stays in the
+always-drawn part rather than costing its own draw call. This one is small
+— tall trees still show over a 3 m roof — about 120k triangles off the view
+of the building from outside, for 3 extra draw calls indoors.
+
 Indoors the only view out is the back window, so the yard is skipped. The
 fence now encloses a block in front of the building (the airlock side) and
 keeps the player there, where the window can't be seen, so outside the
@@ -96,8 +106,8 @@ Measured at 1280 × 720 (D3D11):
 | View | Everything drawn | Culled |
 |---|---|---|
 | Inside, facing the front wall | 104 calls, 3.47M tris | 59 calls, 1.68M tris |
-| Inside, facing the window | 120 calls, 3.48M tris | 85 calls, 1.69M tris |
-| Outside, facing the building | 216 calls, 3.50M tris | 138 calls, 3.48M tris |
+| Inside, facing the window | 123 calls, 3.48M tris | 88 calls, 1.69M tris |
+| Outside, facing the building | 216 calls, 3.50M tris | 133 calls, 3.36M tris |
 | Airlock cycle, worst frame | — | 16.1 ms; hatch opened 45 ms after the 2.5 s cycle |
 
 **When the office is redesigned:** the zones re-derive themselves from the
