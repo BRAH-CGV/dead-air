@@ -2,7 +2,7 @@
 
 > Written after a playtest report: **low FPS on boot and while looking
 > around the base for the first time.** Ordered by expected impact for that
-> specific symptom. Items 1–2 are done; the rest need someone at a keyboard
+> specific symptom. Items 1–3 are done; the rest need someone at a keyboard
 > with DevTools, because none of it should be tuned blind.
 
 ---
@@ -39,30 +39,72 @@ material across all four racks; LEDs share geometry. LED *materials* stay
 per-instance deliberately: `LEDStrip` writes `emissiveIntensity` per dot,
 so sharing would blink every dot on every rack in lockstep.
 
-## 3. Next, highest impact: stop re-rendering static shadows
+## 3. Done: static shadows frozen, boot warm-up, airlock occlusion
 
-Two lights cast shadows — the moon (`BaseScene._addLighting`, 2048²) and
-the office ceiling light (`MainOffice.buildLighting`, 1024²). Every frame,
-the renderer re-renders all shadow-casting geometry from each of those
-lights' point of view, **even though neither the lights nor the base ever
-move.** That's two extra full geometry passes per frame, forever, for an
-image that is identical every time.
+**Shadows render only when they change** (`ShadowScheduler`, on the Engine
+as `engine.shadows`). Per light, not the renderer-wide switch this section
+first proposed, because the moon is *not* static: `Daylight` swings it
+across the sky all night. Each shadow light gets `shadow.autoUpdate = false`
+and is redrawn only when:
 
-The fix is to render each shadow map once and freeze it:
+- the light has turned more than 0.25° (the moon) or moved (a point light)
+  since its map was last drawn;
+- a watched caster moved (`shadows.watch(dish, [moon])` — the dish slews);
+- something calls `shadows.invalidate()`: an airlock state change (door
+  panels), an occlusion zone swap, and every frame while the level editor
+  is open (it moves casters nobody is watching).
 
-```js
-renderer.shadowMap.autoUpdate = false;   // stop the per-frame re-render
-renderer.shadowMap.needsUpdate = true;   // ...but do one pass now
-```
+The office ceiling light is a point light — six passes over the office per
+frame — and now renders once.
 
-Set `needsUpdate = true` again whenever shadow-casting geometry actually
-changes. In this scene that's exactly one event: a night change, because
-`Door.locked` toggles its panel's `visible`. `BaseScene._setupNights`
-already has the hook (`this.nights.onChange(...)`).
+**The warm-up** (`WarmUp.js`, called from `Engine.init`). Section 2's
+`renderer.compile` covered only part of what WebGL does lazily. The loading
+screen now stays up through `compileAsync` (parallel compile), an upload of
+every texture, and one render with frustum culling off and hidden objects
+shown — every geometry buffer and shadow map is on the GPU before the
+player sees a frame. Then the game loop runs *under* the loading screen
+until 20 frames in a row come in under 50 ms (`FrameSettle`, 5 s cap), and
+the game fades in from black (`ScreenFade.fadeIn`).
 
-**Why this isn't already done:** getting it wrong means *no shadows at
-all*, and it can't be verified without a browser. It's a five-line change
-and should be the first thing anyone with the game open tries.
+Measuring the warm-up found the biggest single hitch in the game: **a
+20-second freeze on the first frame**, from `PCFSoftShadowMap`. three r185
+deprecates it and silently swaps in `PCFShadowMap` on the first shadow
+render — after every lit shader had been compiled for PCFSoft — so ~30
+programs were re-keyed and recompiled synchronously (ANGLE/D3D11 takes up
+to 1.2 s each). The engine now asks for `PCFShadowMap` directly; it is what
+was being drawn anyway. Boot to first frame: 28 s → 8 s on the same machine.
+
+**Occlusion through the airlock** (`OcclusionZones`, `Sightlines`,
+`AirlockPortal`; built in `BaseScene._buildOcclusion`). Two zones that are
+never on screen together:
+
+- `interior` — every room's furnishings except the airlock's. Never the
+  shell, the doors, or a light (hiding a light changes the light count
+  every lit shader is compiled for — a full recompile).
+- `yard` — every outdoor object no window can see. Windows are read off the
+  rooms' `openings`; instanced scenery is split along that line.
+
+Indoors the only view out is the back window, so the yard is skipped. The
+fence now encloses a block in front of the building (the airlock side) and
+keeps the player there, where the window can't be seen, so outside the
+interior is skipped. The airlock swaps zones the moment a cycle starts —
+both doors are shut — and `Airlock.readyFor` holds the door ahead until the
+new side is compiled, loaded and drawn for a few frames.
+
+Measured at 1280 × 720 (D3D11):
+
+| View | Everything drawn | Culled |
+|---|---|---|
+| Inside, facing the front wall | 104 calls, 3.47M tris | 59 calls, 1.68M tris |
+| Inside, facing the window | 120 calls, 3.48M tris | 85 calls, 1.69M tris |
+| Outside, facing the building | 216 calls, 3.50M tris | 138 calls, 3.48M tris |
+| Airlock cycle, worst frame | — | 16.1 ms; hatch opened 45 ms after the 2.5 s cycle |
+
+**When the office is redesigned:** the zones re-derive themselves from the
+rooms' openings and contents, but check two things. Anything that should
+stay visible from the yard must not be a room furnishing. And a new window
+in a wall the yard can see breaks the "outside can't see in" assumption —
+the fence block would have to move with it.
 
 ## 4. Then measure, before touching anything else
 
@@ -84,6 +126,12 @@ compare against the budgets from `ROOM-BASED-SCENE-PLAN.md` §3:
 | Triangles | < 500k |
 | Physics bodies | < 100 |
 | Scene build time | < 2 s |
+
+**First readings (after §3):** draw calls are in budget everywhere;
+**triangles are not** — 1.7M indoors (looking out of the window) and 3.5M
+outside, against 500k. That is the next thing to chase, and the vegetation
+belt's tree models are the first suspect (`MarsVegetation` also owns 8 of
+the 10 largest textures).
 
 Whichever number is actually out of budget picks the next item below. Do
 not do all of them speculatively — several trade away code clarity.
@@ -117,6 +165,13 @@ props that are 60 cm tall on screen. Worth auditing the asset sizes in
 rate, but it's cheap to check.
 
 ## 6. Traps this project has already hit
+
+- **Anything that changes a shader's cache key after the warm-up recompiles
+  it, synchronously, on the next frame.** `PCFSoftShadowMap` did it to every
+  lit material at once (§3). The same goes for changing the number of
+  lights — so hide a light by zeroing its intensity, never `visible = false`
+  — and for `shadowMap.type`, `toneMapping`, or a material's `side` /
+  `transparent` at runtime.
 
 - **`transmission > 0` on any material forces a second full scene render,
   every frame that material is visible.** This halved FPS once already

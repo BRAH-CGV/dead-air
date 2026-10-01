@@ -668,3 +668,121 @@ describe('BaseScene gameplay loop', () => {
     for (const spy of hidden) expect(spy).toHaveBeenCalled();
   });
 });
+
+describe('BaseScene occlusion — the airlock decides which side is drawn', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  /** Every Object3D in a zone, and everything under them. */
+  function zoneContents(name) {
+    const out = new Set();
+    for (const obj of scene.zones.objects(name)) obj.traverse(o => out.add(o));
+    return out;
+  }
+  const named = (root, name) => root.getObjectByName(name);
+
+  it('has two zones: the interior and the yard', () => {
+    expect(scene.zones.names().sort()).toEqual(['interior', 'yard']);
+  });
+
+  it('the interior zone holds the rooms\' furnishings', () => {
+    const interior = zoneContents('interior');
+    const office = scene.rooms.MainOffice.root.object3d;
+    for (const prop of ['ComputerDesk', 'VendingMachine', 'WindowFrame_Top']) {
+      expect(interior.has(named(office, prop)), prop).toBe(true);
+    }
+  });
+
+  it('never the shell or the doors — those are the building as seen from outside', () => {
+    const interior = zoneContents('interior');
+    for (const room of [scene.rooms.MainOffice, scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
+      room.root.object3d.traverse((o) => {
+        if (/^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name)) {
+          expect(interior.has(o), `${room.name}/${o.name}`).toBe(false);
+        }
+      });
+      for (const door of room.doors) expect(interior.has(door.object3d), door.name).toBe(false);
+    }
+  });
+
+  it('never a light, in either zone — hiding one recompiles every lit shader', () => {
+    for (const name of scene.zones.names()) {
+      for (const o of zoneContents(name)) expect(o.isLight, `${name}: ${o.name}`).toBeFalsy();
+    }
+  });
+
+  it('leaves the airlock out of the interior — it is the one room seen from both sides', () => {
+    const interior = zoneContents('interior');
+    expect(interior.has(named(scene.rooms.Airlock.root.object3d, 'SuitLocker'))).toBe(false);
+  });
+
+  it('the yard zone holds what stands in front of the building', () => {
+    const yard = zoneContents('yard');
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    expect(yard.has(outside.find('Generator').object3d)).toBe(true);
+  });
+
+  it('but not what the back window looks out on — the dish, its pad, the valley', () => {
+    const yard = zoneContents('yard');
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    for (const name of ['Satellite', 'DishPad', 'MarsTerrain']) {
+      const go = outside.find(name);
+      expect(go, name).not.toBeNull();
+      expect(yard.has(go.object3d), name).toBe(false);
+    }
+  });
+
+  it('splits instanced scenery along the window\'s sightline: every yard instance is out of view of the glass', () => {
+    const windowZ = -4.9;   // the office back wall's inner face
+    const yardMeshes = [...zoneContents('yard')].filter(o => o.isInstancedMesh);
+    expect(yardMeshes.length).toBeGreaterThan(0);
+
+    const m = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    for (const mesh of yardMeshes) {
+      mesh.updateWorldMatrix(true, false);
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        p.setFromMatrixPosition(m.premultiply(mesh.matrixWorld));
+        expect(p.z, mesh.name).toBeGreaterThan(windowZ);
+      }
+    }
+  });
+
+  it('fences the outside into a block on the airlock side, so the back window is out of reach', () => {
+    const { rect } = scene.fence;
+    const footprint = scene._baseFootprint();
+    expect(rect.minX).toBeLessThan(-footprint.halfX);
+    expect(rect.maxX).toBeGreaterThan(footprint.halfX);
+    expect(rect.minZ).toBeGreaterThan(0);     // the block starts in front of the office's middle
+    // The hatch opens into it.
+    const hatch = worldPos(scene.rooms.Airlock.hatch);
+    expect(hatch.z).toBeGreaterThan(rect.minZ);
+    expect(hatch.z).toBeLessThan(rect.maxZ);
+  });
+
+  it('wires an AirlockPortal to the airlock and the zones', () => {
+    expect(scene.portal.airlock).toBe(scene.rooms.Airlock);
+    expect(scene.portal.zones).toBe(scene.zones);
+  });
+
+  it('starts with the yard hidden and the interior drawn once the portal starts', () => {
+    scene.portal.onStart();
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    expect(outside.find('Generator').object3d.visible).toBe(false);
+    expect(named(scene.rooms.MainOffice.root.object3d, 'ComputerDesk').visible).toBe(true);
+  });
+
+  it('dispose shows everything again, so nothing stays hidden into the next scene', () => {
+    scene.portal.onStart();
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    const generator = outside.find('Generator').object3d;
+    scene.dispose();
+    expect(generator.visible).toBe(true);
+  });
+});

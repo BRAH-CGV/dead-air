@@ -11,6 +11,10 @@ import { LoadingScreen } from './ui/LoadingScreen.js';
 
 const engine = new Engine();
 
+// Dev only: a handle for the DevTools console (`__engine.activeScene.suit.putOn()`,
+// `__engine.renderer.info`). Vite strips this from the production build.
+if (import.meta.env.DEV) window.__engine = engine;
+
 engine.init().catch((err) => {
   new LoadingScreen().fail(err.message ?? String(err));
 });

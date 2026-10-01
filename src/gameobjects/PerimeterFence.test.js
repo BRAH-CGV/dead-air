@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 
-import { createPerimeterFence, perimeterRect, FENCE } from './PerimeterFence.js';
+// Fake Rapier: the fence only builds colliders, it never steps a world, and the
+// real WASM module will not load under every test runner.
+vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
+
+import { createPerimeterFence, perimeterRect, yardRect, FENCE } from './PerimeterFence.js';
+import { FakeWorld } from '../test/fakeRapier.js';
 import { BASE_FOOTPRINT, YARD } from './BaseYard.js';
 
 /** A stand-in for the chain-link panel, at the proportions the manifest's
@@ -225,5 +230,66 @@ describe('the runs', () => {
         Math.abs(position.x - rect.minX) < 0.01 || Math.abs(position.x - rect.maxX) < 0.01;
       expect(onSide, `${position.x.toFixed(1)}, ${position.z.toFixed(1)}`).toBe(true);
     }
+  });
+});
+
+describe('the yard block — a fence that keeps the player on the airlock side', () => {
+  const { halfX, halfZ } = BASE_FOOTPRINT;
+
+  it('spans the building end to end, just outside its end walls', () => {
+    const rect = yardRect();
+    expect(rect.minX).toBeLessThan(-halfX);
+    expect(rect.maxX).toBeGreaterThan(halfX);
+    expect(rect.minX).toBeGreaterThan(-halfX - 0.5);     // flush: no gap to squeeze round
+    expect(rect.maxX).toBeLessThan(halfX + 0.5);
+  });
+
+  it('tucks its back edge into the building, so the side runs meet the end walls', () => {
+    const rect = yardRect();
+    expect(rect.minZ).toBeLessThan(halfZ);
+    expect(rect.minZ).toBeGreaterThan(0);                // into the front half, not round the back
+  });
+
+  it('still takes in the whole parking apron, generator and buggy included', () => {
+    const rect = yardRect();
+    const p = YARD.parking;
+    expect(rect.maxZ).toBeGreaterThan(p.z + p.halfZ);
+    expect(rect.minX).toBeLessThan(p.x - p.halfX);
+    expect(rect.maxX).toBeGreaterThan(p.x + p.halfX);
+    for (const [x, z] of [[7, 9], [-7.79, 10.01]]) {     // generator, buggy
+      expect(x).toBeGreaterThan(rect.minX);
+      expect(x).toBeLessThan(rect.maxX);
+      expect(z).toBeLessThan(rect.maxZ);
+    }
+  });
+
+  it('leaves the building side open — the wall is the fence there', () => {
+    const rect = yardRect();
+    const fence = createPerimeterFence({ rect, openSides: ['S'], assets: mockAssets() });
+    expect(fence.rect).toEqual(rect);
+    for (const { position } of panels(fence)) {
+      expect(Math.abs(position.z - rect.minZ), `${position.x.toFixed(1)}, ${position.z.toFixed(1)}`).toBeGreaterThan(0.01);
+    }
+  });
+
+  it('with no lanes it is closed all round — no gate to walk out of', () => {
+    const rect = yardRect();
+    const world = new FakeWorld();
+    const fence = createPerimeterFence({ rect, openSides: ['S'], world });
+    expect(fence.gates).toEqual([]);
+    expect(fence.colliders).toHaveLength(3);             // N, W, E — one unbroken run each
+
+    const total = fence.colliders.reduce((sum, c) => {
+      const h = c.halfExtents();
+      return sum + 2 * Math.max(h.x, h.z);
+    }, 0);
+    const perimeter = (rect.maxX - rect.minX) + 2 * (rect.maxZ - rect.minZ);
+    expect(total).toBeCloseTo(perimeter);
+  });
+
+  it('the default is still the full perimeter, every side fenced', () => {
+    const fence = createPerimeterFence({ world: new FakeWorld() });
+    expect(fence.rect).toEqual(perimeterRect());
+    expect(fence.colliders).toHaveLength(4);
   });
 });

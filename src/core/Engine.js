@@ -7,6 +7,10 @@ import { InteractionSystem } from '../components/InteractionSystem.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
+import { ScreenFade } from '../ui/ScreenFade.js';
+import { ShadowScheduler } from './ShadowScheduler.js';
+import { FrameSettle } from './FrameSettle.js';
+import { warmUp } from './WarmUp.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
@@ -36,6 +40,10 @@ export class Engine {
   // ── Assets ────────────────────────────────
   /** @type {AssetManager} */ assets;
   /** @type {LoadingScreen} */ loadingScreen;
+  /** Shadow maps redrawn only when something changed (PERFORMANCE-PLAN §3).
+   *  @type {ShadowScheduler} */ shadows = new ShadowScheduler();
+  /** Holds the loading screen up until the first frames run smooth; null
+   *  once the game has been revealed. @type {FrameSettle|null} */ _settle = null;
   /** @type {Crosshair}     */ crosshair;
 
   // ── Rapier ────────────────────────────────
@@ -129,7 +137,12 @@ export class Engine {
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+    // PCF, not PCFSoft: three r185 deprecates PCFSoft and swaps it for PCF on
+    // the first shadow render — after the warm-up has compiled every lit
+    // shader for PCFSoft. That swap re-keyed ~30 programs and recompiled them
+    // all synchronously: a 20 s freeze on the first frame. PCF is what was
+    // being drawn either way.
+    this.renderer.shadowMap.type    = THREE.PCFShadowMap;
     this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     document.body.appendChild(this.renderer.domElement);
@@ -237,17 +250,30 @@ export class Engine {
     // ── Initialise every root object ──
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
 
-    // Compile every material's shader program up front, while the loading
-    // screen is still covering the view. WebGL compiles lazily — the first
-    // frame a material becomes visible pays for its shader — which is what
-    // makes the first look around the base stutter. Paying it here instead
-    // costs a moment of loading screen nobody notices.
-    this.renderer.compile(this.scene, this.camera);
+    // ── Warm up, behind the loading screen ──
+    // Every shader compiled, every texture uploaded, every mesh and shadow
+    // map drawn once — WebGL otherwise pays for each the first frame it is
+    // needed, which is the stutter on a first look round (see WarmUp.js).
+    await warmUp({
+      renderer: this.renderer, scene: this.scene, camera: this.camera,
+      onStage: (label, fraction) => this.loadingScreen.setStage(label, fraction),
+    });
 
-    this.loadingScreen.hide();
-
-    // ── Kick off the loop ──
+    // ── Kick off the loop — still behind the loading screen ──
+    // The first frames after that are the JIT, the physics world and the
+    // gameplay systems finding their feet. The loop runs under the overlay
+    // until they've been smooth for a run (FrameSettle), then _reveal()
+    // fades the game in.
+    this.loadingScreen.setStage('Almost there…', 1);
+    this.screenFade = new ScreenFade();
+    this._settle = new FrameSettle();
     requestAnimationFrame(this._loop);
+  }
+
+  /** The way in: cut to black over the loading screen, drop it, fade up. */
+  _reveal() {
+    this.screenFade.fadeIn(1500);
+    this.loadingScreen.hide({ immediate: true });
   }
 
   /** Free every GPU resource we own. Call before rebuilding a level, so
@@ -282,6 +308,8 @@ export class Engine {
    *  @param {typeof import('./Scene.js').Scene} SceneClass */
   loadScene(SceneClass) {
     // ── Tear down the old scene ──
+    // Shadows first: the scene registers its watches while it builds.
+    this.shadows.release();
     this._teardownScene();
 
     // ── Build the new one ──
@@ -291,6 +319,10 @@ export class Engine {
     // Initialise every new root object (sets scene/world refs, adds to
     // the Three.js scene graph via _init).
     for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+
+    // Freeze every shadow map in the new scene (one render each now, then
+    // only when something changes).
+    this.shadows.adopt(this.scene);
 
     // The editor may be open across a scene switch (F4 reset): refresh its
     // tree and drop any selection pointing into the old scene, or the next
@@ -593,10 +625,20 @@ export class Engine {
     // ── Render ──
     this.physicsDebug?.update();
     this.levelEditor?.update();
+    // The editor moves shadow casters the scheduler isn't watching; while it
+    // is open, shadows go back to every frame.
+    if (this.levelEditor?.enabled) this.shadows.invalidate();
+    this.shadows.update();
     this.renderer.render(this.scene, this.camera);
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);
+
+    // Still behind the loading screen: reveal once the frames are smooth.
+    if (this._settle?.push(frameDt)) {
+      this._settle = null;
+      this._reveal();
+    }
 
     // Consume one-frame input after all updates have read it
     this.input.mouse.dx = 0;

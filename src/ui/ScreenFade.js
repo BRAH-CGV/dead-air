@@ -55,4 +55,36 @@ export class ScreenFade {
     }, this.fadeMs);
     return true;
   }
+
+  /**
+   * Cut to black at once, then fade up to the scene over `ms` — the way in
+   * from the loading screen. The cut hides the loading screen being taken
+   * away; the fade is the first thing the player sees.
+   * @param {number} [ms=1500]
+   * @param {() => void} [onDone]  Once the scene is fully clear.
+   */
+  fadeIn(ms = 1500, onDone) {
+    if (!this.root) {
+      onDone?.();
+      return;
+    }
+
+    this.playing = true;
+    const { style, classList } = this.root;
+    style.transitionDuration = '0ms';
+    classList.add('is-dark');
+
+    // A tick for the black to be painted with no transition, before the
+    // long one starts — removing the class in the same frame would just
+    // run the fade from wherever the opacity was.
+    setTimeout(() => {
+      style.transitionDuration = `${ms}ms`;
+      classList.remove('is-dark');
+      setTimeout(() => {
+        style.transitionDuration = `${this.fadeMs}ms`;
+        this.playing = false;
+        onDone?.();
+      }, ms);
+    }, 30);
+  }
 }

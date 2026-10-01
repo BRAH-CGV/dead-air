@@ -31,7 +31,7 @@ Dead Air is a 3D browser-based survival horror game built for the Wits Computer 
 | WASM support | `vite-plugin-wasm` | ^3.6.0 |
 | Tests | `vitest` | (dev) |
 
-- **Renderer config:** Antialiasing on, PCFSoft shadow maps, ACES Filmic tone mapping, exponential fog.
+- **Renderer config:** Antialiasing on, PCF shadow maps (not PCFSoft — three r185 deprecates it and swapping recompiles every lit shader), ACES Filmic tone mapping, exponential fog.
 - **Physics:** Rapier world with gravity `{x:0, y:-9.81, z:0}`, fixed timestep 1/60 s.
 
 ## Architecture
@@ -50,13 +50,17 @@ src/
 │   ├── Colliders.js     # Shape parts → Rapier bodies and colliders
 │   ├── PhysicsDebug.js  # Collider wireframe overlay (` to toggle)
 │   ├── DebugCamera.js   # Free-fly noclip camera (V to toggle)
-│   └── Fullbright.js    # Unlit debug lighting (B to toggle)
+│   ├── Fullbright.js    # Unlit debug lighting (B to toggle)
+│   ├── ShadowScheduler.js # Shadow maps redrawn only when a light/caster moves, or on invalidate()
+│   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen
+│   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
-│   └── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   └── WallClock.js     # Analogue clock driven by the NightClock
@@ -67,7 +71,9 @@ src/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
 ├── systems/
-│   └── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
+│   ├── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
+│   ├── OcclusionZones.js # Named object sets drawn/skipped together, with a readiness gate
+│   └── Sightlines.js    # Window half-spaces, instance splitting, hideable-part collection
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
@@ -364,3 +370,15 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 - Prefer `.glb` over `.gltf` with loose files; consider Draco compression.
 - Scale textures to smallest acceptable size; prefer power-of-two dimensions.
 - Profile with Chrome DevTools before optimizing.
+- **Shadows are frozen** (`engine.shadows`). Something new that casts shadows
+  and moves needs `engine.shadows.watch(object, [light])`; a one-off change
+  (a panel shown, a prop placed) needs `engine.shadows.invalidate()`.
+- **Never hide a light with `visible = false`** — the light count is compiled
+  into every lit shader, so it recompiles the scene. Zero its intensity.
+- **Occlusion zones** (`BaseScene._buildOcclusion`): room furnishings go
+  undrawn while the player is outside, and outdoor things no window can see
+  go undrawn while they're inside. New props are picked up automatically.
+  When the office is redesigned, keep anything meant to be seen from the
+  yard out of the rooms' furnishings, and don't add a window the fenced yard
+  can see — see `docs/PERFORMANCE-PLAN.md` §3. In DevTools (dev builds),
+  `__engine.activeScene.zones.revealAll(true)` turns the culling off.

@@ -8,7 +8,7 @@ import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
-import { createPerimeterFence, FENCE } from '../gameobjects/PerimeterFence.js';
+import { createPerimeterFence, yardRect } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
@@ -27,6 +27,11 @@ import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { OcclusionZones } from '../systems/OcclusionZones.js';
+import {
+  windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, partitionInstances, collectHideable,
+} from '../systems/Sightlines.js';
+import { AirlockPortal } from '../components/AirlockPortal.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -144,6 +149,7 @@ export class BaseScene extends Scene {
     this._buildOutside();
     this._spawnPlayer();
     this._addGameplaySystems();
+    this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -164,6 +170,12 @@ export class BaseScene extends Scene {
   dispose() {
     this._offNightStart?.();
     this._offSuitHud?.();
+    this._offShadowHooks?.forEach(off => off());
+    // Before the rooms go: the portal lets go of the airlock, and every
+    // culled object is drawn again, so nothing stays hidden into whatever
+    // reuses it.
+    this.portal?.onDestroy();
+    this.zones?.dispose();
     // Scene teardown never resets scene.fog, so hand back what _addSky
     // borrowed — otherwise the Mars horizon tint and this scene's long
     // outdoor sightlines follow us into whatever loads next.
@@ -471,21 +483,22 @@ export class BaseScene extends Scene {
       .filter(bearing => bearing !== DISH_LANE);
     const towers = createCommTowers({ alignTo: roads });
 
-    // Chain-link round the compound, opening wherever a lane crosses it — so
-    // the paths through the belt and the gaps in the wire are the same five
-    // ways out, not two unrelated sets of gaps. The dish lane's own width
-    // left a gap of a few metres between its gate and the next lane's, on the
-    // side toward the western wing — too narrow for a real gate, but wide
-    // enough for the tiler to stand one isolated panel in it, right in front
-    // of the dish. Widened past that neighbour's edge so the two merge into
-    // one gate instead of leaving a stray panel between them.
-    const fenceLanes = belt.lanes.map(lane =>
-      lane.bearing !== DISH_LANE ? lane : { ...lane, halfWidth: 9 });
+    // Chain-link round the yard block in front of the base — the airlock's
+    // side, with the generator and the buggy — closed on three sides, the
+    // building's front being the fourth. No gates: keeping the player in
+    // front of the building is what lets the whole interior go undrawn while
+    // they're outside, since the only window is in the back wall (see
+    // _buildOcclusion). The side runs meet the END rooms' front walls, not the
+    // airlock's — the airlock sticks out further, and fencing from its depth
+    // would leave a gap at each end of the building to walk round.
+    const endFront = Math.min(...[this.rooms.ServerRoom, this.rooms.LivingQuarters].map(r => r.bounds().max.z));
     const fence = createPerimeterFence({
-      lanes: fenceLanes,
+      rect: yardRect({ halfX: footprint.halfX, halfZ: endFront }),
+      openSides: ['S'],
       assets: engine.assets,
       world: engine.world,
     });
+    this.fence = fence;
 
     for (const field of [rocks, belt, towers, fence]) {
       this._outside.addChild(field);
@@ -529,6 +542,62 @@ export class BaseScene extends Scene {
         console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
       }
     }());
+  }
+
+  // ──────────────────────────────────────────
+  // Occlusion (the airlock as a portal)
+  // ──────────────────────────────────────────
+  /**
+   * Two zones, never on screen together, and the airlock to switch them:
+   *
+   *   interior  the furnishings of every room but the airlock — props, the
+   *             window frame, light fittings. Never the shell (the building
+   *             as seen from outside), the doors, or a light: hiding a light
+   *             changes the light count every lit shader is compiled for.
+   *   yard      every outdoor thing that can't be seen through a window.
+   *             The instanced scenery (rocks, belt, masts, fence) is split
+   *             along that line, so the half out of view can go.
+   *
+   * Indoors the only view out is the back window, so the yard can go. In the
+   * yard the fence keeps the player in front of the building, which hides
+   * the window, so the interior can go. The windows are read off the rooms'
+   * openings, so a redesigned office re-derives all of this — but a prop
+   * that should stay visible from outside (behind a new window, say) needs
+   * thought again. AirlockPortal does the switching.
+   */
+  _buildOcclusion() {
+    const { engine } = this;
+    const zones = new OcclusionZones({ renderer: engine.renderer, scene: engine.scene, camera: engine.camera });
+
+    const isShell = o => o.userData.isDoor
+      || /^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name);
+    const interiorParts = [
+      this.rooms.MainOffice, this.rooms.ServerRoom, this.rooms.LivingQuarters,
+      ...Object.values(this.corridors),
+    ];
+    for (const part of interiorParts) {
+      for (const door of part.doors) door.object3d.userData.isDoor = true;
+      zones.add('interior', collectHideable(part.root.object3d, isShell));
+    }
+
+    const windows = windowHalfSpaces(Object.values(this.rooms));
+    const yard = [];
+    for (const child of [...this._outside.object3d.children]) {
+      if (child.name === 'MarsTerrain') continue;   // the ground under everything
+      yard.push(...outOfWindowView(child, windows));
+    }
+    zones.add('yard', yard);
+    this.zones = zones;
+
+    this.portal = new AirlockPortal({ airlock: this.rooms.Airlock, zones });
+    this._sceneRoot.addComponent(this.portal);
+
+    // Shadow maps are frozen between changes (Engine.shadows): a zone swap or
+    // a door moving changes what casts them.
+    const redraw = () => engine.shadows?.invalidate();
+    this._offShadowHooks = [zones.onChange(redraw), this.rooms.Airlock.onStateChange(redraw)];
+    // The dish slews; its shadow follows it.
+    if (this.satellite && this.moonLight) engine.shadows?.watch(this.satellite.object3d, [this.moonLight]);
   }
 
   /** Half extents of the built base on the ground, for the scenery to clear.
@@ -669,4 +738,36 @@ export class BaseScene extends Scene {
     this._owned.push(resource);
     return resource;
   }
+}
+
+const _box = new THREE.Box3();
+
+/**
+ * The parts of `object` no window can see, for the yard zone. An
+ * InstancedMesh is split along the window's sightline (partitionInstances),
+ * so the half out of view can go on its own; anything else is taken whole if
+ * its bounds are out of view, or opened up if not, so a group straddling the
+ * line still gives up the children that aren't. A light is never taken — it
+ * would recompile every lit shader (see collectHideable).
+ *
+ * @param {THREE.Object3D} object
+ * @param {import('../systems/Sightlines.js').HalfSpace[]} windows
+ * @returns {THREE.Object3D[]}
+ */
+function outOfWindowView(object, windows) {
+  if (object.isLight) return [];
+  if (object.isInstancedMesh) {
+    const { moved } = partitionInstances(object, sphere => sphereSeenThroughWindows(sphere, windows));
+    return moved ? [moved] : [];
+  }
+
+  let special = false;
+  object.traverse((o) => { if (o !== object && (o.isInstancedMesh || o.isLight)) special = true; });
+  if (!special) {
+    object.updateWorldMatrix(true, true);
+    _box.setFromObject(object);
+    if (_box.isEmpty()) return [];
+    if (!boxSeenThroughWindows(_box, windows)) return [object];
+  }
+  return [...object.children].flatMap(child => outOfWindowView(child, windows));
 }

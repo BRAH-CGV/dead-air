@@ -67,3 +67,45 @@ describe('ScreenFade', () => {
     el.remove();
   });
 });
+
+describe('ScreenFade.fadeIn', () => {
+  let root, fade;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    root = document.createElement('div');
+    fade = new ScreenFade(root, { fadeMs: 600, holdMs: 400 });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('cuts to black at once, then fades to clear over the given time', () => {
+    fade.fadeIn(1500);
+    expect(root.classList.contains('is-dark')).toBe(true);
+    expect(root.style.transitionDuration).toBe('0ms');      // the cut is instant
+
+    vi.advanceTimersByTime(50);
+    expect(root.classList.contains('is-dark')).toBe(false);  // fading up
+    expect(root.style.transitionDuration).toBe('1500ms');
+    expect(fade.playing).toBe(true);
+
+    vi.advanceTimersByTime(1500);
+    expect(fade.playing).toBe(false);
+    expect(root.style.transitionDuration).toBe('600ms');     // back to its own timing for play()
+  });
+
+  it('calls back once the scene is fully clear', () => {
+    const done = vi.fn();
+    fade.fadeIn(1000, done);
+    vi.advanceTimersByTime(900);
+    expect(done).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(200);
+    expect(done).toHaveBeenCalledOnce();
+  });
+
+  it('with no element (no DOM), finishes at once', () => {
+    const done = vi.fn();
+    new ScreenFade(null).fadeIn(1000, done);
+    expect(done).toHaveBeenCalledOnce();
+  });
+});
