@@ -161,7 +161,7 @@ describe('ComputerTerminal', () => {
     const up = { left: false, right: false, up: true, down: false };
 
     // Zenith outward through the dish's own reach (it stops following past
-    // the ring of neighbour origins), the dish chasing every frame.
+    // its 0.75 radius), the dish chasing every frame.
     while (Math.hypot(term._cursorX, term._cursorY) < 0.4) {
       term.moveCursor(up, dt);
       dish._update(dt);

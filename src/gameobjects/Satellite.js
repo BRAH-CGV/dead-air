@@ -30,9 +30,9 @@ export { DISH_SLEW_RATE } from './DishRig.js';
 
 export class Satellite extends GameObject {
 
-  /** The local tower's aiming state. Its reach is the array's centre: out
-   *  from the zenith (the radar's centre) to the ring of neighbour origins,
-   *  and not beyond — the outer band of the sky belongs to the neighbours. */
+  /** The local tower's aiming state. Its reach is the array's centre: the
+   *  big disc around the zenith (the radar's centre) covering the majority
+   *  of the scannable band — the outer band belongs to the neighbours. */
   rig = createLocalRig();
 
   /** Dishes of the neighbouring array nodes, simulated headless. Set by the

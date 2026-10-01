@@ -145,7 +145,7 @@ export class RadarOverlay {
    *   visibly converge on the scanned blip
    *  @param {import('../gameobjects/DishRig.js').DishRig|null} [localRig]
    *   The local dish's rig: draws its reach as an amber circle around the
-   *   centre, out to the ring of neighbour origins */
+   *   centre, covering the majority of the scannable band */
   update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null) {
     const ctx = this._ctx;
     if (!ctx) return;
@@ -153,6 +153,7 @@ export class RadarOverlay {
     const r = this._radius;
     const cx = this._cx;
     const cy = this._cy;
+    const maxR = this._radius * 0.85;
 
     // Clear
     ctx.clearRect(0, 0, r * 2, r * 2);
@@ -181,9 +182,10 @@ export class RadarOverlay {
     ctx.strokeStyle = 'rgba(0, 200, 180, 0.12)';
     ctx.stroke();
 
-    // Local dish reach — the amber circle around the centre, out to the
-    // ring of neighbour origins. Amber to match the local dish indicator:
-    // beyond this circle our own tower stops following the cursor.
+    // Local dish reach — the amber circle around the centre, covering the
+    // majority of the scannable band. Amber to match the local dish
+    // indicator: beyond this circle our own tower stops following the
+    // cursor.
     if (localRig && Number.isFinite(localRig.coverageRadius)) {
       const c = this._sectionCircle(localRig);
       ctx.beginPath();
@@ -195,18 +197,25 @@ export class RadarOverlay {
 
     // Neighbour array sections — a faint circle marking the patch of sky
     // each far-off dish can see, drawn before the blips so the blips stay
-    // dominant. Each section is a true circle on the radar's own disc, and
-    // each dish gets the same treatment as the local one: a small dot on
-    // its origin and a line from there to where it faces, so a parked
-    // neighbour reads at a glance as "waiting out of reach".
+    // dominant. The origins sit on the rim and each section reaches past
+    // the sky's edge, so the circle is clipped to the radar disc — its
+    // outer half reads as cut off — and each dish gets the same treatment
+    // as the local one: a small dot on its origin and a line from there to
+    // where it faces.
     for (const rig of neighbours) {
       if (!Number.isFinite(rig.coverageRadius)) continue;
       const c = this._sectionCircle(rig);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+      ctx.clip();
       ctx.beginPath();
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(0, 200, 180, 0.22)';
       ctx.lineWidth = 1;
       ctx.stroke();
+      ctx.restore();
 
       // Origin dot + line to the facing, then the aim dot — same shape
       // and mapping as the local dish's amber centre line.
@@ -289,7 +298,6 @@ export class RadarOverlay {
     ctx.fill();
 
     // Cursor indicator — crosshair at the Cartesian cursor position
-    const maxR = this._radius * 0.85;
     const curX = this._cx + cursorX * maxR;
     const curY = this._cy - cursorY * maxR;
     const cSize = 8;

@@ -293,10 +293,11 @@ describe('Satellite', () => {
 
   // ── The neighbouring array dishes ────────────────────────
 
-  /** A satellite with two hand-placed neighbour rigs on the ring: east at
-   *  cursor (0.5, 0) and west at (-0.5, 0), each covering 0.55 around its
-   *  origin — the east one reaches the point (0.3, 0), the west one
-   *  doesn't. The local tower is parked deep inside its own central reach. */
+  /** A satellite with two hand-placed neighbour rigs (not the default
+   *  layout): east at cursor (0.5, 0) and west at (-0.5, 0), each covering
+   *  0.55 around its origin — the east one reaches the point (0.3, 0), the
+   *  west one doesn't. The local tower is parked deep inside its own
+   *  central reach. */
   function makeArrayed() {
     const { root, neck, dish } = buildTower();
     const sat = Satellite.fromObject3D(root);
@@ -332,7 +333,7 @@ describe('Satellite', () => {
 
   it('the local dish holds its aim once the cursor leaves its reach', () => {
     const { sat } = makeArrayed();
-    const p = cursorToSky(0.8, 0);       // cursor radius 0.8 — beyond the neighbour origins
+    const p = cursorToSky(0.8, 0);       // cursor radius 0.8 — beyond the local reach (0.75)
 
     sat.aimAll(p.yaw, p.pitch);
 

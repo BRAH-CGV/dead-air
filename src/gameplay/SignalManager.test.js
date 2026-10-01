@@ -41,10 +41,10 @@ describe('SignalManager', () => {
   });
 
   it('spawns across the enlarged scan band — -80° up to -8°', () => {
-    // The band fills the array's combined reach: the local dish's central
-    // disc out to the ring of neighbour origins, and the neighbours' sections
-    // from there to the horizon. Statistical: with 200 signals the band's
-    // ends must both be reached (the old band was -70°..-10°).
+    // The band fills the array's combined reach: the local dish's big
+    // central disc, and the neighbours' rim sections in the outer band.
+    // Statistical: with 200 signals the band's ends must both be reached
+    // (the old band was -70°..-10°).
     const mgr = new SignalManager({ signalsPerNight: 200, payloadPool: POOL });
     mgr.startNight(1);
 

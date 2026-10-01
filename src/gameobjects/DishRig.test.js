@@ -193,16 +193,35 @@ describe('DishRig', () => {
 
   // ── The array layout ─────────────────────────────────────
 
-  it('the local dish reaches exactly the neighbour origins and no further', () => {
+  it('the local dish covers the majority of the scannable band', () => {
+    // Band = cursor radius 0.11…0.91 (pitch -80°..-8°). The local reach is
+    // the big central disc: most of the band must be OURS, leaving only the
+    // outer band to the neighbours.
     const local = createLocalRig();
     expect(Number.isFinite(local.coverageRadius)).toBe(true);
 
+    let inBand = 0;
+    let ours = 0;
+    for (let pitchDeg = -80; pitchDeg <= -8; pitchDeg += 2) {
+      for (let yawDeg = -180; yawDeg < 180; yawDeg += 5) {
+        inBand++;
+        const yaw = yawDeg * Math.PI / 180;
+        const pitch = pitchDeg * Math.PI / 180;
+        if (local.covers(yaw, pitch)) ours++;
+      }
+    }
+    expect(ours / inBand).toBeGreaterThan(0.6);
+  });
+
+  it('the local reach stops short of the neighbour origins', () => {
+    // The origins sit out on the rim now, well past our reach — only their
+    // sections dip back inside it.
+    const local = createLocalRig();
+
     for (const rig of createDefaultNeighbourDishes()) {
       const origin = cursorToSky(rig.originX, rig.originY);
-      expect(local.covers(origin.yaw, origin.pitch)).toBe(true);   // boundary passes through it
+      expect(local.covers(origin.yaw, origin.pitch)).toBe(false);
     }
-    const beyond = cursorToSky(0.7, 0);
-    expect(local.covers(beyond.yaw, beyond.pitch)).toBe(false);
     const centre = cursorToSky(0, 0);                              // our origin: the zenith
     expect(local.covers(centre.yaw, centre.pitch)).toBe(true);
   });
@@ -234,17 +253,55 @@ describe('DishRig', () => {
     }
   });
 
-  it('each neighbour reaches just past our origin at the centre', () => {
-    for (const rig of createDefaultNeighbourDishes()) {
-      const centre = cursorToSky(0, 0);
-      expect(rig.covers(centre.yaw, centre.pitch)).toBe(true);
+  it('each neighbour section overlaps the local reach', () => {
+    // The sections keep their size but sit out on the rim, so their inner
+    // edge must dip back well inside the local reach — the middle of the
+    // disc is covered by both.
+    const local = createLocalRig();
 
-      // A hair further past the centre, on the far side from the origin: out of reach.
+    for (const rig of createDefaultNeighbourDishes()) {
       const len = Math.hypot(rig.originX, rig.originY);
-      const justPast = cursorToSky(-rig.originX / len * 0.04, -rig.originY / len * 0.04);
-      const tooFar = cursorToSky(-rig.originX / len * 0.07, -rig.originY / len * 0.07);
-      expect(rig.covers(justPast.yaw, justPast.pitch)).toBe(true);
-      expect(rig.covers(tooFar.yaw, tooFar.pitch)).toBe(false);
+      const innerX = (rig.originX / len) * (len - rig.coverageRadius);
+      const innerY = (rig.originY / len) * (len - rig.coverageRadius);
+      const inner = cursorToSky(innerX, innerY);
+
+      expect(rig.covers(inner.yaw, inner.pitch)).toBe(true);
+      expect(local.covers(inner.yaw, inner.pitch)).toBe(true);
+    }
+  });
+
+  it('at least half of each neighbour section is cut off by the radar rim', () => {
+    // Grid-sample the section disc; what falls outside the unit sky disc is
+    // cut off by the radar's edge.
+    for (const rig of createDefaultNeighbourDishes()) {
+      let inside = 0;
+      let cut = 0;
+      const step = 0.01;
+      for (let x = rig.originX - rig.coverageRadius; x <= rig.originX + rig.coverageRadius; x += step) {
+        for (let y = rig.originY - rig.coverageRadius; y <= rig.originY + rig.coverageRadius; y += step) {
+          if (Math.hypot(x - rig.originX, y - rig.originY) > rig.coverageRadius) continue;
+          inside++;
+          if (Math.hypot(x, y) > 1) cut++;
+        }
+      }
+      expect(cut / inside).toBeGreaterThanOrEqual(0.5);
+    }
+  });
+
+  it('the outer band beyond the local reach belongs to the neighbours', () => {
+    const local = createLocalRig();
+    const neighbours = createDefaultNeighbourDishes();
+
+    for (let radius = 0.8; radius <= 0.91; radius += 0.02) {
+      for (let yawDeg = -180; yawDeg < 180; yawDeg += 5) {
+        const yaw = yawDeg * Math.PI / 180;
+        const p = cursorToSky(radius * Math.sin(yaw), radius * Math.cos(yaw));
+        expect(local.covers(p.yaw, p.pitch)).toBe(false);          // 0.8 > local reach: not ours
+        expect(
+          neighbours.some(rig => rig.covers(p.yaw, p.pitch)),
+          `gap at radius ${radius}, yaw ${yawDeg}°`,
+        ).toBe(true);
+      }
     }
   });
 

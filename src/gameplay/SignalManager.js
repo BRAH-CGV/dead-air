@@ -17,9 +17,9 @@ import { SignalTarget } from './SignalTarget.js';
 // ─────────────────────────────────────────────
 
 /** Pitch range for generated signals (radians, negative = up). Sized to
- *  the dish array's combined reach: the local dish covers the central disc
- *  out to the ring of neighbour origins (~-45°), the neighbours' sections
- *  cover from there out to the horizon — every signal lands where at least
+ *  the dish array's combined reach: the local dish covers the majority of
+ *  the band as the big central disc, the neighbours' rim sections cover
+ *  the outer band out to the horizon — every signal lands where at least
  *  one dish can see it. */
 const PITCH_MIN = -80 * (Math.PI / 180);  // steepest up
 const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up

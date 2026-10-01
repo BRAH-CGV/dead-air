@@ -156,12 +156,29 @@ describe('RadarOverlay array sections', () => {
     expect(aim.y).toBeCloseTo(c.y, 5);
   });
 
-  it('the default layout keeps every section on the canvas', () => {
+  it('the default layout puts every section origin on the rim, at least half cut off', () => {
+    // The sections keep their size but sit out on the rim, so half or more
+    // of each one is cut off by the radar's edge — grid-sample the canvas
+    // circle and count what lies outside the sky rim.
     for (const rig of createDefaultNeighbourDishes()) {
       const c = overlay._sectionCircle(rig);
-      const farthest = Math.hypot(c.x - CX, c.y - CY) + c.r;
-      expect(farthest).toBeLessThanOrEqual(200);   // canvas half-size
+      expect(Math.hypot(c.x - CX, c.y - CY)).toBeCloseTo(MAX_R, 5);
+
+      let inside = 0;
+      let cut = 0;
+      const step = 1;   // px
+      for (let x = c.x - c.r; x <= c.x + c.r; x += step) {
+        for (let y = c.y - c.r; y <= c.y + c.r; y += step) {
+          if (Math.hypot(x - c.x, y - c.y) > c.r) continue;
+          inside++;
+          if (Math.hypot(x - CX, y - CY) > MAX_R) cut++;
+        }
+      }
+      expect(cut / inside).toBeGreaterThanOrEqual(0.5);
     }
+  });
+
+  it('the local reach circle still fits inside the rim', () => {
     expect(overlay._sectionCircle(createLocalRig()).r).toBeLessThanOrEqual(MAX_R);
   });
 

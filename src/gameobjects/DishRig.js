@@ -14,10 +14,11 @@
 //
 // A rig also carries its coverage: a disc on the radar's own sky map (see
 // skyToCursor below), centred on its origin. The array is laid out there:
-// our dish at the centre — the zenith — its reach ending exactly at the
-// ring of neighbour origins, and each neighbour reaching from its origin on
-// that ring just past our centre, so every part of the signal band belongs
-// to at least one dish, the middle of the disc to several.
+// our dish at the centre — the zenith — its reach covering the majority of
+// the scannable band, and each neighbour out on the rim with its section
+// half cut off by the radar's edge, dipping back inside to overlap our
+// reach, so every part of the signal band belongs to at least one dish and
+// the middle of the disc to several.
 // ─────────────────────────────────────────────
 
 /** The dish's default slew limit, radians per second: π/8 = 22.5°/s. A half
@@ -208,25 +209,29 @@ export class DishRig {
 }
 
 // ── The array layout ─────────────────────────────────────────
-// Everything below is cursor-disc geometry: our dish at the centre, the
-// neighbours on a ring around it. The reach of each is defined by the
-// others' positions — the local dish ends exactly at the neighbour
-// origins, each neighbour ends just past our centre — so the union is one
-// rosette covering the whole signal band, overlapping in the middle.
+// Everything below is cursor-disc geometry: our dish owns the big central
+// disc, the neighbours sit on the rim with their sections half cut off.
+// The reach of each is tuned against the signal spawn band (cursor radius
+// 0.11…0.91): the local dish covers most of it, the outer band belongs to
+// the neighbours, and the union has no gap.
 
 /** How many dishes the neighbouring array nodes lend the player. */
 const NEIGHBOUR_COUNT = 6;
 
-/** Cursor radius of the ring the neighbour origins sit on (~45° up). */
-export const ARRAY_RING = 0.5;
+/** Cursor radius of the ring the neighbour origins sit on: the rim itself
+ *  (pitch 0 — the horizon), so at least half of each neighbour's
+ *  same-sized section is cut off by the radar's edge. */
+export const ARRAY_RING = 1.0;
 
-/** How far our own dish reaches: exactly the ring of neighbour origins,
- *  and not beyond. */
-export const LOCAL_COVERAGE = ARRAY_RING;
+/** How far our own dish reaches: far enough to cover the majority of the
+ *  scannable band (some 69% of its area at radius 0.75), stopping well
+ *  short of the rim — the outer band of the sky belongs to the neighbours. */
+export const LOCAL_COVERAGE = 0.75;
 
-/** Each neighbour's reach: from its origin on the ring (0.5 out from our
- *  centre) to 0.05 past it — just barely covering our origin, and out to
- *  the horizon on its own side, so adjacent sections overlap heavily. */
+/** Each neighbour's reach, in cursor-disc units: same size it has always
+ *  been, but centred on the rim now — so its inner edge dips back well
+ *  inside the local reach (overlap in the middle of the disc) while its
+ *  outer half spills past the rim and is cut off. */
 export const NEIGHBOUR_COVERAGE = 0.55;
 
 /** Neighbour slew limit, radians per second: π/12 = 15°/s against the local
@@ -240,14 +245,14 @@ const NEIGHBOUR_ACCEL = 15;
 const NEIGHBOUR_DAMPING = 8;
 
 /** The local station's own dish: centred on the zenith — the radar's
- *  centre — reaching out to the ring of neighbour origins.
+ *  centre — reaching out over the majority of the scannable band.
  *  @returns {DishRig} */
 export function createLocalRig() {
   return new DishRig({ coverageRadius: LOCAL_COVERAGE });
 }
 
 /** The dishes of the neighbouring array nodes: evenly spaced around the
- *  ring, each starting aimed at its own origin, each a touch slower than
+ *  rim, each starting aimed at its own origin, each a touch slower than
  *  the local tower. Create once and hand the array to
  *  `satellite.neighbours`.
  *  @returns {DishRig[]} */
