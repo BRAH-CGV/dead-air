@@ -43,6 +43,7 @@ function buildPlayer({ sound = fakeSound(), fadeSeconds = 0.5 } = {}) {
   go.scene = { userData: { engine } };
   const suit = go.addComponent(new EVASuit());
   const visor = go.addComponent(new SuitVisor({ suit, sound, fadeSeconds }));
+  visor.onAwake();
   visor.onStart();
   return { camera, suit, visor, sound };
 }
@@ -163,6 +164,7 @@ describe('SuitVisor', () => {
     suit.putOn();
     const sound = fakeSound();
     const visor = go.addComponent(new SuitVisor({ suit, sound }));
+    visor.onAwake();
     visor.onStart();
     expect(sound.play).toHaveBeenCalledOnce();
   });
@@ -190,6 +192,7 @@ describe('SuitVisor', () => {
     go.scene = { userData: { engine: { camera } } };
     const suit = go.addComponent(new EVASuit());
     const visor = go.addComponent(new SuitVisor({ suit }));
+    visor.onAwake();
     visor.onStart();
     suit.putOn();
     expect(() => visor.onUpdate(1 / 60)).not.toThrow();
@@ -248,5 +251,19 @@ describe('seamlessLoop', () => {
 describe('SuitVisor volume', () => {
   it('breathes at 0.4 by default — present, under the rest of the mix', () => {
     expect(new SuitVisor().volume).toBe(0.4);
+  });
+});
+
+describe('SuitVisor timing', () => {
+  it('builds its overlay on awake — before the boot warm-up, so its shader is compiled with everything else', () => {
+    // Built on the first frame instead, the overlay compiled the first time
+    // the suit went on: a one-second freeze in the airlock.
+    const camera = new THREE.PerspectiveCamera();
+    const go = new GameObject('Player');
+    go.scene = { userData: { engine: { camera } } };
+    const suit = go.addComponent(new EVASuit());
+    const visor = go.addComponent(new SuitVisor({ suit, sound: fakeSound() }));
+    visor.onAwake();
+    expect(visor.overlay.parent).toBe(camera);
   });
 });
