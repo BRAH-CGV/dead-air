@@ -7,9 +7,14 @@ import { SignalTarget } from './SignalTarget.js';
 // from a pool, and tracks save/delete state. The required signal count
 // scales with night number.
 //
+// Signals are not all visible at 12:00: each one carries an appearAt shift
+// fraction spread across [APPEAR_START, APPEAR_BY], and fades in over
+// SIGNAL_FADE_SECONDS once the night reaches it — the sky is often empty.
+//
 // Usage:
 //   const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: urls });
 //   mgr.startNight(1);
+//   mgr.update(dt, nightClock);  // call each frame — appearance + fade
 //   mgr.markScanned(2);
 //   mgr.saveSignal(2);        // counts toward quota
 //   mgr.deleteSignal(3);      // discarded
@@ -26,6 +31,17 @@ const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 
 /** Required signals per night: base + (night-1). Clamped to signalsPerNight. */
 const BASE_REQUIRED = 3;
+
+/** Shift fraction at which the first signal may appear — the sky stays
+ *  empty for the first minutes of the night. */
+export const APPEAR_START = 0.05;
+
+/** Shift fraction by which every signal has appeared, leaving enough
+ *  night left to scan the quota. */
+export const APPEAR_BY = 0.75;
+
+/** Real seconds a signal's radar dot takes to fade fully in. */
+export const SIGNAL_FADE_SECONDS = 3;
 
 export class SignalManager {
   /** @type {SignalTarget[]} */
@@ -67,9 +83,16 @@ export class SignalManager {
     shuffleArray(shuffled);
     let poolIdx = 0;
 
+    // Appearance schedule: the window [APPEAR_START, APPEAR_BY] split into
+    // one slot per signal; each signal lands 20–80% into its own slot, so
+    // consecutive appearances are at least 0.4 slot-widths apart — the sky
+    // is often empty, but never dumps every signal at once.
+    const slotWidth = (APPEAR_BY - APPEAR_START) / this.signalsPerNight;
+
     for (let i = 0; i < this.signalsPerNight; i++) {
       const yaw   = randomRange(-Math.PI, Math.PI);
       const pitch = randomRange(PITCH_MIN, PITCH_MAX);
+      const appearAt = APPEAR_START + slotWidth * (i + 0.2 + 0.6 * Math.random());
 
       let payloadUrl = '';
       if (shuffled.length > 0) {
@@ -82,7 +105,29 @@ export class SignalManager {
         yaw,
         pitch,
         payloadUrl,
+        appearAt,
+        fadeSeconds: SIGNAL_FADE_SECONDS,
       }));
+    }
+  }
+
+  /** Advance appearance/fade state. Call once per frame with the elapsed
+   *  real seconds and the night clock; signals flip to `appeared` when the
+   *  shift reaches their `appearAt`, then fade in over their fadeSeconds.
+   *  No-op without a clock. */
+  update(dt, clock) {
+    if (!clock) return;
+    const span = clock.endHour - clock.startHour;
+    const progress = span > 0 ? (clock.currentTime - clock.startHour) / span : 0;
+
+    for (const sig of this.signals) {
+      if (sig.appeared) {
+        if (sig.fadeElapsed < sig.fadeSeconds) {
+          sig.fadeElapsed = Math.min(sig.fadeSeconds, sig.fadeElapsed + dt);
+        }
+        continue;
+      }
+      if (progress >= sig.appearAt) sig.appeared = true;
     }
   }
 

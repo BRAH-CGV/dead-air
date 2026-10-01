@@ -127,6 +127,16 @@ export class RadarOverlay {
     };
   }
 
+  /** Blip fill colour for a signal, its alpha scaled by the signal's
+   *  fade-in opacity — a signal mid-fade shows as a ghost of its state. */
+  _blipColor(sig) {
+    const a = sig.opacity;
+    if (sig.saved)      return `rgba(80, 200, 80, ${0.5 * a})`;      // dim green
+    if (sig.deleted)    return `rgba(200, 60, 60, ${0.5 * a})`;      // dim red
+    if (sig.scanned)    return `rgba(180, 180, 60, ${0.7 * a})`;     // scanned but unresolved
+    return `rgba(0, 220, 200, ${0.8 * a})`;                          // unscanned cyan
+  }
+
   /** Redraw the radar with current signal data, dish direction, cursor,
    *  and scan state. Blips and indicators share one sky mapping: azimuth
    *  (yaw) sweeps around the circle, elevation (-pitch) sets the radial
@@ -238,27 +248,16 @@ export class RadarOverlay {
       ctx.fill();
     }
 
-    // Signal blips — shared _skyToCanvas mapping
+    // Signal blips — shared _skyToCanvas mapping. Each signal appears on
+    // its own schedule through the night and fades in (sig.opacity), so
+    // an un-appeared signal draws nothing at all.
     for (const sig of signals) {
+      if (sig.opacity <= 0) continue;
       const pos = this._skyToCanvas(sig.yaw, sig.pitch);
-      const sx = pos.x;
-      const sy = pos.y;
-
-      let color;
-      let dotR = 5;
-      if (sig.saved) {
-        color = 'rgba(80, 200, 80, 0.5)';      // dim green
-      } else if (sig.deleted) {
-        color = 'rgba(200, 60, 60, 0.5)';       // dim red
-      } else if (sig.scanned) {
-        color = 'rgba(180, 180, 60, 0.7)';       // scanned but unresolved
-      } else {
-        color = 'rgba(0, 220, 200, 0.8)';        // unscanned cyan
-      }
 
       ctx.beginPath();
-      ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = this._blipColor(sig);
       ctx.fill();
     }
 

@@ -189,3 +189,24 @@ describe('RadarOverlay array sections', () => {
     expect(() => overlay.update([], 0, 0, 0, 0, null, -1, [rig], createLocalRig())).not.toThrow();
   });
 });
+
+// ── Blip colour / fade-in ─────────────────────────────────
+describe('RadarOverlay blip colour', () => {
+  const overlay = new RadarOverlay(null);
+
+  /** Plain signal-like input — _blipColor only reads state + opacity. */
+  const blip = (overrides = {}) => ({ saved: false, deleted: false, scanned: false, opacity: 1, ...overrides });
+
+  it('keeps the legacy colours at full opacity', () => {
+    expect(overlay._blipColor(blip())).toBe('rgba(0, 220, 200, 0.8)');                       // unscanned
+    expect(overlay._blipColor(blip({ scanned: true }))).toBe('rgba(180, 180, 60, 0.7)');    // scanned
+    expect(overlay._blipColor(blip({ saved: true }))).toBe('rgba(80, 200, 80, 0.5)');       // saved
+    expect(overlay._blipColor(blip({ deleted: true }))).toBe('rgba(200, 60, 60, 0.5)');     // deleted
+  });
+
+  it('scales the alpha with the fade-in opacity', () => {
+    expect(overlay._blipColor(blip({ opacity: 0.5 }))).toBe('rgba(0, 220, 200, 0.4)');
+    expect(overlay._blipColor(blip({ opacity: 0 }))).toBe('rgba(0, 220, 200, 0)');
+    expect(overlay._blipColor(blip({ scanned: true, opacity: 0.5 }))).toBe('rgba(180, 180, 60, 0.35)');
+  });
+});

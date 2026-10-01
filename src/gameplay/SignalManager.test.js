@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager } from './SignalManager.js';
+import { SignalManager, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS } from './SignalManager.js';
 
 const POOL = [
   'assets/signals/signal-1.png',
@@ -182,6 +182,95 @@ describe('SignalManager', () => {
     mgr.startNight(1);
     for (const sig of mgr.signals) {
       expect(sig.payloadUrl).toBe('');
+    }
+  });
+});
+
+describe('SignalManager signal appearance', () => {
+  /** Stub of the slice of NightClock the manager reads. startHour 0,
+   *  endHour 6 → shift progress = currentTime / 6. */
+  const stubClock = (progress) => ({ currentTime: progress * 6, startHour: 0, endHour: 6 });
+
+  it('hides every signal when the night starts', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(1);
+
+    for (const sig of mgr.signals) {
+      expect(sig.appeared).toBe(false);
+      expect(sig.opacity).toBe(0);
+      expect(sig.revealed).toBe(false);
+      expect(sig.appearAt).toBeGreaterThan(0);   // nothing at 12:00 sharp
+    }
+  });
+
+  it('spreads appearances across [APPEAR_START, APPEAR_BY] with gaps between them', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(1);
+
+    const appearAts = mgr.signals.map(s => s.appearAt).sort((a, b) => a - b);
+    const slotWidth = (APPEAR_BY - APPEAR_START) / mgr.signals.length;
+
+    for (const at of appearAts) {
+      expect(at).toBeGreaterThanOrEqual(APPEAR_START);
+      expect(at).toBeLessThanOrEqual(APPEAR_BY);
+    }
+    // The sky is sometimes empty: consecutive appearances never bunch up.
+    for (let i = 1; i < appearAts.length; i++) {
+      expect(appearAts[i] - appearAts[i - 1]).toBeGreaterThanOrEqual(0.4 * slotWidth);
+    }
+  });
+
+  it('keeps signals hidden before their appearance time, whatever the dt', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(1);
+
+    const first = Math.min(...mgr.signals.map(s => s.appearAt));
+    mgr.update(10, stubClock(first - 0.001));   // huge dt must not leak fade time
+
+    for (const sig of mgr.signals) {
+      expect(sig.appeared).toBe(false);
+      expect(sig.opacity).toBe(0);
+    }
+  });
+
+  it('fades a signal in over SIGNAL_FADE_SECONDS once its time comes', () => {
+    const mgr = new SignalManager({ signalsPerNight: 2, payloadPool: POOL });
+    mgr.startNight(1);
+    const sig = mgr.signals[0];
+    sig.appearAt = 0.2;   // poke for determinism; the other stays hidden
+
+    mgr.update(0.1, stubClock(0.2));
+    expect(sig.appeared).toBe(true);
+    expect(sig.opacity).toBe(0);            // fade starts on the next tick
+
+    mgr.update(SIGNAL_FADE_SECONDS * 0.5, stubClock(0.25));
+    expect(sig.opacity).toBeCloseTo(0.5);
+    expect(sig.revealed).toBe(false);
+
+    mgr.update(SIGNAL_FADE_SECONDS, stubClock(0.3));
+    expect(sig.opacity).toBe(1);
+    expect(sig.revealed).toBe(true);
+  });
+
+  it('has every signal revealed late in the night', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    mgr.startNight(1);
+
+    mgr.update(0.1, stubClock(APPEAR_BY + 0.05));
+    mgr.update(SIGNAL_FADE_SECONDS, stubClock(APPEAR_BY + 0.1));
+
+    for (const sig of mgr.signals) {
+      expect(sig.appeared).toBe(true);
+      expect(sig.revealed).toBe(true);
+    }
+  });
+
+  it('update() without a clock is a no-op', () => {
+    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    mgr.startNight(1);
+    mgr.update(60, undefined);
+    for (const sig of mgr.signals) {
+      expect(sig.appeared).toBe(false);
     }
   });
 });

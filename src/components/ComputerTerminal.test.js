@@ -79,6 +79,16 @@ function makeReviewPanel() {
   };
 }
 
+/** Skip the appearance schedule — every signal fully faded in. The
+ *  scheduling itself is covered in SignalManager.test.js; these tests
+ *  exercise the terminal against revealed signals. */
+function revealAll(mgr) {
+  for (const sig of mgr.signals) {
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds;
+  }
+}
+
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('ComputerTerminal', () => {
@@ -99,6 +109,7 @@ describe('ComputerTerminal', () => {
     term.reviewPanel  = review;
 
     mgr.startNight(1);  // required=3, 5 signals
+    revealAll(mgr);     // hide the appearance schedule from these tests
   });
 
   // ── Initial state ──
@@ -285,6 +296,42 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
     expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover ignores signals that have not appeared yet', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = false;   // not yet scheduled — still invisible
+    sig.fadeElapsed = 0;
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover ignores signals still fading in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds * 0.5;   // visible but half-transparent
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover finds a signal once it has fully faded in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds;
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
   });
 
   it('hover is null when cursor is far from any signal', () => {

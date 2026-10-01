@@ -125,7 +125,7 @@ export class ComputerTerminal extends Component {
     let closestDist = Infinity;
 
     for (const sig of signals) {
-      if (sig.resolved) continue;
+      if (sig.resolved || !sig.revealed) continue;   // hidden / still fading in
       // Compute angular distance from cursor (in sky coords) to signal
       const dyaw = sig.yaw - sky.yaw;
       const dpitch = sig.pitch - sky.pitch;

@@ -145,6 +145,9 @@ export class GameController extends Component {
     // Advance the clock
     this.nightClock?.update(dt);
 
+    // Signals appear on their own schedule through the night
+    this.signalManager?.update(dt, this.nightClock);
+
     // Update HUD every frame
     this._updateHUD();
 
