@@ -34,3 +34,26 @@ describe('AssetManager model loading', () => {
     expect(assets.getCollision('model:thing').bounds.center[0]).toBeCloseTo(3);
   });
 });
+
+describe('AssetManager audio loading', () => {
+  function audioManager() {
+    const assets = new AssetManager({ manifest: { 'sfx:hum': { type: 'audio', url: 'assets/audio/hum.mp3' } } });
+    const buffer = { duration: 2, numberOfChannels: 1, sampleRate: 8000 };
+    assets.audioLoader.loadAsync = vi.fn(async () => buffer);
+    return { assets, buffer };
+  }
+
+  it('decodes an audio entry through the audio loader and caches the buffer', async () => {
+    const { assets, buffer } = audioManager();
+    await assets.load('sfx:hum');
+    expect(assets.audioLoader.loadAsync).toHaveBeenCalledWith(expect.stringContaining('assets/audio/hum.mp3'));
+    expect(assets.get('sfx:hum')).toBe(buffer);
+  });
+
+  it('releases an audio buffer without treating it as a model', async () => {
+    const { assets } = audioManager();
+    await assets.load('sfx:hum');
+    expect(() => assets.release('sfx:hum')).not.toThrow();
+    expect(assets.has('sfx:hum')).toBe(false);
+  });
+});

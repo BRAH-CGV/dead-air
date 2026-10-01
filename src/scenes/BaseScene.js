@@ -20,6 +20,7 @@ import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { EVASuit } from '../components/EVASuit.js';
+import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
@@ -611,6 +612,8 @@ export class BaseScene extends Scene {
     // not only through the locker.
     this.suit = engine.player.addComponent(new EVASuit());
     this.rooms.Airlock.bindSuit(this.suit);
+    // Helmet glass and mask breathing while it's on.
+    engine.player.addComponent(new SuitVisor({ suit: this.suit }));
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the
