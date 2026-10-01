@@ -91,6 +91,15 @@ export class GameObject {
     }
   }
 
+  /** Run every component's onDestroy, here and down the hierarchy. Scene
+   *  teardown calls this on each root, so a component that hung something on
+   *  an object outliving the scene — the camera, the audio graph — can take
+   *  it back down. */
+  destroy() {
+    for (const c of this.components) c.onDestroy();
+    for (const child of this.children) child.destroy?.();
+  }
+
   /** First component matching the class constructor, or null. */
   getComponent(Type) {
     return this.components.find(c => c instanceof Type) ?? null;

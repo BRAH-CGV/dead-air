@@ -16,7 +16,7 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 //   • Filenames must be lowercase and hyphen-separated — the LAMP server is
 //     case-sensitive, our dev machines usually are not. `validateManifest()`
 //     shouts in dev if you slip up.
-//   • Prefix keys by type ('model:', 'tex:') so a typo'd key is obvious in
+//   • Prefix keys by type ('model:', 'tex:', 'sfx:') so a typo'd key is obvious in
 //     the console.
 //   • The filename IS the key with that prefix dropped, so 'model:trash-bin'
 //     lives at 'assets/models/trash-bin.glb'. Either one gives you the other
@@ -85,6 +85,11 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
  *                                           for normal / roughness / metalness.
  * @property {[number, number]} [repeat]     Enables wrapping and sets repeat.
  * @property {boolean}  [flipY]
+ *
+ * @typedef {Object} AudioEntry
+ * @property {'audio'} type
+ * @property {string}  url      Decoded once into a shared AudioBuffer; play it
+ *                              through a THREE.Audio on `engine.audioListener`.
  */
 
 // NOTE: the desk and floor textures are stand-ins, not final art. Swapping in
@@ -94,7 +99,7 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 /**
  * What the game puts on screen today. These are fetched up front, so the
  * loading bar is only ever as long as this object.
- * @type {Record<string, ModelEntry | TextureEntry>}
+ * @type {Record<string, ModelEntry | TextureEntry | AudioEntry>}
  */
 const PLACED = {
   // ── Models ──────────────────────────────────
@@ -271,6 +276,12 @@ const PLACED = {
     colorSpace: 'linear',
     repeat: [24, 24],
   },
+
+  // ── Audio ───────────────────────────────────
+  'sfx:mask-breathing': {
+    type: 'audio',
+    url: 'assets/audio/mask-breathing.mp3',
+  },
 };
 
 /**
@@ -370,7 +381,7 @@ const LIBRARY = {
  * Every asset the game knows how to load, placed or not. `assets.load(key)`
  * and `validateManifest()` both walk this, so a library model is a first-class
  * manifest entry — it just isn't fetched until something asks for it.
- * @type {Record<string, ModelEntry | TextureEntry>}
+ * @type {Record<string, ModelEntry | TextureEntry | AudioEntry>}
  */
 export const ASSETS = { ...PLACED, ...LIBRARY };
 
@@ -417,7 +428,7 @@ export function validateManifest(assets = ASSETS) {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(stem)) {
       problems.push(`${key}: name must be lowercase and hyphen-separated — '${stem}'`);
     }
-    if (entry.type !== 'model' && entry.type !== 'texture') {
+    if (!['model', 'texture', 'audio'].includes(entry.type)) {
       problems.push(`${key}: unknown type '${entry.type}'`);
     }
 

@@ -39,7 +39,8 @@ export function resolveAssetUrl(relativePath, base = BASE_URL) {
 }
 
 export class AssetManager {
-  /** key → { scene, animations } for models, THREE.Texture for textures */
+  /** key → { scene, animations } for models, THREE.Texture for textures,
+   *  AudioBuffer for audio */
   _cache = new Map();
   /** key → in-flight promise, so two callers share one request */
   _pending = new Map();
@@ -63,6 +64,7 @@ export class AssetManager {
     this.manager = new THREE.LoadingManager();
     this.gltfLoader = new GLTFLoader(this.manager);
     this.textureLoader = new THREE.TextureLoader(this.manager);
+    this.audioLoader = new THREE.AudioLoader(this.manager);
 
     /** Cheap sharpness on textures viewed at a glancing angle, like the floor. */
     this.maxAnisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
@@ -89,9 +91,7 @@ export class AssetManager {
     }
 
     const url = resolveAssetUrl(entry.url);
-    const promise = (entry.type === 'model'
-      ? this._loadModel(url, entry)
-      : this._loadTexture(url, entry))
+    const promise = this._loadByType(url, entry)
       .then((asset) => {
         this._cache.set(key, asset);
         this._pending.delete(key);
@@ -123,6 +123,12 @@ export class AssetManager {
       loaded += 1;
       onProgress?.(loaded / total, loaded, total);
     }));
+  }
+
+  _loadByType(url, entry) {
+    if (entry.type === 'model') return this._loadModel(url, entry);
+    if (entry.type === 'audio') return this._loadAudio(url);
+    return this._loadTexture(url, entry);
   }
 
   _loadModel(url, entry) {
@@ -173,6 +179,12 @@ export class AssetManager {
       tex.needsUpdate = true;
       return tex;
     });
+  }
+
+  /** Decoded to an AudioBuffer once; every THREE.Audio that plays it shares
+   *  the same buffer, the way instances share a model's geometry. */
+  _loadAudio(url) {
+    return this.audioLoader.loadAsync(url);
   }
 
   // ──────────────────────────────────────────
@@ -250,8 +262,10 @@ export class AssetManager {
     const asset = this._cache.get(key);
     if (!asset) return;
 
+    // An AudioBuffer has no GPU side and no dispose() — dropping the
+    // reference below is all there is to free.
     if (asset.isTexture) asset.dispose();
-    else disposeObject3D(asset.scene, { disposeShared: true });
+    else if (asset.scene) disposeObject3D(asset.scene, { disposeShared: true });
 
     this._cache.delete(key);
   }
