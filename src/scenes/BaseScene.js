@@ -8,7 +8,7 @@ import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
-import { createPerimeterFence, yardRect, FENCE } from '../gameobjects/PerimeterFence.js';
+import { createPerimeterFence, yardRect, fenceKeepOut, FENCE } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
@@ -113,6 +113,10 @@ const DISH_LANE = Math.atan2(-25, 0);
  *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
  *  it and the building. Three quarters puts the roof just above the lintel. */
 const BUGGY_SCALE = 0.75;
+
+/** Metres either side of the fence kept free of trees. The widest canopy in
+ *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
+const TREE_FENCE_CLEARANCE = 3;
 
 /** Metres the building-as-occluder is shrunk by on every side, for the
  *  sightlines between the corners hiddenFromRegion samples. */
@@ -481,6 +485,11 @@ export class BaseScene extends Scene {
     // back wall. Bounds are read off the rooms themselves, so moving a room
     // moves the cleared ground with it.
     const footprint = this._baseFootprint();
+    // Where the fence will run (built below; the reasons are there) — worked
+    // out first, so the belt can keep its trees off the wire.
+    const endFront = Math.min(...[this.rooms.ServerRoom, this.rooms.LivingQuarters].map(r => r.bounds().max.z));
+    const fenceRect = yardRect({ halfX: footprint.halfX, halfZ: endFront });
+
     const rocks = createMarsRocks({ footprint });
     const belt = createMarsVegetation({
       footprint,
@@ -488,6 +497,9 @@ export class BaseScene extends Scene {
       // The belt closes the horizon all round, so the way out to the dish has
       // to be one of the lanes through it, not just a clearing at its feet.
       lanes: [DISH_LANE],
+      // A tree on the fence line grows through the chain-link. Dropped, not
+      // moved, so the rest of the belt stands where it always has.
+      treesClearOf: fenceKeepOut(fenceRect, { openSides: ['S'], clearance: TREE_FENCE_CLEARANCE }),
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
     // what is left to look at in the distance — and standing one at the end of
@@ -507,9 +519,8 @@ export class BaseScene extends Scene {
     // _buildOcclusion). The side runs meet the END rooms' front walls, not the
     // airlock's — the airlock sticks out further, and fencing from its depth
     // would leave a gap at each end of the building to walk round.
-    const endFront = Math.min(...[this.rooms.ServerRoom, this.rooms.LivingQuarters].map(r => r.bounds().max.z));
     const fence = createPerimeterFence({
-      rect: yardRect({ halfX: footprint.halfX, halfZ: endFront }),
+      rect: fenceRect,
       openSides: ['S'],
       assets: engine.assets,
       world: engine.world,

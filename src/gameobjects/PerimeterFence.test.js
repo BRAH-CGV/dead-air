@@ -5,7 +5,7 @@ import * as THREE from 'three';
 // real WASM module will not load under every test runner.
 vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
 
-import { createPerimeterFence, perimeterRect, yardRect, FENCE } from './PerimeterFence.js';
+import { createPerimeterFence, perimeterRect, yardRect, fenceKeepOut, FENCE } from './PerimeterFence.js';
 import { FakeWorld } from '../test/fakeRapier.js';
 import { BASE_FOOTPRINT, YARD } from './BaseYard.js';
 
@@ -291,5 +291,17 @@ describe('the yard block — a fence that keeps the player on the airlock side',
     const fence = createPerimeterFence({ world: new FakeWorld() });
     expect(fence.rect).toEqual(perimeterRect());
     expect(fence.colliders).toHaveLength(4);
+  });
+});
+
+describe('fenceKeepOut — the bands either side of each run, for scenery to stay out of', () => {
+  it('one box per fenced side, reaching `clearance` either side of the wire and past its ends', () => {
+    const rect = yardRect();
+    const boxes = fenceKeepOut(rect, { openSides: ['S'], clearance: 3 });
+    expect(boxes).toHaveLength(3);
+    const [n, w, e] = boxes;
+    expect(n).toEqual({ minX: rect.minX - 3, maxX: rect.maxX + 3, minZ: rect.maxZ - 3, maxZ: rect.maxZ + 3 });
+    expect(w).toEqual({ minX: rect.minX - 3, maxX: rect.minX + 3, minZ: rect.minZ - 3, maxZ: rect.maxZ + 3 });
+    expect(e).toEqual({ minX: rect.maxX - 3, maxX: rect.maxX + 3, minZ: rect.minZ - 3, maxZ: rect.maxZ + 3 });
   });
 });

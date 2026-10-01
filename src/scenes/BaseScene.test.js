@@ -883,3 +883,40 @@ describe('BaseScene occlusion — only worth a draw call when it saves real work
     }
   });
 });
+
+describe('BaseScene trees and the fence', () => {
+  it('stands no tree within 3 m of a fence run — none grows through the wire', () => {
+    const engine = makeSceneEngine();
+    // A two-part stand-in tree, so the belt actually plants trees.
+    const tree = new THREE.Group();
+    tree.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 4), new THREE.MeshStandardMaterial()));
+    const canopy = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5), new THREE.MeshStandardMaterial());
+    canopy.position.y = 3;
+    tree.add(canopy);
+    engine.assets.get = vi.fn(key => (key.startsWith('model:tree-') ? { scene: tree } : null));
+    engine.assets.getCollision = vi.fn(() => ({ bounds: { size: [3, 4, 3], center: [0, 2, 0] } }));
+
+    const scene = new BaseScene(engine);
+    scene.build();
+    const { rect } = scene.fence;
+    const near = (x, z) =>
+      (Math.abs(z - rect.maxZ) < 3 && x > rect.minX - 3 && x < rect.maxX + 3)
+      || ((Math.abs(x - rect.minX) < 3 || Math.abs(x - rect.maxX) < 3) && z > rect.minZ - 3 && z < rect.maxZ + 3);
+
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    let trunks = 0;
+    const m = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    outside.object3d.traverse((mesh) => {
+      if (!mesh.isInstancedMesh || mesh.geometry.type !== 'CylinderGeometry') return;
+      mesh.updateWorldMatrix(true, false);
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        p.setFromMatrixPosition(m.premultiply(mesh.matrixWorld));
+        trunks++;
+        expect(near(p.x, p.z), `tree at ${p.x.toFixed(1)}, ${p.z.toFixed(1)}`).toBe(false);
+      }
+    });
+    expect(trunks).toBeGreaterThan(50);   // the belt really was planted
+  });
+});

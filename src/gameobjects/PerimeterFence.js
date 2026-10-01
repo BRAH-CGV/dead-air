@@ -148,6 +148,27 @@ export function yardRect(footprint = BASE_FOOTPRINT) {
 }
 
 /**
+ * The bands either side of each fenced run, `clearance` metres out and past
+ * both ends, as boxes — for scenery to keep out of. A tree planted on the
+ * line grows straight through the wire.
+ *
+ * @param {ReturnType<typeof perimeterRect>} rect
+ * @param {{ openSides?: string[], clearance?: number }} [opts]
+ * @returns {Array<{minX: number, maxX: number, minZ: number, maxZ: number}>}  N, S, W, E order
+ */
+export function fenceKeepOut(rect, { openSides = [], clearance = 3 } = {}) {
+  const c = clearance;
+  const along = { minX: rect.minX - c, maxX: rect.maxX + c };
+  const across = { minZ: rect.minZ - c, maxZ: rect.maxZ + c };
+  return [
+    ['N', { ...along, minZ: rect.maxZ - c, maxZ: rect.maxZ + c }],
+    ['S', { ...along, minZ: rect.minZ - c, maxZ: rect.minZ + c }],
+    ['W', { minX: rect.minX - c, maxX: rect.minX + c, ...across }],
+    ['E', { minX: rect.maxX - c, maxX: rect.maxX + c, ...across }],
+  ].filter(([side]) => !openSides.includes(side)).map(([, box]) => box);
+}
+
+/**
  * Build the fence.
  *
  * @param {Object} [opts]
