@@ -34,10 +34,30 @@ describe('SignalManager', () => {
       expect(sig.yaw).toBeGreaterThanOrEqual(-Math.PI);
       expect(sig.yaw).toBeLessThanOrEqual(Math.PI);
       // Pitch: negative = up in Three.js convention.
-      // Upper hemisphere mapped to roughly -10° to -70°.
+      // Upper hemisphere mapped to roughly -8° to -80°.
       expect(sig.pitch).toBeLessThan(0);
       expect(sig.pitch).toBeGreaterThan(-Math.PI / 2);
     }
+  });
+
+  it('spawns across the enlarged scan band — -80° up to -8°', () => {
+    // The band fills the array's combined reach: the local dish's central
+    // disc out to the ring of neighbour origins, and the neighbours' sections
+    // from there to the horizon. Statistical: with 200 signals the band's
+    // ends must both be reached (the old band was -70°..-10°).
+    const mgr = new SignalManager({ signalsPerNight: 200, payloadPool: POOL });
+    mgr.startNight(1);
+
+    let closestToHorizon = -Math.PI / 2;   // the shallowest pitch spawned
+    let closestToZenith = 0;               // the steepest pitch spawned
+    for (const sig of mgr.signals) {
+      expect(sig.pitch).toBeLessThanOrEqual(-8 * (Math.PI / 180) + 1e-9);
+      expect(sig.pitch).toBeGreaterThanOrEqual(-80 * (Math.PI / 180) - 1e-9);
+      closestToHorizon = Math.max(closestToHorizon, sig.pitch);
+      closestToZenith = Math.min(closestToZenith, sig.pitch);
+    }
+    expect(closestToHorizon).toBeGreaterThan(-14 * (Math.PI / 180));   // well past the old -10° bound
+    expect(closestToZenith).toBeLessThan(-76 * (Math.PI / 180));       // well past the old -70° bound
   });
 
   it('sets required count scaling with night number', () => {

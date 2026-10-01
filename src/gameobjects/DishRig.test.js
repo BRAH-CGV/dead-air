@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   DishRig,
+  createLocalRig,
   createDefaultNeighbourDishes,
+  cursorToSky,
+  skyToCursor,
+  ARRAY_RING,
   DISH_SLEW_RATE,
+  NEIGHBOUR_SLEW_RATE,
   angleDelta,
   SETTLED_EPSILON,
 } from './DishRig.js';
@@ -138,25 +143,37 @@ describe('DishRig', () => {
     expect(rig.isAimedAt(1.0, 1.0, 0.1)).toBe(false);
   });
 
-  // ── Coverage ─────────────────────────────────────────────
+  // ── Coverage — measured on the radar disc (cursor space) ─
 
   it('covers() is true inside the radius, false outside, inclusive on the boundary', () => {
-    const rig = new DishRig({ originYaw: 0, originPitch: -0.5, coverageRadius: 0.65 });
+    const rig = new DishRig({ originX: 0.5, originY: 0, coverageRadius: 0.55 });
+    const inside = cursorToSky(0.45, 0.1);               // 0.15 away
+    const boundary = cursorToSky(1.05, 0);               // exactly 0.55 away
+    const outside = cursorToSky(-0.1, 0);                // 0.6 away
 
-    expect(rig.covers(0, -0.5)).toBe(true);              // dead centre
-    expect(rig.covers(0.6, -0.5)).toBe(true);            // inside on yaw alone
-    expect(rig.covers(0, -0.5 + 0.6)).toBe(true);        // inside on pitch alone
-    expect(rig.covers(1.0, -0.5)).toBe(false);           // outside
-    expect(rig.covers(0, 0.5)).toBe(false);              // outside
+    expect(rig.covers(inside.yaw, inside.pitch)).toBe(true);
+    expect(rig.covers(boundary.yaw, boundary.pitch)).toBe(true);
+    expect(rig.covers(outside.yaw, outside.pitch)).toBe(false);
   });
 
-  it('covers() wraps yaw around ±π', () => {
-    const rig = new DishRig({ originYaw: Math.PI - 0.1, originPitch: 0, coverageRadius: 0.5 });
+  it('covers() measures from the origin, not the current aim', () => {
+    const rig = new DishRig({ originX: 0.5, originY: 0, coverageRadius: 0.55 });
+    rig.currentYaw = 1.4;                                 // pointed well away
+    rig.currentPitch = -0.2;
 
-    expect(rig.covers(-Math.PI + 0.1, 0)).toBe(true);    // across the wrap seam
+    const centre = cursorToSky(0.5, 0);
+    expect(rig.covers(centre.yaw, centre.pitch)).toBe(true);
   });
 
-  it('an infinite coverageRadius covers the whole hemisphere (the local dish)', () => {
+  it('covers() spans the yaw seam at the back of the disc', () => {
+    // Origins either side of the ±π bearing are close together on the disc.
+    const rig = new DishRig({ originX: 0.05, originY: -0.4975, coverageRadius: 0.2 });
+    const west = cursorToSky(-0.05, -0.4975);
+
+    expect(rig.covers(west.yaw, west.pitch)).toBe(true);  // 0.1 away, across the seam
+  });
+
+  it('an infinite coverageRadius covers the whole hemisphere (a bare rig)', () => {
     const rig = new DishRig({ coverageRadius: Infinity });
 
     expect(rig.covers(-Math.PI, 0)).toBe(true);
@@ -174,43 +191,133 @@ describe('DishRig', () => {
     expect(rig.angularDamping).toBeCloseTo(10.0);
   });
 
-  // ── Neighbour layout ─────────────────────────────────────
+  // ── The array layout ─────────────────────────────────────
 
-  it('creates six neighbour dishes, each aimed at its own origin', () => {
+  it('the local dish reaches exactly the neighbour origins and no further', () => {
+    const local = createLocalRig();
+    expect(Number.isFinite(local.coverageRadius)).toBe(true);
+
+    for (const rig of createDefaultNeighbourDishes()) {
+      const origin = cursorToSky(rig.originX, rig.originY);
+      expect(local.covers(origin.yaw, origin.pitch)).toBe(true);   // boundary passes through it
+    }
+    const beyond = cursorToSky(0.7, 0);
+    expect(local.covers(beyond.yaw, beyond.pitch)).toBe(false);
+    const centre = cursorToSky(0, 0);                              // our origin: the zenith
+    expect(local.covers(centre.yaw, centre.pitch)).toBe(true);
+  });
+
+  it('creates six neighbours on one ring, evenly spaced, each aimed at its own origin', () => {
     const neighbours = createDefaultNeighbourDishes();
-
     expect(neighbours).toHaveLength(6);
+
+    const angles = [];
     for (const rig of neighbours) {
       expect(rig).toBeInstanceOf(DishRig);
-      expect(rig.currentYaw).toBeCloseTo(rig.originYaw);
-      expect(rig.currentPitch).toBeCloseTo(rig.originPitch);
-      expect(rig.targetYaw).toBeCloseTo(rig.originYaw);
-      expect(rig.targetPitch).toBeCloseTo(rig.originPitch);
+      expect(Math.hypot(rig.originX, rig.originY)).toBeCloseTo(ARRAY_RING, 5);
+      const origin = cursorToSky(rig.originX, rig.originY);
+      angles.push(origin.yaw);
+      expect(rig.currentYaw).toBeCloseTo(origin.yaw);
+      expect(rig.currentPitch).toBeCloseTo(origin.pitch);
+      expect(rig.targetYaw).toBeCloseTo(origin.yaw);
+      expect(rig.targetPitch).toBeCloseTo(origin.pitch);
       expect(rig.isRotating()).toBe(false);
       expect(Number.isFinite(rig.coverageRadius)).toBe(true);
     }
+
+    // Even yaw spacing, including across the seam.
+    const sorted = [...angles].sort((a, b) => a - b);
+    const spacing = (2 * Math.PI) / sorted.length;
+    for (let i = 0; i < sorted.length; i++) {
+      const next = sorted[(i + 1) % sorted.length];
+      expect(angleDelta(sorted[i], next)).toBeCloseTo(spacing, 5);
+    }
   });
 
-  it('spreads the neighbour origins evenly in yaw and overlaps adjacent sections', () => {
+  it('each neighbour reaches just past our origin at the centre', () => {
+    for (const rig of createDefaultNeighbourDishes()) {
+      const centre = cursorToSky(0, 0);
+      expect(rig.covers(centre.yaw, centre.pitch)).toBe(true);
+
+      // A hair further past the centre, on the far side from the origin: out of reach.
+      const len = Math.hypot(rig.originX, rig.originY);
+      const justPast = cursorToSky(-rig.originX / len * 0.04, -rig.originY / len * 0.04);
+      const tooFar = cursorToSky(-rig.originX / len * 0.07, -rig.originY / len * 0.07);
+      expect(rig.covers(justPast.yaw, justPast.pitch)).toBe(true);
+      expect(rig.covers(tooFar.yaw, tooFar.pitch)).toBe(false);
+    }
+  });
+
+  it('adjacent neighbour sections overlap so no bearing on the ring is left unwatched', () => {
     const neighbours = createDefaultNeighbourDishes();
-    const spacing = (2 * Math.PI) / neighbours.length;
+    const first = neighbours[0];
+    const second = neighbours[1];
+    const mid = cursorToSky(
+      (first.originX + second.originX) / 2,
+      (first.originY + second.originY) / 2,
+    );
 
-    // Sorted yaw gaps are all the even spacing, including across the seam.
-    const yaws = neighbours.map(r => r.originYaw).sort((a, b) => a - b);
-    for (let i = 0; i < yaws.length; i++) {
-      const next = yaws[(i + 1) % yaws.length];
-      const gap = angleDelta(yaws[i], next);
-      expect(gap).toBeGreaterThan(0);
-      expect(gap).toBeCloseTo(spacing, 1);
-    }
-
-    // Each neighbour covers its own origin…
+    let covering = 0;
     for (const rig of neighbours) {
-      expect(rig.covers(rig.originYaw, rig.originPitch)).toBe(true);
-      // …and reaches a neighbouring origin's yaw ring, so sections overlap.
-      expect(rig.covers(rig.originYaw + spacing - rig.coverageRadius + 0.01, rig.originPitch))
-        .toBe(true);
+      if (rig.covers(mid.yaw, mid.pitch)) covering++;
     }
+    expect(covering).toBeGreaterThanOrEqual(2);
+  });
+
+  it('neighbours slew slower than the local dish', () => {
+    const local = createLocalRig();
+    expect(local.maxRotationSpeed).toBeCloseTo(DISH_SLEW_RATE);
+
+    for (const rig of createDefaultNeighbourDishes()) {
+      expect(rig.maxRotationSpeed).toBeCloseTo(NEIGHBOUR_SLEW_RATE);
+      expect(rig.maxRotationSpeed).toBeLessThan(DISH_SLEW_RATE);
+    }
+  });
+
+  it('the whole signal band lies inside the combined reach of the array', () => {
+    // Signals spawn from -80° up to -8° (cursor radius 0.11…0.91). Every
+    // point of that band must belong to the local dish or a neighbour.
+    const local = createLocalRig();
+    const neighbours = createDefaultNeighbourDishes();
+
+    for (let pitchDeg = -80; pitchDeg <= -8; pitchDeg += 2) {
+      for (let yawDeg = -180; yawDeg < 180; yawDeg += 5) {
+        const yaw = yawDeg * Math.PI / 180;
+        const pitch = pitchDeg * Math.PI / 180;
+        const covered = local.covers(yaw, pitch)
+          || neighbours.some(r => r.covers(yaw, pitch));
+        expect(covered, `gap at yaw ${yawDeg}°, pitch ${pitchDeg}°`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('sky/cursor conversions', () => {
+  it('cursorToSky and skyToCursor are inverses', () => {
+    const cursorPoints = [[0, 0], [0.5, 0.5], [-0.9, 0.1], [0.3, -0.8], [1, 0]];
+    for (const [x, y] of cursorPoints) {
+      const sky = cursorToSky(x, y);
+      const back = skyToCursor(sky.yaw, sky.pitch);
+      expect(back.x).toBeCloseTo(x);
+      expect(back.y).toBeCloseTo(y);
+    }
+
+    const skyPoints = [[0, -1.2], [2.5, -0.3], [-3.0, -0.05], [Math.PI - 0.1, -0.785]];
+    for (const [yaw, pitch] of skyPoints) {
+      const c = skyToCursor(yaw, pitch);
+      const back = cursorToSky(c.x, c.y);
+      expect(back.yaw).toBeCloseTo(yaw);
+      expect(back.pitch).toBeCloseTo(pitch);
+    }
+  });
+
+  it('the zenith sits at the cursor centre, the horizon on the rim', () => {
+    const zenith = skyToCursor(0, -Math.PI / 2);
+    expect(zenith.x).toBeCloseTo(0);
+    expect(zenith.y).toBeCloseTo(0);
+
+    const rim = skyToCursor(1.2, 0);
+    expect(Math.hypot(rim.x, rim.y)).toBeCloseTo(1);
   });
 });
 

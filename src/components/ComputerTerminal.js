@@ -2,6 +2,7 @@ import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
+import { cursorToSky } from '../gameobjects/DishRig.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -108,15 +109,11 @@ export class ComputerTerminal extends Component {
   }
 
   /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
-   *  Centre of radar (y=1) = zenith (pitch=-π/2), rim (y=0) = horizon. */
+   *  Centre of radar (y=1) = zenith (pitch=-π/2), rim (y=0) = horizon.
+   *  The one conversion lives in DishRig — the same coordinates the
+   *  array's coverage sections are measured in. */
   _cursorToSky() {
-    const r = Math.sqrt(this._cursorX * this._cursorX + this._cursorY * this._cursorY);
-    const theta = Math.atan2(this._cursorX, this._cursorY);
-    const elev = r * (Math.PI / 2);   // 0 at centre (zenith), π/2 at rim (horizon)
-    return {
-      yaw: theta,
-      pitch: -(Math.PI / 2) + elev,   // -π/2 at zenith, 0 at horizon
-    };
+    return cursorToSky(this._cursorX, this._cursorY);
   }
 
   /** Check if cursor is hovering over any unresolved signal. */
@@ -349,6 +346,7 @@ export class ComputerTerminal extends Component {
       this._hoveredSignal,
       scanProgress,
       this.satellite.neighbours ?? [],
+      this.satellite.rig ?? null,
     );
   }
 }

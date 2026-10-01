@@ -110,22 +110,20 @@ export class RadarOverlay {
     };
   }
 
-  /** One point on a neighbour dish's section boundary, in sky coordinates.
-   *  The section is a disc of `coverageRadius` radians around the dish's
-   *  origin in (yaw, pitch) space — the same metric as the aim checks — so
-   *  every boundary point is exactly coverageRadius from the origin, and
-   *  t=0 and t=1 close the loop. Yaw wraps around ±π so a section crossing
-   *  the seam still draws a closed path.
+  /** A dish's coverage section as a circle on the canvas. Coverage is
+   *  measured on the radar's own disc (see DishRig.skyToCursor): bearing
+   *  around, elevation out from the centre — the same unit the cursor and
+   *  the blips' radial placement use — so a section that reads as a circle
+   *  to the player is drawn as an exact circle, and its centre sits where
+   *  the shared _skyToCanvas mapping puts the rig's origin.
    *  @param {import('../gameobjects/DishRig.js').DishRig} rig
-   *  @param {number} t  0..1 around the boundary
-   *  @returns {{ yaw: number, pitch: number }} */
-  _sectionBoundaryPoint(rig, t) {
-    const angle = t * Math.PI * 2;
-    const yaw = rig.originYaw + rig.coverageRadius * Math.cos(angle);
-    const pitch = rig.originPitch + rig.coverageRadius * Math.sin(angle);
+   *  @returns {{ x: number, y: number, r: number }} */
+  _sectionCircle(rig) {
+    const maxR = this._radius * 0.85;
     return {
-      yaw: Math.atan2(Math.sin(yaw), Math.cos(yaw)),   // wrap into ±π
-      pitch,
+      x: this._cx + rig.originX * maxR,
+      y: this._cy - rig.originY * maxR,
+      r: rig.coverageRadius * maxR,
     };
   }
 
@@ -142,9 +140,13 @@ export class RadarOverlay {
    *  @param {import('../gameplay/SignalTarget.js').SignalTarget|null} hoveredSignal
    *  @param {number} scanProgress 0..1 while scanning, -1 when not
    *  @param {import('../gameobjects/DishRig.js').DishRig[]} [neighbours]
-   *   The neighbour array dishes: each draws its faint sky section and a
-   *   small aim dot, so locked dishes visibly converge on the scanned blip */
-  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = []) {
+   *   The neighbour array dishes: each draws its sky section, a line from
+   *   its origin to where it faces, and a small aim dot — locked dishes
+   *   visibly converge on the scanned blip
+   *  @param {import('../gameobjects/DishRig.js').DishRig|null} [localRig]
+   *   The local dish's rig: draws its reach as an amber circle around the
+   *   centre, out to the ring of neighbour origins */
+  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null) {
     const ctx = this._ctx;
     if (!ctx) return;
 
@@ -179,29 +181,48 @@ export class RadarOverlay {
     ctx.strokeStyle = 'rgba(0, 200, 180, 0.12)';
     ctx.stroke();
 
-    // Neighbour array sections — faint closed paths marking the patch of
-    // sky each far-off dish can see. Drawn before the blips so the blips
-    // stay dominant; the boundary runs through the same _skyToCanvas
-    // mapping as everything else, so a blip inside a section really is
-    // coverable by that dish.
-    const SECTION_SAMPLES = 24;
-    for (const rig of neighbours) {
-      if (!Number.isFinite(rig.coverageRadius)) continue;   // the local dish has no section
+    // Local dish reach — the amber circle around the centre, out to the
+    // ring of neighbour origins. Amber to match the local dish indicator:
+    // beyond this circle our own tower stops following the cursor.
+    if (localRig && Number.isFinite(localRig.coverageRadius)) {
+      const c = this._sectionCircle(localRig);
       ctx.beginPath();
-      for (let i = 0; i <= SECTION_SAMPLES; i++) {
-        const sky = this._sectionBoundaryPoint(rig, i / SECTION_SAMPLES);
-        const p = this._skyToCanvas(sky.yaw, sky.pitch);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      }
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 200, 60, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Neighbour array sections — a faint circle marking the patch of sky
+    // each far-off dish can see, drawn before the blips so the blips stay
+    // dominant. Each section is a true circle on the radar's own disc, and
+    // each dish gets the same treatment as the local one: a small dot on
+    // its origin and a line from there to where it faces, so a parked
+    // neighbour reads at a glance as "waiting out of reach".
+    for (const rig of neighbours) {
+      if (!Number.isFinite(rig.coverageRadius)) continue;
+      const c = this._sectionCircle(rig);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(0, 200, 180, 0.22)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      // The dish itself: a small dim dot where it currently points. Same
-      // mapping as the local dish's amber indicator — locked dishes visibly
-      // converge on the scanned blip.
+      // Origin dot + line to the facing, then the aim dot — same shape
+      // and mapping as the local dish's amber centre line.
       const aim = this._skyToCanvas(rig.currentYaw, rig.currentPitch);
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y);
+      ctx.lineTo(aim.x, aim.y);
+      ctx.strokeStyle = 'rgba(120, 190, 180, 0.45)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(120, 190, 180, 0.5)';
+      ctx.fill();
+
       ctx.beginPath();
       ctx.arc(aim.x, aim.y, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(120, 190, 180, 0.55)';

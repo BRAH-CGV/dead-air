@@ -1,5 +1,5 @@
 import { GameObject } from '../core/GameObject.js';
-import { DishRig, aimError, angleDelta, SETTLED_EPSILON } from './DishRig.js';
+import { aimError, angleDelta, SETTLED_EPSILON, createLocalRig } from './DishRig.js';
 
 // ─────────────────────────────────────────────
 // Satellite  –  steerable dish tower
@@ -30,8 +30,10 @@ export { DISH_SLEW_RATE } from './DishRig.js';
 
 export class Satellite extends GameObject {
 
-  /** The local tower's aiming state — covers the whole scannable sky. */
-  rig = new DishRig();
+  /** The local tower's aiming state. Its reach is the array's centre: out
+   *  from the zenith (the radar's centre) to the ring of neighbour origins,
+   *  and not beyond — the outer band of the sky belongs to the neighbours. */
+  rig = createLocalRig();
 
   /** Dishes of the neighbouring array nodes, simulated headless. Set by the
    *  scene; _update ticks them alongside the local rig.
@@ -156,12 +158,12 @@ export class Satellite extends GameObject {
   }
 
   /** Aim the whole array at a sky direction — the cursor's shared aim
-   *  point. The local dish always re-targets (it covers the whole scannable
-   *  sky); each neighbour re-targets only while the point lies inside its
-   *  section, and a dish whose section doesn't contain the point holds its
-   *  last target. */
+   *  point. Every dish, local included, re-targets only while the point
+   *  lies inside its section; a dish whose section doesn't contain the
+   *  point holds its last target. aimAt stays unconditional — it is the
+   *  low-level "point there" used for cutscenes and tests. */
   aimAll(yaw, pitch) {
-    this.rig.aimAt(yaw, pitch);
+    if (this.rig.covers(yaw, pitch)) this.rig.aimAt(yaw, pitch);
     for (const rig of this.neighbours) {
       if (rig.covers(yaw, pitch)) rig.aimAt(yaw, pitch);
     }

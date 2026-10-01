@@ -16,9 +16,13 @@ import { SignalTarget } from './SignalTarget.js';
 //   mgr.isComplete();          // saved >= required
 // ─────────────────────────────────────────────
 
-/** Pitch range for generated signals (radians, negative = up). */
-const PITCH_MIN = -70 * (Math.PI / 180);  // steepest up
-const PITCH_MAX = -10 * (Math.PI / 180);  // shallowest up
+/** Pitch range for generated signals (radians, negative = up). Sized to
+ *  the dish array's combined reach: the local dish covers the central disc
+ *  out to the ring of neighbour origins (~-45°), the neighbours' sections
+ *  cover from there out to the horizon — every signal lands where at least
+ *  one dish can see it. */
+const PITCH_MIN = -80 * (Math.PI / 180);  // steepest up
+const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 
 /** Required signals per night: base + (night-1). Clamped to signalsPerNight. */
 const BASE_REQUIRED = 3;

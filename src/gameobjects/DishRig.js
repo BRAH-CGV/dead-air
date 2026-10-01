@@ -12,10 +12,12 @@
 // rig accelerates toward its target, decelerates as it approaches, and
 // never turns faster than `maxRotationSpeed`.
 //
-// A rig also carries its coverage: a disc in (yaw, pitch) sky space
-// centred on its origin. The local dish's radius is Infinity — it covers
-// the whole scannable sky — while each neighbour covers only the small
-// section of sky around itself, overlapping its neighbours'.
+// A rig also carries its coverage: a disc on the radar's own sky map (see
+// skyToCursor below), centred on its origin. The array is laid out there:
+// our dish at the centre — the zenith — its reach ending exactly at the
+// ring of neighbour origins, and each neighbour reaching from its origin on
+// that ring just past our centre, so every part of the signal band belongs
+// to at least one dish, the middle of the disc to several.
 // ─────────────────────────────────────────────
 
 /** The dish's default slew limit, radians per second: π/8 = 22.5°/s. A half
@@ -36,9 +38,9 @@ export function angleDelta(angle, target) {
 }
 
 /** Combined angular distance from a dish pose to a target direction — the
- *  one metric behind every aim check and coverage check, so "a dish can
- *  see it" and "a dish is aimed at it" can never disagree. Yaw error takes
- *  the short way around the circle; pitch is an elevation, measured plain.
+ *  metric behind the aim checks ("is the dish pointed at the signal?").
+ *  Yaw error takes the short way around the circle; pitch is an elevation,
+ *  measured plain.
  *  @param {number} currentYaw
  *  @param {number} currentPitch
  *  @param {number} targetYaw
@@ -48,6 +50,38 @@ export function aimError(currentYaw, currentPitch, targetYaw, targetPitch) {
   const yawErr = Math.abs(angleDelta(currentYaw, targetYaw));
   const pitchErr = Math.abs(currentPitch - targetPitch);
   return Math.sqrt(yawErr * yawErr + pitchErr * pitchErr);
+}
+
+// ── Sky ↔ cursor: the radar's own coordinates ────────────────
+// The radar disc is the sky seen from above: bearing is the angle around
+// the disc, elevation the distance from the centre (the zenith) to the rim
+// (the horizon). Coverage is measured in this space, so the section a
+// player sees as a circle on the radar is a circle in the metric, and the
+// yaw seam (±π) needs no special casing — opposite bearings are simply on
+// opposite sides of the disc. ComputerTerminal's cursor lives here too.
+
+/** Sky direction → point on the unit cursor disc.
+ *  @param {number} yaw    Bearing, radians (0 = radar "up")
+ *  @param {number} pitch  Negative up: 0 = horizon, -π/2 = zenith
+ *  @returns {{x: number, y: number}} */
+export function skyToCursor(yaw, pitch) {
+  const p = Math.min(Math.max(pitch, -Math.PI / 2), 0);
+  const r = (p + Math.PI / 2) / (Math.PI / 2);   // 0 at the zenith, 1 at the horizon
+  return { x: r * Math.sin(yaw), y: r * Math.cos(yaw) };
+}
+
+/** Point on the unit cursor disc → sky direction. r = 0 (the zenith) has no
+ *  bearing of its own; yaw defaults to 0 there. Points beyond the rim are
+ *  pulled back onto it.
+ *  @param {number} x
+ *  @param {number} y
+ *  @returns {{yaw: number, pitch: number}} */
+export function cursorToSky(x, y) {
+  const r = Math.min(Math.hypot(x, y), 1);
+  return {
+    yaw: Math.atan2(x, y),
+    pitch: -(Math.PI / 2) + r * (Math.PI / 2),
+  };
 }
 
 export class DishRig {
@@ -75,36 +109,38 @@ export class DishRig {
   maxRotationSpeed = DISH_SLEW_RATE;
 
   // ── Coverage ──
-  /** Centre of this dish's sky section. Only meaningful for neighbours. */
-  originYaw = 0;
-  originPitch = 0;
-  /** Radius of the sky section the dish can see, radians. Infinity for the
-   *  local dish, which covers the whole scannable hemisphere. */
+  /** Centre of this dish's sky section, on the cursor disc: (0, 0) is the
+   *  zenith — the radar's centre — and our own dish's origin. */
+  originX = 0;
+  originY = 0;
+  /** Radius of the section the dish can see, in cursor-disc units (1 = the
+   *  radar rim). Infinity covers the whole hemisphere; the local dish and
+   *  the neighbours both get finite reach from the array layout below. */
   coverageRadius = Infinity;
 
   /**
    * @param {Object} [opts]
-   * @param {number} [opts.originYaw=0]       Section centre, defaulting to the start pose
-   * @param {number} [opts.originPitch=0]
+   * @param {number} [opts.originX=0]         Section centre on the cursor disc
+   * @param {number} [opts.originY=0]
    * @param {number} [opts.coverageRadius=Infinity]
-   * @param {number} [opts.currentYaw=originYaw]  Start pose — a neighbour
-   *   starts aimed at its own origin
-   * @param {number} [opts.currentPitch=originPitch]
+   * @param {number} [opts.currentYaw=0]      Start pose. A neighbour starts
+   *   aimed at its own origin — see createDefaultNeighbourDishes
+   * @param {number} [opts.currentPitch=0]
    * @param {number} [opts.targetYaw=currentYaw]  Targets start on the start
    *   pose, so spawning alone doesn't jerk the dish back to zero
    * @param {number} [opts.targetPitch=currentPitch]
    */
   constructor({
-    originYaw = 0,
-    originPitch = 0,
+    originX = 0,
+    originY = 0,
     coverageRadius = Infinity,
-    currentYaw = originYaw,
-    currentPitch = originPitch,
+    currentYaw = 0,
+    currentPitch = 0,
     targetYaw = currentYaw,
     targetPitch = currentPitch,
   } = {}) {
-    this.originYaw = originYaw;
-    this.originPitch = originPitch;
+    this.originX = originX;
+    this.originY = originY;
     this.coverageRadius = coverageRadius;
     this.currentYaw = currentYaw;
     this.currentPitch = currentPitch;
@@ -157,47 +193,83 @@ export class DishRig {
   }
 
   /** True when a sky direction falls inside this dish's section — the patch
-   *  of sky it can see. Uses the same combined metric as the aim checks, so
-   *  a dish that covers a signal is a dish that can be aimed at it. */
+   *  of sky it can see. Measured on the cursor disc, so what looks like a
+   *  circle on the radar is one in the metric. Coverage is about reach —
+   *  which signals the dish will even try for — while aim checks stay in
+   *  (yaw, pitch) sky space; a dish that covers a target always slews all
+   *  the way onto it, so the two can never strand a signal. */
   covers(yaw, pitch) {
     if (!Number.isFinite(this.coverageRadius)) return true;
-    return aimError(this.originYaw, this.originPitch, yaw, pitch) <= this.coverageRadius;
+    const p = skyToCursor(yaw, pitch);
+    const dx = p.x - this.originX;
+    const dy = p.y - this.originY;
+    return Math.hypot(dx, dy) <= this.coverageRadius;
   }
 }
 
-// ── The neighbour array ──────────────────────────────────────
+// ── The array layout ─────────────────────────────────────────
+// Everything below is cursor-disc geometry: our dish at the centre, the
+// neighbours on a ring around it. The reach of each is defined by the
+// others' positions — the local dish ends exactly at the neighbour
+// origins, each neighbour ends just past our centre — so the union is one
+// rosette covering the whole signal band, overlapping in the middle.
 
 /** How many dishes the neighbouring array nodes lend the player. */
 const NEIGHBOUR_COUNT = 6;
 
-/** Sky radius each neighbour dish can see, radians (~37°). The origins sit
- *  60° apart in yaw, so with a 37° radius adjacent sections overlap by
- *  ~14° — a signal near a boundary can be picked up by two dishes at once. */
-const NEIGHBOUR_COVERAGE_RADIUS = 0.65;
+/** Cursor radius of the ring the neighbour origins sit on (~45° up). */
+export const ARRAY_RING = 0.5;
 
-/** Base elevation of the neighbour origins, radians (~-40°: comfortably up
- *  in the scan band, which runs from -10° to -70°). */
-const NEIGHBOUR_PITCH = -40 * (Math.PI / 180);
+/** How far our own dish reaches: exactly the ring of neighbour origins,
+ *  and not beyond. */
+export const LOCAL_COVERAGE = ARRAY_RING;
 
-/** How far odd dishes stagger off the base elevation, radians (~±5°), so
- *  the ring of sections isn't a perfect circle on the radar. */
-const NEIGHBOUR_STAGGER = 5 * (Math.PI / 180);
+/** Each neighbour's reach: from its origin on the ring (0.5 out from our
+ *  centre) to 0.05 past it — just barely covering our origin, and out to
+ *  the horizon on its own side, so adjacent sections overlap heavily. */
+export const NEIGHBOUR_COVERAGE = 0.55;
 
-/** The dishes of the neighbouring array nodes, evenly spaced around the
- *  horizon. Each starts aimed at its own origin. Create once per night
- *  network and hand the array to `satellite.neighbours`.
+/** Neighbour slew limit, radians per second: π/12 = 15°/s against the local
+ *  dish's 22.5°/s. Borrowed machines at distant nodes — the cursor will
+ *  outpace them, and the player has to wait for them to settle. */
+export const NEIGHBOUR_SLEW_RATE = Math.PI / 12;
+
+/** Softer, slightly overdamped spring for the neighbours (critical damping
+ *  for k=15 is c≈7.75): distant machinery settles without snapping. */
+const NEIGHBOUR_ACCEL = 15;
+const NEIGHBOUR_DAMPING = 8;
+
+/** The local station's own dish: centred on the zenith — the radar's
+ *  centre — reaching out to the ring of neighbour origins.
+ *  @returns {DishRig} */
+export function createLocalRig() {
+  return new DishRig({ coverageRadius: LOCAL_COVERAGE });
+}
+
+/** The dishes of the neighbouring array nodes: evenly spaced around the
+ *  ring, each starting aimed at its own origin, each a touch slower than
+ *  the local tower. Create once and hand the array to
+ *  `satellite.neighbours`.
  *  @returns {DishRig[]} */
 export function createDefaultNeighbourDishes() {
   const dishes = [];
   const spacing = (2 * Math.PI) / NEIGHBOUR_COUNT;
   for (let i = 0; i < NEIGHBOUR_COUNT; i++) {
     const yaw = -Math.PI + i * spacing;
-    const pitch = NEIGHBOUR_PITCH + (i % 2 === 0 ? NEIGHBOUR_STAGGER : -NEIGHBOUR_STAGGER);
-    dishes.push(new DishRig({
-      originYaw: yaw,
-      originPitch: pitch,
-      coverageRadius: NEIGHBOUR_COVERAGE_RADIUS,
-    }));
+    const originX = ARRAY_RING * Math.sin(yaw);
+    const originY = ARRAY_RING * Math.cos(yaw);
+    const pose = cursorToSky(originX, originY);
+    const rig = new DishRig({
+      originX,
+      originY,
+      coverageRadius: NEIGHBOUR_COVERAGE,
+      currentYaw: pose.yaw,
+      currentPitch: pose.pitch,
+    });
+    rig.maxRotationSpeed = NEIGHBOUR_SLEW_RATE;
+    rig.angularAccel = NEIGHBOUR_ACCEL;
+    rig.angularDamping = NEIGHBOUR_DAMPING;
+    dishes.push(rig);
   }
   return dishes;
 }

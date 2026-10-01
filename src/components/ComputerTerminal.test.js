@@ -10,13 +10,7 @@ import * as THREE from 'three';
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
-
-// ── Helper: convert sky coords to Cartesian cursor position ──
-function skyToCursor(yaw, pitch) {
-  const elev = pitch + Math.PI / 2;
-  const r = elev / (Math.PI / 2);
-  return { x: r * Math.sin(yaw), y: r * Math.cos(yaw) };
-}
+import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
 
 // ── Minimal test doubles ──────────────────────────────────
 
@@ -166,8 +160,9 @@ describe('ComputerTerminal', () => {
     const dt = 1 / 60;
     const up = { left: false, right: false, up: true, down: false };
 
-    // Zenith to horizon, the dish chasing every frame.
-    while (Math.hypot(term._cursorX, term._cursorY) < 1) {
+    // Zenith outward through the dish's own reach (it stops following past
+    // the ring of neighbour origins), the dish chasing every frame.
+    while (Math.hypot(term._cursorX, term._cursorY) < 0.4) {
       term.moveCursor(up, dt);
       dish._update(dt);
     }
@@ -180,6 +175,27 @@ describe('ComputerTerminal', () => {
       t += dt;
     }
     expect(t).toBeLessThanOrEqual(0.5);
+  });
+
+  it('_updateRadarDisplay forwards the neighbour array and the local rig to the radar', () => {
+    const dish = makeRealDish();
+    dish.neighbours = createDefaultNeighbourDishes();
+    term.satellite = dish;
+    term.enter();
+
+    term._updateRadarDisplay();
+
+    expect(radar.update).toHaveBeenCalledWith(
+      mgr.signals,
+      dish.neck.object3d.rotation.y,
+      dish.dish.object3d.rotation.x,
+      term._cursorX,
+      term._cursorY,
+      term._hoveredSignal,
+      -1,
+      dish.neighbours,
+      dish.rig,
+    );
   });
 
   it('moves finely enough per frame to stop inside a signal', () => {

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { HUD, RadarOverlay } from './HUD.js';
-import { DishRig } from '../gameobjects/DishRig.js';
+import {
+  DishRig,
+  createLocalRig,
+  createDefaultNeighbourDishes,
+  cursorToSky,
+} from '../gameobjects/DishRig.js';
 
 // ── Suit indicator ────────────────────────────────────────
 // A stand-in root: HUD only ever reaches its elements through querySelector.
@@ -103,72 +108,67 @@ describe('RadarOverlay sky mapping', () => {
   });
 });
 
-// ── Neighbour array coverage sections ─────────────────────
-// The neighbour dishes' sky sections are drawn as faint closed paths on
-// the radar. Only the pure geometry is testable without a 2D context:
-// section boundary points and the shared sky-to-canvas mapping.
-describe('RadarOverlay neighbour sections', () => {
+// ── Array coverage sections ──────────────────────────────
+// Each dish's reach is a circle on the radar's own disc: the local dish's
+// centred on the zenith (the radar centre), the neighbours' on their
+// origins around the ring. Only the pure geometry is testable without a
+// 2D context: the section-circle helper and the shared sky mapping.
+describe('RadarOverlay array sections', () => {
   const overlay = new RadarOverlay(null);
-  const CX = 200, CY = 200;
+  const CX = 200, CY = 200, MAX_R = 170;
 
-  /** A neighbour dish's section centre and the distance of a mapped point
-   *  from another mapped point, in canvas pixels. */
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  it('maps a neighbour section to a circle centred on its origin', () => {
+    const rig = new DishRig({ originX: 0.5, originY: 0, coverageRadius: 0.55 });
+    const c = overlay._sectionCircle(rig);
 
-  it('section boundary points sit exactly coverageRadius from the origin', () => {
-    const rig = new DishRig({ originYaw: 0.8, originPitch: -0.6, coverageRadius: 0.65 });
+    expect(c.x).toBeCloseTo(CX + 0.5 * MAX_R);
+    expect(c.y).toBeCloseTo(CY);
+    expect(c.r).toBeCloseTo(0.55 * MAX_R);
+  });
 
-    for (const t of [0, 0.13, 0.25, 0.5, 0.77, 0.99]) {
-      const sky = overlay._sectionBoundaryPoint(rig, t);
-      const dy = Math.abs(Math.atan2(Math.sin(sky.yaw - rig.originYaw), Math.cos(sky.yaw - rig.originYaw)));
-      const dp = Math.abs(sky.pitch - rig.originPitch);
-      expect(Math.hypot(dy, dp)).toBeCloseTo(rig.coverageRadius, 5);
+  it('maps the local section to a circle centred on the radar centre', () => {
+    const rig = new DishRig({ coverageRadius: 0.5 });   // origin (0,0) = the zenith
+    const c = overlay._sectionCircle(rig);
+
+    expect(c.x).toBeCloseTo(CX);
+    expect(c.y).toBeCloseTo(CY);
+    expect(c.r).toBeCloseTo(0.5 * MAX_R);
+  });
+
+  it('the section centre is the same point the shared sky mapping gives for the origin', () => {
+    // The origin→facing line starts where the one mapping puts the origin,
+    // so it can never disagree with the blips or the local dish line.
+    for (const rig of createDefaultNeighbourDishes()) {
+      const origin = cursorToSky(rig.originX, rig.originY);
+      const mapped = overlay._skyToCanvas(origin.yaw, origin.pitch);
+      const c = overlay._sectionCircle(rig);
+      expect(c.x).toBeCloseTo(mapped.x, 5);
+      expect(c.y).toBeCloseTo(mapped.y, 5);
     }
   });
 
-  it('section boundary is a closed loop — t=0 and t=1 are the same point', () => {
-    const rig = new DishRig({ originYaw: -1.2, originPitch: -0.4, coverageRadius: 0.5 });
+  it('a neighbour aimed at its own origin puts its aim dot on the section centre', () => {
+    const rig = createDefaultNeighbourDishes()[0];   // starts aimed at its origin
+    const aim = overlay._skyToCanvas(rig.currentYaw, rig.currentPitch);
+    const c = overlay._sectionCircle(rig);
 
-    const a = overlay._sectionBoundaryPoint(rig, 0);
-    const b = overlay._sectionBoundaryPoint(rig, 1);
-    expect(a.yaw).toBeCloseTo(b.yaw, 5);
-    expect(a.pitch).toBeCloseTo(b.pitch, 5);
+    expect(aim.x).toBeCloseTo(c.x, 5);
+    expect(aim.y).toBeCloseTo(c.y, 5);
   });
 
-  it('boundary points at the origin bearing map along the same bearing as the origin', () => {
-    const rig = new DishRig({ originYaw: 0.8, originPitch: -0.6, coverageRadius: 0.65 });
-    const originPos = overlay._skyToCanvas(rig.originYaw, rig.originPitch);
-
-    // t=0 is a pure yaw offset: same elevation, same ring — only the
-    // bearing advances, by exactly the coverage radius.
-    const skyPoint = overlay._sectionBoundaryPoint(rig, 0);
-    expect(skyPoint.pitch).toBeCloseTo(rig.originPitch, 5);
-    const canvasPoint = overlay._skyToCanvas(skyPoint.yaw, skyPoint.pitch);
-    const angleOf = (p) => Math.atan2(p.x - CX, -(p.y - CY));
-    expect(angleOf(canvasPoint)).toBeCloseTo(rig.originYaw + rig.coverageRadius, 5);
-    expect(dist(canvasPoint, originPos)).toBeGreaterThan(0);
-
-    // Same elevation ⇒ same radial distance: the boundary sample rides
-    // the same ring as the origin.
-    const distFromCentre = (p) => Math.hypot(p.x - CX, p.y - CY);
-    expect(distFromCentre(canvasPoint)).toBeCloseTo(distFromCentre(originPos), 5);
-  });
-
-  it('a section centred on the radar maps entirely inside the disc', () => {
-    const rig = new DishRig({ originYaw: 0.8, originPitch: -0.6, coverageRadius: 0.65 });
-    const MAX_R = 170;
-
-    for (let i = 0; i < 24; i++) {
-      const sky = overlay._sectionBoundaryPoint(rig, i / 24);
-      const p = overlay._skyToCanvas(sky.yaw, sky.pitch);
-      expect(Math.hypot(p.x - CX, p.y - CY)).toBeLessThanOrEqual(MAX_R + 1);
+  it('the default layout keeps every section on the canvas', () => {
+    for (const rig of createDefaultNeighbourDishes()) {
+      const c = overlay._sectionCircle(rig);
+      const farthest = Math.hypot(c.x - CX, c.y - CY) + c.r;
+      expect(farthest).toBeLessThanOrEqual(200);   // canvas half-size
     }
+    expect(overlay._sectionCircle(createLocalRig()).r).toBeLessThanOrEqual(MAX_R);
   });
 
-  it('update with a neighbours list is a no-op without a canvas (backward compatible)', () => {
-    const rig = new DishRig({ originYaw: 0, originPitch: -0.5, coverageRadius: 0.65 });
-    expect(() => overlay.update([], 0, 0, 0, 0, null, -1, [rig])).not.toThrow();
-    // And the 8th argument may be omitted entirely, as older callers did.
+  it('update without a canvas is a no-op, with or without the array', () => {
+    const rig = new DishRig({ originX: 0.5, originY: 0, coverageRadius: 0.55 });
     expect(() => overlay.update([], 0, 0, 0, 0, null, -1)).not.toThrow();
+    expect(() => overlay.update([], 0, 0, 0, 0, null, -1, [rig])).not.toThrow();
+    expect(() => overlay.update([], 0, 0, 0, 0, null, -1, [rig], createLocalRig())).not.toThrow();
   });
 });

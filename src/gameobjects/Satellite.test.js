@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { Satellite, DISH_SLEW_RATE } from './Satellite.js';
-import { DishRig } from './DishRig.js';
+import { DishRig, cursorToSky } from './DishRig.js';
 
 /** Minimal dish-tower stand-in: Base → Neck_block → Dish, matching the node
  *  names the real GLB ships with. */
@@ -293,45 +293,61 @@ describe('Satellite', () => {
 
   // ── The neighbouring array dishes ────────────────────────
 
-  /** A satellite with two hand-placed neighbour rigs: one whose section
-   *  covers (0, -0.5) and one whose doesn't. */
+  /** A satellite with two hand-placed neighbour rigs on the ring: east at
+   *  cursor (0.5, 0) and west at (-0.5, 0), each covering 0.55 around its
+   *  origin — the east one reaches the point (0.3, 0), the west one
+   *  doesn't. The local tower is parked deep inside its own central reach. */
   function makeArrayed() {
     const { root, neck, dish } = buildTower();
     const sat = Satellite.fromObject3D(root);
     neck.rotation.y = 0;
-    dish.rotation.x = -0.5;
+    dish.rotation.x = -1.0;
     sat.rig.currentYaw = 0;
-    sat.rig.currentPitch = -0.5;
+    sat.rig.currentPitch = -1.0;
     sat.rig.targetYaw = 0;
-    sat.rig.targetPitch = -0.5;
+    sat.rig.targetPitch = -1.0;
     sat.neighbours = [
-      new DishRig({ originYaw: 0.1, originPitch: -0.5, coverageRadius: 0.65 }),   // covers (0, -0.5)
-      new DishRig({ originYaw: 2.0, originPitch: -0.5, coverageRadius: 0.3 }),     // doesn't
+      new DishRig({ originX: 0.5, originY: 0, coverageRadius: 0.55 }),   // covers (0.3, 0)
+      new DishRig({ originX: -0.5, originY: 0, coverageRadius: 0.55 }),  // doesn't
     ];
     return { sat, neck, dish };
   }
 
   it('aimAll re-targets the local dish and every neighbour that covers the point', () => {
     const { sat } = makeArrayed();
-    const outside = sat.neighbours[1];
-    outside.targetYaw = 1.5;                // something to hold on to
-    outside.targetPitch = -0.2;
+    const west = sat.neighbours[1];
+    west.targetYaw = 1.5;                // something to hold on to
+    west.targetPitch = -0.2;
+    const p = cursorToSky(0.3, 0);       // cursor radius 0.3 — inside the local reach
 
-    sat.aimAll(0, -0.5);
+    sat.aimAll(p.yaw, p.pitch);
 
-    expect(sat.targetYaw).toBeCloseTo(0);           // local: always re-targets
-    expect(sat.targetPitch).toBeCloseTo(-0.5);
-    expect(sat.neighbours[0].targetYaw).toBeCloseTo(0);   // covers → follows
-    expect(sat.neighbours[0].targetPitch).toBeCloseTo(-0.5);
-    expect(outside.targetYaw).toBeCloseTo(1.5);           // doesn't cover → holds
-    expect(outside.targetPitch).toBeCloseTo(-0.2);
+    expect(sat.targetYaw).toBeCloseTo(p.yaw);                  // local covers → follows
+    expect(sat.targetPitch).toBeCloseTo(p.pitch);
+    expect(sat.neighbours[0].targetYaw).toBeCloseTo(p.yaw);    // 0.2 away → follows
+    expect(sat.neighbours[0].targetPitch).toBeCloseTo(p.pitch);
+    expect(west.targetYaw).toBeCloseTo(1.5);                   // 0.8 away → holds
+    expect(west.targetPitch).toBeCloseTo(-0.2);
+  });
+
+  it('the local dish holds its aim once the cursor leaves its reach', () => {
+    const { sat } = makeArrayed();
+    const p = cursorToSky(0.8, 0);       // cursor radius 0.8 — beyond the neighbour origins
+
+    sat.aimAll(p.yaw, p.pitch);
+
+    expect(sat.targetYaw).toBeCloseTo(0);                      // held at the last in-reach aim
+    expect(sat.targetPitch).toBeCloseTo(-1.0);
+    expect(sat.neighbours[0].targetYaw).toBeCloseTo(p.yaw);    // the east neighbour reaches it
+    expect(sat.neighbours[0].targetPitch).toBeCloseTo(p.pitch);
+    expect(sat.neighbours[1].targetYaw).toBeCloseTo(0);        // fresh rig: targets on its start pose
   });
 
   it('_update ticks every neighbour rig alongside the local tower', () => {
     const { sat } = makeArrayed();
     const [a, b] = sat.neighbours;
-    a.aimAt(0.1, -0.5);   // an error-free target: no motion
-    b.aimAt(2.6, -0.5);   // a step away from its pose — must slew
+    a.aimAt(0, 0);         // its own start pose: no motion
+    b.aimAt(2.6, -0.5);    // a step away from its pose — must slew
     const before = b.currentYaw;
 
     for (let i = 0; i < 10; i++) sat._update(1 / 60);   // momentum builds from rest
@@ -341,8 +357,10 @@ describe('Satellite', () => {
   });
 
   it('isAnyDishAimedAt and aimedDishCount span the local dish and the neighbours', () => {
-    const { sat } = makeArrayed();
-    // Local dish aimed at (0, -0.5); neighbour 0 at (0.3, -0.5); neighbour 1 far off.
+    const { sat, neck, dish } = makeArrayed();
+    neck.rotation.y = 0;                      // local tower aimed at (0, -0.5)
+    dish.rotation.x = -0.5;
+    // Neighbour 0 at (0.3, -0.5); neighbour 1 far off.
     sat.neighbours[0].currentYaw = 0.3;
     sat.neighbours[0].currentPitch = -0.5;
     sat.neighbours[1].currentYaw = 2.0;
@@ -387,7 +405,7 @@ describe('Satellite', () => {
     sat.rig.targetYaw = yaw;
     sat.rig.targetPitch = pitch;
 
-    const neighbour = new DishRig({ originYaw: 0, originPitch: -0.5, coverageRadius: 1 });
+    const neighbour = new DishRig({ coverageRadius: 1 });   // reach is irrelevant here
     neighbour.currentYaw   = neighbourAimed ? 0 : 2.0;
     neighbour.currentPitch = neighbourAimed ? -0.5 : -0.2;
     neighbour.targetYaw    = neighbour.currentYaw;
