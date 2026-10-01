@@ -56,6 +56,8 @@ src/
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
+│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
+│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
@@ -169,7 +171,7 @@ Centralized on `Engine.input`:
 - `mouse` — `{ dx, dy }` accumulated deltas, consumed each frame
 - `locked` — boolean, pointer-lock active
 
-`Engine.keyBinds` maps action names to codes, including the debug keys (`debugFly`, `fullbright`). Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
+`Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
 
 ## Debug tooling
 
@@ -194,6 +196,8 @@ Three toggles, all edge-triggered and free while off:
 1. Drop the file in `public/assets/` — lowercase, hyphen-separated, `.glb` for models.
 2. Add a key to [`src/assets/manifest.js`](src/assets/manifest.js). The `url` is relative to `public/`, so `public/assets/models/desk.glb` → `'assets/models/desk.glb'`.
 3. Use it: `engine.spawnModel('model:desk', { position: [0, 0, -3] })`, or `engine.assets.get('tex:foo')` for a texture.
+
+Sounds go in `public/assets/audio/` as `type: 'audio'`, keyed `sfx:<name>`; `assets.load` decodes them to a shared `AudioBuffer`, played through a `THREE.Audio` on `engine.audioListener` (it rides on the camera, and resumes on the first click — Chrome blocks audio before a user gesture).
 
 No path is ever hard-coded outside the manifest. `validateManifest()` runs in dev and warns about the two mistakes that only fail after upload: absolute paths and capital letters.
 

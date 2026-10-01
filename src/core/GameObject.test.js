@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 import { GameObject } from './GameObject.js';
+import { Component } from './Component.js';
 
 describe('GameObject hierarchy extensions', () => {
   describe('descendants()', () => {
@@ -281,5 +282,21 @@ describe('GameObject hierarchy extensions', () => {
 
       expect(root.object3d.parent).toBe(scene);
     });
+  });
+});
+
+describe('GameObject.destroy', () => {
+  it('runs onDestroy on its own components and every descendant\'s', () => {
+    const root = new GameObject('Root');
+    const child = root.addChild(new GameObject('Child'));
+    const a = root.addComponent(new Component());
+    const b = child.addComponent(new Component());
+    a.onDestroy = vi.fn();
+    b.onDestroy = vi.fn();
+
+    root.destroy();
+
+    expect(a.onDestroy).toHaveBeenCalledOnce();
+    expect(b.onDestroy).toHaveBeenCalledOnce();
   });
 });

@@ -4,6 +4,7 @@ import { GameObject } from './GameObject.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { playerBody } from '../components/PlayerBody.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { AssetManager } from './AssetManager.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { LoadingScreen } from '../ui/LoadingScreen.js';
@@ -45,6 +46,8 @@ export class Engine {
   /** Holds the loading screen up until the first frames run smooth; null
    *  once the game has been revealed. @type {FrameSettle|null} */ _settle = null;
   /** @type {Crosshair}     */ crosshair;
+  /** The ears: rides on the camera, and every THREE.Audio plays through it.
+   *  @type {THREE.AudioListener} */ audioListener;
 
   // ── Rapier ────────────────────────────────
   world;
@@ -102,6 +105,7 @@ export class Engine {
     jump:     'Space',
     crouch:   'KeyC',
     interact: 'KeyE',
+    flashlight: 'KeyF',
     // Debug keys, in the same table so they remap with everything else.
     debugFly:   'KeyV',   // toggle the noclip fly camera
     fullbright: 'KeyB',   // toggle the unlit lighting mode
@@ -132,6 +136,11 @@ export class Engine {
       75, innerWidth / innerHeight, 0.1, 1000,
     );
 
+    // ── Audio ──
+    // Starts suspended until the first click (see pointer lock below).
+    this.audioListener = new THREE.AudioListener();
+    this.camera.add(this.audioListener);
+
     // ── Renderer ──
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
@@ -158,7 +167,12 @@ export class Engine {
 
     // ── Pointer-lock mouse look ──
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('click', () => canvas.requestPointerLock());
+    canvas.addEventListener('click', () => {
+      canvas.requestPointerLock();
+      // Chrome won't let an AudioContext start before a user gesture; this
+      // click is the first one the game gets, so it's where sound wakes up.
+      if (this.audioListener?.context.state === 'suspended') this.audioListener.context.resume();
+    });
     document.addEventListener('pointerlockchange', () => {
       this.input.locked = document.pointerLockElement === canvas;
       this.input.mouse.dx = 0;
@@ -348,8 +362,12 @@ export class Engine {
     this.world.timestep = Engine.FIXED_DT;
     if (this.physicsDebug) this.physicsDebug.world = this.world;
 
-    // Remove all root Object3Ds from the Three.js scene
+    // Remove all root Object3Ds from the Three.js scene. Destroy first: the
+    // camera outlives the scene (the next buildPlayer re-mounts it), so
+    // anything a component hung on it — the flashlight, the suit visor —
+    // would otherwise ride along into the next level.
     for (const go of this._rootObjects) {
+      go.destroy();
       this.scene.remove(go.object3d);
     }
 
@@ -559,6 +577,9 @@ export class Engine {
 
     // ── InteractionSystem component ──
     player.addComponent(new InteractionSystem({ range: 5 }));
+
+    // ── Flashlight component ──  F toggles; bright up close, short reach by design.
+    player.addComponent(new Flashlight());
 
     this.player = player;           // the debug fly camera freezes whoever this is
     this._rootObjects.push(player);

@@ -44,6 +44,15 @@ describe('manifest', () => {
     })).toContainEqual(expect.stringContaining('lowercase and hyphen-separated'));
   });
 
+  it('accepts audio entries, and keeps the mask breathing loop under assets/audio/', () => {
+    expect(validateManifest({
+      'sfx:hum': { type: 'audio', url: 'assets/audio/hum.mp3' },
+    })).toEqual([]);
+    expect(ASSETS['sfx:mask-breathing']).toMatchObject({
+      type: 'audio', url: 'assets/audio/mask-breathing.mp3',
+    });
+  });
+
   it('has no validation problems', () => {
     expect(validateManifest(ASSETS)).toEqual([]);
   });
