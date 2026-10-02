@@ -491,6 +491,23 @@ Which of these was downloaded as `retro_futuristic_computer.glb` (now
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
+## Sounds
+
+### Gas mask breathing
+
+"Gas Mask Raw" by xTokioBeatlex on Pixabay
+(https://pixabay.com/sound-effects/film-special-effects-gas-mask-raw-36154/),
+under the Pixabay Content License — free to use, attribution not required,
+credited here anyway. Downloaded as
+`freesound_community-gas-mask-breath-69348.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/mask-breathing.mp3` |
+| **Manifest key** | `sfx:mask-breathing` |
+| **Used for** | Breathing inside the EVA suit helmet (`SuitVisor`) |
+| **Modifications** | Renamed; at load, encoder silence is trimmed and the ends crossfaded so it loops cleanly (`seamlessLoop`) |
+
 ## Downloaded but unattributed — TODO
 
 These files sit in `public/assets/models/` with no source link on record.
