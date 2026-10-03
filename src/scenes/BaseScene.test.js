@@ -1100,7 +1100,22 @@ describe('BaseScene power and the UFO', () => {
     expect(threat.signalLight).toBe(scene.rooms.MainOffice.signalLight);
   });
 
-  it('knows outside from in: rooms and corridors are inside, the yard is not', () => {
+  it('in view of the window means anywhere in the main office — no hiding behind the furniture', () => {
+    const { exposedToBeam } = scene.ufoThreat.hooks;
+    const office = scene.rooms.MainOffice;
+    const [ox, , oz] = office.position;
+    const desk = office.root.find('ComputerDesk').object3d.getWorldPosition(new THREE.Vector3());
+    expect(exposedToBeam(new THREE.Vector3(desk.x, 0.45, desk.z + 0.2))).toBe(true);   // crouched under the desk
+    expect(exposedToBeam(new THREE.Vector3(ox + 5.6, 1.24, oz - 4.5))).toBe(true);      // tucked beside the window
+    expect(exposedToBeam(new THREE.Vector3(ox, 1.24, oz + 4.5))).toBe(true);            // by the front door
+    // Out of the office, out of view.
+    const corridor = scene.corridors.OfficeToServer.position;
+    expect(exposedToBeam(new THREE.Vector3(corridor[0], 1.24, corridor[2]))).toBe(false);
+    const quarters = scene.rooms.LivingQuarters.position;
+    expect(exposedToBeam(new THREE.Vector3(quarters[0], 1.24, quarters[2]))).toBe(false);
+  });
+
+    it('knows outside from in: rooms and corridors are inside, the yard is not', () => {
     const { isOutside } = scene.ufoThreat.hooks;
     expect(isOutside(new THREE.Vector3(0, 1.2, 0))).toBe(false);                 // the office
     const corridor = scene.corridors.OfficeToServer.position;

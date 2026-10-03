@@ -159,11 +159,6 @@ const UFO_HOVER_HEIGHT = 35;
  *  the floor beneath them dark: hiding under the desk looks like hiding. */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7 };
 
-/** Where the UFO "sees" from once its beam covers the base: points on the
- *  lit ground beyond the office window, metres from the back wall's outer
- *  face, 1 m up. Anyone with a clear line to one of them is in view of the
- *  window. */
-const WINDOW_WATCHERS = [[-4, -3], [0, -3], [4, -3], [-4, -9], [0, -9], [4, -9]];
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
@@ -761,8 +756,8 @@ export class BaseScene extends Scene {
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
-   *  beam widens over the whole facility. It is judged by what the lit
-   *  ground beyond the office window can see. Built after the gameplay
+   *  beam widens over the whole facility. Anyone in the office — the room
+   *  its window looks into — is in view. Built after the gameplay
    *  systems, which it reads. Parented on the scene root, not Outside: it
    *  flies, so the occlusion sort must never file it away. */
   _addUfo() {
@@ -801,29 +796,13 @@ export class BaseScene extends Scene {
     this._sceneRoot.addChild(floodGO);
     this.windowFlood = flood;
 
-    const watchers = WINDOW_WATCHERS.map(([x, z]) => new THREE.Vector3(ox + x, 1, back + z));
-    let ray = null;   // made on first use: only the lethal beam needs it
     const hooks = {
       eyePosition: out => engine.camera.getWorldPosition(out),
       isOutside: p => this._isOutside(p),
-      // Seen if any lit point beyond the window has a clear line to the eye:
-      // walls, the roof and the desk block it; the open window does not.
-      exposedToBeam: (eye) => {
-        for (const from of watchers) {
-          const dx = eye.x - from.x, dy = eye.y - from.y, dz = eye.z - from.z;
-          const dist = Math.hypot(dx, dy, dz);
-          if (dist < 1e-3) return true;
-          ray ??= new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
-          ray.origin = { x: from.x, y: from.y, z: from.z };
-          ray.dir = { x: dx / dist, y: dy / dist, z: dz / dist };
-          const hit = engine.world.castRay(
-            ray, dist - 0.05, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
-            undefined, undefined, engine.player?.rigidBody,
-          );
-          if (!hit) return true;
-        }
-        return false;
-      },
+      // In view of the window = anywhere in the room it looks into. The
+      // furniture doesn't count: no hiding under the desk or behind the
+      // chair — a rule that can't drift when the props change.
+      exposedToBeam: eye => office.containsPoint(eye),
       setPlayerLocked: locked => this._setPlayerLocked(locked),
     };
 

@@ -33,7 +33,7 @@ import { Component } from '../core/Component.js';
 //
 // Rooms don't know about gameplay, and this doesn't know about rooms: the
 // scene hands it hooks for where the player's eye is, whether they are
-// outside, and whether the lit ground beyond the window can see them.
+// outside, and whether they are in view of the window (in the office).
 // ─────────────────────────────────────────────
 
 /** Tuning. Seconds and metres unless stated. */
@@ -188,7 +188,8 @@ export class UfoThreat extends Component {
    * @param {object} opts.hooks
    * @param {(out: THREE.Vector3) => THREE.Vector3} opts.hooks.eyePosition
    * @param {(p: THREE.Vector3) => boolean} opts.hooks.isOutside
-   * @param {(eye: THREE.Vector3) => boolean} opts.hooks.exposedToBeam
+   * @param {(eye: THREE.Vector3) => boolean} opts.hooks.exposedToBeam  In view of the
+   *        office window (BaseScene: anywhere in the main office)
    * @param {(locked: boolean) => void} opts.hooks.setPlayerLocked
    * @param {THREE.Vector3} [opts.hoverPoint]  Over the office. Default (0, 35, 0).
    * @param {{ light: THREE.Light, intensity: number }} [opts.flood]  The light
