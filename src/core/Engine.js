@@ -61,6 +61,9 @@ export class Engine {
   /** @type {DebugCamera}  */ debugCamera;
   /** @type {Fullbright}   */ fullbright;
   /** @type {GameObject}   */ player;
+  /** The player's controller — settings (sensitivity, crouch mode, …) are
+   *  written onto it after every build.
+   *  @type {FirstPersonController|null} */ playerController = null;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -628,6 +631,7 @@ export class Engine {
     player.addComponent(new Flashlight());
 
     this.player = player;           // the debug fly camera freezes whoever this is
+    this.playerController = ctrl;
     this._rootObjects.push(player);
     this.crosshair.show();
   }

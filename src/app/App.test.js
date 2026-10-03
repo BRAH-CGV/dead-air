@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { App } from './App.js';
 import { MenuView } from '../ui/menu/MenuView.js';
+import { SETTINGS_KEY } from './SettingsStore.js';
+import { withKeys, setInteractKey } from '../ui/promptKeys.js';
 
 // ── Fakes: no WebGL, no Rapier, no real pointer lock ──
 
@@ -30,9 +32,22 @@ function makeScene() {
   };
 }
 
+/** What buildPlayer makes: a controller with hard-coded values. */
+const makeController = () => ({ sensitivity: 0.002, invertY: false, cameraSmoothing: 0.2, crouchMode: 'toggle' });
+
+/** A Storage-shaped fake over a Map. */
+function memoryStorage() {
+  const map = new Map();
+  return { map, getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+}
+
 function makeEngine() {
   const sceneListeners = new Set();
   const engine = {
+    camera: { fov: 75, far: 1000, updateProjectionMatrix: vi.fn() },
+    renderer: { toneMappingExposure: 1, shadowMap: { enabled: true }, setPixelRatio: vi.fn() },
+    playerController: makeController(),
+    perfStats: { show: vi.fn(), hide: vi.fn() },
     paused: false,
     setPaused: vi.fn((p) => { engine.paused = p; }),
     devTools: true,
@@ -50,6 +65,7 @@ function makeEngine() {
     onSceneLoaded: vi.fn((cb) => { sceneListeners.add(cb); return () => sceneListeners.delete(cb); }),
     loadScene: vi.fn(() => {
       engine.activeScene = makeScene();
+      engine.playerController = makeController();
       for (const l of [...sceneListeners]) l(engine.activeScene);
     }),
   };
@@ -98,14 +114,15 @@ const key = (code, type = 'keydown') => {
 };
 
 describe('App', () => {
-  let engine, lock, view, fade, app;
+  let engine, lock, view, fade, app, storage;
 
   beforeEach(async () => {
     engine = makeEngine();
     lock = makeLock();
     view = makeDom();
     fade = makeFade();
-    app = new App(engine, { pointerLock: lock, view, fade, version: '9.9.9', storage: new Map() });
+    storage = memoryStorage();
+    app = new App(engine, { pointerLock: lock, view, fade, version: '9.9.9', storage, devToolsDefault: true });
     await app.start();
   });
 
@@ -131,7 +148,7 @@ describe('App', () => {
       const e2 = makeEngine();
       e2.revealed = new Promise((r) => { reveal = r; });
       const v2 = makeDom();
-      const a2 = new App(e2, { pointerLock: makeLock(), view: v2, fade: makeFade(), storage: new Map() });
+      const a2 = new App(e2, { pointerLock: makeLock(), view: v2, fade: makeFade(), storage: memoryStorage() });
       const started = a2.start();
       await flush();
       expect(v2.visible).toBe(false);
@@ -396,6 +413,158 @@ describe('App', () => {
       expect(old.listenerCount).toBe(0);
       engine.activeScene.gameController.fire('gameOver');
       expect(view.screen).toBe('nightFailed');
+    });
+  });
+
+  describe('settings', () => {
+    const panel = () => document.getElementById('menu-panel');
+    const tab = (id) => document.querySelector(`[data-action="tab"][data-tab="${id}"]`).click();
+    const choose = (key, value) =>
+      document.querySelector(`[data-setting="${key}"][data-value='${JSON.stringify(value)}']`).click();
+    const slide = (key, value) => {
+      const input = document.querySelector(`input[data-setting="${key}"]`);
+      input.value = String(value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    afterEach(() => setInteractKey('E'));
+
+    it('opens from the main menu, and Back / Esc return to it', async () => {
+      await click('settings');
+      expect(view.screen).toBe('settings');
+      key('Escape');
+      expect(view.screen).toBe('main');
+    });
+
+    it('opens from pause and goes back to pause', async () => {
+      await startGame();
+      lock.lose();
+      await click('settings');
+      await click('back');
+      expect(view.screen).toBe('pause');
+    });
+
+    it('applies a slider live, without redrawing (so a drag is not dropped)', async () => {
+      await click('settings');
+      tab('video');
+      const input = document.querySelector('input[data-setting="fov"]');
+      slide('fov', 90);
+      expect(engine.camera.fov).toBe(90);
+      expect(document.querySelector('input[data-setting="fov"]')).toBe(input);
+      expect(panel().textContent).toContain('90\u00b0');
+    });
+
+    it('persists, and a new App starts from the saved values', async () => {
+      await click('settings');
+      tab('controls');
+      slide('sensitivity', 2);
+      expect(JSON.parse(storage.map.get(SETTINGS_KEY)).sensitivity).toBe(2);
+
+      const e2 = makeEngine();
+      const a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage });
+      await a2.start();
+      expect(e2.playerController.sensitivity).toBeCloseTo(0.004);
+      a2.dispose();
+    });
+
+    it('re-applies the settings to the new player after every rebuild', async () => {
+      await click('settings');
+      tab('controls');
+      choose('invertY', true);
+      await click('back');
+      await startGame();
+      lock.lose();
+      await click('restart');
+      await click('confirm');
+      expect(engine.playerController.invertY).toBe(true);
+    });
+
+    it('Show FPS works with dev tools off', async () => {
+      await click('settings');
+      tab('developer');
+      choose('devTools', false);
+      tab('game');
+      choose('showFps', true);
+      expect(engine.perfStats.show).toHaveBeenCalled();
+      expect(engine.devTools).toBe(false);
+    });
+
+    it('the dev tools toggle drives engine.devTools', async () => {
+      expect(engine.devTools).toBe(true);
+      await click('settings');
+      tab('developer');
+      choose('devTools', false);
+      expect(engine.devTools).toBe(false);
+    });
+
+    it('Reset tab puts only that tab back', async () => {
+      await click('settings');
+      tab('video');
+      slide('fov', 95);
+      tab('controls');
+      slide('sensitivity', 2);
+      tab('video');
+      await click('resetTab');
+      expect(engine.camera.fov).toBe(75);
+      expect(app.settings.values.sensitivity).toBe(2);
+    });
+
+    describe('rebinding', () => {
+      beforeEach(async () => {
+        await click('settings');
+        tab('controls');
+      });
+      const bindRow = (action) => document.querySelector(`[data-action="rebind"][data-bind-action="${action}"]`);
+
+      it('captures the next key, writes it into the live keyBinds, and keeps it from the game', async () => {
+        const binds = engine.keyBinds;
+        bindRow('jump').click();
+        expect(panel().textContent).toContain('PRESS A KEY');
+        const behind = vi.fn();
+        window.addEventListener('keydown', behind);
+        key('KeyJ');
+        window.removeEventListener('keydown', behind);
+        expect(behind).not.toHaveBeenCalled();
+        expect(engine.keyBinds).toBe(binds);
+        expect(engine.keyBinds.jump).toBe('KeyJ');
+        expect(bindRow('jump').textContent).toBe('J');
+      });
+
+      it('refuses a reserved key with a message', () => {
+        bindRow('jump').click();
+        key('KeyQ');
+        expect(engine.keyBinds.jump).toBe('Space');
+        expect(panel().textContent).toMatch(/Q is reserved/);
+      });
+
+      it('Esc cancels the capture and stays on settings', () => {
+        bindRow('jump').click();
+        key('Escape');
+        expect(view.screen).toBe('settings');
+        expect(engine.keyBinds.jump).toBe('Space');
+        expect(panel().textContent).not.toContain('PRESS A KEY');
+      });
+
+      it('a duplicate swaps the two actions', () => {
+        bindRow('jump').click();
+        key('KeyC');
+        expect(engine.keyBinds.jump).toBe('KeyC');
+        expect(engine.keyBinds.crouch).toBe('Space');
+        expect(panel().textContent).toMatch(/Swapped with Crouch/);
+      });
+
+      it('rebinding Interact renames [E] in prompts', () => {
+        bindRow('interact').click();
+        key('KeyG');
+        expect(withKeys('[E] Sleep')).toBe('[G] Sleep');
+      });
+
+      it('the Controls screen shows the new bind', async () => {
+        bindRow('jump').click();
+        key('KeyJ');
+        await click('controls');
+        expect(panel().textContent).toMatch(/Jump\s*J/);
+      });
     });
   });
 });

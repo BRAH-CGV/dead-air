@@ -14,12 +14,19 @@
 // ─────────────────────────────────────────────
 
 import { createSkyBackdrop } from '../gameobjects/SkyBackdrop.js';
+import { withKeys } from './promptKeys.js';
 
 // ── HUD ────────────────────────────────────────────────────
 
 export class HUD {
-  constructor(root = typeof document !== 'undefined' ? document.getElementById('hud') : null) {
+  /**
+   * @param {HTMLElement|null} [root]
+   * @param {{ keyLabel?: (text: string) => string }} [opts]  Rewrites '[E]'
+   *        in prompts to the bound interact key; the shared one by default.
+   */
+  constructor(root = typeof document !== 'undefined' ? document.getElementById('hud') : null, { keyLabel = withKeys } = {}) {
     this.root = root;
+    this.keyLabel = keyLabel;
     this._clock     = root?.querySelector('#hud-clock')     ?? null;
     this._signals   = root?.querySelector('#hud-signals')   ?? null;
     this._night     = root?.querySelector('#hud-night')     ?? null;
@@ -55,7 +62,7 @@ export class HUD {
   }
 
   setPrompt(text) {
-    if (this._prompt) this._prompt.textContent = text || '';
+    if (this._prompt) this._prompt.textContent = text ? this.keyLabel(text) : '';
   }
 
   /** Show the EVA suit indicator while the suit is on; hidden otherwise. */

@@ -10,7 +10,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
 - [x] Phase 3: menus on screen (App also carries Phase 4's rebuild / restart / quit paths)
 - [x] Phase 4: restart and memory
-- [ ] Phase 5: settings
+- [x] Phase 5: settings (§6.8 terminal-key rebinding skipped; the Controls screen lists Q / Enter / S / D as fixed)
 - [ ] Phase 6: credits and end states
 - [ ] Phase 7 (optional): continue, camera drift, layout-aware key names
 - [ ] Phase 8: docs and production build
@@ -50,6 +50,13 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **No browser tool was available in this session**, so §10 is left for a human (see QA results).
 
 - **`RadarOverlay.dispose()` is fixed too, not only `SignalReviewPanel`.** Each overlay added a window `resize` listener per build and never removed it, which kept every old overlay and that scene's sky (through the backdrop) alive. Both scenes now call `dispose()` on both overlays. Those were the only per-scene listeners in `src/` (grepped).
+
+- **`engine.playerController`.** `buildPlayer` stores the controller there, so `applySettings` can reach it without importing Rapier (`FirstPersonController` imports it).
+- **`[E]` substitution goes through a tiny shared module, `src/ui/promptKeys.js`.** `PromptLabel` and `HUD` take a `keyLabel` option that defaults to its `withKeys`, and App calls `setInteractKey()` whenever settings apply. `PromptLabel` is constructed deep inside `InteractionSystem` and `RoomTransitionSystem`, so threading a function through would have touched more files. A prompt already on screen updates the next time it's shown.
+- **Sliders apply live but aren't redrawn while dragged.** Redrawing would replace the `<input>` mid-drag. Choices, rebinds, tab switches and resets redraw, and focus comes back to the same control.
+- **Selects are rows of choice buttons (`OFF LOW [HIGH]`), and toggles are `OFF / ON` pairs.** That fits VotV's plain text rows better than native `<select>`, which can't be styled in the dark theme. Left / Right step through them.
+- **`setPixelRatio` is called only when the ratio changes.** It reallocates the canvas, and every slider tick re-applies all settings.
+- **Saved key binds are validated as a set.** Any bad, reserved or duplicate code makes the whole set fall back to the defaults, because half a broken layout is worse than the defaults. A bind missing from an older save takes its default.
 
 ## Needs a human
 

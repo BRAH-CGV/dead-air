@@ -25,6 +25,10 @@
 import { AppFlow } from './AppFlow.js';
 import { PointerLock } from './PointerLock.js';
 import { controlsList } from './controlsList.js';
+import { SettingsStore, SCHEMA, TABS } from './SettingsStore.js';
+import { applySettings } from './applySettings.js';
+import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
+import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { TAGLINE, COPY } from '../ui/menu/text.js';
@@ -34,6 +38,11 @@ import { version as PACKAGE_VERSION } from '../../package.json';
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
 
+/** localStorage, or null where touching it throws (blocked site data). */
+function safeLocalStorage() {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
 export class App {
   /**
    * @param {import('../core/Engine.js').Engine} engine
@@ -42,6 +51,9 @@ export class App {
    * @param {MenuView} [deps.view]
    * @param {ScreenFade} [deps.fade]
    * @param {string} [deps.version]
+   * @param {Storage|null} [deps.storage]  Where settings persist
+   * @param {boolean} [deps.devToolsDefault]  On in `npm run dev`, off in the build
+   * @param {SettingsStore} [deps.settings]
    * @param {Document} [deps.doc]
    * @param {Window} [deps.win]
    */
@@ -50,6 +62,9 @@ export class App {
     view = new MenuView(),
     fade = engine.screenFade ?? new ScreenFade(),
     version = PACKAGE_VERSION,
+    storage = safeLocalStorage(),
+    devToolsDefault = !!import.meta.env?.DEV,
+    settings = null,
     doc = document,
     win = window,
   } = {}) {
@@ -61,6 +76,20 @@ export class App {
     this.version = version;
     this.doc = doc;
     this.win = win;
+    // The engine's binds at boot are the defaults the CONTROLS tab resets to.
+    this.settings = settings ?? new SettingsStore({
+      storage,
+      defaults: {
+        keyBinds: Object.fromEntries(REBINDABLE.map(a => [a, engine.keyBinds[a]])),
+        devTools: devToolsDefault,
+      },
+    });
+    this._settingsTab = 'game';
+    this._settingsMessage = '';
+    /** The action waiting for a key on the CONTROLS tab, or null. */
+    this._capturing = null;
+    /** Rows to flash once on the next draw (a rebind swap). */
+    this._flash = new Set();
 
     /** True while a lock request or a rebuild is in flight: menu input is
      *  ignored, so a double click can't queue two rebuilds. */
@@ -87,6 +116,7 @@ export class App {
     this._listen(doc, 'visibilitychange', () => { if (doc.hidden) this.pause(); });
     this._offs.push(this.pointerLock.onChange((locked) => { if (!locked) this.pause(); }));
 
+    this._offs.push(this.settings.onChange((values, keys) => this._onSettingsChanged(values, keys)));
     this._offs.push(engine.onSceneLoaded((scene) => this._onSceneLoaded(scene)));
     this._onSceneLoaded(engine.activeScene);
 
@@ -206,10 +236,25 @@ export class App {
   // ──────────────────────────────────────────
 
   /** After every scene load, App's or not (F4, the editor's switcher):
-   *  follow the new GameController. */
+   *  re-apply the settings (buildPlayer and the scene's moon light come
+   *  back with hard-coded values) and follow the new GameController. */
   _onSceneLoaded(scene) {
+    this._applySettings();
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
+  }
+
+  _applySettings(values = this.settings.values) {
+    applySettings(this.engine, values);
+    setInteractKey(keyName(values.keyBinds.interact));
+  }
+
+  /** Live: applied the moment a value changes, behind the menu. A slider
+   *  isn't redrawn (that would drop it mid-drag); everything else is. */
+  _onSettingsChanged(values, keys) {
+    this._applySettings(values);
+    const sliderOnly = keys.length === 1 && SCHEMA[keys[0]]?.type === 'number';
+    if (this.flow.screen === 'settings' && !sliderOnly) this._render();
   }
 
   // ──────────────────────────────────────────
@@ -220,6 +265,12 @@ export class App {
    *  window listeners. Only keydown: swallowing a keyup would stick a key. */
   _onKeyDownCapture = (e) => {
     if (!this.flow.isMenuOpen) return;
+    if (this._capturing) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this._captureKey(e.code);
+      return;
+    }
     if (e.code === 'Escape') {
       e.preventDefault();
       if (!this._busy) this.flow.back();
@@ -245,7 +296,9 @@ export class App {
       case 'controls': return flow.openControls();
       case 'credits':  return flow.openCredits();
       case 'back':
-      case 'cancel':   return flow.back();
+      case 'cancel':
+        this._capturing = null;
+        return flow.back();
       case 'restart':  return flow.openConfirm('restart');
       case 'retry':    return this._restartNight();
       case 'quit':
@@ -259,8 +312,51 @@ export class App {
     }
   }
 
-  /** Intents from screens added later (settings, credits). */
-  _onExtraIntent() {}
+  /** The settings screen's own intents. */
+  _onExtraIntent(action, data) {
+    switch (action) {
+      case 'tab':
+        this._settingsTab = data.tab;
+        this._settingsMessage = '';
+        this._capturing = null;
+        return this._render();
+      case 'setting':
+        return this.settings.set(data.key, data.value);
+      case 'resetTab':
+        this._settingsMessage = '';
+        this._capturing = null;
+        this.settings.resetTab(this._settingsTab);
+        return this._render();
+      case 'rebind':
+        this._capturing = data.bindAction;
+        this._settingsMessage = '';
+        return this._render();
+      default:
+    }
+  }
+
+  /** The key pressed while a bind row waits for one. Esc cancels; a
+   *  reserved key is refused with a reason; a key another action has is
+   *  swapped, and both rows flash. */
+  _captureKey(code) {
+    const action = this._capturing;
+    this._capturing = null;
+    if (code === 'Escape') {
+      this._settingsMessage = '';
+    } else {
+      const result = rebind(this.settings.values.keyBinds, action, code, { devTools: this.engine.devTools });
+      if (result.ok) {
+        this._settingsMessage = result.swappedWith
+          ? `Swapped with ${ACTION_LABELS[result.swappedWith]}.`
+          : '';
+        this._flash = new Set([action, result.swappedWith].filter(Boolean));
+        this.settings.setBinds(result.changes);
+      } else {
+        this._settingsMessage = `${result.reason}.`;
+      }
+    }
+    this._render();
+  }
 
   // ──────────────────────────────────────────
   // Drawing
@@ -296,9 +392,48 @@ export class App {
         return { groups: controlsList(this.engine.keyBinds, { devTools: this.engine.devTools }) };
       case 'nightFailed':
         return { ...this._failed };
+      case 'settings':
+        return this._settingsModel();
       default:
         return {};
     }
+  }
+
+  /** Rows for the current settings tab, from SCHEMA plus the extras each
+   *  tab carries: the rebind rows on CONTROLS, the debug keys on DEVELOPER. */
+  _settingsModel() {
+    const values = this.settings.values;
+    const tab = this._settingsTab;
+    const rows = [];
+    for (const [key, spec] of Object.entries(SCHEMA)) {
+      if (spec.tab !== tab || spec.type === 'binds') continue;
+      if (spec.type === 'number') {
+        rows.push({ type: 'slider', key, label: spec.label, min: spec.min, max: spec.max, step: spec.step,
+          value: values[key], format: spec.format });
+      } else {
+        const options = spec.type === 'bool'
+          ? [{ value: false, label: 'OFF' }, { value: true, label: 'ON' }]
+          : spec.options;
+        rows.push({ type: 'choice', key, label: spec.label, value: values[key], options });
+      }
+    }
+    if (tab === 'controls') {
+      for (const action of REBINDABLE) {
+        rows.push({
+          type: 'bind', action, label: ACTION_LABELS[action],
+          keyText: keyName(values.keyBinds[action]),
+          capturing: this._capturing === action,
+          flash: this._flash.has(action),
+        });
+      }
+      rows.push({ type: 'button', action: 'controls', label: 'View all controls' });
+    }
+    if (tab === 'developer') {
+      const dev = controlsList(this.engine.keyBinds, { devTools: true }).find(g => g.title === 'DEVELOPER');
+      for (const r of dev.rows) rows.push({ type: 'info', label: r.label, text: r.keys });
+    }
+    this._flash = new Set();
+    return { tabs: TABS, tab, rows, message: this._settingsMessage };
   }
 
   /** `NIGHT 2 · 03:14 AM · SIGNALS 2/4`, read when the pause menu opens. */
