@@ -7,7 +7,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 
 - [x] Phase 0: set up and orient
 - [x] Phase 1: pause core
-- [ ] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
+- [x] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
 - [ ] Phase 3: menus on screen
 - [ ] Phase 4: restart and memory
 - [ ] Phase 5: settings
@@ -36,6 +36,11 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **`setPaused` clears `input.keys` and `input.pressed` in place, without replacing the objects.** Components hold references to them.
 - **The second `_init` loop in `Engine.init()` is left alone.** No component overrides `onAwake` in a way that breaks on a second call, and removing it isn't needed for this task.
 - **`GameController._setState` fires after `_endShift` has stopped the clock and set the prompt.** A listener therefore sees a fully ended shift.
+
+- **The flashlight (`F`) is rebindable too.** It landed after the task doc was written and is a gameplay key, so `REBINDABLE` has eight actions, not seven.
+- **`AppFlow.restartPaused()`.** If the pointer lock is refused after Restart or Retry, the rebuilt night waits on the pause screen with the "click RESUME again" hint. It doesn't fall back to the screen it came from.
+- **Credits are reachable only from the main menu** (per §3.1). `openCredits()` is a no-op on other screens.
+- **The task doc isn't committed.** It was pasted into the session and isn't on any branch. This log records everything a resume needs.
 
 ## Needs a human
 
