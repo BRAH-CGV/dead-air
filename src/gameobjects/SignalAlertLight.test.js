@@ -114,4 +114,37 @@ describe('SignalAlertLight', () => {
       expect(bulb(light).material.emissiveIntensity).toBe(light.offIntensity);
     });
   });
+
+  describe('power and the UFO', () => {
+    it('goes frantic — fast, irregular flashing — with nothing to scan', () => {
+      const light = new SignalAlertLight();
+      light.frantic = true;
+      const seen = new Set();
+      for (let i = 0; i < 60; i++) {
+        light._update(1 / 60);
+        seen.add(bulb(light).material.emissiveIntensity);
+      }
+      expect(seen.has(light.offIntensity)).toBe(true);
+      expect([...seen].some(v => v > light.onIntensity)).toBe(true);   // brighter than a normal alert
+      // Several flips in one second: far faster than the 0.8 s alert cycle.
+      let flips = 0, prev = null;
+      for (let i = 0; i < 60; i++) {
+        light._update(1 / 60);
+        const on = bulb(light).material.emissiveIntensity > light.offIntensity;
+        if (prev !== null && on !== prev) flips++;
+        prev = on;
+      }
+      expect(flips).toBeGreaterThan(6);
+    });
+
+    it('is dark with no power, frantic or not', () => {
+      const light = new SignalAlertLight();
+      light.frantic = true;
+      light.powerLevel = 0;
+      for (let i = 0; i < 30; i++) {
+        light._update(1 / 60);
+        expect(bulb(light).material.emissiveIntensity).toBe(0);
+      }
+    });
+  });
 });

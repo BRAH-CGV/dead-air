@@ -18,6 +18,9 @@ import { PRELOAD } from '../assets/manifest.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { hiddenFromRegion } from '../systems/Sightlines.js';
+import { Ufo } from '../gameobjects/Ufo.js';
+import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { GeneratorSound } from '../components/GeneratorSound.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -281,17 +284,19 @@ describe('BaseScene', () => {
     }
   });
 
-  it('the generator is a raycastable Interactable stub that toggles power (phase 10)', () => {
+  it('the generator is a raycastable Interactable that switches the power grid', () => {
     const generator = sceneRoot.find('Outside').find('Generator');
     const interactable = generator.getComponent(Interactable);
     expect(interactable).not.toBeNull();
     expect(engine._bodyToGO.get(generator.rigidBody.handle)).toBe(generator);
 
-    expect(generator.powerOn).toBe(true);
+    expect(scene.power.on).toBe(true);
+    expect(interactable.promptLabel).toMatch(/cut power/i);
     interactable.onInteract({});
-    expect(generator.powerOn).toBe(false);
+    expect(scene.power.on).toBe(false);
+    expect(interactable.promptLabel).toMatch(/restore power/i);
     interactable.onInteract({});
-    expect(generator.powerOn).toBe(true);
+    expect(scene.power.on).toBe(true);
   });
 
   it('opens every interior door from night 1, and keeps them open every night', () => {
@@ -934,5 +939,172 @@ describe('BaseScene trees and the fence', () => {
       }
     });
     expect(trunks).toBeGreaterThan(50);   // the belt really was planted
+  });
+});
+
+describe('BaseScene power and the UFO', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  it('puts every room and corridor light on the grid, but not the airlock beacon', () => {
+    const ceiling = scene.rooms.MainOffice.root.find('CeilingLight').object3d.children.find(o => o.isLight);
+    const beacon = scene.rooms.Airlock.beacon;
+    const before = { ceiling: ceiling.intensity, beacon: beacon.intensity };
+    scene.power.setOn(false);
+    scene.power.update(0.016);
+    expect(ceiling.intensity).toBe(0);
+    expect(beacon.intensity).toBe(before.beacon);
+    scene.power.setOn(true);
+    scene.power.update(0.016);
+    expect(ceiling.intensity).toBe(before.ceiling);
+  });
+
+  it('feeds the signal lamp and the terminal from the grid', () => {
+    scene.power.setOn(false);
+    scene.power.update(0.016);
+    expect(scene.rooms.MainOffice.signalLight.powerLevel).toBe(0);
+    expect(scene.terminal.powered).toBe(false);
+    scene.power.setOn(true);
+    expect(scene.terminal.powered).toBe(true);
+  });
+
+  it('builds the UFO hidden, to hover high over the office, outside the occlusion zones', () => {
+    expect(scene.ufo).toBeInstanceOf(Ufo);
+    expect(scene.ufo.body.visible).toBe(false);
+    const hover = scene.ufoThreat.hoverPoint;
+    expect(scene.rooms.MainOffice.containsPoint(new THREE.Vector3(hover.x, 1, hover.z))).toBe(true);
+    expect(hover.y).toBeGreaterThan(25);
+    expect(scene._outside.object3d.getObjectById(scene.ufo.object3d.id)).toBeUndefined();
+  });
+
+  it('the building is solid to the searchlight: every room mesh draws both faces into its shadow map', () => {
+    const shadowCam = scene.ufo.searchlight.shadow.camera;
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      let wall = null;
+      part.root.object3d.traverse(o => { if (!wall && o.isMesh && o.name === 'Floor') wall = o; });
+      const depth = { side: THREE.BackSide };
+      wall.onBeforeShadow(null, wall, null, shadowCam, null, depth, null);
+      expect(depth.side, part.name).toBe(THREE.DoubleSide);
+    }
+  });
+
+  it('cuts the visible beam out of every room and corridor, so it ends on the roofs', () => {
+    const u = scene.ufo.beamMesh.material.uniforms;
+    const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
+    expect(u.uCutoutCount.value).toBe(parts.length);
+    const office = scene.rooms.MainOffice.bounds();
+    const i = u.uCutoutMin.value.findIndex(v => v.equals(office.min));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(u.uCutoutMax.value[i].equals(office.max)).toBe(true);
+  });
+
+    it('has a dark light inside the office, under the window, spilling the lethal beam in', () => {
+    const flood = scene.windowFlood;
+    const office = scene.rooms.MainOffice;
+    expect(flood.intensity).toBe(0);
+    expect(scene.ufoThreat.flood.light).toBe(flood);
+    flood.updateMatrixWorld(true);
+    const at = flood.getWorldPosition(new THREE.Vector3());
+    const to = flood.target.getWorldPosition(new THREE.Vector3());
+    // Inside the room, just in from the window, under its header…
+    expect(office.containsPoint(at)).toBe(true);
+    expect(at.z - office.bounds().min.z).toBeLessThan(1);
+    expect(at.y).toBeLessThan(2.825);
+    // …aimed steeply down into the room, never up at the walls' tops.
+    const dir = to.clone().sub(at).normalize();
+    expect(dir.y).toBeLessThan(-0.5);
+    expect(dir.z).toBeGreaterThan(0);
+    expect(Math.acos(-dir.y) + flood.angle).toBeLessThan(Math.PI / 2);   // the cone never rises above level
+    // Its own static shadow: the desk keeps the floor beneath it dark.
+    expect(flood.castShadow).toBe(true);
+  });
+
+  it('a blow-out spares the dish pad floods and the desk screen glow, once power is back', () => {
+    const flood = scene.dishPad.object3d.getObjectByName('DishFlood_0');
+    const screen = scene.rooms.MainOffice.screenGlow;
+    const ceiling = scene.rooms.MainOffice.root.find('CeilingLight').object3d.children.find(o => o.isLight);
+    const before = { flood: flood.intensity, screen: screen.intensity };
+    scene.power.breakLights();
+    scene.power.update(0.016);
+    expect(flood.intensity).toBe(0);    // the generator tripped
+    expect(screen.intensity).toBe(0);
+    scene.power.resetBreakers();
+    scene.power.setOn(true);
+    scene.power.update(0.016);
+    expect(ceiling.intensity).toBe(0);
+    expect(flood.intensity).toBe(before.flood);
+    expect(screen.intensity).toBe(before.screen);
+    expect(screen.intensity).toBeGreaterThan(0);
+  });
+
+  it('after a UFO blow-out the generator opens the breaker panel instead of switching on', () => {
+    const generator = scene._sceneRoot.find('Outside').find('Generator');
+    const sw = generator.getComponent(Interactable);
+    scene.power.breakLights();
+    expect(sw.promptLabel).toMatch(/breakers/i);
+
+    sw.onInteract({});
+    expect(scene.breakerPanel.isOpen).toBe(true);
+    expect(scene.power.on).toBe(false);
+
+    // Stepping away and back keeps the same half-done puzzle.
+    const puzzle = scene.breakerPanel._puzzle;
+    scene.breakerPanel.close();
+    sw.onInteract({});
+    expect(scene.breakerPanel._puzzle).toBe(puzzle);
+
+    // Every flick clicks.
+    expect(typeof scene.breakerPanel._callbacks.onFlick).toBe('function');
+    expect(() => scene.breakerPanel._callbacks.onFlick()).not.toThrow();
+
+    // Solved: breakers in, generator started.
+    const on = vi.spyOn(scene.generatorSound, 'switchOn');
+    scene.breakerPanel._callbacks.onSolved();
+    expect(scene.power.tripped).toBe(false);
+    expect(scene.power.on).toBe(true);
+    expect(on).toHaveBeenCalled();
+    expect(sw.promptLabel).toMatch(/cut power/i);
+  });
+
+  it('a new night shuts a breaker panel left open, and its next blow-out is a fresh puzzle', () => {
+    const generator = scene._sceneRoot.find('Outside').find('Generator');
+    scene.power.breakLights();
+    generator.getComponent(Interactable).onInteract({});
+    const first = scene.breakerPanel._puzzle;
+    scene.power.repair();
+    expect(scene.breakerPanel.isOpen).toBe(false);
+    scene.power.breakLights();
+    generator.getComponent(Interactable).onInteract({});
+    expect(scene.breakerPanel._puzzle).not.toBe(first);
+  });
+
+  it('gives the generator its sound, switched by its Interactable', () => {
+    const generator = scene._sceneRoot.find('Outside').find('Generator');
+    expect(generator.getComponent(GeneratorSound)).toBe(scene.generatorSound);
+    const off = vi.spyOn(scene.generatorSound, 'switchOff');
+    generator.getComponent(Interactable).onInteract({});
+    expect(off).toHaveBeenCalled();
+  });
+
+  it('runs a UfoThreat on the gameplay systems, wired to the controller, grid and radar', () => {
+    const threat = scene._sceneRoot.find('GameplaySystems').getComponent(UfoThreat);
+    expect(threat).toBe(scene.ufoThreat);
+    expect(threat.controller).toBe(scene.gameController);
+    expect(threat.grid).toBe(scene.power);
+    expect(threat.radar).toBe(scene.radarOverlay);
+    expect(threat.signalLight).toBe(scene.rooms.MainOffice.signalLight);
+  });
+
+  it('knows outside from in: rooms and corridors are inside, the yard is not', () => {
+    const { isOutside } = scene.ufoThreat.hooks;
+    expect(isOutside(new THREE.Vector3(0, 1.2, 0))).toBe(false);                 // the office
+    const corridor = scene.corridors.OfficeToServer.position;
+    expect(isOutside(new THREE.Vector3(corridor[0], 1.2, corridor[2]))).toBe(false);
+    expect(isOutside(new THREE.Vector3(7, 1.2, 9))).toBe(true);                  // by the generator
   });
 });

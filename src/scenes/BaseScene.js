@@ -35,6 +35,17 @@ import {
 } from '../systems/Sightlines.js';
 import { AirlockPortal } from '../components/AirlockPortal.js';
 import { PLAYER_BODY } from '../components/PlayerBody.js';
+import { Component } from '../core/Component.js';
+import { LEDStrip } from '../components/LEDStrip.js';
+import { FirstPersonController } from '../components/FirstPersonController.js';
+import { PowerGrid } from '../systems/PowerGrid.js';
+import { Ufo } from '../gameobjects/Ufo.js';
+import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { WhiteOut } from '../ui/WhiteOut.js';
+import { GeneratorSound } from '../components/GeneratorSound.js';
+import { BreakerPanel } from '../ui/BreakerPanel.js';
+import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
+import { sealAgainst } from '../core/ShadowSides.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -133,6 +144,27 @@ const MIN_SPLIT_TRIANGLES = 8000;
  *  jumps at 4 m/s, so v²/2g ≈ 0.82 m), plus margin for a low step. */
 const EYE_TOP = PLAYER_BODY.standEyeHeight + (4 * 4) / (2 * 9.81) + 0.4;
 
+/** Where the UFO stops: metres above the office's centre — well clear of
+ *  the dish tower and the treeline on the way in. */
+const UFO_HOVER_HEIGHT = 35;
+
+/** The UFO's beam spilling in through the office window while it covers
+ *  the base. The searchlight itself never gets in — its shadow map keeps it
+ *  off everything under a roof — so this stands in for it: a spotlight
+ *  inside the office, tucked under the window header, aimed steeply down
+ *  into the room. Positions are metres from the back wall's inner face (+
+ *  into the room); the cone (half-angle + tilt) stays below level, so it
+ *  never paints the tops of the walls — light through a window can't reach
+ *  them. It casts a shadow (static, drawn once) so the desk and chair keep
+ *  the floor beneath them dark: hiding under the desk looks like hiding. */
+const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7 };
+
+/** Where the UFO "sees" from once its beam covers the base: points on the
+ *  lit ground beyond the office window, metres from the back wall's outer
+ *  face, 1 m up. Anyone with a clear line to one of them is in view of the
+ *  window. */
+const WINDOW_WATCHERS = [[-4, -3], [0, -3], [4, -3], [-4, -9], [0, -9], [4, -9]];
+
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
   rooms = {};
@@ -145,8 +177,14 @@ export class BaseScene extends Scene {
    *  @type {EVASuit|null} */
   suit = null;
 
+  /** The generator's grid: every lamp in the base, and the vital functions.
+   *  @type {PowerGrid|null} */
+  power = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
+  /** Sounds the scene itself plays (the breaker panel's click). */
+  _sounds = [];
 
   build() {
     console.time('BaseScene.build');
@@ -169,7 +207,9 @@ export class BaseScene extends Scene {
     this._addLighting();
     this._buildOutside();
     this._spawnPlayer();
+    this._addPower();
     this._addGameplaySystems();
+    this._addUfo();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
@@ -191,6 +231,15 @@ export class BaseScene extends Scene {
   dispose() {
     this._offNightStart?.();
     this._offSuitHud?.();
+    this._offPower?.forEach(off => off());
+    this.ufo?.dispose();
+    this.breakerPanel?.close();
+    for (const sound of this._sounds) {
+      if (sound.isPlaying) sound.stop();
+      try { sound.disconnect(); } catch (_) { /* never connected */ }
+    }
+    this._sounds.length = 0;
+    this.whiteOut?.clear();
     this._offShadowHooks?.forEach(off => off());
     // Before the rooms go: the portal lets go of the airlock, and every
     // culled object is drawn again, so nothing stays hidden into whatever
@@ -380,6 +429,11 @@ export class BaseScene extends Scene {
 
     this.hud.setSuit(this.suit.worn);
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
+
+    // The terminal is a vital function: it runs whenever the generator
+    // does, blown bulbs or not.
+    this.terminal.setPowered(this.power.on);
+    this._offPower.push(this.power.onChange(grid => this.terminal.setPowered(grid.on)));
   }
 
   // ──────────────────────────────────────────
@@ -575,16 +629,219 @@ export class BaseScene extends Scene {
 
     // Generator stand-in until generator.glb arrives (asset list, P1). Out
     // the office's front door, where the player has to go to cut power.
-    const generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
-    generator.powerOn = true;
-    generator.addComponent(new class extends Interactable {
-      promptLabel = '[E] Cut power';
+    // _addPower() puts its switch on it.
+    this.generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
+    this.dishPad = dishPad;
+  }
+
+  // ──────────────────────────────────────────
+  // Power (the generator outside feeds the base)
+  // ──────────────────────────────────────────
+  /** Every lamp in the rooms, the corridors and on the dish pad goes on one
+   *  PowerGrid; the server LEDs and the signal lamp drive their own glow
+   *  from its level. The generator outside is the switch, and GeneratorSound
+   *  its voice. The airlock beacon is on its own battery (Airlock marks it
+   *  offGrid). The dish pad's floods and the desk screen's glow are
+   *  unbreakable: a UFO blow-out leaves them working once power is back. */
+  _addPower() {
+    const grid = new PowerGrid();
+    this.power = grid;
+
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    for (const part of parts) grid.collect(part.root.object3d);
+    if (this.dishPad) grid.collect(this.dishPad.object3d, { breakable: false });
+    for (const go of this._sceneRoot.descendants()) {
+      const strip = go.getComponent?.(LEDStrip);
+      if (strip) grid.addConsumer(strip);
+    }
+    const { signalLight } = this.rooms.MainOffice;
+    if (signalLight) grid.addConsumer(signalLight);
+
+    // Written every frame — the UFO's surge flickers it.
+    this._sceneRoot.addComponent(new class extends Component {
+      onUpdate(dt) { grid.update(dt); }
+    }());
+
+    const label = () => {
+      if (grid.tripped) return '[E] Reset the tripped breakers';
+      if (grid.on) return '[E] Cut power';
+      return grid.broken ? '[E] Restore power (vital systems — the lights are blown)' : '[E] Restore power';
+    };
+    const generator = this.generator;
+    // Start-up on, wind-down off, a hum between — a whisper from indoors.
+    const sound = generator.addComponent(new GeneratorSound({
+      grid,
+      hooks: { listenerPosition: out => this.engine.camera.getWorldPosition(out), isOutside: p => this._isOutside(p) },
+    }));
+    this.generatorSound = sound;
+    // After a UFO blow-out the breakers are tripped: the switch is dead
+    // until the panel minigame is done, out here in the yard. One puzzle per
+    // blow-out, so stepping away and back carries on where you left off.
+    this.breakerPanel = new BreakerPanel();
+    const click = this._sound('sfx:light-switch', 0.7);
+    let puzzle = null;
+    const openPanel = () => {
+      puzzle ??= new BreakerPuzzle();
+      this._usePanel(true);
+      this.breakerPanel.open(puzzle, {
+        onClose: () => this._usePanel(false),
+        onFlick: () => {
+          if (!click) return;
+          if (click.isPlaying) click.stop();
+          click.play();
+        },
+        onSolved: () => {
+          this._usePanel(false);
+          grid.resetBreakers();
+          sound.switchOn();
+        },
+      });
+    };
+
+    const sw = generator.addComponent(new class extends Interactable {
+      promptLabel = label();
       onInteract() {
-        generator.powerOn = !generator.powerOn;
-        // TODO: cut every room's lights when powerOn is false (breaker panel).
-        console.log(`[Outside] generator power ${generator.powerOn ? 'on' : 'off'}`);
+        if (grid.tripped) openPanel();
+        else if (grid.on) sound.switchOff();
+        else sound.switchOn();
       }
     }());
+    this._offPower = [grid.onChange(() => {
+      // A data field, so InteractionSystem re-shows it while you look at it.
+      sw.promptLabel = label();
+      // Breakers back in (solved, or a new night's repair): this blow-out's
+      // puzzle is done with.
+      if (!grid.tripped) {
+        puzzle = null;
+        this.breakerPanel.close();
+      }
+    })];
+  }
+
+  /** A THREE.Audio for a preloaded sound, or null (no listener or no
+   *  buffer: tests, or a failed load). Stopped and unhooked on dispose. */
+  _sound(key, volume = 1) {
+    const { audioListener, assets } = this.engine;
+    if (!audioListener || !assets?.has?.(key)) return null;
+    const audio = new THREE.Audio(audioListener);
+    audio.setBuffer(assets.get(key));
+    audio.setVolume(volume);
+    this._sounds.push(audio);
+    return audio;
+  }
+
+  /** Hand the mouse to a DOM panel (true) or back to looking around. The
+   *  player stands still meanwhile; the pointer lock comes back on the way
+   *  out — a click or a key press, so the browser allows it. */
+  _usePanel(open) {
+    this._setPlayerLocked(open);
+    const canvas = this.engine.renderer?.domElement;
+    if (open) {
+      this.engine.crosshair?.hide();
+      if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock?.();
+    } else {
+      this.engine.crosshair?.show();
+      try { canvas?.requestPointerLock?.()?.catch?.(() => {}); } catch (_) { /* no gesture: the next click locks */ }
+    }
+  }
+
+  /** Freeze the player where they stand (a panel, the white-out), or free them. */
+  _setPlayerLocked(locked) {
+    const ctrl = this.engine.player?.getComponent(FirstPersonController);
+    if (ctrl) ctrl.inputLocked = locked;
+  }
+
+  /** Anywhere not inside a room or corridor — the yard, the valley. */
+  _isOutside(p) {
+    this._insideParts ??= [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    return !this._insideParts.some(part => part.containsPoint(p));
+  }
+
+  // ──────────────────────────────────────────
+  // The UFO (once a night — UfoThreat)
+  // ──────────────────────────────────────────
+  /** The saucer comes in high and stops directly over the office, where its
+   *  beam widens over the whole facility. It is judged by what the lit
+   *  ground beyond the office window can see. Built after the gameplay
+   *  systems, which it reads. Parented on the scene root, not Outside: it
+   *  flies, so the occlusion sort must never file it away. */
+  _addUfo() {
+    const { engine } = this;
+    const office = this.rooms.MainOffice;
+    const [ox, , oz] = office.position;
+    const back = office.bounds().min.z;
+    const hoverPoint = new THREE.Vector3(ox, UFO_HOVER_HEIGHT, oz);
+
+    // A clone sharing the cached model's GPU resources — Ufo.dispose never
+    // frees it. Not loaded (tests): Ufo builds a stand-in disc.
+    const model = engine.assets?.has?.('model:ufo') ? engine.assets.instantiate('model:ufo') : null;
+    this.ufo = new Ufo({ model });
+    this.ufo.setPose(hoverPoint);
+    this._sceneRoot.addChild(this.ufo);
+    // Its searchlight casts shadows (the roofs keep it out of the rooms); the
+    // ShadowScheduler redraws its map as it flies. sealAgainst makes every
+    // building mesh receive shadows and, for that one light, draw both faces
+    // into the map — without either it got in along every wall joint and
+    // lit every small fitting (see ShadowSides). And the
+    // visible beam is cut out of the building, so it ends on the roofs.
+    const shell = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    for (const part of shell) sealAgainst(part.root.object3d, this.ufo.searchlight);
+    this.ufo.setCutouts(shell.map(part => part.bounds()));
+
+    // The beam spilling in through the window. Zeroed, never hidden (AGENTS.md).
+    const inner = back + office.wallThick;   // the back wall's inner face
+    const floodGO = new GameObject('UfoWindowFlood');
+    const flood = new THREE.SpotLight(0xdcefff, 0, 14, WINDOW_FLOOD.angle, 0.6, 1);
+    flood.position.set(ox + WINDOW_FLOOD.from[0], WINDOW_FLOOD.from[1], inner + WINDOW_FLOOD.from[2]);
+    flood.target.position.set(ox + WINDOW_FLOOD.to[0], WINDOW_FLOOD.to[1], inner + WINDOW_FLOOD.to[2]);
+    flood.castShadow = true;
+    flood.shadow.mapSize.set(512, 512);
+    flood.shadow.bias = -0.0005;
+    floodGO.object3d.add(flood, flood.target);
+    this._sceneRoot.addChild(floodGO);
+    this.windowFlood = flood;
+
+    const watchers = WINDOW_WATCHERS.map(([x, z]) => new THREE.Vector3(ox + x, 1, back + z));
+    let ray = null;   // made on first use: only the lethal beam needs it
+    const hooks = {
+      eyePosition: out => engine.camera.getWorldPosition(out),
+      isOutside: p => this._isOutside(p),
+      // Seen if any lit point beyond the window has a clear line to the eye:
+      // walls, the roof and the desk block it; the open window does not.
+      exposedToBeam: (eye) => {
+        for (const from of watchers) {
+          const dx = eye.x - from.x, dy = eye.y - from.y, dz = eye.z - from.z;
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist < 1e-3) return true;
+          ray ??= new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+          ray.origin = { x: from.x, y: from.y, z: from.z };
+          ray.dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+          const hit = engine.world.castRay(
+            ray, dist - 0.05, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+            undefined, undefined, engine.player?.rigidBody,
+          );
+          if (!hit) return true;
+        }
+        return false;
+      },
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+    };
+
+    this.whiteOut = new WhiteOut();
+    this.ufoThreat = new UfoThreat({
+      controller:  this.gameController,
+      grid:        this.power,
+      ufo:         this.ufo,
+      hooks,
+      hoverPoint,
+      flood:       { light: flood, intensity: WINDOW_FLOOD.intensity },
+      signalLight: this.rooms.MainOffice.signalLight,
+      radar:       this.radarOverlay,
+      terminal:    this.terminal,
+      whiteOut:    this.whiteOut,
+      nightDuration: this.nightClock.nightDuration,
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
 
   // ──────────────────────────────────────────
