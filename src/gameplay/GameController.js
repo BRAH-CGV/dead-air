@@ -8,7 +8,8 @@ import { Component } from '../core/Component.js';
 //
 //   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
 //      │                            └──sleep() on the last night──▶ finished
-//      └──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      └──fail() (a threat got the player)──▶ gameOver
 //
 // Meeting the quota early doesn't end the shift: the player still has to
 // hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
@@ -54,6 +55,9 @@ export class GameController extends Component {
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
 
+  /** @type {Set<(night: number) => void>} */
+  _nightStartListeners = new Set();
+
   // ──────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────
@@ -72,6 +76,24 @@ export class GameController extends Component {
     this.hud?.setTime(this.nightClock?.timeString ?? '12:00 AM');
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
+
+    for (const fn of this._nightStartListeners) fn(nightNumber);
+  }
+
+  /** Hear about every night that starts — a new night, a skip or a retry.
+   *  Threats reschedule here. @param {(night: number) => void} fn
+   *  @returns {() => void} unsubscribe */
+  onNightStart(fn) {
+    this._nightStartListeners.add(fn);
+    return () => this._nightStartListeners.delete(fn);
+  }
+
+  /** Something killed the player: end the shift as a game over, with its
+   *  own prompt. Only a shift in progress can be failed.
+   *  @param {string} [prompt] */
+  fail(prompt = PROMPT.failed) {
+    if (this.state !== 'playing') return;
+    this._endShift('gameOver', prompt);
   }
 
   /** Follow a NightManager: start the night it is on now, and every night

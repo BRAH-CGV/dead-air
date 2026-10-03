@@ -320,4 +320,32 @@ describe('GameController', () => {
     gc.startNight(1);   // must not throw
     expect(() => gc.onUpdate(0.016)).not.toThrow();
   });
+
+  // ── Threat hooks ──
+
+  it('tells night-start listeners each night it starts, until unsubscribed', () => {
+    const fn = vi.fn();
+    const off = gc.onNightStart(fn);
+    gc.startNight(2);
+    expect(fn).toHaveBeenCalledWith(2);
+    off();
+    gc.startNight(3);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('fail() ends a playing shift as a game over with its own prompt', () => {
+    gc.startNight(1);
+    gc.fail('You were taken. [E] to retry');
+    expect(gc.state).toBe('gameOver');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken. [E] to retry');
+    gc.retryNight();
+    expect(gc.state).toBe('playing');
+  });
+
+  it('fail() does nothing outside a playing shift', () => {
+    gc.startNight(1);
+    gc._morning();
+    gc.fail('nope');
+    expect(gc.state).toBe('morning');
+  });
 });

@@ -111,6 +111,8 @@ export class Engine {
     fullbright: 'KeyB',   // toggle the unlit lighting mode
     nextNight:  'KeyN',   // BaseScene: advance the night (wraps to night 1)
     perfStats:  'KeyI',   // toggle the FPS / draw-call readout
+    // TESTING ONLY — remove before release: bring the UFO now (BaseScene).
+    summonUfo:  'KeyU',
   };
 
   /** Returns true while the key mapped to [action] is held down. */
@@ -210,6 +212,11 @@ export class Engine {
       if (e.code === this.keyBinds.perfStats)  this.perfStats?.toggle();
       // Only scenes with night progression (BaseScene) have `nights`.
       const nights = this.activeScene?.nights;
+      // TESTING ONLY — remove before release.
+      if (e.code === this.keyBinds.summonUfo && this.activeScene?.ufoThreat) {
+        const coming = this.activeScene.ufoThreat.summon();
+        console.log(coming ? '[DEBUG] UFO summoned' : '[DEBUG] UFO not summoned — a visit is under way, or no shift is');
+      }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);
         else nights.advance();
