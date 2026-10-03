@@ -114,13 +114,59 @@ describe('ServerRoom', () => {
     expect(after).not.toEqual(before);
   });
 
-  it('the console is an Interactable stub for evil-signal deletion (phase 10)', () => {
+  it('the console is an Interactable that clears the signal from the inserted drive', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     expect(interactable).not.toBeNull();
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Bind a fake DriveManager with a saved drive.
+    const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
+    const dm = {
+      drives: [fakeDrive],
+      driveInserted: true,
+      insertedDrive: fakeDrive,
+      insertedDriveHasSignal: true,
+      signalsOnDrive: 1,
+    };
+    room.bindDriveManager(dm);
+
+    // After binding with a saved drive, the prompt shows the delete option.
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+
+    // Interact to clear the signal.
     interactable.onInteract({});
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('signal deleted'));
-    log.mockRestore();
+    expect(fakeDrive.saved).toBe(false);  // drive was reset
+    expect(dm.signalsOnDrive).toBe(0);    // counter was zeroed
+
+    // After clearing, the prompt should revert.
+    dm.insertedDriveHasSignal = false;
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
+  });
+
+  it('the console clears the signal from a carried drive, not just an inserted one', () => {
+    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+
+    // A green drive being carried by the player (not inserted).
+    const carriedDrive = { saved: true, setSaved(v) { this.saved = v; } };
+    const dm = {
+      drives: [carriedDrive],
+      driveInserted: false,
+      insertedDrive: null,
+      insertedDriveHasSignal: false,
+      signalsOnDrive: 0,
+    };
+    const ps = {
+      heldPickupable: { gameObject: carriedDrive },
+    };
+    room.bindDriveManager(dm);
+    room.bindPickupSystem(ps);
+
+    // The prompt should show the delete option for the carried green drive.
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+
+    // Interact to clear the signal.
+    interactable.onInteract({});
+    expect(carriedDrive.saved).toBe(false);
   });
 
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {

@@ -346,8 +346,10 @@ export class BaseScene extends Scene {
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
 
-    // Wire the drive manager to the office's drive reader.
+    // Wire the drive manager to the office's drive reader and the server
+    // room's console (for clearing signals from drives).
     this.rooms.MainOffice.bindDriveManager(this.driveManager);
+    this.rooms.ServerRoom?.bindDriveManager(this.driveManager);
 
     // ── Pickup system (generic carry mechanic) ──
     // Attached to the player so it can detect Pickupable objects via
@@ -356,8 +358,10 @@ export class BaseScene extends Scene {
     this.engine.player.addComponent(this.pickupSystem);
     this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
     this.pickupSystem.terminal = this.terminal;
-    // Wire the pickup system to the office's drive reader.
+    // Wire the pickup system to the office's drive reader and the server
+    // room's console (for clearing signals from carried drives).
     this.rooms.MainOffice.bindPickupSystem(this.pickupSystem);
+    this.rooms.ServerRoom?.bindPickupSystem(this.pickupSystem);
 
     // The review panel is now display-only — Q auto-saves via the terminal.
     // No onSave/onDelete callbacks needed.

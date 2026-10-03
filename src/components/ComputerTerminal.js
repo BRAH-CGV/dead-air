@@ -192,9 +192,12 @@ export class ComputerTerminal extends Component {
     // overlay has its own cursor.
     this.crosshair?.hide();
     this.radar?.show();
-    // Check drive state first — scanning requires a drive in the reader.
+    // Check drive state first — scanning requires a drive in the reader,
+    // and a drive with a signal already on it blocks further scanning.
     if (this.driveManager && !this.driveManager.driveInserted) {
       this.radar?.setHint('Insert a drive into the reader on the desk | Q: exit');
+    } else if (this.driveManager?.insertedDriveHasSignal) {
+      this.radar?.setHint('Drive full — delete signal in ServerRoom | Q: exit');
     } else {
       this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
     }
@@ -297,9 +300,12 @@ export class ComputerTerminal extends Component {
       // Enter key starts scanning if hovering and a dish of the array is aimed
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
       if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
-        // Scanning requires a drive in the reader.
+        // Scanning requires a drive in the reader, and the drive must not
+        // already have a signal on it.
         if (this.driveManager && !this.driveManager.driveInserted) {
           this.radar?.setInfo('No drive inserted — scan blocked');
+        } else if (this.driveManager?.insertedDriveHasSignal) {
+          this.radar?.setInfo('Drive full — delete signal first');
         } else {
           const sig = this._hoveredSignal;
           const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);

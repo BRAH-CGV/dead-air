@@ -23,6 +23,18 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // ─────────────────────────────────────────────
 
 export class ServerRoom extends Room {
+  /** The server console with the "Delete signal" interactable.
+   *  @type {import('../../core/GameObject.js').GameObject|null} */
+  _serverConsole = null;
+
+  /** DriveManager reference, set by bindDriveManager.
+   *  @type {import('../../gameplay/DriveManager.js').DriveManager|null} */
+  _driveManager = null;
+
+  /** PickupSystem reference, set by bindPickupSystem.
+   *  @type {import('../../components/PickupSystem.js').PickupSystem|null} */
+  _pickupSystem = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -44,6 +56,23 @@ export class ServerRoom extends Room {
 
   buildDoors() {
     this.addDoor('ToMainOffice', 'left', 'MainOffice');
+  }
+
+  /** Wire the DriveManager to the console's interactable. Called by the
+   *  scene after gameplay systems are up. */
+  bindDriveManager(dm) {
+    this._driveManager = dm;
+    // Refresh the console prompt now that the manager is available.
+    const interact = this._serverConsole?.getComponent(Interactable);
+    interact?.refreshPrompt?.();
+  }
+
+  /** Wire the player's PickupSystem to the console's interactable. Called by
+   *  the scene after the PickupSystem is created. */
+  bindPickupSystem(pickupSystem) {
+    this._pickupSystem = pickupSystem;
+    const interact = this._serverConsole?.getComponent(Interactable);
+    interact?.refreshPrompt?.();
   }
 
   buildLighting() {
@@ -77,12 +106,61 @@ export class ServerRoom extends Room {
     });
 
     // Console against the back wall, facing the racks' aisle.
+    // The interactable clears the signal from a drive — either the inserted
+    // drive in the reader, or a drive the player is carrying. This is the
+    // "Delete signal" action from the original design, repurposed to reset
+    // drives so they can accept new signals.
     const console_ = this._spawnProp('model:radar-terminal', {
       name: 'ServerConsole', position: [-1, 0, -2.45], scale: 0.478,
     });
+    this._serverConsole = console_;
+    const self = this;
     console_.addComponent(new class extends Interactable {
       promptLabel = '[E] Delete signal';
-      onInteract() { console.log('[ServerRoom] signal deleted'); }
+      interactRange = 2;
+
+      // Find a drive with a signal: either inserted or being carried.
+      _findDriveWithSignal() {
+        const dm = self._driveManager;
+        const ps = self._pickupSystem;
+        if (!dm) return null;
+        // Check the inserted drive first.
+        if (dm.insertedDriveHasSignal) return dm.insertedDrive;
+        // Check if the player is carrying a drive with a signal.
+        const heldGO = ps?.heldPickupable?.gameObject;
+        if (heldGO && dm.drives.includes(heldGO) && heldGO.saved) {
+          return heldGO;
+        }
+        return null;
+      }
+
+      // The prompt follows the drive state — shows "No signal to delete"
+      // when there's nothing to clear.
+      refreshPrompt() {
+        if (this._findDriveWithSignal()) {
+          this.promptLabel = '[E] Delete signal';
+        } else {
+          this.promptLabel = 'No signal to delete';
+        }
+      }
+
+      onHover() {
+        this.refreshPrompt();
+      }
+
+      onInteract() {
+        const drive = this._findDriveWithSignal();
+        if (drive) {
+          drive.setSaved(false);
+          // Also reset the counter on the DriveManager if this was the
+          // inserted drive.
+          const dm = self._driveManager;
+          if (dm && dm.insertedDrive === drive) {
+            dm.signalsOnDrive = 0;
+          }
+        }
+        this.refreshPrompt();
+      }
     }());
 
     // Camera-entity watch volume, over the rack aisle. Not wired to an AI

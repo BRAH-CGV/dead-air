@@ -11,6 +11,8 @@ function makeMockDrive(held = false) {
   return {
     name: `Drive_${Math.random().toString(36).slice(2, 6)}`,
     components: [pickupable],
+    saved: false,
+    setSaved(v) { this.saved = v; },
     getComponent(Type) {
       return this.components.find(c => c instanceof Type) ?? null;
     },
@@ -166,6 +168,63 @@ describe('DriveManager', () => {
     const dm = new DriveManager();
     expect(dm.saveToDrive()).toBe(0);
     expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('saveToDrive marks the inserted drive as saved', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    expect(d.saved).toBe(false);
+    dm.saveToDrive();
+    expect(d.saved).toBe(true);
+  });
+
+  // ── insertedDriveHasSignal ──
+
+  it('insertedDriveHasSignal is false when no drive is inserted', () => {
+    const dm = new DriveManager();
+    expect(dm.insertedDriveHasSignal).toBe(false);
+  });
+
+  it('insertedDriveHasSignal is false when the inserted drive has no signal', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    expect(dm.insertedDriveHasSignal).toBe(false);
+  });
+
+  it('insertedDriveHasSignal is true after saveToDrive', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveToDrive();
+    expect(dm.insertedDriveHasSignal).toBe(true);
+  });
+
+  // ── clearInsertedDriveSignal ──
+
+  it('clearInsertedDriveSignal resets the drive and zeroes the counter', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveToDrive();
+    dm.saveToDrive();
+    expect(d.saved).toBe(true);
+    expect(dm.signalsOnDrive).toBe(2);
+
+    const result = dm.clearInsertedDriveSignal();
+    expect(result).toBe(true);
+    expect(d.saved).toBe(false);
+    expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('clearInsertedDriveSignal is a no-op without an inserted drive', () => {
+    const dm = new DriveManager();
+    expect(dm.clearInsertedDriveSignal()).toBe(false);
   });
 
   // ── Full cycle ──

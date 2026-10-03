@@ -424,7 +424,9 @@ describe('MainOffice', () => {
     room.driveReader.getComponent(Interactable).onInteract({});
 
     expect(dm.ejectDrive).toHaveBeenCalled();
-    expect(drive.saved).toBe(false);                           // indicator reset for reuse
+    // The drive keeps its signal state after eject — it's not reset until
+    // the ServerRoom console clears it.
+    expect(drive.saved).toBe(true);
     expect(pickUp).toHaveBeenCalledWith(pickupable);
   });
 

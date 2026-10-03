@@ -212,7 +212,12 @@ export class MainOffice extends Room {
           self.drives.includes(ps.heldPickupable.gameObject);
 
         if (dm.driveInserted) {
-          this.promptLabel = '[E] Eject drive';
+          // Show whether the inserted drive has a signal on it.
+          if (dm.insertedDriveHasSignal) {
+            this.promptLabel = '[E] Eject drive (has signal)';
+          } else {
+            this.promptLabel = '[E] Eject drive';
+          }
         } else if (heldDrive) {
           // The player is carrying one of our drives — offer to insert it.
           this.promptLabel = '[E] Insert drive';
@@ -235,10 +240,11 @@ export class MainOffice extends Room {
         if (!dm) return;
 
         if (dm.driveInserted) {
-          // Eject: return the drive to the world.
+          // Eject: return the drive to the world. The drive keeps its
+          // signal state — a green drive stays green until the ServerRoom
+          // console clears it.
           const ejected = dm.ejectDrive();
           if (ejected) {
-            ejected.setEjected();
             // Make the drive dynamic again (it was kinematic in the reader).
             ejected.makeDynamic?.();
             ejected.enablePhysics?.();

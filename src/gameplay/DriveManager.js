@@ -54,6 +54,9 @@ export class DriveManager {
   /** Whether a drive is currently in the reader slot. */
   get driveInserted() { return this.insertedDrive !== null; }
 
+  /** Whether the inserted drive has a signal stored on it. */
+  get insertedDriveHasSignal() { return this.insertedDrive?.saved === true; }
+
   /** Return drives that are neither held by the player nor in the reader.
    *  A drive is "available" if its Pickupable component exists and is not
    *  held, and it is not the inserted drive. */
@@ -92,11 +95,23 @@ export class DriveManager {
     return drive;
   }
 
-  /** Save a signal to the inserted drive.
+  /** Save a signal to the inserted drive. Marks the drive as saved (turns
+   *  it green) so it cannot accept more signals until cleared.
    *  @returns {number} the new signalsOnDrive count */
   saveToDrive() {
     if (!this.insertedDrive) return this.signalsOnDrive;
     this.signalsOnDrive++;
+    this.insertedDrive.setSaved(true);
     return this.signalsOnDrive;
+  }
+
+  /** Clear the signal from the inserted drive, resetting it to the default
+   *  colour. Used by the ServerRoom console to wipe a drive.
+   *  @returns {boolean} true if a signal was cleared */
+  clearInsertedDriveSignal() {
+    if (!this.insertedDrive) return false;
+    this.insertedDrive.setSaved(false);
+    this.signalsOnDrive = 0;
+    return true;
   }
 }
