@@ -13,7 +13,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 5: settings (§6.8 terminal-key rebinding skipped; the Controls screen lists Q / Enter / S / D as fixed)
 - [x] Phase 6: credits and end states
 - [x] Phase 7 (optional): **Continue only**. The camera drift and layout-aware key names were skipped as low value for the risk.
-- [ ] Phase 8: docs and production build
+- [x] Phase 8: docs and production build
 - [ ] Phase 9: ship
 
 ## Baseline (Phase 0, `npm run test` on `origin/main`)
@@ -75,4 +75,16 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 
 ## QA results
 
-_(Phase 8)_
+**Automated.**
+
+- Full `npx vitest run`: **73 of 79 files pass (1355 tests)**. The six failures are exactly the BUG-003 baseline files above, against a baseline of 1107 passing tests.
+- `npm run build` succeeds. The only warning is the existing "chunks larger than 500 kB" one. `grep -rn 'src="/\|href="/' dist/index.html` prints nothing, and the credits text is inlined in the bundle.
+
+**Browser QA (§10): not run.** No browser tool was available in this session, so every §10 item is left for a human (listed in the PR as "For a human to check"). These need a real browser most:
+
+- Resume clicked straight after Esc.
+- Alt-Tab and stuck keys.
+- Each video setting, visually.
+- The shadows off → high recompile.
+- Memory counters over five Main menu → New game cycles.
+- Layout at 1024×600.

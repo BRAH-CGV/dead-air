@@ -324,7 +324,10 @@ In rough priority order, with the owners from the meeting:
    nap in the bedroom. *Hayden.*
 3. **Sound**: ambience, dish motors, signal audio, stingers. *Unassigned.*
 4. **Menus, settings, credits screen**: the credits screen hooks into the end of
-   F4's final night. *Sibonelo.*
+   F4's final night. *Sibonelo.* **Done** on `feat/menus-navigation`: main menu,
+   pause, settings (game, controls, video, developer), controls, credits parsed
+   from `ATTRIBUTIONS.md`, Night failed and Run complete screens, restart without
+   a refresh, and Continue. See AGENTS.md → "App flow and menus".
 5. **Oxygen timer outside**, so going outside has a cost.
 6. **Custom shader the whole team can explain**: F4's dawn uniform is a start;
    a CRT/signal-static shader on the terminal screen would be a good second.
