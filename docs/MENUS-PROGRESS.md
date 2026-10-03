@@ -6,7 +6,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 ## Phases
 
 - [x] Phase 0: set up and orient
-- [ ] Phase 1: pause core
+- [x] Phase 1: pause core
 - [ ] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
 - [ ] Phase 3: menus on screen
 - [ ] Phase 4: restart and memory
