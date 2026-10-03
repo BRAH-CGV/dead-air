@@ -80,9 +80,11 @@ export class PickupSystem extends Component {
       go.rigidBody.setGravityScale(1, true);
       go.rigidBody.setLinearDamping(0.5, true);
       go.rigidBody.setAngularDamping(1.0, true);
-      // Kill the spring's leftover velocity first, then add a small forward
-      // impulse for a "place" feel.
-      go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      // Kill the spring's accumulated force so it doesn't keep pulling the
+      // drive toward the old target, but keep the velocity — that's the
+      // momentum from the player's camera turn, and it should carry through
+      // so the drive flies across the room if thrown.
+      go.rigidBody.resetForces(true);
       const engine = this._getEngine();
       if (engine) {
         _camFwd.set(0, 0, -1).applyQuaternion(engine.camera.quaternion);
