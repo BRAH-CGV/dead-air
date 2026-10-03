@@ -12,7 +12,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 4: restart and memory
 - [x] Phase 5: settings (§6.8 terminal-key rebinding skipped; the Controls screen lists Q / Enter / S / D as fixed)
 - [x] Phase 6: credits and end states
-- [ ] Phase 7 (optional): continue, camera drift, layout-aware key names
+- [x] Phase 7 (optional): **Continue only**. The camera drift and layout-aware key names were skipped as low value for the risk.
 - [ ] Phase 8: docs and production build
 - [ ] Phase 9: ship
 
@@ -61,6 +61,8 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **Credit titles keep an ordinary dash.** A heading is split only when its tail is a `⚠` note or a `TODO`, so "Blast door — closed" and "Blast door — open" keep their full titles.
 - **The dev console warning also lists the "Downloaded but unattributed — TODO" section.** It names switchboard, bush and break-panel (all in the manifest) plus four unused files, next to the TODO entries and the floor and signal images. The doc's rule is not to drop TODOs silently.
 - **The credits are inlined with `import … from '../../ATTRIBUTIONS.md?raw'`.** The production build contains them, and nothing is fetched at runtime.
+
+- **Continue.** `{ night }` goes to `dead-air.progress.v1` whenever the controller enters `playing` (a night starts). It's cleared on `finished` and on New game, and offered only from night 2. It sets the night on the fresh scene the menu sits over, with no rebuild, and only after the lock is granted, so a refused lock can't leave New game starting on night 2.
 
 ## Needs a human
 

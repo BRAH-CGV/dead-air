@@ -40,6 +40,9 @@ import { version as PACKAGE_VERSION } from '../../package.json';
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
 
+/** Where Continue remembers the night reached: `{ night }`. */
+export const PROGRESS_KEY = 'dead-air.progress.v1';
+
 /** localStorage, or null where touching it throws (blocked site data). */
 function safeLocalStorage() {
   try { return globalThis.localStorage ?? null; } catch { return null; }
@@ -80,6 +83,7 @@ export class App {
     this.version = version;
     this.doc = doc;
     this.win = win;
+    this.storage = storage;
     // The engine's binds at boot are the defaults the CONTROLS tab resets to.
     this.settings = settings ?? new SettingsStore({
       storage,
@@ -174,6 +178,28 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        this._saveNight(null);   // a new run: Continue returns from night 2
+        this.flow.newGame();
+        this.engine.setPaused(false);
+      } else {
+        this._setHint(COPY.lockRefused);
+      }
+    });
+  }
+
+  /** Continue: the night saved last time, on the fresh scene the menu sits
+   *  over — no rebuild, just the night set (like the N key) once the lock
+   *  is ours. Set any earlier and a refused lock would leave New game
+   *  starting on that night. */
+  async _continue() {
+    const night = this._savedNight();
+    if (!night) return;
+    this._wakeAudio();
+    const lock = this.pointerLock.request();
+    await this._run(async () => {
+      if (this.flow.needsRebuild) await this._fadeRebuild();
+      if (await this._lockHeld(lock)) {
+        this.engine.activeScene?.nights?.setNight(night);
         this.flow.newGame();
         this.engine.setPaused(false);
       } else {
@@ -223,6 +249,10 @@ export class App {
   /** The shift ended: `gameOver` or `finished`. The flow moves first, so
    *  the lock released after it isn't read as a pause. */
   _onGameState(state) {
+    if (state === 'playing') {
+      this._saveNight(this._currentNight());
+      return;
+    }
     if (state === 'gameOver') {
       const progress = this.engine.activeScene?.signalManager?.getProgress?.();
       this._failed = {
@@ -234,6 +264,7 @@ export class App {
     } else if (state === 'finished') {
       // Lands mid sleep-fade, while the screen is black: the screen is up by
       // the time the fade clears.
+      this._saveNight(null);
       this.flow.runComplete();
     } else {
       return;
@@ -302,6 +333,7 @@ export class App {
     const { flow } = this;
     switch (action) {
       case 'newGame':  return this._newGame();
+      case 'continue': return this._continue();
       case 'resume':   return this._resume();
       case 'settings': return flow.openSettings();
       case 'controls': return flow.openControls();
@@ -392,7 +424,7 @@ export class App {
   _model(screen) {
     switch (screen) {
       case 'main':
-        return { tagline: TAGLINE, version: this.version, continueNight: null, hint: this._hint };
+        return { tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint };
       case 'pause':
         return { status: this._statusLine(), hint: this._hint };
       case 'confirm':
@@ -481,6 +513,26 @@ export class App {
   // ──────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────
+
+  /** The night Continue would start, or null — night 1 isn't worth a
+   *  button, and a corrupt or out-of-range save is ignored. */
+  _savedNight() {
+    try {
+      const { night } = JSON.parse(this.storage?.getItem(PROGRESS_KEY) ?? 'null') ?? {};
+      const max = this.engine.activeScene?.nights?.maxNight ?? 3;
+      return Number.isInteger(night) && night >= 2 && night <= max ? night : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remember the night reached (null forgets it). Never throws. */
+  _saveNight(night) {
+    try {
+      if (night === null) this.storage?.removeItem(PROGRESS_KEY);
+      else this.storage?.setItem(PROGRESS_KEY, JSON.stringify({ night }));
+    } catch { /* blocked or full: Continue just won't be offered */ }
+  }
 
   _currentNight() {
     const scene = this.engine.activeScene;

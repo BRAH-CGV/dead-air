@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { App } from './App.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { SETTINGS_KEY } from './SettingsStore.js';
+import { PROGRESS_KEY } from './App.js';
 import { withKeys, setInteractKey } from '../ui/promptKeys.js';
 
 // ── Fakes: no WebGL, no Rapier, no real pointer lock ──
@@ -38,7 +39,12 @@ const makeController = () => ({ sensitivity: 0.002, invertY: false, cameraSmooth
 /** A Storage-shaped fake over a Map. */
 function memoryStorage() {
   const map = new Map();
-  return { map, getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+  return {
+    map,
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+  };
 }
 
 function makeEngine() {
@@ -602,6 +608,58 @@ describe('App', () => {
       expect(warn).not.toHaveBeenCalled();
       a3.dispose();
       warn.mockRestore();
+    });
+  });
+
+  describe('continue', () => {
+    /** Sleep through to `night`: the controller goes morning → playing. */
+    function reachNight(night) {
+      engine.activeScene.nights.setNight(night);
+      engine.activeScene.gameController.fire('morning');
+      engine.activeScene.gameController.fire('playing');
+    }
+
+    it('saves the night each time one starts', async () => {
+      await startGame();
+      reachNight(2);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2 });
+    });
+
+    it('offers Continue on the main menu from night 2, and plays that night without a rebuild', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2 }));
+      const e2 = makeEngine();
+      const v2 = makeDom();
+      const a2 = new App(e2, { pointerLock: makeLock(), view: v2, fade: makeFade(), storage, dev: false });
+      await a2.start();
+      const button = document.querySelector('[data-action="continue"]');
+      expect(button.textContent).toMatch(/night 2/i);
+      await click('continue');
+      expect(e2.activeScene.nights.setNight).toHaveBeenCalledWith(2);
+      expect(e2.loadScene).not.toHaveBeenCalled();
+      expect(a2.flow.state).toBe('playing');
+      a2.dispose();
+    });
+
+    it('has no Continue for night 1 or garbage', async () => {
+      expect(document.querySelector('[data-action="continue"]')).toBeNull();
+      storage.setItem(PROGRESS_KEY, '{bad');
+      const a2 = new App(makeEngine(), { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage, dev: false });
+      await a2.start();
+      expect(document.querySelector('[data-action="continue"]')).toBeNull();
+      a2.dispose();
+    });
+
+    it('New game forgets the old save', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 3 }));
+      await startGame();
+      expect(storage.map.has(PROGRESS_KEY)).toBe(false);
+    });
+
+    it('clears the save when the run is finished', async () => {
+      await startGame();
+      reachNight(3);
+      engine.activeScene.gameController.fire('finished');
+      expect(storage.map.has(PROGRESS_KEY) ? storage.map.get(PROGRESS_KEY) : null).toBe(null);
     });
   });
 });
