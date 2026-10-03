@@ -528,12 +528,14 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.state).toBe('radar');
   });
 
-  it('wires the terminal to the satellite, signals and UI', () => {
+  it('wires the terminal to the satellite, signals, UI and drive manager', () => {
     expect(scene.terminal.satellite).toBe(scene.satellite);
     expect(scene.terminal.signalManager).toBe(scene.signalManager);
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
     expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
+    expect(scene.terminal.driveManager).toBe(scene.driveManager);
+    expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
   });
 
@@ -550,19 +552,11 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.hud).toBe(scene.hud);
   });
 
-  it('routes the review panel buttons through the terminal and the controller', () => {
-    const saved = vi.spyOn(scene.terminal, 'saveSignal').mockImplementation(() => {});
-    const deleted = vi.spyOn(scene.terminal, 'deleteSignal').mockImplementation(() => {});
-    const onSaved = vi.spyOn(scene.gameController, 'onSignalSaved').mockImplementation(() => {});
-    const onDeleted = vi.spyOn(scene.gameController, 'onSignalDeleted').mockImplementation(() => {});
-
-    scene.reviewPanel._saveCb();
-    expect(saved).toHaveBeenCalled();
-    expect(onSaved).toHaveBeenCalled();
-
-    scene.reviewPanel._deleteCb();
-    expect(deleted).toHaveBeenCalled();
-    expect(onDeleted).toHaveBeenCalled();
+  it('wires the drive manager to the office drive reader', () => {
+    expect(scene.driveManager).toBeDefined();
+    expect(scene.driveManager.totalDrives).toBe(3);
+    const reader = scene.rooms.MainOffice.driveReader;
+    expect(reader).not.toBeNull();
   });
 
   it('starts the controller on the night the NightManager is actually on', () => {

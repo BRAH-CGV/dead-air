@@ -6,7 +6,7 @@
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
 //                      EVA suit indicator
 //   RadarOverlay     – 2D canvas radar display with signal blips
-//   SignalReviewPanel– modal for save/delete after scanning a signal
+//   SignalReviewPanel– modal for viewing a scanned signal's payload
 //
 // All follow the Crosshair/LoadingScreen pattern: markup + CSS live in
 // index.html so the panel renders before any JS parses; these classes
@@ -470,15 +470,6 @@ export class SignalReviewPanel {
   constructor(root = typeof document !== 'undefined' ? document.getElementById('signal-review') : null) {
     this.root = root;
     this._image    = root?.querySelector('#signal-review-image')  ?? null;
-    this._saveBtn  = root?.querySelector('#signal-save-btn')      ?? null;
-    this._deleteBtn = root?.querySelector('#signal-delete-btn')    ?? null;
-    this._saveCb    = null;
-    this._deleteCb  = null;
-    this._keyHandler = null;
-
-    // Wire click handlers
-    this._saveBtn?.addEventListener('click', () => this._saveCb?.());
-    this._deleteBtn?.addEventListener('click', () => this._deleteCb?.());
   }
 
   /** Show the panel with the signal's payload image. */
@@ -486,36 +477,12 @@ export class SignalReviewPanel {
     if (!this.root) return;
     if (this._image) this._image.src = payloadUrl;
     this.root.style.display = 'flex';
-    this._installKeyHandler();
   }
 
-  /** Hide the panel and clear handlers. */
+  /** Hide the panel. */
   hide() {
     if (!this.root) return;
     this.root.style.display = 'none';
     if (this._image) this._image.src = '';
-    this._removeKeyHandler();
-  }
-
-  /** Register callback for save action (KeyS or click). */
-  onSave(callback) { this._saveCb = callback; }
-
-  /** Register callback for delete action (KeyD or click). */
-  onDelete(callback) { this._deleteCb = callback; }
-
-  _installKeyHandler() {
-    this._removeKeyHandler();
-    this._keyHandler = (e) => {
-      if (e.code === 'KeyS') { e.preventDefault(); this._saveCb?.(); }
-      if (e.code === 'KeyD') { e.preventDefault(); this._deleteCb?.(); }
-    };
-    addEventListener('keydown', this._keyHandler);
-  }
-
-  _removeKeyHandler() {
-    if (this._keyHandler) {
-      removeEventListener('keydown', this._keyHandler);
-      this._keyHandler = null;
-    }
   }
 }

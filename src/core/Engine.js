@@ -86,7 +86,7 @@ export class Engine {
   input = {
     keys: {},
     pressed: {},
-    mouse: { dx: 0, dy: 0 },
+    mouse: { dx: 0, dy: 0, wheel: 0 },
     locked: false,
   };
   
@@ -183,6 +183,15 @@ export class Engine {
       this.input.mouse.dx += this._clampMouseEventDelta(e.movementX);
       this.input.mouse.dy += this._clampMouseEventDelta(e.movementY);
     });
+
+    // ── Mouse wheel (scroll) ──
+    // Accumulated per frame; consumed after updates read it (same as mouse dx/dy).
+    addEventListener('wheel', (e) => {
+      if (!this.input.locked) return;
+      // deltaY is positive when scrolling down (away from user).
+      // Normalise to ±1 ticks so consumers can multiply by a step size.
+      this.input.mouse.wheel += Math.sign(e.deltaY);
+    }, { passive: true });
 
     // ── Keyboard ──
     addEventListener('keydown', (e) => {
@@ -664,6 +673,7 @@ export class Engine {
     // Consume one-frame input after all updates have read it
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
+    this.input.mouse.wheel = 0;
     this.input.pressed = {};
   };
 

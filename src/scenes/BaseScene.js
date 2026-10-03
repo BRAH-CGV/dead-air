@@ -13,6 +13,8 @@ import { createPerimeterFence, yardRect, fenceKeepOut, FENCE } from '../gameobje
 import { createDishPad } from '../gameobjects/DishPad.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
+import { InteractionSystem } from '../components/InteractionSystem.js';
+import { PickupSystem } from '../components/PickupSystem.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
@@ -25,6 +27,7 @@ import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
@@ -295,6 +298,9 @@ export class BaseScene extends Scene {
     );
     this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
 
+    // ── Drive manager (physical hard drives) ──
+    this.driveManager = new DriveManager();
+
     // UI wrappers over the markup in index.html. With no DOM (tests) each
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
@@ -312,8 +318,8 @@ export class BaseScene extends Scene {
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
     this.terminal.reviewPanel   = this.reviewPanel;
+    this.terminal.driveManager  = this.driveManager;
     this.terminal.crosshair     = this.engine.crosshair;
-
     // The desk is a room prop, so it is found through the room rather than
     // the scene root. MainOffice deliberately leaves it without an
     // Interactable of its own — InteractionSystem takes the first one it
@@ -337,14 +343,24 @@ export class BaseScene extends Scene {
     this.gameController.hud           = this.hud;
     gameplayGO.addComponent(this.gameController);
 
-    this.reviewPanel.onSave(() => {
-      this.terminal.saveSignal();
-      this.gameController.onSignalSaved();
-    });
-    this.reviewPanel.onDelete(() => {
-      this.terminal.deleteSignal();
-      this.gameController.onSignalDeleted();
-    });
+    // The terminal notifies the controller when a signal is auto-saved.
+    this.terminal.gameController = this.gameController;
+
+    // Wire the drive manager to the office's drive reader.
+    this.rooms.MainOffice.bindDriveManager(this.driveManager);
+
+    // ── Pickup system (generic carry mechanic) ──
+    // Attached to the player so it can detect Pickupable objects via
+    // InteractionSystem's raycast and apply spring-damper hold forces.
+    this.pickupSystem = new PickupSystem();
+    this.engine.player.addComponent(this.pickupSystem);
+    this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
+    this.pickupSystem.terminal = this.terminal;
+    // Wire the pickup system to the office's drive reader.
+    this.rooms.MainOffice.bindPickupSystem(this.pickupSystem);
+
+    // The review panel is now display-only — Q auto-saves via the terminal.
+    // No onSave/onDelete callbacks needed.
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on

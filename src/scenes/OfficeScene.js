@@ -162,15 +162,8 @@ export class OfficeScene extends Scene {
       this.signalLight.gameController = this.gameController;
     }
 
-    // Wire review panel callbacks into the terminal.
-    this.reviewPanel.onSave(() => {
-      this.terminal.saveSignal();
-      this.gameController.onSignalSaved();
-    });
-    this.reviewPanel.onDelete(() => {
-      this.terminal.deleteSignal();
-      this.gameController.onSignalDeleted();
-    });
+    // The review panel is now display-only — Q auto-saves via the terminal.
+    // No onSave/onDelete callbacks needed.
   }
 
   // ──────────────────────────────────────────

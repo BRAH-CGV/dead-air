@@ -17,7 +17,7 @@ import { cursorToSky } from '../gameobjects/DishRig.js';
 // cursor that the satellite dish "chases" with momentum.
 //
 // External references (set by OfficeScene during wiring):
-//   satellite, signalManager, hud, radar, reviewPanel
+//   satellite, signalManager, hud, radar, reviewPanel, driveManager
 // ─────────────────────────────────────────────
 
 /** @readonly */
@@ -45,6 +45,10 @@ export class ComputerTerminal extends Component {
   radar = null;
   /** @type {import('../ui/HUD.js').SignalReviewPanel|null} */
   reviewPanel = null;
+  /** @type {import('../gameplay/DriveManager.js').DriveManager|null} */
+  driveManager = null;
+  /** @type {import('../gameplay/GameController.js').GameController|null} */
+  gameController = null;
   /** @type {import('../ui/Crosshair.js').Crosshair|null} */
   crosshair = null;
 
@@ -141,23 +145,15 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = closest;
   }
 
-  /** Save the currently reviewed signal. */
+  /** Save the currently reviewed signal (auto-called on review dismiss). */
   saveSignal() {
     if (this.state !== 'review') return;
     const mgr = this.signalManager;
     if (!mgr || !this._hoveredSignal) return;
 
     mgr.saveSignal(this._hoveredSignal.id);
-    this._onSignalResolved();
-  }
-
-  /** Delete the currently reviewed signal. */
-  deleteSignal() {
-    if (this.state !== 'review') return;
-    const mgr = this.signalManager;
-    if (!mgr || !this._hoveredSignal) return;
-
-    mgr.deleteSignal(this._hoveredSignal.id);
+    this.driveManager?.saveToDrive();
+    this.gameController?.onSignalSaved();
     this._onSignalResolved();
   }
 
@@ -196,7 +192,12 @@ export class ComputerTerminal extends Component {
     // overlay has its own cursor.
     this.crosshair?.hide();
     this.radar?.show();
-    this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
+    // Check drive state first — scanning requires a drive in the reader.
+    if (this.driveManager && !this.driveManager.driveInserted) {
+      this.radar?.setHint('Insert a drive into the reader on the desk | Q: exit');
+    } else {
+      this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
+    }
     this.radar?.setInfo('');
     this._hoveredSignal = null;
     // Check if a scan completed while terminal was closed
@@ -233,6 +234,8 @@ export class ComputerTerminal extends Component {
     const sig = this._hoveredSignal;
     if (sig) {
       this.signalManager?.markScanned(sig.id);
+      // Show the signal image — the panel now has no save/delete choice.
+      // Dismissing it (Q) auto-saves the signal to the drive.
       this.reviewPanel?.show(sig.payloadUrl);
     }
     this.radar?.setInfo('');
@@ -267,6 +270,10 @@ export class ComputerTerminal extends Component {
 
     // ── Global: Q exits from any state ──
     if (engine.input.keys['KeyQ']) {
+      // In review, Q auto-saves the signal before exiting.
+      if (this.state === 'review') {
+        this.saveSignal();
+      }
       this.exit();
       return;
     }
@@ -290,12 +297,17 @@ export class ComputerTerminal extends Component {
       // Enter key starts scanning if hovering and a dish of the array is aimed
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
       if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
-        const sig = this._hoveredSignal;
-        const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
-        if (aimed) {
-          this._enterScanning();
+        // Scanning requires a drive in the reader.
+        if (this.driveManager && !this.driveManager.driveInserted) {
+          this.radar?.setInfo('No drive inserted — scan blocked');
         } else {
-          this.radar?.setInfo('No dish aimed — wait for one to settle');
+          const sig = this._hoveredSignal;
+          const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+          if (aimed) {
+            this._enterScanning();
+          } else {
+            this.radar?.setInfo('No dish aimed — wait for one to settle');
+          }
         }
       }
       this._enterHeld = enterDown;

@@ -193,32 +193,11 @@
         border-radius: 4px;
         box-shadow: 0 0 20px rgba(0, 200, 180, 0.15);
       }
-      #signal-review-actions {
-        display: flex;
-        gap: 32px;
-      }
-      #signal-save-btn,
-      #signal-delete-btn {
-        cursor: pointer;
-        padding: 6px 14px;
-        border-radius: 3px;
+      #signal-review-hint {
+        color: #8898a8;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        transition: background 0.15s;
-      }
-      #signal-save-btn {
-        color: #6ecf9a;
-        border: 1px solid rgba(110, 207, 154, 0.4);
-      }
-      #signal-save-btn:hover {
-        background: rgba(110, 207, 154, 0.15);
-      }
-      #signal-delete-btn {
-        color: #cf6e6e;
-        border: 1px solid rgba(207, 110, 110, 0.4);
-      }
-      #signal-delete-btn:hover {
-        background: rgba(207, 110, 110, 0.15);
+        font-size: 11px;
       }
 
       /* ── Screen fade (ScreenFade.js sets the duration) ──── */
@@ -254,13 +233,10 @@
       <div id="radar-hint">Select a signal blip, then aim with WASD</div>
     </div>
 
-    <!-- Signal review modal (save/delete after scanning) -->
+    <!-- Signal review modal (shown after scanning a signal) -->
     <div id="signal-review">
       <img id="signal-review-image" alt="Signal payload" />
-      <div id="signal-review-actions">
-        <span id="signal-save-btn">[S] Save Signal</span>
-        <span id="signal-delete-btn">[D] Delete Signal</span>
-      </div>
+      <div id="signal-review-hint">Signal saved to drive — press Q to continue</div>
     </div>
 
     <div id="fade"></div>
