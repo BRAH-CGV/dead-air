@@ -83,6 +83,7 @@ export class FakeWorld {
       // Only meaningful for cuboids; a heightfield collider reports its shape
       // through `heightfield` instead, the way the real API splits them.
       halfExtents: () => ({ ...desc.half }),
+      translation: () => ({ ...desc.t }),
       heightfield: desc.heightfield,
       isSensor: () => sensor,
       setSensor: s => { sensor = s; },

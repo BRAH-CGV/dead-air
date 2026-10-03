@@ -18,6 +18,11 @@ import { terrainHeightAt } from './MarsTerrain.js';
 //   const belt = createMarsVegetation({ ... });
 //   this._outside.addChild(createPerimeterFence({ lanes: belt.lanes, assets }));
 //
+// BaseScene no longer fences the whole compound: it passes `rect: yardRect()`
+// and `openSides: ['S']` for a closed block in front of the building, which
+// keeps the player where the back window can't be seen (see AirlockPortal).
+// The full perimeter, with its lane gates, is still the default.
+//
 // ── Why one rectangle, not the yard's true outline ──
 // BaseYard's cleared ground is a union of rounded shapes — the building shell,
 // the parking apron, the dish track — because scenery wants soft edges. A
@@ -107,6 +112,63 @@ export function perimeterRect() {
 }
 
 /**
+ * The yard block: the ground in front of the building, from one end wall to
+ * the other and out past the parking apron — the airlock's side, where the
+ * generator and the buggy stand. Fenced on three sides; the building's own
+ * front is the fourth (pass `openSides: ['S']`).
+ *
+ * Keeping the player in here is what lets the whole interior go undrawn
+ * while they are outside: the base's only window is in the back wall, which
+ * can't be seen from in front of the building. See AirlockPortal.
+ *
+ * The side runs sit just outside the end walls and start a metre *into* the
+ * building's depth, so they meet the walls with no gap to slip round.
+ *
+ * @param {{halfX: number, halfZ: number}} [footprint]  The building's outer
+ *        half extents — BaseScene passes its live bounds.
+ */
+export function yardRect(footprint = BASE_FOOTPRINT) {
+  const { halfX, halfZ } = footprint;
+  const p = YARD.parking;
+  const outset = FENCE.colliderThickness;
+  const overlap = 1;
+
+  const minX = Math.min(-halfX - outset, p.x - p.halfX);
+  const maxX = Math.max(halfX + outset, p.x + p.halfX);
+  const minZ = halfZ - overlap;
+  const maxZ = p.z + p.halfZ + FENCE.frontBuffer;
+
+  return {
+    minX, maxX, minZ, maxZ,
+    x: (minX + maxX) / 2,
+    z: (minZ + maxZ) / 2,
+    halfX: (maxX - minX) / 2,
+    halfZ: (maxZ - minZ) / 2,
+  };
+}
+
+/**
+ * The bands either side of each fenced run, `clearance` metres out and past
+ * both ends, as boxes — for scenery to keep out of. A tree planted on the
+ * line grows straight through the wire.
+ *
+ * @param {ReturnType<typeof perimeterRect>} rect
+ * @param {{ openSides?: string[], clearance?: number }} [opts]
+ * @returns {Array<{minX: number, maxX: number, minZ: number, maxZ: number}>}  N, S, W, E order
+ */
+export function fenceKeepOut(rect, { openSides = [], clearance = 3 } = {}) {
+  const c = clearance;
+  const along = { minX: rect.minX - c, maxX: rect.maxX + c };
+  const across = { minZ: rect.minZ - c, maxZ: rect.maxZ + c };
+  return [
+    ['N', { ...along, minZ: rect.maxZ - c, maxZ: rect.maxZ + c }],
+    ['S', { ...along, minZ: rect.minZ - c, maxZ: rect.minZ + c }],
+    ['W', { minX: rect.minX - c, maxX: rect.minX + c, ...across }],
+    ['E', { minX: rect.maxX - c, maxX: rect.maxX + c, ...across }],
+  ].filter(([side]) => !openSides.includes(side)).map(([, box]) => box);
+}
+
+/**
  * Build the fence.
  *
  * @param {Object} [opts]
@@ -117,17 +179,20 @@ export function perimeterRect() {
  *        omit to get the rectangle and its gates with no geometry — useful
  *        headless, and for anything that wants to know where the gaps are
  * @param {(x: number, z: number) => number} [opts.heightAt]
+ * @param {ReturnType<typeof perimeterRect>} [opts.rect]  The rectangle to fence;
+ *        defaults to perimeterRect(). `yardRect()` is the block in front of the base.
+ * @param {Array<'N'|'S'|'E'|'W'>} [opts.openSides]  Sides left unfenced — where the
+ *        rectangle backs onto the building, which is its own barrier.
  * @returns {GameObject} a group carrying the fence panels
  */
 export function createPerimeterFence(opts = {}) {
-  const { lanes = [], assets, world, heightAt = terrainHeightAt } = opts;
+  const { lanes = [], assets, world, heightAt = terrainHeightAt, rect = perimeterRect(), openSides = [] } = opts;
 
   const fence = new GameObject('PerimeterFence');
   // A group, so the editor neither lists every panel nor measures a bounding
   // box the width of the compound.
   fence.makeGroup();
 
-  const rect = perimeterRect();
   fence.rect = rect;
 
   const gates = lanes.map(lane => gateFor(lane, rect)).filter(Boolean);
@@ -145,7 +210,7 @@ export function createPerimeterFence(opts = {}) {
     { name: 'N', fixed: rect.maxZ, from: rect.minX, to: rect.maxX, along: 'x', facing: 0 },
     { name: 'W', fixed: rect.minX, from: rect.minZ, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
     { name: 'E', fixed: rect.maxX, from: rect.minZ, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
-  ];
+  ].filter(side => !openSides.includes(side.name));
 
   // The same open runs answer both what to draw and what to collide with, so
   // a gate can never end up solid in one and not the other.

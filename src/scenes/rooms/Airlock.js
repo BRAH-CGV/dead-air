@@ -32,8 +32,11 @@ import { PLAYER_BODY } from '../../components/PlayerBody.js';
 //   pressurising    both shut                         amber
 //
 // The door you are leaving shuts the moment the suit changes; the one ahead
-// opens once the airlock has cycled. Changing your mind mid-cycle runs back
-// only as far as the cycle had got. The room's root carries the ticking
+// opens once the airlock has cycled — and, if `readyFor` is set, once the
+// side beyond it says it is ready (BaseScene's AirlockPortal swaps which
+// half of the base is drawn while both doors are shut, and holds the door
+// until the new half is). Changing your mind mid-cycle runs back only as far
+// as the cycle had got. `onStateChange` reports every state. The room's root carries the ticking
 // component, so the scene drives the cycle like any other GameObject.
 //
 // The locker only works from inside the chamber, clear of both doorways:
@@ -112,7 +115,14 @@ export class Airlock extends Corridor {
     /** Seconds to cycle from one door to the other. */
     this.cycleTime = 2.5;
 
+    /** Gate on the door ahead: `readyFor('outside' | 'inside')` must say yes
+     *  before a finished cycle opens it, so the far side is never opened
+     *  onto before it is drawn. Null opens on the cycle alone.
+     *  @type {((side: 'outside'|'inside') => boolean)|null} */
+    this.readyFor = null;
+
     this._cycleLeft = 0;
+    this._stateListeners = new Set();
     this._lockerUse = null;
     this._beaconLens = null;
     this._offSuit = null;
@@ -189,23 +199,44 @@ export class Airlock extends Corridor {
     if (this._disposed) return;
     if (this.cycling) {
       this._cycleLeft -= dt;
-      if (this._cycleLeft <= 0) this._settle(this.state === 'depressurising');
+      const outward = this.state === 'depressurising';
+      if (this._cycleLeft <= 0 && (this.readyFor?.(outward ? 'outside' : 'inside') ?? true)) {
+        this._settle(outward);
+      }
     }
     this._updateLockerLabel();
+  }
+
+  /** `listener(state)` on every state change — the scene swaps which side
+   *  of the base is drawn on these. @returns {() => void} unsubscribe */
+  onStateChange(listener) {
+    this._stateListeners.add(listener);
+    return () => this._stateListeners.delete(listener);
   }
 
   /** The suit changed: shut both doors and start cycling towards the other
    *  side. A reversal mid-cycle only has to undo the time already run. */
   _cycle(worn) {
-    this._cycleLeft = this.cycling ? this.cycleTime - this._cycleLeft : this.cycleTime;
+    // Overrun while held by readyFor leaves _cycleLeft negative; a reversal
+    // then runs back the whole cycle, never more.
+    const run = Math.min(this.cycleTime, this.cycleTime - this._cycleLeft);
+    this._cycleLeft = this.cycling ? run : this.cycleTime;
     this.state = worn ? 'depressurising' : 'pressurising';
     this._apply();
+    this._emitState();
   }
 
   _settle(worn) {
-    this.state = worn ? 'depressurised' : 'pressurised';
+    const state = worn ? 'depressurised' : 'pressurised';
+    const changed = state !== this.state;
+    this.state = state;
     this._cycleLeft = 0;
     this._apply();
+    if (changed) this._emitState();
+  }
+
+  _emitState() {
+    for (const listener of [...this._stateListeners]) listener(this.state);
   }
 
   /** Put the doors, their prompts and the beacon in step with `state`. */
@@ -258,6 +289,8 @@ export class Airlock extends Corridor {
     this._offSuit = null;
     this.suit = null;
     this.innerDoor = null;
+    this.readyFor = null;
+    this._stateListeners.clear();
     this._disposed = true;
     super.dispose(opts);
   }

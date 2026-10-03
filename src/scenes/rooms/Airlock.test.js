@@ -234,6 +234,66 @@ describe('Airlock', () => {
       airlock.bindInnerDoor(late);
       expect(late.locked).toBe(true);
     });
+
+    describe('readyFor — the door ahead waits for the side beyond it', () => {
+      it('holds the hatch shut past the cycle time until the outside is ready', () => {
+        let outsideReady = false;
+        airlock.readyFor = side => side === 'outside' ? outsideReady : true;
+
+        use.onInteract({});
+        run(airlock, airlock.cycleTime + 1);
+        expect(airlock.state).toBe('depressurising');
+        expect(airlock.hatch.locked).toBe(true);
+        expect(airlock.hatch.lockedPrompt).toBe('Airlock cycling…');
+
+        outsideReady = true;
+        run(airlock, 1 / 60);
+        expect(airlock.state).toBe('depressurised');
+        expect(airlock.hatch.locked).toBe(false);
+      });
+
+      it('holds the inner door shut on the way back in until the inside is ready', () => {
+        let insideReady = true;
+        airlock.readyFor = side => side === 'inside' ? insideReady : true;
+        use.onInteract({});
+        run(airlock, airlock.cycleTime + 0.1);
+
+        insideReady = false;
+        use.onInteract({});
+        run(airlock, airlock.cycleTime + 1);
+        expect(inner.locked).toBe(true);
+
+        insideReady = true;
+        run(airlock, 1 / 60);
+        expect(airlock.state).toBe('pressurised');
+        expect(inner.locked).toBe(false);
+      });
+
+      it('never cuts the cycle short — a side that is already ready still waits the cycle out', () => {
+        airlock.readyFor = () => true;
+        use.onInteract({});
+        run(airlock, airlock.cycleTime - 0.1);
+        expect(airlock.hatch.locked).toBe(true);
+      });
+    });
+
+    it('onStateChange reports each new state, so the scene can swap what is drawn', () => {
+      const states = [];
+      airlock.onStateChange(state => states.push(state));
+      use.onInteract({});
+      run(airlock, airlock.cycleTime + 0.1);
+      use.onInteract({});
+      run(airlock, airlock.cycleTime + 0.1);
+      expect(states).toEqual(['depressurising', 'depressurised', 'pressurising', 'pressurised']);
+    });
+
+    it('onStateChange returns an unsubscribe', () => {
+      const listener = vi.fn();
+      const off = airlock.onStateChange(listener);
+      off();
+      use.onInteract({});
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 
   describe('the suit locker only works from inside the chamber', () => {

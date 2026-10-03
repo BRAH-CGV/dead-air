@@ -252,13 +252,20 @@ export class SuitVisor extends Component {
     return this.gameObject?.scene?.userData?.engine ?? null;
   }
 
-  onStart() {
-    const engine = this._engine;
-    const camera = engine?.camera;
-    if (!camera) return;
-
+  /** The overlay is built on awake — while the scene is built, before the
+   *  boot warm-up — so its shader is compiled with everything else. Built on
+   *  the first frame, it compiled the first time the suit went on instead:
+   *  a one-second freeze in the airlock. */
+  onAwake() {
+    const camera = this._engine?.camera;
+    if (!camera || this.overlay) return;
     this.overlay = this._buildOverlay();
     camera.add(this.overlay);
+  }
+
+  onStart() {
+    const engine = this._engine;
+    if (!this.overlay) return;
 
     if (this.sound) this._useSound(this.sound);
     else this._loadSound(engine);

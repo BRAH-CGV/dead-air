@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 
+// Fake Rapier: the belt builds no colliders of its own, but MarsTerrain (for
+// heights) imports the real WASM module, which won't load under every runner.
+vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
+
+// Several tests grow whole belts; one compares four. Past vitest's 5 s default
+// on a busy machine, as BaseScene.test.js found.
+vi.setConfig({ testTimeout: 30_000 });
+
 import { createMarsVegetation, VEGETATION, TREE_SPECIES } from './MarsVegetation.js';
 import { makeYard, yardDistance, BASE_FOOTPRINT } from './BaseYard.js';
 import { terrainHeightAt } from './MarsTerrain.js';
@@ -330,5 +338,37 @@ describe('determinism', () => {
       .toEqual(bladeX(createMarsVegetation()));
     expect(bladeX(createMarsVegetation()))
       .not.toEqual(bladeX(createMarsVegetation({ seed: 99 })));
+  });
+});
+
+describe('treesClearOf — keeping trees off something the scene built', () => {
+  /** Where each tree stands: the trunk part, whose instance sits at the root. */
+  function trunks(veg) {
+    const out = [];
+    for (const mesh of treesOf(veg)) {
+      if (mesh.geometry.type !== 'CylinderGeometry') continue;
+      for (const { position } of instances(mesh)) out.push(`${position.x.toFixed(3)},${position.z.toFixed(3)}`);
+    }
+    return out;
+  }
+  const inBox = (key, b) => {
+    const [x, z] = key.split(',').map(Number);
+    return x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
+  };
+
+  it('drops the trees standing in a box, and moves no other tree', () => {
+    const all = trunks(createMarsVegetation({ assets: mockAssets() }));
+    const [x, z] = all[0].split(',').map(Number);
+    const box = { minX: x - 4, maxX: x + 4, minZ: z - 4, maxZ: z + 4 };
+
+    const kept = trunks(createMarsVegetation({ assets: mockAssets(), treesClearOf: [box] }));
+    expect(kept.some(k => inBox(k, box))).toBe(false);
+    expect(kept.sort()).toEqual(all.filter(k => !inBox(k, box)).sort());
+  });
+
+  it('leaves the grass alone — blades through a fence read as overgrowth', () => {
+    const plain = createMarsVegetation({});
+    const cleared = createMarsVegetation({ treesClearOf: [{ minX: -100, maxX: 100, minZ: -100, maxZ: 100 }] });
+    expect(grassOf(cleared).count).toBe(grassOf(plain).count);
   });
 });

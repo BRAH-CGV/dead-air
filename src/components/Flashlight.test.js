@@ -20,6 +20,7 @@ function buildPlayer(opts) {
   const go = new GameObject('Player');
   go.scene = { userData: { engine } };
   const torch = go.addComponent(new Flashlight(opts));
+  torch.onAwake();
   torch.onStart();
   return { engine, camera, torch };
 }
@@ -106,6 +107,19 @@ describe('Flashlight', () => {
   it('waits quietly with no engine wired up', () => {
     const torch = new Flashlight();
     new GameObject('Player').addComponent(torch);
-    expect(() => { torch.onStart(); torch.onUpdate(1 / 60); torch.onDestroy(); }).not.toThrow();
+    expect(() => { torch.onAwake(); torch.onStart(); torch.onUpdate(1 / 60); torch.onDestroy(); }).not.toThrow();
+  });
+});
+
+describe('Flashlight timing', () => {
+  it('is on the camera from awake — before the boot warm-up compiles the shaders it changes', () => {
+    // A light added on the first frame instead changes the light count every
+    // lit shader is compiled for, after the warm-up: a full recompile.
+    const camera = new THREE.PerspectiveCamera();
+    const go = new GameObject('Player');
+    go.scene = { userData: { engine: { camera, keyBinds: {}, input: { keys: {}, pressed: {} } } } };
+    const torch = go.addComponent(new Flashlight());
+    torch.onAwake();
+    expect(torch.light.parent).toBe(camera);
   });
 });

@@ -140,6 +140,11 @@ const UP = new THREE.Vector3(0, 1, 0);
  * @param {number[]} [opts.lanes]  extra lane bearings in radians, on top of the
  *        seeded ones — pass the direction of anything that must stay drivable
  * @param {(x: number, z: number) => number} [opts.heightAt]
+ * @param {Array<{minX: number, maxX: number, minZ: number, maxZ: number}>} [opts.treesClearOf]
+ *        boxes no tree may stand in — the bands either side of a fence, say
+ *        (PerimeterFence.fenceKeepOut). Trees there are dropped after the belt
+ *        is laid out, so every other tree stands exactly where it would have.
+ *        Grass is left alone: blades through a fence read as overgrowth.
  * @returns {GameObject} a group carrying the grass and one mesh per tree part
  */
 export function createMarsVegetation(opts = {}) {
@@ -151,6 +156,7 @@ export function createMarsVegetation(opts = {}) {
     keepClear   = [],
     lanes: extraLanes = [],
     heightAt    = terrainHeightAt,
+    treesClearOf = [],
   } = opts;
 
   const rand  = makeRandom(seed);
@@ -171,7 +177,8 @@ export function createMarsVegetation(opts = {}) {
   const site      = { zones, yardAt, lanes, clearings, groves, noise, heightAt };
 
   const blades = plantGrass(site, rand);
-  const trees  = plantTrees(site, rand);
+  const trees  = plantTrees(site, rand).filter(({ position: { x, z } }) =>
+    !treesClearOf.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ));
 
   const time = { value: 0 };
   if (blades.length > 0) {

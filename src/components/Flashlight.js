@@ -56,9 +56,13 @@ export class Flashlight extends Component {
     return this.gameObject?.scene?.userData?.engine ?? null;
   }
 
-  onStart() {
+  /** On awake, not start: awake runs while the scene is built, before the
+   *  boot warm-up compiles every shader. A light added on the first frame
+   *  instead changes the light count after that, and every lit shader
+   *  recompiles. */
+  onAwake() {
     const camera = this._engine?.camera;
-    if (!camera) return;
+    if (!camera || this.light) return;
 
     // decay 2 is physical inverse-square falloff — the reason the beam fades
     // out fast instead of carrying evenly to `distance`.

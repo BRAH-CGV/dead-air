@@ -17,6 +17,7 @@ import { EVASuit } from '../components/EVASuit.js';
 import { PRELOAD } from '../assets/manifest.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { hiddenFromRegion } from '../systems/Sightlines.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -682,5 +683,256 @@ describe('BaseScene gameplay loop', () => {
       .map(ui => vi.spyOn(ui, 'hide'));
     scene.dispose();
     for (const spy of hidden) expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene occlusion — the airlock decides which side is drawn', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  /** Every Object3D in a zone, and everything under them. */
+  function zoneContents(name) {
+    const out = new Set();
+    for (const obj of scene.zones.objects(name)) obj.traverse(o => out.add(o));
+    return out;
+  }
+  const named = (root, name) => root.getObjectByName(name);
+
+  it('has the interior and yard zones, plus one for what nobody can see', () => {
+    expect(scene.zones.names().sort()).toEqual(['interior', 'unseen', 'yard']);
+  });
+
+  it('the interior zone holds the rooms\' furnishings', () => {
+    const interior = zoneContents('interior');
+    const office = scene.rooms.MainOffice.root.object3d;
+    for (const prop of ['ComputerDesk', 'VendingMachine', 'WindowFrame_Top']) {
+      expect(interior.has(named(office, prop)), prop).toBe(true);
+    }
+  });
+
+  it('never the shell or the doors — those are the building as seen from outside', () => {
+    const interior = zoneContents('interior');
+    for (const room of [scene.rooms.MainOffice, scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
+      room.root.object3d.traverse((o) => {
+        if (/^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name)) {
+          expect(interior.has(o), `${room.name}/${o.name}`).toBe(false);
+        }
+      });
+      for (const door of room.doors) expect(interior.has(door.object3d), door.name).toBe(false);
+    }
+  });
+
+  it('never a light, in either zone — hiding one recompiles every lit shader', () => {
+    for (const name of scene.zones.names()) {
+      for (const o of zoneContents(name)) expect(o.isLight, `${name}: ${o.name}`).toBeFalsy();
+    }
+  });
+
+  it('leaves the airlock out of the interior — it is the one room seen from both sides', () => {
+    const interior = zoneContents('interior');
+    expect(interior.has(named(scene.rooms.Airlock.root.object3d, 'SuitLocker'))).toBe(false);
+  });
+
+  it('the yard zone holds what stands in front of the building', () => {
+    const yard = zoneContents('yard');
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    expect(yard.has(outside.find('Generator').object3d)).toBe(true);
+  });
+
+  it('but not what the back window looks out on — the dish, its pad, the valley', () => {
+    const yard = zoneContents('yard');
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    for (const name of ['Satellite', 'DishPad', 'MarsTerrain']) {
+      const go = outside.find(name);
+      expect(go, name).not.toBeNull();
+      expect(yard.has(go.object3d), name).toBe(false);
+    }
+  });
+
+  it('splits instanced scenery along the window\'s sightline: every yard instance is out of view of the glass', () => {
+    const windowZ = -4.9;   // the office back wall's inner face
+    const yardMeshes = [...zoneContents('yard')].filter(o => o.isInstancedMesh);
+    expect(yardMeshes.length).toBeGreaterThan(0);
+
+    const m = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    for (const mesh of yardMeshes) {
+      mesh.updateWorldMatrix(true, false);
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        p.setFromMatrixPosition(m.premultiply(mesh.matrixWorld));
+        expect(p.z, mesh.name).toBeGreaterThan(windowZ);
+      }
+    }
+  });
+
+  it('fences the outside into a block on the airlock side, so the back window is out of reach', () => {
+    const { rect } = scene.fence;
+    const footprint = scene._baseFootprint();
+    expect(rect.minX).toBeLessThan(-footprint.halfX);
+    expect(rect.maxX).toBeGreaterThan(footprint.halfX);
+    expect(rect.minZ).toBeGreaterThan(0);     // the block starts in front of the office's middle
+    // The hatch opens into it.
+    const hatch = worldPos(scene.rooms.Airlock.hatch);
+    expect(hatch.z).toBeGreaterThan(rect.minZ);
+    expect(hatch.z).toBeLessThan(rect.maxZ);
+  });
+
+  it('wires an AirlockPortal to the airlock and the zones', () => {
+    expect(scene.portal.airlock).toBe(scene.rooms.Airlock);
+    expect(scene.portal.zones).toBe(scene.zones);
+  });
+
+  it('starts with the yard hidden and the interior drawn once the portal starts', () => {
+    scene.portal.onStart();
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    expect(outside.find('Generator').object3d.visible).toBe(false);
+    expect(named(scene.rooms.MainOffice.root.object3d, 'ComputerDesk').visible).toBe(true);
+  });
+
+  it('dispose shows everything again, so nothing stays hidden into the next scene', () => {
+    scene.portal.onStart();
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    const generator = outside.find('Generator').object3d;
+    scene.dispose();
+    expect(generator.visible).toBe(true);
+  });
+});
+
+describe('BaseScene occlusion — the building hides what is low behind it from the yard', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  const instancedIn = name => {
+    const out = [];
+    for (const obj of scene.zones.objects(name)) obj.traverse(o => { if (o.isInstancedMesh) out.push(o); });
+    return out;
+  };
+  const instanceSpheres = (mesh) => {
+    mesh.updateWorldMatrix(true, false);
+    mesh.geometry.computeBoundingSphere();
+    const out = [];
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, m);
+      out.push(mesh.geometry.boundingSphere.clone().applyMatrix4(m.premultiply(mesh.matrixWorld)));
+    }
+    return out;
+  };
+
+  it('works out the occluders — one per room and corridor, never the airlock — and where the yard sees from', () => {
+    const { occluders, eyes } = scene.yardView;
+    const parts = [scene.rooms.MainOffice, scene.rooms.ServerRoom, scene.rooms.LivingQuarters, ...Object.values(scene.corridors)];
+    expect(occluders).toHaveLength(parts.length);
+
+    // Each inside its own part: an occluder may under-hide, never over-hide.
+    occluders.forEach((box, i) => {
+      expect(parts[i].bounds().containsBox(box), parts[i].name).toBe(true);
+      expect(box.max.y).toBeLessThan(parts[i].height);
+    });
+    // Flush where they join, so the union has no gap to see through: the
+    // office's right edge is the corridor's left edge, and so on.
+    const office = occluders[0];
+    const toServer = occluders[3];
+    expect(toServer.min.x).toBeCloseTo(office.max.x);
+
+    // The eyes: in front of every occluder, up to the top of a jump, and only
+    // where the capsule can actually stand inside the fence.
+    for (const box of occluders) expect(eyes.min.z).toBeGreaterThan(box.max.z);
+    expect(eyes.max.y).toBeGreaterThanOrEqual(2.4);
+    expect(eyes.max.x).toBeLessThan(scene.fence.rect.maxX);
+  });
+
+  it('scenery the window sees but the yard cannot joins the interior zone — drawn only from inside', () => {
+    const { occluders: occluder, eyes } = scene.yardView;
+    const behind = instancedIn('interior');
+    expect(behind.length).toBeGreaterThan(0);
+    for (const mesh of behind) {
+      for (const sphere of instanceSpheres(mesh)) {
+        expect(hiddenFromRegion(sphere, eyes, occluder), mesh.name).toBe(true);
+      }
+    }
+  });
+
+  it('what neither side can ever see goes in an unseen zone that stays hidden', () => {
+    expect(scene.zones.names()).toContain('unseen');
+    scene.portal.onStart();
+    expect(scene.zones.isVisible('unseen')).toBe(false);
+    scene.suit.putOn();
+    expect(scene.zones.isVisible('unseen')).toBe(false);
+  });
+
+  it('the dish stands over the roof, so it is drawn from both sides', () => {
+    const satellite = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside').find('Satellite');
+    for (const name of scene.zones.names()) {
+      for (const obj of scene.zones.objects(name)) {
+        let inZone = false;
+        obj.traverse(o => { if (o === satellite.object3d) inZone = true; });
+        expect(inZone, name).toBe(false);
+      }
+    }
+  });
+});
+
+describe('BaseScene occlusion — only worth a draw call when it saves real work', () => {
+  it('never splits off an inside-only or unseen part of fewer than 8k triangles', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    for (const name of ['interior', 'unseen']) {
+      for (const obj of scene.zones.objects(name)) {
+        if (!obj.isInstancedMesh) continue;
+        const g = obj.geometry;
+        const tris = (g.index ? g.index.count : g.attributes.position.count) / 3 * obj.count;
+        expect(tris, `${name}: ${obj.name}`).toBeGreaterThanOrEqual(8000);
+      }
+    }
+  });
+});
+
+describe('BaseScene trees and the fence', () => {
+  it('stands no tree within 3 m of a fence run — none grows through the wire', () => {
+    const engine = makeSceneEngine();
+    // A two-part stand-in tree, so the belt actually plants trees.
+    const tree = new THREE.Group();
+    tree.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 4), new THREE.MeshStandardMaterial()));
+    const canopy = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5), new THREE.MeshStandardMaterial());
+    canopy.position.y = 3;
+    tree.add(canopy);
+    engine.assets.get = vi.fn(key => (key.startsWith('model:tree-') ? { scene: tree } : null));
+    engine.assets.getCollision = vi.fn(() => ({ bounds: { size: [3, 4, 3], center: [0, 2, 0] } }));
+
+    const scene = new BaseScene(engine);
+    scene.build();
+    const { rect } = scene.fence;
+    const near = (x, z) =>
+      (Math.abs(z - rect.maxZ) < 3 && x > rect.minX - 3 && x < rect.maxX + 3)
+      || ((Math.abs(x - rect.minX) < 3 || Math.abs(x - rect.maxX) < 3) && z > rect.minZ - 3 && z < rect.maxZ + 3);
+
+    const outside = engine._rootObjects.find(go => go.name === 'SceneRoot').find('Outside');
+    let trunks = 0;
+    const m = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+    outside.object3d.traverse((mesh) => {
+      if (!mesh.isInstancedMesh || mesh.geometry.type !== 'CylinderGeometry') return;
+      mesh.updateWorldMatrix(true, false);
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        p.setFromMatrixPosition(m.premultiply(mesh.matrixWorld));
+        trunks++;
+        expect(near(p.x, p.z), `tree at ${p.x.toFixed(1)}, ${p.z.toFixed(1)}`).toBe(false);
+      }
+    });
+    expect(trunks).toBeGreaterThan(50);   // the belt really was planted
   });
 });

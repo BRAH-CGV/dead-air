@@ -25,6 +25,17 @@ export class LoadingScreen {
     }
   }
 
+  /** Name a stage after the asset download — 'Preparing scene…' — with its
+   *  own 0..1 progress, so a bar that refills reads as work, not a hang.
+   *  @param {string} label
+   *  @param {number} [fraction] */
+  setStage(label, fraction) {
+    if (this.label) this.label.textContent = label;
+    if (fraction !== undefined && this.bar) {
+      this.bar.style.width = `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
+    }
+  }
+
   /** Replace the bar with an error, and leave the overlay up. */
   fail(message) {
     if (!this.root) return;
@@ -34,9 +45,15 @@ export class LoadingScreen {
     console.error(message);
   }
 
-  /** Fade out and remove from the layout, so it stops eating pointer events. */
-  hide() {
+  /** Fade out and remove from the layout, so it stops eating pointer events.
+   *  `immediate` drops it at once — for when a black fade already covers it.
+   *  @param {{ immediate?: boolean }} [opts] */
+  hide({ immediate = false } = {}) {
     if (!this.root) return;
+    if (immediate) {
+      this.root.style.display = 'none';
+      return;
+    }
     this.root.classList.add('is-hidden');
     setTimeout(() => { this.root.style.display = 'none'; }, 400);
   }
