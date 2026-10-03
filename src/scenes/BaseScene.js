@@ -281,6 +281,7 @@ export class BaseScene extends Scene {
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
     this.terminal.reviewPanel   = this.reviewPanel;
+    this.terminal.crosshair     = this.engine.crosshair;
 
     // The desk is a room prop, so it is found through the room rather than
     // the scene root. MainOffice deliberately leaves it without an

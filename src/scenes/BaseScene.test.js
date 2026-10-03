@@ -533,6 +533,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
     expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
+    expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
   });
 
   it('runs the game controller as a component under SceneRoot, so it ticks', () => {

@@ -45,6 +45,8 @@ export class ComputerTerminal extends Component {
   radar = null;
   /** @type {import('../ui/HUD.js').SignalReviewPanel|null} */
   reviewPanel = null;
+  /** @type {import('../ui/Crosshair.js').Crosshair|null} */
+  crosshair = null;
 
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
@@ -183,11 +185,16 @@ export class ComputerTerminal extends Component {
     this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
+    // Restore the first-person reticle now that the terminal is closed.
+    this.crosshair?.show();
   }
 
   _enterRadar() {
     this.state = 'radar';
     this._setInputLocked(true);
+    // Hide the first-person reticle while the terminal is open — the radar
+    // overlay has its own cursor.
+    this.crosshair?.hide();
     this.radar?.show();
     this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
     this.radar?.setInfo('');

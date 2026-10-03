@@ -80,6 +80,13 @@ function makeReviewPanel() {
   };
 }
 
+function makeCrosshair() {
+  return {
+    show: vi.fn(), hide: vi.fn(),
+    setActive: vi.fn(),
+  };
+}
+
 /** Skip the appearance schedule — every signal fully faded in. The
  *  scheduling itself is covered in SignalManager.test.js; these tests
  *  exercise the terminal against revealed signals. */
@@ -93,7 +100,7 @@ function revealAll(mgr) {
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('ComputerTerminal', () => {
-  let term, sat, mgr, hud, radar, review;
+  let term, sat, mgr, hud, radar, review, crosshair;
 
   beforeEach(() => {
     term   = new ComputerTerminal();
@@ -102,12 +109,14 @@ describe('ComputerTerminal', () => {
     hud    = makeHUD();
     radar  = makeRadar();
     review = makeReviewPanel();
+    crosshair = makeCrosshair();
 
     term.satellite    = sat;
     term.signalManager = mgr;
     term.hud          = hud;
     term.radar        = radar;
     term.reviewPanel  = review;
+    term.crosshair    = crosshair;
 
     mgr.startNight(1);  // required=3, 5 signals
     revealAll(mgr);     // hide the appearance schedule from these tests
@@ -125,6 +134,17 @@ describe('ComputerTerminal', () => {
     term.enter();
     expect(term.state).toBe('radar');
     expect(radar.show).toHaveBeenCalled();
+  });
+
+  it('hides the first-person crosshair when the terminal opens', () => {
+    term.enter();
+    expect(crosshair.hide).toHaveBeenCalled();
+  });
+
+  it('restores the crosshair when the terminal closes', () => {
+    term.enter();
+    term.exit();
+    expect(crosshair.show).toHaveBeenCalled();
   });
 
   it('enter does nothing if not idle', () => {

@@ -132,6 +132,7 @@ export class OfficeScene extends Scene {
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
     this.terminal.reviewPanel   = this.reviewPanel;
+    this.terminal.crosshair     = this.engine.crosshair;
 
     // Attach the terminal and its Interactable to the computer model.
     // The computer is the first child of _office (spawned in _addOfficeFurniture).
