@@ -75,9 +75,37 @@ export class RadarOverlay {
     this._ctx    = this._canvas?.getContext('2d')        ?? null;
     this._info   = root?.querySelector('#radar-info')    ?? null;
     this._hint   = root?.querySelector('#radar-hint')    ?? null;
-    this._radius = this._canvas ? this._canvas.width / 2 : 200;
-    this._cx     = this._radius;
-    this._cy     = this._radius;
+    this._resizeHandler = null;
+    this._resize();
+    // Resize when the window changes
+    if (typeof window !== 'undefined') {
+      this._resizeHandler = () => this._resize();
+      window.addEventListener('resize', this._resizeHandler);
+    }
+  }
+
+  /** Recompute the canvas size and internal metrics. Called on construction
+   *  and on window resize. The overlay fills the smaller of the window's
+   *  width or height, leaving a margin for the text below. */
+  _resize() {
+    if (!this._canvas) {
+      // Fallback for tests / no DOM
+      this._radius = 200;
+      this._cx = 200;
+      this._cy = 200;
+      return;
+    }
+    // Leave room for the info/hint text below the canvas
+    const margin = 80;
+    const size = typeof window !== 'undefined'
+      ? Math.min(window.innerWidth, window.innerHeight) - margin
+      : 400;
+    // Clamp to a reasonable range
+    this._canvas.width = Math.max(200, Math.min(size, 1200));
+    this._canvas.height = this._canvas.width;
+    this._radius = this._canvas.width / 2;
+    this._cx = this._radius;
+    this._cy = this._radius;
   }
 
   show() { if (this.root) this.root.style.display = 'flex'; }
@@ -160,10 +188,18 @@ export class RadarOverlay {
     }
 
     // The Milky Way — one soft stroke along its visible great circle,
-    // breaking wherever it dips under the horizon (NaN samples).
+    // breaking wherever it dips under the horizon (NaN samples). The stroke
+    // uses a radial gradient so the band fades out smoothly as it approaches
+    // the edge, rather than popping in/out at the hard clip.
     const bandAlpha = Math.min(0.3, b.bandIntensity * 2.5) * (1 - b.dawn);
     if (bandAlpha > 0.01) {
-      ctx.strokeStyle = `rgba(${b.bandBase}, ${bandAlpha.toFixed(3)})`;
+      const bandGradient = ctx.createRadialGradient(
+        this._cx, this._cy, maxR * 0.5,
+        this._cx, this._cy, maxR * 0.9,
+      );
+      bandGradient.addColorStop(0, `rgba(${b.bandBase}, ${bandAlpha.toFixed(3)})`);
+      bandGradient.addColorStop(1, `rgba(${b.bandBase}, 0)`);
+      ctx.strokeStyle = bandGradient;
       ctx.lineWidth = Math.max(2, b.bandWidthRad * pxPerRad);
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -188,6 +224,20 @@ export class RadarOverlay {
       ctx.arc(p.x, p.y, Math.max(3, moon.angularRadius * pxPerRad), 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Soft fade at the edge — a radial gradient overlay that hides the hard
+    // clip. Fades from transparent at 85% of the radius to the background
+    // color at the rim, so stars and the Milky Way fade out smoothly rather
+    // than popping in/out.
+    const fadeInner = 0.85;
+    const gradient = ctx.createRadialGradient(
+      this._cx, this._cy, maxR * fadeInner,
+      this._cx, this._cy, maxR,
+    );
+    gradient.addColorStop(0, 'rgba(10, 15, 25, 0)');
+    gradient.addColorStop(1, 'rgba(10, 15, 25, 0.92)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(this._cx - maxR, this._cy - maxR, maxR * 2, maxR * 2);
 
     ctx.restore();
   }
@@ -247,6 +297,10 @@ export class RadarOverlay {
     const cx = this._cx;
     const cy = this._cy;
     const maxR = this._radius * 0.85;
+    // Scale factor: the original canvas was 400×400 (radius 200). Scale all
+    // stroke widths and element sizes proportionally so the overlay looks
+    // the same at any size.
+    const s = r / 200;
 
     // Clear
     ctx.clearRect(0, 0, r * 2, r * 2);
@@ -257,7 +311,7 @@ export class RadarOverlay {
     ctx.fillStyle = 'rgba(10, 15, 25, 0.92)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(0, 200, 180, 0.3)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * s;
     ctx.stroke();
 
     // The real sky, faintly: stars, the Milky Way and both moons, read
@@ -289,7 +343,7 @@ export class RadarOverlay {
       ctx.beginPath();
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 200, 60, 0.25)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 * s;
       ctx.stroke();
     }
 
@@ -311,7 +365,7 @@ export class RadarOverlay {
       ctx.beginPath();
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(0, 200, 180, 0.22)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 * s;
       ctx.stroke();
       ctx.restore();
 
@@ -322,16 +376,16 @@ export class RadarOverlay {
       ctx.moveTo(c.x, c.y);
       ctx.lineTo(aim.x, aim.y);
       ctx.strokeStyle = 'rgba(120, 190, 180, 0.45)';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * s;
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 2, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, 2 * s, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(120, 190, 180, 0.5)';
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(aim.x, aim.y, 2.5, 0, Math.PI * 2);
+      ctx.arc(aim.x, aim.y, 2.5 * s, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(120, 190, 180, 0.55)';
       ctx.fill();
     }
@@ -344,7 +398,7 @@ export class RadarOverlay {
       const pos = this._skyToCanvas(sig.yaw, sig.pitch);
 
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 5 * s, 0, Math.PI * 2);
       ctx.fillStyle = this._blipColor(sig);
       ctx.fill();
     }
@@ -354,9 +408,9 @@ export class RadarOverlay {
       const hPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
       const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
       ctx.beginPath();
-      ctx.arc(hPos.x, hPos.y, 10 + pulse * 3, 0, Math.PI * 2);
+      ctx.arc(hPos.x, hPos.y, (10 + pulse * 3) * s, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(0, 255, 230, ${0.3 + pulse * 0.3})`;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * s;
       ctx.stroke();
     }
 
@@ -364,9 +418,9 @@ export class RadarOverlay {
     if (scanProgress >= 0 && hoveredSignal) {
       const sPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
       ctx.beginPath();
-      ctx.arc(sPos.x, sPos.y, 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * scanProgress);
+      ctx.arc(sPos.x, sPos.y, 14 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * scanProgress);
       ctx.strokeStyle = 'rgba(0, 255, 200, 0.9)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * s;
       ctx.stroke();
     }
 
@@ -376,29 +430,36 @@ export class RadarOverlay {
     ctx.moveTo(cx, cy);
     ctx.lineTo(dish.x, dish.y);
     ctx.strokeStyle = 'rgba(255, 200, 60, 0.7)';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * s;
     ctx.stroke();
 
+    // Origin dot — matches the neighbour origin dots
     ctx.beginPath();
-    ctx.arc(dish.x, dish.y, 4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 2 * s, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 200, 60, 0.6)';
+    ctx.fill();
+
+    // Aim dot
+    ctx.beginPath();
+    ctx.arc(dish.x, dish.y, 4 * s, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 200, 60, 0.9)';
     ctx.fill();
 
     // Cursor indicator — crosshair at the Cartesian cursor position
     const curX = this._cx + cursorX * maxR;
     const curY = this._cy - cursorY * maxR;
-    const cSize = 8;
+    const cSize = 8 * s;
     ctx.beginPath();
     ctx.moveTo(curX - cSize, curY); ctx.lineTo(curX + cSize, curY);
     ctx.moveTo(curX, curY - cSize); ctx.lineTo(curX, curY + cSize);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * s;
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(curX, curY, 3, 0, Math.PI * 2);
+    ctx.arc(curX, curY, 3 * s, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * s;
     ctx.stroke();
   }
 }

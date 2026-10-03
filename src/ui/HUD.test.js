@@ -240,6 +240,11 @@ describe('RadarOverlay sky backdrop', () => {
       save:      ()    => calls.push({ op: 'save' }),
       restore:   ()    => calls.push({ op: 'restore' }),
       clip:      ()    => calls.push({ op: 'clip' }),
+      fillRect:  (...a) => calls.push({ op: 'fillRect', a, style: ctx.fillStyle }),
+      createRadialGradient: (...a) => {
+        const grad = { isGradient: true, args: a, addColorStop: () => {} };
+        return grad;
+      },
     };
     return { ctx, calls };
   }
@@ -255,8 +260,9 @@ describe('RadarOverlay sky backdrop', () => {
   const draw = (overlay) => overlay.update([], 0, -0.5, 0, 0, null, -1, [], null);
 
   const starFills   = (calls, base) => calls.filter(c => c.op === 'fill' && c.style.startsWith(`rgba(${base},`));
-  const bandStrokes = (calls, base) => calls.filter(c => c.op === 'stroke' && c.style.startsWith(`rgba(${base},`));
-  const smallArcs   = (calls) => calls.filter(c => c.op === 'arc' && c.a[2] < 2.1);
+  const bandStrokes = (calls, base) => calls.filter(c => c.op === 'stroke' && (c.style?.isGradient || c.style?.startsWith?.(`rgba(${base},`)));
+  // Small arcs are star dots — exclude the origin dot at the center (cx, cy)
+  const smallArcs   = (calls) => calls.filter(c => c.op === 'arc' && c.a[2] < 2.1 && (Math.abs(c.a[0] - 200) > 1 || Math.abs(c.a[1] - 200) > 1));
 
   it('draws the sky\'s stars, band and moons faintly, under the grid', () => {
     const sky = createMarsSky({ starCount: 60 });

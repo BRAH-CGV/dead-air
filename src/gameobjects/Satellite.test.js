@@ -372,9 +372,9 @@ describe('Satellite', () => {
   it('aimAll re-targets the local dish and every neighbour that covers the point', () => {
     const { sat } = makeArrayed();
     const west = sat.neighbours[1];
-    west.targetYaw = 1.5;                // something to hold on to
-    west.targetPitch = -0.2;
-    const p = cursorToSky(0.3, 0);       // cursor radius 0.3 — inside the local reach
+    west.currentYaw = 1.5;             // start pose — where it will stop
+    west.currentPitch = -0.2;
+    const p = cursorToSky(0.3, 0);     // cursor radius 0.3 — inside the local reach
 
     sat.aimAll(p.yaw, p.pitch);
 
@@ -382,21 +382,40 @@ describe('Satellite', () => {
     expect(sat.targetPitch).toBeCloseTo(p.pitch);
     expect(sat.neighbours[0].targetYaw).toBeCloseTo(p.yaw);    // 0.2 away → follows
     expect(sat.neighbours[0].targetPitch).toBeCloseTo(p.pitch);
-    expect(west.targetYaw).toBeCloseTo(1.5);                   // 0.8 away → holds
+    expect(west.targetYaw).toBeCloseTo(1.5);                   // 0.8 away → stops where it is
     expect(west.targetPitch).toBeCloseTo(-0.2);
   });
 
-  it('the local dish holds its aim once the cursor leaves its reach', () => {
+  it('the local dish stops where it is once the cursor leaves its reach', () => {
     const { sat } = makeArrayed();
     const p = cursorToSky(0.8, 0);       // cursor radius 0.8 — beyond the local reach (0.75)
 
     sat.aimAll(p.yaw, p.pitch);
 
-    expect(sat.targetYaw).toBeCloseTo(0);                      // held at the last in-reach aim
-    expect(sat.targetPitch).toBeCloseTo(-1.0);
+    expect(sat.targetYaw).toBeCloseTo(0);                      // stops where it is (currentYaw)
+    expect(sat.targetPitch).toBeCloseTo(-1.0);                 // stops where it is (currentPitch)
     expect(sat.neighbours[0].targetYaw).toBeCloseTo(p.yaw);    // the east neighbour reaches it
     expect(sat.neighbours[0].targetPitch).toBeCloseTo(p.pitch);
-    expect(sat.neighbours[1].targetYaw).toBeCloseTo(0);        // fresh rig: targets on its start pose
+    expect(sat.neighbours[1].targetYaw).toBeCloseTo(0);        // fresh rig: stops at start pose
+  });
+
+  it('a dish that loses the cursor decelerates smoothly with momentum', () => {
+    const { sat } = makeArrayed();
+    // Give the dish a velocity (it was tracking the cursor)
+    sat.rig.velYaw = 0.5;
+    sat.rig.velPitch = -0.2;
+    const p = cursorToSky(0.8, 0);       // cursor leaves the local reach
+
+    sat.aimAll(p.yaw, p.pitch);          // target becomes current position
+
+    // The dish should decelerate, not stop instantly
+    expect(sat.rig.velYaw).toBe(0.5);    // velocity unchanged by aimAll
+    expect(sat.rig.velPitch).toBe(-0.2);
+
+    // After a few ticks, velocity decays through damping
+    for (let i = 0; i < 10; i++) sat._update(1 / 60);
+    expect(Math.abs(sat.rig.velYaw)).toBeLessThan(0.5);
+    expect(Math.abs(sat.rig.velPitch)).toBeLessThan(0.2);
   });
 
   it('_update ticks every neighbour rig alongside the local tower', () => {

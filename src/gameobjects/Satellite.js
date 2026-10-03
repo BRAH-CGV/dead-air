@@ -180,12 +180,24 @@ export class Satellite extends GameObject {
   /** Aim the whole array at a sky direction — the cursor's shared aim
    *  point. Every dish, local included, re-targets only while the point
    *  lies inside its section; a dish whose section doesn't contain the
-   *  point holds its last target. aimAt stays unconditional — it is the
-   *  low-level "point there" used for cutscenes and tests. */
+   *  point stops where it is (target set to current position, velocity
+   *  decays naturally through damping — smooth deceleration, not a hard
+   *  stop). aimAt stays unconditional — it is the low-level "point there"
+   *  used for cutscenes and tests. */
   aimAll(yaw, pitch) {
-    if (this.rig.covers(yaw, pitch)) this.rig.aimAt(yaw, pitch);
+    if (this.rig.covers(yaw, pitch)) {
+      this.rig.aimAt(yaw, pitch);
+    } else {
+      // Cursor left the circle — stop where we are with momentum
+      this.rig.aimAt(this.rig.currentYaw, this.rig.currentPitch);
+    }
     for (const rig of this.neighbours) {
-      if (rig.covers(yaw, pitch)) rig.aimAt(yaw, pitch);
+      if (rig.covers(yaw, pitch)) {
+        rig.aimAt(yaw, pitch);
+      } else {
+        // Cursor left the circle — stop where we are with momentum
+        rig.aimAt(rig.currentYaw, rig.currentPitch);
+      }
     }
   }
 
