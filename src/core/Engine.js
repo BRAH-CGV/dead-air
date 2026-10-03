@@ -89,6 +89,9 @@ export class Engine {
   devTools = true;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();
+  /** Resolves once the loading screen is gone and the game is on show —
+   *  the moment the main menu can appear. @type {Promise<void>} */
+  revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
 
   // ── Input ─────────────────────────────────
   // Touchpads can occasionally emit one huge movement event. Cap each raw
@@ -328,6 +331,7 @@ export class Engine {
   _reveal() {
     this.screenFade.fadeIn(1500);
     this.loadingScreen.hide({ immediate: true });
+    this._resolveRevealed();
   }
 
   /** Free every GPU resource we own. Call before rebuilding a level, so

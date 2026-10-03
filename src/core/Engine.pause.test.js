@@ -149,3 +149,19 @@ describe('Engine devTools gate', () => {
     expect(engine.debugKeysActive).toBe(false);
   });
 });
+
+describe('Engine revealed', () => {
+  it('resolves once the loading screen has been taken away', async () => {
+    const engine = new Engine();
+    engine.screenFade = { fadeIn: vi.fn() };
+    engine.loadingScreen = { hide: vi.fn() };
+    let revealed = false;
+    engine.revealed.then(() => { revealed = true; });
+    await Promise.resolve();
+    expect(revealed).toBe(false);
+    engine._reveal();
+    await Promise.resolve();
+    expect(revealed).toBe(true);
+    expect(engine.loadingScreen.hide).toHaveBeenCalled();
+  });
+});

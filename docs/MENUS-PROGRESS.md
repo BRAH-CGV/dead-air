@@ -8,7 +8,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 0: set up and orient
 - [x] Phase 1: pause core
 - [x] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
-- [ ] Phase 3: menus on screen
+- [x] Phase 3: menus on screen (App also carries Phase 4's rebuild / restart / quit paths)
 - [ ] Phase 4: restart and memory
 - [ ] Phase 5: settings
 - [ ] Phase 6: credits and end states
@@ -41,6 +41,13 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **`AppFlow.restartPaused()`.** If the pointer lock is refused after Restart or Retry, the rebuilt night waits on the pause screen with the "click RESUME again" hint. It doesn't fall back to the screen it came from.
 - **Credits are reachable only from the main menu** (per §3.1). `openCredits()` is a no-op on other screens.
 - **The task doc isn't committed.** It was pasted into the session and isn't on any branch. This log records everything a resume needs.
+
+- **`engine.revealed` (a Promise resolved in `_reveal()`).** `init()` now resolves *before* the loading screen goes, because the frame-settle wait comes after it. `App.start()` awaits `revealed` before the main menu appears, so the menu never covers "Almost there…".
+- **`#fade` moved from z-index 101 to 200, above the menu (150).** Each rebuild fade then covers the screen swap, the reveal fades the menu in with the scene, and Run complete appears as the bed's sleep fade clears.
+- **Restart and Main menu landed in Phase 3, not Phase 4.** The pause menu's buttons need somewhere to go. `App.rebuild()` turns off the fly camera and fullbright, unsubscribes the old controller, calls `loadScene(activeScene.constructor)` and marks the flow clean.
+- **Rebuild without a fade if one is already running** (`ScreenFade.play` returns false, e.g. the bed's). Rebuilding without a fade beats not rebuilding at all.
+- **The fade is `engine.screenFade`**, the same instance the reveal uses. Its `playing` flag then guards both.
+- **No browser tool was available in this session**, so §10 is left for a human (see QA results).
 
 ## Needs a human
 
