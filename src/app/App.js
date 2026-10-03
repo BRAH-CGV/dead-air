@@ -31,7 +31,9 @@ import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
-import { TAGLINE, COPY } from '../ui/menu/text.js';
+import { TAGLINE, TEAM, COPY } from '../ui/menu/text.js';
+import { buildCreditBlocks, creditWarnings } from '../ui/menu/credits.js';
+import attributionsMd from '../../ATTRIBUTIONS.md?raw';
 import { version as PACKAGE_VERSION } from '../../package.json';
 
 /** body[data-app] per flow state — index.html hides the gameplay overlays
@@ -54,6 +56,7 @@ export class App {
    * @param {Storage|null} [deps.storage]  Where settings persist
    * @param {boolean} [deps.devToolsDefault]  On in `npm run dev`, off in the build
    * @param {SettingsStore} [deps.settings]
+   * @param {boolean} [deps.dev]  Dev build: unconfirmed credits show, and warn
    * @param {Document} [deps.doc]
    * @param {Window} [deps.win]
    */
@@ -65,6 +68,7 @@ export class App {
     storage = safeLocalStorage(),
     devToolsDefault = !!import.meta.env?.DEV,
     settings = null,
+    dev = !!import.meta.env?.DEV,
     doc = document,
     win = window,
   } = {}) {
@@ -84,6 +88,10 @@ export class App {
         devTools: devToolsDefault,
       },
     });
+    this.dev = dev;
+    // Parsed once: ATTRIBUTIONS.md is inlined at build time (?raw), so a new
+    // entry there reaches the credits on the next build.
+    this._creditBlocks = buildCreditBlocks({ markdown: attributionsMd, team: TEAM, dev });
     this._settingsTab = 'game';
     this._settingsMessage = '';
     /** The action waiting for a key on the CONTROLS tab, or null. */
@@ -106,6 +114,9 @@ export class App {
   async start() {
     const { engine, flow, win, doc } = this;
     engine.setPaused(true);
+    if (this.dev) {
+      console.warn(`[credits] Not credited yet, needs a source in ATTRIBUTIONS.md:\n  ${creditWarnings(attributionsMd).join('\n  ')}`);
+    }
 
     this._offs.push(flow.onChange(() => this._render()));
     this.view.onIntent((action, data) => this._onIntent(action, data));
@@ -394,6 +405,10 @@ export class App {
         return { ...this._failed };
       case 'settings':
         return this._settingsModel();
+      case 'credits':
+        return { blocks: this._creditBlocks, mode: 'list' };
+      case 'runComplete':
+        return { blocks: this._creditBlocks };
       default:
         return {};
     }

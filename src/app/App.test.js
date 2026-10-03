@@ -122,7 +122,7 @@ describe('App', () => {
     view = makeDom();
     fade = makeFade();
     storage = memoryStorage();
-    app = new App(engine, { pointerLock: lock, view, fade, version: '9.9.9', storage, devToolsDefault: true });
+    app = new App(engine, { pointerLock: lock, view, fade, version: '9.9.9', storage, devToolsDefault: true, dev: false });
     await app.start();
   });
 
@@ -565,6 +565,43 @@ describe('App', () => {
         await click('controls');
         expect(panel().textContent).toMatch(/Jump\s*J/);
       });
+    });
+  });
+
+  describe('credits', () => {
+    const panel = () => document.getElementById('menu-panel');
+
+    it('open from the main menu with the team, the assets and a Back', async () => {
+      await click('credits');
+      expect(view.screen).toBe('credits');
+      expect(panel().textContent).toContain('drax9207 (Adrian Draxl)');
+      expect(panel().textContent).toContain('siboneloblessingmaduna (Sibonelo Blessing Maduna)');
+      expect(panel().textContent).toContain('Satellite dish tower');
+      expect(panel().textContent).toContain('three.js (MIT)');
+      expect(panel().querySelector('a[target="_blank"]')).not.toBeNull();
+      await click('back');
+      expect(view.screen).toBe('main');
+    });
+
+    it('roll on Run complete', async () => {
+      await startGame();
+      engine.activeScene.gameController.fire('finished');
+      expect(panel().querySelector('.menu-roll').textContent).toContain('Satellite dish tower');
+    });
+
+    it('warn in dev about what they cannot vouch for, once', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const a2 = new App(makeEngine(), { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), dev: true });
+      await a2.start();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0].join(' ')).toMatch(/floor-basecolor/);
+      a2.dispose();
+      warn.mockClear();
+      const a3 = new App(makeEngine(), { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), dev: false });
+      await a3.start();
+      expect(warn).not.toHaveBeenCalled();
+      a3.dispose();
+      warn.mockRestore();
     });
   });
 });

@@ -11,7 +11,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 3: menus on screen (App also carries Phase 4's rebuild / restart / quit paths)
 - [x] Phase 4: restart and memory
 - [x] Phase 5: settings (§6.8 terminal-key rebinding skipped; the Controls screen lists Q / Enter / S / D as fixed)
-- [ ] Phase 6: credits and end states
+- [x] Phase 6: credits and end states
 - [ ] Phase 7 (optional): continue, camera drift, layout-aware key names
 - [ ] Phase 8: docs and production build
 - [ ] Phase 9: ship
@@ -58,9 +58,18 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **`setPixelRatio` is called only when the ratio changes.** It reallocates the canvas, and every slider tick re-applies all settings.
 - **Saved key binds are validated as a set.** Any bad, reserved or duplicate code makes the whole set fall back to the defaults, because half a broken layout is worse than the defaults. A bind missing from an older save takes its default.
 
+- **Credit titles keep an ordinary dash.** A heading is split only when its tail is a `⚠` note or a `TODO`, so "Blast door — closed" and "Blast door — open" keep their full titles.
+- **The dev console warning also lists the "Downloaded but unattributed — TODO" section.** It names switchboard, bush and break-panel (all in the manifest) plus four unused files, next to the TODO entries and the floor and signal images. The doc's rule is not to drop TODOs silently.
+- **The credits are inlined with `import … from '../../ATTRIBUTIONS.md?raw'`.** The production build contains them, and nothing is fetched at runtime.
+
 ## Needs a human
 
 - **Memory counters across restarts (§6.5).** `renderer.info.memory.geometries` / `.textures` can't be reached without WebGL, which the tests don't have. The listener leaks are covered by tests (`src/ui/HUD.dispose.test.js`, plus the BaseScene and OfficeScene dispose tests). Still needed: in the browser, press I, then do Main menu → New game five times and check that the Geometries and Textures numbers come back to the same values.
+
+- **Asset sources to confirm (they are not in the credits until they have an entry).** In code: `src/ui/menu/credits.js` (`UNATTRIBUTED_FILES`) and the dev console warning at startup.
+  - Confirm the source of the floor textures (`public/assets/textures/floor-*.png`) and the signal images (`public/assets/signals/signal-*.png`). Add them to `ATTRIBUTIONS.md` if they're not original.
+  - Resolve the three TODO entries in `ATTRIBUTIONS.md` (radar terminal, desk with computer, security camera). They show as "Source being confirmed" in dev builds and are hidden in the production build.
+  - Add sources for `switchboard.glb`, `bush.glb` and `break-panel.glb` (all used through the manifest), listed under "Downloaded but unattributed — TODO".
 
 ## QA results
 

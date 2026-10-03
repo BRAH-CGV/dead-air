@@ -316,7 +316,7 @@ export class MenuView {
   /** blocks: { heading, items: { title?, parts: ({text}|{href,text})[], note?, todo? }[] }[] */
   _creditBlocks(blocks) {
     return blocks.map(b => h('section', { class: 'menu-group' },
-      h('h3', { class: 'menu-subheading' }, b.heading),
+      b.heading ? h('h3', { class: 'menu-subheading' }, b.heading) : null,
       b.items.map(item => h('div', { class: `menu-credit${item.todo ? ' is-todo' : ''}` },
         item.title ? h('div', { class: 'menu-credit-title' }, item.title) : null,
         h('div', { class: 'menu-credit-text' }, item.parts.map(p => p.href

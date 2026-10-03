@@ -214,6 +214,12 @@ describe('MenuView', () => {
       expect(byAction(view, 'back')).not.toBeNull();
     });
 
+    it('a block with no heading draws no heading', () => {
+      view.show('credits', { blocks: [{ heading: null, items: [{ parts: [{ text: 'Course line' }] }] }], mode: 'list' });
+      expect(view.panel.querySelectorAll('.menu-credits h3').length).toBe(0);
+      expect(view.panel.textContent).toContain('Course line');
+    });
+
     it('escapes text rather than parsing it as HTML', () => {
       view.show('credits', { blocks: [{ heading: 'X', items: [{ parts: [{ text: '<img src=x onerror=alert(1)>' }] }] }], mode: 'list' });
       expect(view.panel.querySelector('img')).toBeNull();
