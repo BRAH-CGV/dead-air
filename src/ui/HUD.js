@@ -13,6 +13,8 @@
 // are the single place game code touches the DOM.
 // ─────────────────────────────────────────────
 
+import { createSkyBackdrop } from '../gameobjects/SkyBackdrop.js';
+
 // ── HUD ────────────────────────────────────────────────────
 
 export class HUD {
@@ -89,12 +91,30 @@ export class RadarOverlay {
     if (this._hint) this._hint.textContent = text || '';
   }
 
+  /** The faint sky behind the grid, or null for the plain dark disc. */
+  _backdrop = null;
+
+  /** Draw the actual Mars sky behind the radar grid — pass a sky from
+   *  createMarsSky(), or null to go back to the plain disc. The scene wires
+   *  it once; the backdrop re-reads the sky on every update, so it turns
+   *  with the night and drowns in the dawn exactly as the window view
+   *  does. Stars, the Milky Way and both moons land through the SAME
+   *  _skyToCanvas mapping the blips use, so a blip sits on the patch of
+   *  sky it belongs to. */
+  setSky(sky) {
+    this._backdrop = sky ? createSkyBackdrop(sky) : null;
+  }
+
   /** Map a sky direction to a point on the radar canvas. Azimuth (yaw)
-   *  sweeps around the circle — 0 rad points up — and elevation (-pitch)
-   *  sets the radial distance: the horizon sits on the rim, the zenith at
-   *  the centre. ONE mapping serves blips, the dish indicator and the
-   *  neighbour sections alike, so parking the dish dot on a blip visually
-   *  means the aim matches — the scan check compares exactly these angles.
+   *  sweeps around the circle — 0 rad, the window direction, sits at the
+   *  BOTTOM of the canvas so the disc reads like the view out of the
+   *  window: the horizon ahead on the bottom rim, the sky rising toward
+   *  the centre, and what climbs in the window climbs on the radar.
+   *  Elevation (-pitch) sets the radial distance: the horizon sits on the
+   *  rim, the zenith at the centre. ONE mapping serves blips, the dish
+   *  indicator, the neighbour sections and the sky backdrop alike, so
+   *  parking the dish dot on a blip visually means the aim matches — the
+   *  scan check compares exactly these angles.
    *  @param {number} yaw
    *  @param {number} pitch  negative = up
    *  @returns {{ x: number, y: number }} */
@@ -106,8 +126,70 @@ export class RadarOverlay {
     const radius = (1 - elev / (Math.PI / 2)) * maxR;
     return {
       x: this._cx + Math.sin(yaw) * radius,
-      y: this._cy - Math.cos(yaw) * radius,
+      y: this._cy + Math.cos(yaw) * radius,
     };
+  }
+
+  /** Stars, the Milky Way band and both moons behind the grid — set
+   *  dressing, not a second sky, so everything stays faint and clipped to
+   *  the sky disc. Shares _skyToCanvas with the blips: every dot lands on
+   *  the patch of sky it belongs to. Allocates nothing. */
+  _drawSkyBackdrop(ctx, maxR) {
+    const b = this._backdrop;
+    if (!b) return;
+    b.refresh();
+
+    // Pixels per radian of elevation — the shared mapping's radial scale.
+    const pxPerRad = maxR / (Math.PI / 2);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(this._cx, this._cy, maxR, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Star dots — a subsample of the real field; the backdrop has already
+    // scaled each alpha by magnitude, horizon fade and dawn.
+    for (let k = 0; k < b.stars.length; k += 4) {
+      const alpha = b.stars[k + 3];
+      if (alpha <= 0.01) continue;
+      const p = this._skyToCanvas(b.stars[k], b.stars[k + 1]);
+      ctx.fillStyle = `rgba(${b.starBase}, ${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, b.stars[k + 2], 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // The Milky Way — one soft stroke along its visible great circle,
+    // breaking wherever it dips under the horizon (NaN samples).
+    const bandAlpha = Math.min(0.3, b.bandIntensity * 2.5) * (1 - b.dawn);
+    if (bandAlpha > 0.01) {
+      ctx.strokeStyle = `rgba(${b.bandBase}, ${bandAlpha.toFixed(3)})`;
+      ctx.lineWidth = Math.max(2, b.bandWidthRad * pxPerRad);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      let drawing = false;
+      for (let k = 0; k < b.band.length; k += 2) {
+        const pitch = b.band[k + 1];
+        if (Number.isNaN(pitch)) { drawing = false; continue; }
+        const p = this._skyToCanvas(b.band[k], pitch);
+        if (drawing) ctx.lineTo(p.x, p.y);
+        else { ctx.moveTo(p.x, p.y); drawing = true; }
+      }
+      ctx.stroke();
+    }
+
+    // Both moons — discs a shade brighter than the backdrop, dimming with
+    // the dawn but not vanishing: they are meshes in the sky, not stars.
+    for (const moon of b.moons) {
+      if (moon.pitch >= 0) continue;   // under the horizon this hour
+      const p = this._skyToCanvas(moon.yaw, moon.pitch);
+      ctx.fillStyle = `rgba(${moon.base}, ${(0.7 * (1 - 0.6 * b.dawn)).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(3, moon.angularRadius * pxPerRad), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 
   /** A dish's coverage section as a circle on the canvas. Coverage is
@@ -146,7 +228,8 @@ export class RadarOverlay {
    *  @param {number} dishYaw   Current neck rotation Y
    *  @param {number} dishPitch Current dish rotation X
    *  @param {number} cursorX   Cursor x in unit circle (-1..+1)
-   *  @param {number} cursorY   Cursor y in unit circle (-1..+1, +1=zenith)
+   *  @param {number} cursorY   Cursor y in unit circle (-1..+1); the disc's
+   *                            centre is the zenith, its rim the horizon
    *  @param {import('../gameplay/SignalTarget.js').SignalTarget|null} hoveredSignal
    *  @param {number} scanProgress 0..1 while scanning, -1 when not
    *  @param {import('../gameobjects/DishRig.js').DishRig[]} [neighbours]
@@ -176,6 +259,11 @@ export class RadarOverlay {
     ctx.strokeStyle = 'rgba(0, 200, 180, 0.3)';
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // The real sky, faintly: stars, the Milky Way and both moons, read
+    // live from the sky the scene wired in — under the grid, so the grid
+    // and the blips stay the readable layer.
+    this._drawSkyBackdrop(ctx, maxR);
 
     // Grid rings
     for (let i = 1; i <= 3; i++) {

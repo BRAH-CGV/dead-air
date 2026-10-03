@@ -56,19 +56,25 @@ export function aimError(currentYaw, currentPitch, targetYaw, targetPitch) {
 // ── Sky ↔ cursor: the radar's own coordinates ────────────────
 // The radar disc is the sky seen from above: bearing is the angle around
 // the disc, elevation the distance from the centre (the zenith) to the rim
-// (the horizon). Coverage is measured in this space, so the section a
-// player sees as a circle on the radar is a circle in the metric, and the
-// yaw seam (±π) needs no special casing — opposite bearings are simply on
-// opposite sides of the disc. ComputerTerminal's cursor lives here too.
+// (the horizon). Bearing 0 — out the office window — sits at the BOTTOM of
+// the disc, so the map reads like the view out of the window: the horizon
+// ahead on the bottom rim, the sky rising toward the centre, and what
+// climbs in the window climbs on the radar too. Coverage is measured in
+// this space, so the section a player sees as a circle on the radar is a
+// circle in the metric, and the yaw seam (±π) needs no special casing —
+// opposite bearings are simply on opposite sides of the disc.
+// ComputerTerminal's cursor lives here too.
 
 /** Sky direction → point on the unit cursor disc.
- *  @param {number} yaw    Bearing, radians (0 = radar "up")
+ *  @param {number} yaw    Bearing, radians — 0 is the window direction,
+ *                        drawn at the disc's bottom so the radar reads
+ *                        like the view out of the window
  *  @param {number} pitch  Negative up: 0 = horizon, -π/2 = zenith
  *  @returns {{x: number, y: number}} */
 export function skyToCursor(yaw, pitch) {
   const p = Math.min(Math.max(pitch, -Math.PI / 2), 0);
   const r = (p + Math.PI / 2) / (Math.PI / 2);   // 0 at the zenith, 1 at the horizon
-  return { x: r * Math.sin(yaw), y: r * Math.cos(yaw) };
+  return { x: r * Math.sin(yaw), y: -r * Math.cos(yaw) };
 }
 
 /** Point on the unit cursor disc → sky direction. r = 0 (the zenith) has no
@@ -80,7 +86,7 @@ export function skyToCursor(yaw, pitch) {
 export function cursorToSky(x, y) {
   const r = Math.min(Math.hypot(x, y), 1);
   return {
-    yaw: Math.atan2(x, y),
+    yaw: Math.atan2(x, -y),
     pitch: -(Math.PI / 2) + r * (Math.PI / 2),
   };
 }
@@ -262,7 +268,7 @@ export function createDefaultNeighbourDishes() {
   for (let i = 0; i < NEIGHBOUR_COUNT; i++) {
     const yaw = -Math.PI + i * spacing;
     const originX = ARRAY_RING * Math.sin(yaw);
-    const originY = ARRAY_RING * Math.cos(yaw);
+    const originY = -ARRAY_RING * Math.cos(yaw);   // skyToCursor: bearing 0 is the disc's bottom
     const pose = cursorToSky(originX, originY);
     const rig = new DishRig({
       originX,

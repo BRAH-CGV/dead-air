@@ -146,6 +146,15 @@ describe('OfficeScene hierarchy', () => {
     expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
   });
 
+  it('shows the real sky behind the radar grid', () => {
+    scene.build();
+
+    const backdrop = scene.radarOverlay._backdrop;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.moons.map(m => m.name)).toEqual(['Phobos', 'Deimos']);
+    expect(scene.sky.skyUniforms.uDawn.value).toBe(backdrop.dawn);
+  });
+
   it('ground exposes its rigid body and collider for scene teardown', () => {
     scene.build();
 

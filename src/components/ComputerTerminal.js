@@ -49,9 +49,10 @@ export class ComputerTerminal extends Component {
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
 
-  /** Cursor position in Cartesian unit-circle coords.
-   *  x: -1..+1 (left..right = yaw), y: -1..+1 (bottom..top = horizon..zenith).
-   *  Clamped to the unit circle so the cursor stays in the radar disc. */
+  /** Cursor position in Cartesian unit-circle coords: x -1..+1 (left..right),
+   *  y -1..+1 (down..up). The disc's centre (0, 0) is the zenith and its rim
+   *  the horizon — straight down from the centre is the horizon out of the
+   *  window. Clamped to the unit circle so the cursor stays in the radar. */
   _cursorX = 0;
   _cursorY = 0;
 
@@ -109,7 +110,7 @@ export class ComputerTerminal extends Component {
   }
 
   /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
-   *  Centre of radar (y=1) = zenith (pitch=-π/2), rim (y=0) = horizon.
+   *  The disc's centre is the zenith (pitch −π/2), its rim the horizon.
    *  The one conversion lives in DishRig — the same coordinates the
    *  array's coverage sections are measured in. */
   _cursorToSky() {
@@ -328,8 +329,11 @@ export class ComputerTerminal extends Component {
   /** Refresh the radar canvas with current state. */
   _updateRadarDisplay() {
     if (!this.radar || !this.signalManager || !this.satellite) return;
-    const dishYaw   = this.satellite.neck?.object3d?.rotation?.y ?? 0;
-    const dishPitch = this.satellite.dish?.object3d?.rotation?.x ?? 0;
+    // Game angles, straight from the rig — the model's neck rotation
+    // mirrors game yaw (see Satellite), so raw rotations would draw the
+    // dish indicator on the wrong side of the disc.
+    const dishYaw   = this.satellite.currentYaw ?? 0;
+    const dishPitch = this.satellite.currentPitch ?? 0;
 
     // Compute scan progress for the ring display
     let scanProgress = -1;

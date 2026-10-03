@@ -611,6 +611,15 @@ describe('BaseScene gameplay loop', () => {
     expect(light.gameController).toBe(scene.gameController);
   });
 
+  it('shows the real sky behind the radar grid', () => {
+    // The backdrop is the sky the window shows, subsampled — Phobos and
+    // Deimos riding the same turn — drawn through the radar's own mapping.
+    const backdrop = scene.radarOverlay._backdrop;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.moons.map(m => m.name)).toEqual(['Phobos', 'Deimos']);
+    expect(scene.sky.skyUniforms.uDawn.value).toBe(backdrop.dawn);
+  });
+
   it('turns the night to day and back with the controller — sky, lights and fog', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const daylight = gameplay.getComponent(Daylight);

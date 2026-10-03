@@ -15,7 +15,8 @@ import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRi
 // ── Minimal test doubles ──────────────────────────────────
 
 /** The real dish, on a bare Base → Neck_block → Dish rig, parked at the
- *  zenith where a fresh terminal's cursor starts. */
+ *  zenith where a fresh terminal's cursor starts. The neck rests at model
+ *  0, which the mirror reads back as game bearing π — up on the disc. */
 function makeRealDish() {
   const root = new THREE.Object3D(); root.name = 'Base';
   const neck = new THREE.Object3D(); neck.name = 'Neck_block';
@@ -172,7 +173,10 @@ describe('ComputerTerminal', () => {
     const up = { left: false, right: false, up: true, down: false };
 
     // Zenith outward through the dish's own reach (it stops following past
-    // its 0.75 radius), the dish chasing every frame.
+    // its 0.75 radius), the dish chasing every frame. Up from the centre is
+    // bearing π — the bearing the stand-in parks on (its neck at model 0
+    // mirrors to game π) — so the chase is about closing a pitch gap, not a
+    // half-turn of yaw.
     while (Math.hypot(term._cursorX, term._cursorY) < 0.4) {
       term.moveCursor(up, dt);
       dish._update(dt);
@@ -196,10 +200,13 @@ describe('ComputerTerminal', () => {
 
     term._updateRadarDisplay();
 
+    // Game angles, straight from the rig — the parked stand-in's neck at
+    // model 0 reads back as bearing π (the neck mirrors yaw), the zenith
+    // tilt as -π/2.
     expect(radar.update).toHaveBeenCalledWith(
       mgr.signals,
-      dish.neck.object3d.rotation.y,
-      dish.dish.object3d.rotation.x,
+      dish.currentYaw,
+      dish.currentPitch,
       term._cursorX,
       term._cursorY,
       term._hoveredSignal,

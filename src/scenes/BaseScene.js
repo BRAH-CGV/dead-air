@@ -270,6 +270,11 @@ export class BaseScene extends Scene {
     this.radarOverlay = new RadarOverlay();
     this.reviewPanel  = new SignalReviewPanel();
 
+    // The real sky behind the radar grid: the backdrop reads it live, so it
+    // turns with the night and drowns in the dawn exactly as the window
+    // view does.
+    this.radarOverlay.setSky(this.sky);
+
     this.terminal = new ComputerTerminal();
     this.terminal.satellite     = this.satellite;
     this.terminal.signalManager = this.signalManager;

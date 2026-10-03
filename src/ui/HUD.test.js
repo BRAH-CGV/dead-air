@@ -6,6 +6,7 @@ import {
   createDefaultNeighbourDishes,
   cursorToSky,
 } from '../gameobjects/DishRig.js';
+import { createMarsSky } from '../gameobjects/MarsSky.js';
 
 // ── Suit indicator ────────────────────────────────────────
 // A stand-in root: HUD only ever reaches its elements through querySelector.
@@ -46,9 +47,11 @@ describe('RadarOverlay sky mapping', () => {
   it('maps the horizon (pitch 0) onto the radar rim', () => {
     const p = overlay._skyToCanvas(0, 0);
     expect(distFromCentre(p)).toBeCloseTo(MAX_R);
-    // yaw 0 points up on the canvas
+    // yaw 0 — the window direction — sits at the BOTTOM of the canvas, so
+    // the disc reads like the view out of the window: horizon ahead on the
+    // bottom rim, the sky rising toward the centre.
     expect(p.x).toBeCloseTo(CX);
-    expect(p.y).toBeCloseTo(CY - MAX_R);
+    expect(p.y).toBeCloseTo(CY + MAX_R);
   });
 
   it('maps the zenith (pitch -90°) onto the centre', () => {
@@ -66,8 +69,9 @@ describe('RadarOverlay sky mapping', () => {
     expect(distFromCentre(horizon)).toBeGreaterThan(distFromCentre(midSky));
     expect(distFromCentre(midSky)).toBeGreaterThan(distFromCentre(zenith));
 
-    // The bearing from centre stays locked to yaw while radius changes
-    const angleOf = (p) => Math.atan2(p.x - CX, -(p.y - CY));
+    // The bearing from centre stays locked to yaw while radius changes.
+    // atan2 measures from canvas-down — the side bearing 0 is drawn on.
+    const angleOf = (p) => Math.atan2(p.x - CX, p.y - CY);
     expect(angleOf(horizon)).toBeCloseTo(1.0);
     expect(angleOf(midSky)).toBeCloseTo(1.0);
   });
@@ -80,9 +84,9 @@ describe('RadarOverlay sky mapping', () => {
     expect(distFromCentre(at0)).toBeCloseTo(distFromCentre(at90));
     expect(distFromCentre(at90)).toBeCloseTo(distFromCentre(at180));
 
-    expect(at0.y).toBeLessThan(CY);   // yaw 0 → up
+    expect(at0.y).toBeGreaterThan(CY);   // yaw 0 → down (out the window)
     expect(at90.x).toBeGreaterThan(CX); // yaw +90° → right
-    expect(at180.y).toBeGreaterThan(CY); // yaw 180° → down
+    expect(at180.y).toBeLessThan(CY); // yaw 180° → up (behind the base)
   });
 
   it('uses one mapping for dish and blips — same direction, same point', () => {
@@ -208,5 +212,115 @@ describe('RadarOverlay blip colour', () => {
     expect(overlay._blipColor(blip({ opacity: 0.5 }))).toBe('rgba(0, 220, 200, 0.4)');
     expect(overlay._blipColor(blip({ opacity: 0 }))).toBe('rgba(0, 220, 200, 0)');
     expect(overlay._blipColor(blip({ scanned: true, opacity: 0.5 }))).toBe('rgba(180, 180, 60, 0.35)');
+  });
+});
+
+// ── Sky backdrop ─────────────────────────────────────
+// The radar disc is the sky seen from above, so the real Mars sky can be
+// drawn faintly behind the grid — through the SAME _skyToCanvas mapping the
+// blips use, so a blip sits on the patch of sky it belongs to. The overlay
+// falls back to a null canvas under jsdom, so a recording fake context is
+// injected to assert what gets drawn.
+describe('RadarOverlay sky backdrop', () => {
+  const CX = 200, CY = 200;
+
+  /** A 2D context stand-in that records every call with the styles set at
+   *  the time — enough to assert what was drawn, where, and in what order. */
+  function recordingCtx() {
+    const calls = [];
+    const ctx = {
+      fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: 'butt',
+      clearRect: (...a) => calls.push({ op: 'clearRect', a }),
+      beginPath: () => calls.push({ op: 'beginPath' }),
+      arc:       (...a) => calls.push({ op: 'arc', a }),
+      fill:      ()    => calls.push({ op: 'fill',   style: ctx.fillStyle }),
+      stroke:    ()    => calls.push({ op: 'stroke', style: ctx.strokeStyle, w: ctx.lineWidth }),
+      moveTo:    (...a) => calls.push({ op: 'moveTo', a }),
+      lineTo:    (...a) => calls.push({ op: 'lineTo', a }),
+      save:      ()    => calls.push({ op: 'save' }),
+      restore:   ()    => calls.push({ op: 'restore' }),
+      clip:      ()    => calls.push({ op: 'clip' }),
+    };
+    return { ctx, calls };
+  }
+
+  function makeOverlay(sky) {
+    const overlay = new RadarOverlay(null);
+    const { ctx, calls } = recordingCtx();
+    overlay._ctx = ctx;
+    if (sky) overlay.setSky(sky);
+    return { overlay, calls };
+  }
+
+  const draw = (overlay) => overlay.update([], 0, -0.5, 0, 0, null, -1, [], null);
+
+  const starFills   = (calls, base) => calls.filter(c => c.op === 'fill' && c.style.startsWith(`rgba(${base},`));
+  const bandStrokes = (calls, base) => calls.filter(c => c.op === 'stroke' && c.style.startsWith(`rgba(${base},`));
+  const smallArcs   = (calls) => calls.filter(c => c.op === 'arc' && c.a[2] < 2.1);
+
+  it('draws the sky\'s stars, band and moons faintly, under the grid', () => {
+    const sky = createMarsSky({ starCount: 60 });
+    const { overlay, calls } = makeOverlay(sky);
+    draw(overlay);
+
+    const b = overlay._backdrop;
+    expect(b).toBeDefined();
+
+    // Star dots: one small arc per visible star, at the shared mapping\'s point.
+    const visible = [];
+    for (let k = 0; k < b.stars.length / 4; k++) {
+      if (b.stars[k * 4 + 3] > 0.01) visible.push(k);
+    }
+    expect(visible.length).toBeGreaterThan(0);
+    const dots = smallArcs(calls);
+    expect(dots.length).toBe(visible.length);
+    for (const k of visible) {
+      const p = overlay._skyToCanvas(b.stars[k * 4], b.stars[k * 4 + 1]);
+      const hit = dots.find(d => Math.abs(d.a[0] - p.x) < 0.5 && Math.abs(d.a[1] - p.y) < 0.5);
+      expect(hit, `star ${k} at (${p.x}, ${p.y})`).toBeDefined();
+    }
+    expect(starFills(calls, b.starBase).length).toBe(visible.length);
+
+    // The Milky Way: a faint stroke of the band colour along its circle.
+    expect(bandStrokes(calls, b.bandBase).length).toBeGreaterThan(0);
+
+    // Both moons, as dots bigger than any star.
+    for (const moon of b.moons) {
+      const moonFill = calls.find(c => c.op === 'fill' && c.style.startsWith(`rgba(${moon.base},`));
+      expect(moonFill, moon.name).toBeDefined();
+    }
+
+    // Set dressing, not a second sky: the backdrop draws under the grid.
+    const firstStar = calls.findIndex(c => c.op === 'fill' && c.style.startsWith(`rgba(${b.starBase},`));
+    const firstRing = calls.findIndex(c => c.op === 'arc' && Math.abs(c.a[2] - 200 / 3) < 1);
+    expect(firstStar).toBeGreaterThan(-1);
+    expect(firstRing).toBeGreaterThan(firstStar);
+  });
+
+  it('setSky(null) clears the backdrop — the sky can be swapped away', () => {
+    const { overlay, calls } = makeOverlay(createMarsSky({ starCount: 60 }));
+    overlay.setSky(null);
+    draw(overlay);
+
+    expect(overlay._backdrop).toBeNull();
+    expect(smallArcs(calls)).toHaveLength(0);
+  });
+
+  it('refreshes the sky each frame — the dawn drowns the star dots', () => {
+    const sky = createMarsSky({ starCount: 60 });
+    const { overlay, calls } = makeOverlay(sky);
+    draw(overlay);
+    const b = overlay._backdrop;
+    expect(starFills(calls, b.starBase).length).toBeGreaterThan(0);
+
+    // Daylight raises uDawn; the next update must see it without being told.
+    sky.skyUniforms.uDawn.value = 1;
+    calls.length = 0;
+    draw(overlay);
+
+    expect(starFills(calls, b.starBase)).toHaveLength(0);
+    // The moons dim but stay — they are meshes in the sky, not shader stars.
+    const moonFill = calls.find(c => c.op === 'fill' && c.style.startsWith(`rgba(${b.moons[0].base},`));
+    expect(moonFill).toBeDefined();
   });
 });

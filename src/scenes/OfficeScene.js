@@ -121,6 +121,10 @@ export class OfficeScene extends Scene {
     this.radarOverlay = new RadarOverlay();
     this.reviewPanel  = new SignalReviewPanel();
 
+    // The real sky behind the radar grid — reads the sky live each frame,
+    // so it turns and dawns in step with the view out of the window.
+    this.radarOverlay.setSky(this.sky);
+
     // ── Computer terminal (component on the retro-computer) ──
     this.terminal = new ComputerTerminal();
     this.terminal.satellite     = this.satellite;
@@ -518,6 +522,7 @@ export class OfficeScene extends Scene {
     const sky = createMarsSky();
     sky.addComponent(new SkyFollow());
     skyGroup.addChild(sky);
+    this.sky = sky;   // the radar backdrop reads it; nothing else turns it here
 
     // Match the fog to the dome's horizon. FogExp2 washes the ground plane out
     // to the fog colour by ~100 m, well inside the dome, so the engine default

@@ -17,6 +17,14 @@ import { aimError, angleDelta, SETTLED_EPSILON, createLocalRig } from './DishRig
 // (`this.neighbours`), which are too far away to be seen or heard, so only
 // their rotation is simulated — no model, no body.
 //
+// The rig speaks GAME angles; the model does not. Measured from
+// dish-tower.glb: the reflector's axis is its mesh's local +Z (the feed
+// horn sits on the +Z side), the dish tilts about X and the neck slews
+// about Y — but a positive neck rotation swings the boresight toward −X
+// while game yaw (atan2(x, −z)) grows toward +X. The neck MIRRORS game
+// yaw: bearing g is neck.rotation.y = π − g. Pitch happens to be direct:
+// the boresight's elevation is −dish.rotation.x, the game's pitch sign.
+//
 // Spawn through the engine, which handles physics and registration:
 //
 //   const dish = engine.spawnModel('model:dish-tower', {
@@ -27,6 +35,11 @@ import { aimError, angleDelta, SETTLED_EPSILON, createLocalRig } from './DishRig
 // ─────────────────────────────────────────────
 
 export { DISH_SLEW_RATE } from './DishRig.js';
+
+/** Game-space bearing of a neck Y rotation — the model mirrors yaw. */
+const neckToGameYaw = (neckYaw) => Math.PI - neckYaw;
+/** The neck Y rotation that points the boresight at a game bearing. */
+const gameToNeckYaw = (gameYaw) => Math.PI - gameYaw;
 
 export class Satellite extends GameObject {
 
@@ -50,6 +63,10 @@ export class Satellite extends GameObject {
   /** Angle the dish is tilting toward, radians around X. */
   get targetPitch() { return this.rig.targetPitch; }
   set targetPitch(v) { this.rig.targetPitch = v; }
+  /** The bearing the tower is slewing through right now, game radians. */
+  get currentYaw() { return this.rig.currentYaw; }
+  /** The tilt the dish is slewing through right now, game radians. */
+  get currentPitch() { return this.rig.currentPitch; }
   /** Angular velocity around Y (rad/s). */
   get velYaw() { return this.rig.velYaw; }
   set velYaw(v) { this.rig.velYaw = v; }
@@ -87,8 +104,9 @@ export class Satellite extends GameObject {
       console.warn("[Satellite] dish-tower is missing its 'Neck_block' or 'Dish' sub-node — it will not move");
     }
     // Hold the pose the model shipped with until something sets a target,
-    // so spawning alone doesn't jerk the tower back to zero.
-    const yaw   = sat.neck?.object3d.rotation.y ?? 0;
+    // so spawning alone doesn't jerk the tower back to zero. The latch is
+    // in game angles, so the neck's mirrored yaw is converted.
+    const yaw   = sat.neck ? neckToGameYaw(sat.neck.object3d.rotation.y) : 0;
     const pitch = sat.dish?.object3d.rotation.x ?? 0;
     sat.rig.currentYaw   = yaw;
     sat.rig.currentPitch = pitch;
@@ -126,10 +144,12 @@ export class Satellite extends GameObject {
     }
 
     // Local tower: sync live rotations in, advance the shared physics, out.
-    if (this.neck) this.rig.currentYaw = this.neck.object3d.rotation.y;
+    // Both crossings speak game angles on the rig's side, so the neck's
+    // mirrored yaw is converted each way; the dish tilt is direct.
+    if (this.neck) this.rig.currentYaw = neckToGameYaw(this.neck.object3d.rotation.y);
     if (this.dish) this.rig.currentPitch = this.dish.object3d.rotation.x;
     this.rig.update(dt);
-    if (this.neck) this.neck.object3d.rotation.y = this.rig.currentYaw;
+    if (this.neck) this.neck.object3d.rotation.y = gameToNeckYaw(this.rig.currentYaw);
     if (this.dish) this.dish.object3d.rotation.x = this.rig.currentPitch;
 
     // The neighbours have no model — the rig's numbers are all they are.
@@ -140,7 +160,7 @@ export class Satellite extends GameObject {
    *  the tower has finished aiming (or was never asked to move). Measured
    *  from the live rotations, so it is correct even between updates. */
   isRotating() {
-    if (this.neck && Math.abs(angleDelta(this.neck.object3d.rotation.y, this.targetYaw)) > SETTLED_EPSILON) {
+    if (this.neck && Math.abs(angleDelta(neckToGameYaw(this.neck.object3d.rotation.y), this.targetYaw)) > SETTLED_EPSILON) {
       return true;
     }
     if (this.dish && Math.abs(angleDelta(this.dish.object3d.rotation.x, this.targetPitch)) > SETTLED_EPSILON) {
@@ -193,7 +213,8 @@ export class Satellite extends GameObject {
    *  direction. Combines yaw and pitch error into a single magnitude. */
   getAimError(targetYaw, targetPitch) {
     // A missing part can't contribute error — treat it as on target.
-    const yaw = this.neck ? this.neck.object3d.rotation.y : targetYaw;
+    // The model pose converts to game angles first: the neck mirrors yaw.
+    const yaw = this.neck ? neckToGameYaw(this.neck.object3d.rotation.y) : targetYaw;
     const pitch = this.dish ? this.dish.object3d.rotation.x : targetPitch;
     return aimError(yaw, pitch, targetYaw, targetPitch);
   }
