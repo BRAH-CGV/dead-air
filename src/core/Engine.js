@@ -66,6 +66,9 @@ export class Engine {
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
   _prevQuat  = new Map();         // RigidBody.handle → { x, y, z, w }
   _scratchQ  = new THREE.Quaternion();
+  _scratchQ2 = new THREE.Quaternion();
+  _scratchQ3 = new THREE.Quaternion();
+  _scratchV  = new THREE.Vector3();
 
   // ── Scene ────────────────────────────────
   /** @type {import('./Scene.js').Scene} */ activeScene;
@@ -270,8 +273,10 @@ export class Engine {
     this.levelEditor = new LevelEditor(this);
     this.levelEditor.init();
 
-    // ── Initialise every root object ──
-    for (const obj of this._rootObjects) obj._init(this.scene, this.world);
+    // loadScene() already called _init on every root object (line 319).
+    // A second pass here would double-create physics bodies for any
+    // GameObject that builds them in _init (e.g. Drive), leaving orphaned
+    // colliders in the Rapier world — hence no second _init loop.
 
     // ── Warm up, behind the loading screen ──
     // Every shader compiled, every texture uploaded, every mesh and shadow
@@ -721,18 +726,44 @@ export class Engine {
       const prev = this._prevPos.get(handle);
       if (!prev) continue;
       const cur = go.rigidBody.translation();
-      go.object3d.position.set(
-        prev.x + (cur.x - prev.x) * alpha,
-        prev.y + (cur.y - prev.y) * alpha,
-        prev.z + (cur.z - prev.z) * alpha,
-      );
+      
+      // Interpolated world position
+      const wx = prev.x + (cur.x - prev.x) * alpha;
+      const wy = prev.y + (cur.y - prev.y) * alpha;
+      const wz = prev.z + (cur.z - prev.z) * alpha;
+      
+      // Convert world position to local space if the object has a parent.
+      // Child objects (e.g. drives inside a room) store position relative to
+      // their parent, so we must transform from world to local space.
+      if (go.object3d.parent) {
+        // Ensure the parent's world matrix is current before the conversion.
+        go.object3d.parent.updateMatrixWorld(true);
+        this._scratchV.set(wx, wy, wz);
+        go.object3d.parent.worldToLocal(this._scratchV);
+        go.object3d.position.copy(this._scratchV);
+      } else {
+        go.object3d.position.set(wx, wy, wz);
+      }
 
       const pq = this._prevQuat.get(handle);
       if (pq) {
         const cr = go.rigidBody.rotation();
         this._scratchQ.set(pq.x, pq.y, pq.z, pq.w);
-        go.object3d.quaternion.set(cr.x, cr.y, cr.z, cr.w);
-        go.object3d.quaternion.slerp(this._scratchQ, 1 - alpha);
+        
+        // Interpolated world quaternion
+        const wq = this._scratchQ2.set(cr.x, cr.y, cr.z, cr.w);
+        wq.slerp(this._scratchQ, 1 - alpha);
+        
+        // Convert world quaternion to local space if the object has a parent.
+        if (go.object3d.parent) {
+          // Parent's world matrix is already up to date from the position block.
+          const parentQuat = this._scratchQ3;
+          go.object3d.parent.getWorldQuaternion(parentQuat);
+          parentQuat.invert().multiply(wq);
+          go.object3d.quaternion.copy(parentQuat);
+        } else {
+          go.object3d.quaternion.copy(wq);
+        }
       }
     }
   }

@@ -65,7 +65,11 @@ export class Drive extends GameObject {
     const engine = scene.userData.engine;
     if (!engine?.RAPIER) return;
     const RAPIER = engine.RAPIER;
-    const pos = this.object3d.position;
+    // Use world position for the rigid body, since Rapier works in world space.
+    // The drive's object3d.position is local (relative to the parent room), so
+    // we must convert to world space before creating the body.
+    const worldPos = new THREE.Vector3();
+    this.object3d.getWorldPosition(worldPos);
 
     // Dynamic body with gravity — the drive rests where it is placed and
     // falls when dropped. Light damping on both axes so a nudge slides it
@@ -73,7 +77,7 @@ export class Drive extends GameObject {
     // box from tunnelling through the floor when it is kicked or dropped.
     this.rigidBody = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(pos.x, pos.y, pos.z)
+        .setTranslation(worldPos.x, worldPos.y, worldPos.z)
         .setLinearDamping(0.5)
         .setAngularDamping(1.0)
         .setGravityScale(1)
@@ -126,11 +130,18 @@ export class Drive extends GameObject {
     if (!RAPIER) return;
     const t = this.rigidBody.translation();
     const r = this.rigidBody.rotation();
+    const engine = this.scene?.userData?.engine;
+    const oldHandle = this.rigidBody.handle;
     // Remove old colliders before changing body type.
     for (const c of this.colliders) {
       try { this.world.removeCollider(c, true); } catch (_) { /* already gone */ }
     }
     try { this.world.removeRigidBody(this.rigidBody); } catch (_) { /* already gone */ }
+    // Remove old handle from engine maps to prevent stale entries.
+    if (engine) {
+      engine._bodyToGO.delete(oldHandle);
+      engine.rigidBodyMap.delete(oldHandle);
+    }
 
     this.rigidBody = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased()
@@ -145,7 +156,6 @@ export class Drive extends GameObject {
     );
     this.colliders = [this.collider];
 
-    const engine = this.scene?.userData?.engine;
     if (engine) {
       engine._bodyToGO.set(this.rigidBody.handle, this);
       engine.rigidBodyMap.set(this.rigidBody.handle, this);
@@ -158,11 +168,18 @@ export class Drive extends GameObject {
     const RAPIER = this.scene?.userData?.engine?.RAPIER;
     if (!RAPIER) return;
     const t = this.rigidBody.translation();
+    const engine = this.scene?.userData?.engine;
+    const oldHandle = this.rigidBody.handle;
     // Remove old colliders before changing body type.
     for (const c of this.colliders) {
       try { this.world.removeCollider(c, true); } catch (_) { /* already gone */ }
     }
     try { this.world.removeRigidBody(this.rigidBody); } catch (_) { /* already gone */ }
+    // Remove old handle from engine maps to prevent stale entries.
+    if (engine) {
+      engine._bodyToGO.delete(oldHandle);
+      engine.rigidBodyMap.delete(oldHandle);
+    }
 
     this.rigidBody = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
@@ -180,7 +197,6 @@ export class Drive extends GameObject {
     );
     this.colliders = [this.collider];
 
-    const engine = this.scene?.userData?.engine;
     if (engine) {
       engine._bodyToGO.set(this.rigidBody.handle, this);
       engine.rigidBodyMap.set(this.rigidBody.handle, this);
