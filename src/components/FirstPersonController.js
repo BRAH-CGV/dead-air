@@ -55,6 +55,8 @@ export class FirstPersonController extends Component {
     this.speed         = opts.speed         ?? 5;
     this.jumpForce     = opts.jumpForce     ?? 4;
     this.sensitivity   = opts.sensitivity   ?? 0.002;
+    /** Mouse up looks down. Yaw is never inverted. */
+    this.invertY       = opts.invertY       ?? false;
     // Touchpads can emit rare huge movement deltas; cap one-frame camera jumps.
     this.maxMouseDelta = opts.maxMouseDelta ?? 32;
     // Camera smoothing: 0 = instant, 1 = no movement. Lower = more responsive, higher = smoother.
@@ -185,7 +187,7 @@ export class FirstPersonController extends Component {
       const dy = this._clampMouseDelta(input.mouse.dy);
     
       this.yaw   -= dx * this.sensitivity;
-      this.pitch -= dy * this.sensitivity;
+      this.pitch -= dy * this.sensitivity * (this.invertY ? -1 : 1);
           
       // Normalize yaw to [-π, π] to prevent floating point issues
       while (this.yaw > Math.PI) this.yaw -= 2 * Math.PI;

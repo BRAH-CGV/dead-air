@@ -31,6 +31,23 @@ describe('PerfStats', () => {
     expect(stats.visible).toBe(false);
   });
 
+  it('show and hide set visibility directly (the Show FPS setting)', () => {
+    const stats = new PerfStats();
+    stats.show();
+    expect(stats.visible).toBe(true);
+    stats.show();
+    expect(stats.visible).toBe(true);
+    stats.hide();
+    expect(stats.visible).toBe(false);
+    stats.hide();
+    expect(stats.visible).toBe(false);
+  });
+
+  it('show and hide are no-ops without an element', () => {
+    const stats = new PerfStats(null);
+    expect(() => { stats.show(); stats.hide(); }).not.toThrow();
+  });
+
   it('refreshes the text once per interval, averaging FPS over it', () => {
     const stats = new PerfStats(undefined, { interval: 0.5 });
     stats.toggle();

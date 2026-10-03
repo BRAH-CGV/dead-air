@@ -7,9 +7,17 @@
 // touches the element.
 // ─────────────────────────────────────────────
 
+import { withKeys } from './promptKeys.js';
+
 export class PromptLabel {
-  constructor(root = PromptLabel.findOrCreate()) {
+  /**
+   * @param {HTMLElement|null} [root]
+   * @param {{ keyLabel?: (text: string) => string }} [opts]  Rewrites '[E]'
+   *        to the bound interact key; the shared one by default.
+   */
+  constructor(root = PromptLabel.findOrCreate(), { keyLabel = withKeys } = {}) {
     this.root = root;
+    this.keyLabel = keyLabel;
     this.hide();
   }
 
@@ -39,7 +47,7 @@ export class PromptLabel {
 
   show(text) {
     if (!this.root) return;
-    this.root.textContent = text;
+    this.root.textContent = this.keyLabel(text);
     this.root.style.display = 'block';
   }
 

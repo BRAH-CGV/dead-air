@@ -61,6 +61,9 @@ export class Engine {
   /** @type {DebugCamera}  */ debugCamera;
   /** @type {Fullbright}   */ fullbright;
   /** @type {GameObject}   */ player;
+  /** The player's controller — settings (sensitivity, crouch mode, …) are
+   *  written onto it after every build.
+   *  @type {FirstPersonController|null} */ playerController = null;
 
   // ── Physics interpolation (pre-allocated) ──
   _prevPos   = new Map();         // RigidBody.handle → { x, y, z }
@@ -78,6 +81,20 @@ export class Engine {
   _accumulator = 0;
   _lastTime    = 0;
   _rootObjects = [];
+
+  // ── App state ─────────────────────────────
+  /** While true the loop still renders (menus preview settings live behind
+   *  them) but nothing steps or updates — the clock, the dish, the airlock
+   *  and every enemy freeze without knowing why. Set through setPaused(). */
+  paused = false;
+  /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
+   *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
+  devTools = true;
+  /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
+  _sceneLoadedListeners = new Set();
+  /** Resolves once the loading screen is gone and the game is on show —
+   *  the moment the main menu can appear. @type {Promise<void>} */
+  revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
 
   // ── Input ─────────────────────────────────
   // Touchpads can occasionally emit one huge movement event. Cap each raw
@@ -112,6 +129,34 @@ export class Engine {
     nextNight:  'KeyN',   // BaseScene: advance the night (wraps to night 1)
     perfStats:  'KeyI',   // toggle the FPS / draw-call readout
   };
+
+  /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
+   *  that lands while the window is blurred never arrives, so a key held
+   *  into the pause menu would otherwise walk the player on resume.
+   *  @param {boolean} paused */
+  setPaused(paused) {
+    this.paused = !!paused;
+    this._accumulator = 0;
+    // Cleared in place — components and the debug camera hold these objects.
+    for (const code in this.input.keys) delete this.input.keys[code];
+    for (const code in this.input.pressed) delete this.input.pressed[code];
+    this.input.mouse.dx = 0;
+    this.input.mouse.dy = 0;
+  }
+
+  /** Whether the debug keys may act right now. */
+  get debugKeysActive() {
+    return this.devTools && !this.paused;
+  }
+
+  /** Subscribe to scene loads — called at the end of every loadScene, the
+   *  ones the app starts and the ones it doesn't (F4, the editor's switcher).
+   *  @param {(scene: import('./Scene.js').Scene) => void} listener
+   *  @returns {() => void} unsubscribe */
+  onSceneLoaded(listener) {
+    this._sceneLoadedListeners.add(listener);
+    return () => this._sceneLoadedListeners.delete(listener);
+  }
 
   /** Returns true while the key mapped to [action] is held down. */
   isAction(action) {
@@ -202,6 +247,7 @@ export class Engine {
     // Edge-triggered, so like the collider overlay they get their own
     // listener rather than `input.keys`, which is level-triggered.
     addEventListener('keydown', (e) => {
+      if (!this.debugKeysActive) return;
       if (e.code === 'Backquote')        this.physicsDebug?.toggle();
       if (e.code === 'F2')               this.levelEditor?.toggle();
       if (e.code === this.keyBinds.debugFly)
@@ -288,6 +334,7 @@ export class Engine {
   _reveal() {
     this.screenFade.fadeIn(1500);
     this.loadingScreen.hide({ immediate: true });
+    this._resolveRevealed();
   }
 
   /** Free every GPU resource we own. Call before rebuilding a level, so
@@ -342,6 +389,8 @@ export class Engine {
     // tree and drop any selection pointing into the old scene, or the next
     // arrow-key press would sync dead physics bodies.
     this.levelEditor?.onSceneRebuilt?.();
+
+    for (const listener of [...this._sceneLoadedListeners]) listener(this.activeScene);
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping
@@ -582,6 +631,7 @@ export class Engine {
     player.addComponent(new Flashlight());
 
     this.player = player;           // the debug fly camera freezes whoever this is
+    this.playerController = ctrl;
     this._rootObjects.push(player);
     this.crosshair.show();
   }
@@ -598,6 +648,16 @@ export class Engine {
     let frameDt = Math.min(now - this._lastTime, Engine.MAX_FRAME);
     this._lastTime = now;
 
+    // Paused: the clock above still moves (no spike on resume), the frame
+    // still renders, and nothing in between runs.
+    if (!this.paused) this._simulate(frameDt);
+
+    this._renderFrame(frameDt);
+  };
+
+  /** One frame of simulation: fixed steps, interpolation, the debug camera,
+   *  then the variable and late updates. Skipped while paused. */
+  _simulate(frameDt) {
     // ── Fixed update (physics) ──
     this._accumulator += frameDt;
     while (this._accumulator >= Engine.FIXED_DT) {
@@ -642,7 +702,10 @@ export class Engine {
 
     // ── Late update (post-update, camera, etc.) ──
     for (const obj of this._rootObjects) obj._lateUpdate(frameDt);
+  }
 
+  /** Draw the frame and consume one-frame input — runs paused or not. */
+  _renderFrame(frameDt) {
     // ── Render ──
     this.physicsDebug?.update();
     this.levelEditor?.update();
@@ -665,7 +728,7 @@ export class Engine {
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
     this.input.pressed = {};
-  };
+  }
 
   _clampMouseEventDelta(delta) {
     if (!Number.isFinite(delta)) return 0;

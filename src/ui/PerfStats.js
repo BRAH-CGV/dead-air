@@ -50,8 +50,20 @@ export class PerfStats {
   get visible() { return !!this.root && this.root.style.display !== 'none'; }
 
   toggle() {
+    if (this.visible) this.hide();
+    else this.show();
+  }
+
+  /** Show the readout (the Show FPS setting, or I). */
+  show() {
+    if (!this.root || this.visible) return;
+    this.root.style.display = 'block';
+    this._reset();
+  }
+
+  hide() {
     if (!this.root) return;
-    this.root.style.display = this.visible ? 'none' : 'block';
+    this.root.style.display = 'none';
     this._reset();
   }
 
