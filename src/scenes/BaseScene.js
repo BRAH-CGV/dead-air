@@ -215,8 +215,10 @@ export class BaseScene extends Scene {
     // outside the scene graph — nothing tears them down for us, so a scene
     // swap would leave last night's numbers floating over the next level.
     this.hud?.hide();
-    this.radarOverlay?.hide();
-    this.reviewPanel?.hide();
+    // dispose(), not just hide(): both hang listeners on page elements and
+    // the window that outlive the scene.
+    this.radarOverlay?.dispose();
+    this.reviewPanel?.dispose();
   }
 
   // ──────────────────────────────────────────

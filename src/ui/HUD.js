@@ -111,6 +111,18 @@ export class RadarOverlay {
   show() { if (this.root) this.root.style.display = 'flex'; }
   hide() { if (this.root) this.root.style.display = 'none'; }
 
+  /** Stop listening for resizes and drop the sky. The window listener
+   *  would otherwise keep this overlay — and the scene's sky through the
+   *  backdrop — alive after every rebuild. */
+  dispose() {
+    this.hide();
+    if (this._resizeHandler && typeof window !== 'undefined') {
+      window.removeEventListener('resize', this._resizeHandler);
+    }
+    this._resizeHandler = null;
+    this._backdrop = null;
+  }
+
   setInfo(text) {
     if (this._info) this._info.textContent = text || '';
   }
@@ -476,9 +488,23 @@ export class SignalReviewPanel {
     this._deleteCb  = null;
     this._keyHandler = null;
 
-    // Wire click handlers
-    this._saveBtn?.addEventListener('click', () => this._saveCb?.());
-    this._deleteBtn?.addEventListener('click', () => this._deleteCb?.());
+    // Wire click handlers. The buttons outlive the scene (index.html), so
+    // the handlers are kept to be removed again in dispose().
+    this._onSaveClick   = () => this._saveCb?.();
+    this._onDeleteClick = () => this._deleteCb?.();
+    this._saveBtn?.addEventListener('click', this._onSaveClick);
+    this._deleteBtn?.addEventListener('click', this._onDeleteClick);
+  }
+
+  /** Let go of the page's buttons. Without this every scene rebuild adds
+   *  another pair of click listeners, and one click saves into every dead
+   *  scene as well as the live one. */
+  dispose() {
+    this.hide();
+    this._saveBtn?.removeEventListener('click', this._onSaveClick);
+    this._deleteBtn?.removeEventListener('click', this._onDeleteClick);
+    this._saveCb = null;
+    this._deleteCb = null;
   }
 
   /** Show the panel with the signal's payload image. */

@@ -9,7 +9,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 1: pause core
 - [x] Phase 2: pure navigation (AppFlow, PointerLock, keyNames)
 - [x] Phase 3: menus on screen (App also carries Phase 4's rebuild / restart / quit paths)
-- [ ] Phase 4: restart and memory
+- [x] Phase 4: restart and memory
 - [ ] Phase 5: settings
 - [ ] Phase 6: credits and end states
 - [ ] Phase 7 (optional): continue, camera drift, layout-aware key names
@@ -49,9 +49,11 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **The fade is `engine.screenFade`**, the same instance the reveal uses. Its `playing` flag then guards both.
 - **No browser tool was available in this session**, so §10 is left for a human (see QA results).
 
+- **`RadarOverlay.dispose()` is fixed too, not only `SignalReviewPanel`.** Each overlay added a window `resize` listener per build and never removed it, which kept every old overlay and that scene's sky (through the backdrop) alive. Both scenes now call `dispose()` on both overlays. Those were the only per-scene listeners in `src/` (grepped).
+
 ## Needs a human
 
-_(none yet)_
+- **Memory counters across restarts (§6.5).** `renderer.info.memory.geometries` / `.textures` can't be reached without WebGL, which the tests don't have. The listener leaks are covered by tests (`src/ui/HUD.dispose.test.js`, plus the BaseScene and OfficeScene dispose tests). Still needed: in the browser, press I, then do Main menu → New game five times and check that the Geometries and Textures numbers come back to the same values.
 
 ## QA results
 
