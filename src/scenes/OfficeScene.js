@@ -5,12 +5,14 @@ import { Scene } from '../core/Scene.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { Satellite } from '../gameobjects/Satellite.js';
+import { createDefaultNeighbourDishes } from '../gameobjects/DishRig.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { SignalAlertLight } from '../gameobjects/SignalAlertLight.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 
 // ─────────────────────────────────────────────
@@ -68,6 +70,10 @@ export class OfficeScene extends Scene {
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
 
+    // The dishes of the neighbouring array nodes, lent to this station.
+    // Too far away to be seen or heard, so they are simulated headless.
+    this.satellite.neighbours = createDefaultNeighbourDishes();
+
     // ── Player (shared across all scenes) ──
     this.engine.buildPlayer();
 
@@ -115,6 +121,10 @@ export class OfficeScene extends Scene {
     this.radarOverlay = new RadarOverlay();
     this.reviewPanel  = new SignalReviewPanel();
 
+    // The real sky behind the radar grid — reads the sky live each frame,
+    // so it turns and dawns in step with the view out of the window.
+    this.radarOverlay.setSky(this.sky);
+
     // ── Computer terminal (component on the retro-computer) ──
     this.terminal = new ComputerTerminal();
     this.terminal.satellite     = this.satellite;
@@ -122,6 +132,7 @@ export class OfficeScene extends Scene {
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
     this.terminal.reviewPanel   = this.reviewPanel;
+    this.terminal.crosshair     = this.engine.crosshair;
 
     // Attach the terminal and its Interactable to the computer model.
     // The computer is the first child of _office (spawned in _addOfficeFurniture).
@@ -143,6 +154,13 @@ export class OfficeScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     gameplayGO.addComponent(this.gameController);
+
+    // The placeholder warning lamp over the desk: dark until a signal window
+    // opens, so the player can tell from across the room that one has.
+    if (this.signalLight) {
+      this.signalLight.signalManager  = this.signalManager;
+      this.signalLight.gameController = this.gameController;
+    }
 
     // Wire review panel callbacks into the terminal.
     this.reviewPanel.onSave(() => {
@@ -347,6 +365,13 @@ export class OfficeScene extends Scene {
       scale: 0.016,
     });
     this._office.addChild(computer);
+
+    // Placeholder warning lamp above the desk (a real model later): blinks
+    // red while an unscanned signal is visible, wired up in
+    // _addGameplaySystems.
+    this.signalLight = new SignalAlertLight();
+    this.signalLight.object3d.position.set(0, 1.3, -2.45);
+    this._office.addChild(this.signalLight);
       
     const server = this.engine.spawnModel('model:server-rack', { 
       name: 'ServerRack', 
@@ -498,6 +523,7 @@ export class OfficeScene extends Scene {
     const sky = createMarsSky();
     sky.addComponent(new SkyFollow());
     skyGroup.addChild(sky);
+    this.sky = sky;   // the radar backdrop reads it; nothing else turns it here
 
     // Match the fog to the dome's horizon. FogExp2 washes the ground plane out
     // to the fog colour by ~100 m, well inside the dome, so the engine default

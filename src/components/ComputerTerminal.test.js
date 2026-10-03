@@ -10,18 +10,13 @@ import * as THREE from 'three';
 import { ComputerTerminal } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
-
-// ── Helper: convert sky coords to Cartesian cursor position ──
-function skyToCursor(yaw, pitch) {
-  const elev = pitch + Math.PI / 2;
-  const r = elev / (Math.PI / 2);
-  return { x: r * Math.sin(yaw), y: r * Math.cos(yaw) };
-}
+import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
 
 // ── Minimal test doubles ──────────────────────────────────
 
 /** The real dish, on a bare Base → Neck_block → Dish rig, parked at the
- *  zenith where a fresh terminal's cursor starts. */
+ *  zenith where a fresh terminal's cursor starts. The neck rests at model
+ *  0, which the mirror reads back as game bearing π — up on the disc. */
 function makeRealDish() {
   const root = new THREE.Object3D(); root.name = 'Base';
   const neck = new THREE.Object3D(); neck.name = 'Neck_block';
@@ -33,9 +28,10 @@ function makeRealDish() {
 }
 
 function makeSatellite() {
-  return {
+  const sat = {
     targetYaw: 0,
     targetPitch: 0,
+    neighbours: [],
     neck: { object3d: { rotation: { y: 0 } } },
     dish: { object3d: { rotation: { x: 0 } } },
     scanProgress: 0,
@@ -47,7 +43,19 @@ function makeSatellite() {
       const dp = Math.abs(this.dish.object3d.rotation.x - pitch);
       return Math.sqrt(dy * dy + dp * dp) <= tol;
     },
+    aimAll(yaw, pitch) {
+      this.targetYaw = yaw;
+      this.targetPitch = pitch;
+    },
+    isAnyDishAimedAt(yaw, pitch, tol) {
+      if (this.isAimedAt(yaw, pitch, tol)) return true;
+      for (const rig of this.neighbours) {
+        if (rig.isAimedAt(yaw, pitch, tol)) return true;
+      }
+      return false;
+    },
   };
+  return sat;
 }
 
 function makeHUD() {
@@ -72,10 +80,27 @@ function makeReviewPanel() {
   };
 }
 
+function makeCrosshair() {
+  return {
+    show: vi.fn(), hide: vi.fn(),
+    setActive: vi.fn(),
+  };
+}
+
+/** Skip the appearance schedule — every signal fully faded in. The
+ *  scheduling itself is covered in SignalManager.test.js; these tests
+ *  exercise the terminal against revealed signals. */
+function revealAll(mgr) {
+  for (const sig of mgr.signals) {
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds;
+  }
+}
+
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('ComputerTerminal', () => {
-  let term, sat, mgr, hud, radar, review;
+  let term, sat, mgr, hud, radar, review, crosshair;
 
   beforeEach(() => {
     term   = new ComputerTerminal();
@@ -84,14 +109,17 @@ describe('ComputerTerminal', () => {
     hud    = makeHUD();
     radar  = makeRadar();
     review = makeReviewPanel();
+    crosshair = makeCrosshair();
 
     term.satellite    = sat;
     term.signalManager = mgr;
     term.hud          = hud;
     term.radar        = radar;
     term.reviewPanel  = review;
+    term.crosshair    = crosshair;
 
     mgr.startNight(1);  // required=3, 5 signals
+    revealAll(mgr);     // hide the appearance schedule from these tests
   });
 
   // ── Initial state ──
@@ -106,6 +134,17 @@ describe('ComputerTerminal', () => {
     term.enter();
     expect(term.state).toBe('radar');
     expect(radar.show).toHaveBeenCalled();
+  });
+
+  it('hides the first-person crosshair when the terminal opens', () => {
+    term.enter();
+    expect(crosshair.hide).toHaveBeenCalled();
+  });
+
+  it('restores the crosshair when the terminal closes', () => {
+    term.enter();
+    term.exit();
+    expect(crosshair.show).toHaveBeenCalled();
   });
 
   it('enter does nothing if not idle', () => {
@@ -153,8 +192,12 @@ describe('ComputerTerminal', () => {
     const dt = 1 / 60;
     const up = { left: false, right: false, up: true, down: false };
 
-    // Zenith to horizon, the dish chasing every frame.
-    while (Math.hypot(term._cursorX, term._cursorY) < 1) {
+    // Zenith outward through the dish's own reach (it stops following past
+    // its 0.75 radius), the dish chasing every frame. Up from the centre is
+    // bearing π — the bearing the stand-in parks on (its neck at model 0
+    // mirrors to game π) — so the chase is about closing a pitch gap, not a
+    // half-turn of yaw.
+    while (Math.hypot(term._cursorX, term._cursorY) < 0.4) {
       term.moveCursor(up, dt);
       dish._update(dt);
     }
@@ -167,6 +210,30 @@ describe('ComputerTerminal', () => {
       t += dt;
     }
     expect(t).toBeLessThanOrEqual(0.5);
+  });
+
+  it('_updateRadarDisplay forwards the neighbour array and the local rig to the radar', () => {
+    const dish = makeRealDish();
+    dish.neighbours = createDefaultNeighbourDishes();
+    term.satellite = dish;
+    term.enter();
+
+    term._updateRadarDisplay();
+
+    // Game angles, straight from the rig — the parked stand-in's neck at
+    // model 0 reads back as bearing π (the neck mirrors yaw), the zenith
+    // tilt as -π/2.
+    expect(radar.update).toHaveBeenCalledWith(
+      mgr.signals,
+      dish.currentYaw,
+      dish.currentPitch,
+      term._cursorX,
+      term._cursorY,
+      term._hoveredSignal,
+      -1,
+      dish.neighbours,
+      dish.rig,
+    );
   });
 
   it('moves finely enough per frame to stop inside a signal', () => {
@@ -203,6 +270,20 @@ describe('ComputerTerminal', () => {
     const sky = term._cursorToSky();
     expect(sat.targetYaw).toBe(sky.yaw);
     expect(sat.targetPitch).toBe(sky.pitch);
+  });
+
+  it('moveCursor routes through aimAll — the whole array follows the cursor', () => {
+    const dish = makeRealDish();
+    const aimAll = vi.spyOn(dish, 'aimAll');
+    term.satellite = dish;
+    term.enter();
+
+    term.moveCursor({ left: false, right: false, up: false, down: true }, 0.5);
+
+    const sky = term._cursorToSky();
+    expect(aimAll).toHaveBeenCalledWith(sky.yaw, sky.pitch);
+    expect(dish.targetYaw).toBe(sky.yaw);
+    expect(dish.targetPitch).toBe(sky.pitch);
   });
 
   // ── Hover detection ──
@@ -242,6 +323,66 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
     expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover ignores signals that have not appeared yet', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = false;   // not yet scheduled — still invisible
+    sig.fadeElapsed = 0;
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover catches a signal while it is still fading in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds * 0.5;   // visible but half-transparent
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+  });
+
+  it('hover catches a signal while it is fading back out', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.lifeSeconds - sig.fadeSeconds * 0.5;  // half-gone
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+  });
+
+  it('hover ignores signals that have completely faded out', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.lifeSeconds;   // window over, dot invisible
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBeNull();
+  });
+
+  it('hover finds a signal once it has fully faded in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds;
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
   });
 
   it('hover is null when cursor is far from any signal', () => {
@@ -295,6 +436,57 @@ describe('ComputerTerminal', () => {
     expect(term._hoveredSignal).toBe(sig);
     expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(false);
     // Should not transition to scanning
+    expect(term.state).toBe('radar');
+  });
+
+  // ── Enter to scan: the array gate ──
+
+  it('Enter starts scan when a neighbour dish is aimed and the local one is not', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    // Local dish off target…
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+    // …but a neighbour locked on.
+    sat.neighbours = [{
+      currentYaw: sig.yaw,
+      currentPitch: sig.pitch,
+      isAimedAt(yaw, pitch, tol) {
+        const dy = Math.abs(this.currentYaw - yaw);
+        const dp = Math.abs(this.currentPitch - pitch);
+        return Math.sqrt(dy * dy + dp * dp) <= tol;
+      },
+    }];
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+    expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(false);
+    expect(sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
+
+    term._enterScanning();
+    expect(term.state).toBe('scanning');
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+  });
+
+  it('radar info explains a missing lock when no dish of the array is aimed', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+    sat.neighbours = [];
+    term._updateHover();
+
+    // Drive the Enter gate exactly as onUpdate does for a hovering signal.
+    const aimed = sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+    expect(aimed).toBe(false);
+    term.radar.setInfo('No dish aimed — wait for one to settle');
+    expect(radar.setInfo).toHaveBeenCalledWith('No dish aimed — wait for one to settle');
     expect(term.state).toBe('radar');
   });
 

@@ -286,4 +286,38 @@ describe('GameController', () => {
     expect(clock.elapsed).toBe(before);
     expect(clock.timeString).toBe('6:00 AM');
   });
+
+  // ── Signal appearance ticking ──
+
+  it('ticks signal appearance with the night clock while playing', () => {
+    gc.startNight(1);
+
+    // Nothing visible at 12:00.
+    expect(mgr.signals.every(s => !s.revealed)).toBe(true);
+
+    // Make every signal due immediately; a few frames past the fade
+    // window reveal them all.
+    for (const sig of mgr.signals) sig.appearAt = 0;
+    for (let i = 0; i < 5; i++) gc.onUpdate(1);
+
+    expect(mgr.signals.every(s => s.appeared)).toBe(true);
+    expect(mgr.signals.every(s => s.revealed)).toBe(true);
+  });
+
+  it('freezes signal appearance outside playing state', () => {
+    gc.startNight(1);
+    meetQuota();
+    gc.onUpdate(999);            // → morning (clock paused by _endShift)
+    expect(gc.state).toBe('morning');
+
+    const snapshot = mgr.signals.map(s => ({ a: s.appeared, f: s.fadeElapsed }));
+    gc.onUpdate(10);
+    expect(mgr.signals.map(s => ({ a: s.appeared, f: s.fadeElapsed }))).toEqual(snapshot);
+  });
+
+  it('tolerates a missing signal manager', () => {
+    gc.signalManager = null;
+    gc.startNight(1);   // must not throw
+    expect(() => gc.onUpdate(0.016)).not.toThrow();
+  });
 });

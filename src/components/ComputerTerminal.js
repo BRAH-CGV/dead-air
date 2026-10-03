@@ -2,6 +2,7 @@ import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
+import { cursorToSky } from '../gameobjects/DishRig.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -44,13 +45,16 @@ export class ComputerTerminal extends Component {
   radar = null;
   /** @type {import('../ui/HUD.js').SignalReviewPanel|null} */
   reviewPanel = null;
+  /** @type {import('../ui/Crosshair.js').Crosshair|null} */
+  crosshair = null;
 
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
 
-  /** Cursor position in Cartesian unit-circle coords.
-   *  x: -1..+1 (left..right = yaw), y: -1..+1 (bottom..top = horizon..zenith).
-   *  Clamped to the unit circle so the cursor stays in the radar disc. */
+  /** Cursor position in Cartesian unit-circle coords: x -1..+1 (left..right),
+   *  y -1..+1 (down..up). The disc's centre (0, 0) is the zenith and its rim
+   *  the horizon — straight down from the centre is the horizon out of the
+   *  window. Clamped to the unit circle so the cursor stays in the radar. */
   _cursorX = 0;
   _cursorY = 0;
 
@@ -99,24 +103,20 @@ export class ComputerTerminal extends Component {
       this._cursorX /= r;
       this._cursorY /= r;
     }
-    // Convert to sky coords and update satellite target
+    // Convert to sky coords and aim the whole array — every dish whose
+    // section contains the point follows the cursor.
     const sky = this._cursorToSky();
     if (this.satellite) {
-      this.satellite.targetYaw = sky.yaw;
-      this.satellite.targetPitch = sky.pitch;
+      this.satellite.aimAll(sky.yaw, sky.pitch);
     }
   }
 
   /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
-   *  Centre of radar (y=1) = zenith (pitch=-π/2), rim (y=0) = horizon. */
+   *  The disc's centre is the zenith (pitch −π/2), its rim the horizon.
+   *  The one conversion lives in DishRig — the same coordinates the
+   *  array's coverage sections are measured in. */
   _cursorToSky() {
-    const r = Math.sqrt(this._cursorX * this._cursorX + this._cursorY * this._cursorY);
-    const theta = Math.atan2(this._cursorX, this._cursorY);
-    const elev = r * (Math.PI / 2);   // 0 at centre (zenith), π/2 at rim (horizon)
-    return {
-      yaw: theta,
-      pitch: -(Math.PI / 2) + elev,   // -π/2 at zenith, 0 at horizon
-    };
+    return cursorToSky(this._cursorX, this._cursorY);
   }
 
   /** Check if cursor is hovering over any unresolved signal. */
@@ -128,7 +128,7 @@ export class ComputerTerminal extends Component {
     let closestDist = Infinity;
 
     for (const sig of signals) {
-      if (sig.resolved) continue;
+      if (sig.resolved || sig.opacity <= 0) continue;   // hidden / fully faded out
       // Compute angular distance from cursor (in sky coords) to signal
       const dyaw = sig.yaw - sky.yaw;
       const dpitch = sig.pitch - sky.pitch;
@@ -185,13 +185,18 @@ export class ComputerTerminal extends Component {
     this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
+    // Restore the first-person reticle now that the terminal is closed.
+    this.crosshair?.show();
   }
 
   _enterRadar() {
     this.state = 'radar';
     this._setInputLocked(true);
+    // Hide the first-person reticle while the terminal is open — the radar
+    // overlay has its own cursor.
+    this.crosshair?.hide();
     this.radar?.show();
-    this.radar?.setHint('WASD: move cursor | Enter: scan (when dish aimed) | Q: exit');
+    this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
     this.radar?.setInfo('');
     this._hoveredSignal = null;
     // Check if a scan completed while terminal was closed
@@ -282,15 +287,15 @@ export class ComputerTerminal extends Component {
       // Update hover detection
       this._updateHover();
 
-      // Enter key starts scanning if hovering and dish is aimed
+      // Enter key starts scanning if hovering and a dish of the array is aimed
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
       if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
         const sig = this._hoveredSignal;
-        const aimed = this.satellite.isAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+        const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
         if (aimed) {
           this._enterScanning();
         } else {
-          this.radar?.setInfo('Dish not aimed — wait for it to settle');
+          this.radar?.setInfo('No dish aimed — wait for one to settle');
         }
       }
       this._enterHeld = enterDown;
@@ -331,8 +336,11 @@ export class ComputerTerminal extends Component {
   /** Refresh the radar canvas with current state. */
   _updateRadarDisplay() {
     if (!this.radar || !this.signalManager || !this.satellite) return;
-    const dishYaw   = this.satellite.neck?.object3d?.rotation?.y ?? 0;
-    const dishPitch = this.satellite.dish?.object3d?.rotation?.x ?? 0;
+    // Game angles, straight from the rig — the model's neck rotation
+    // mirrors game yaw (see Satellite), so raw rotations would draw the
+    // dish indicator on the wrong side of the disc.
+    const dishYaw   = this.satellite.currentYaw ?? 0;
+    const dishPitch = this.satellite.currentPitch ?? 0;
 
     // Compute scan progress for the ring display
     let scanProgress = -1;
@@ -348,6 +356,8 @@ export class ComputerTerminal extends Component {
       this._cursorY,
       this._hoveredSignal,
       scanProgress,
+      this.satellite.neighbours ?? [],
+      this.satellite.rig ?? null,
     );
   }
 }

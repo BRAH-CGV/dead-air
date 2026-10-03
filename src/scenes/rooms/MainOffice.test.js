@@ -28,6 +28,7 @@ import { MainOffice } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
+import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { PRELOAD } from '../../assets/manifest.js';
 
 let nextHandle = 1;
@@ -322,6 +323,19 @@ describe('MainOffice', () => {
     expect(box.max.y).toBeLessThan(2.9);                   // below the ceiling
   });
 
+  it('perches a signal alert lamp above the computer desk, in sight of the room', () => {
+    const light = room.root.find('SignalAlertLight');
+    expect(light).toBeInstanceOf(SignalAlertLight);
+    expect(room.signalLight).toBe(light);            // the scene wires it to gameplay
+
+    const pos = light.object3d.position;
+    expect(Math.abs(pos.x)).toBeLessThan(0.5);       // over the desk…
+    expect(pos.z).toBeGreaterThan(-3.05);            // …which stands at z −2.55
+    expect(pos.z).toBeLessThan(-2.05);
+    expect(pos.y).toBeGreaterThan(1.0);              // clear of the monitor
+    expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
+  });
+
   it('leaves global lights (ambient, moon) to the scene', () => {
     let globals = 0;
     room.root.object3d.traverse(o => { if (o.isAmbientLight || o.isDirectionalLight) globals++; });
@@ -375,6 +389,16 @@ describe('MainOffice wall clock teardown', () => {
     const room = new MainOffice(makeEngine());
     room.build();
     const dispose = vi.spyOn(room.wallClock, 'dispose');
+    room.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('MainOffice signal alert light teardown', () => {
+  it('dispose frees the alert light with the rest of the room', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const dispose = vi.spyOn(room.signalLight, 'dispose');
     room.dispose();
     expect(dispose).toHaveBeenCalled();
   });

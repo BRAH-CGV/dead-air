@@ -533,6 +533,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
     expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
+    expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
   });
 
   it('runs the game controller as a component under SceneRoot, so it ticks', () => {
@@ -603,6 +604,21 @@ describe('BaseScene gameplay loop', () => {
 
   it('hangs the night clock on the office wall', () => {
     expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
+  });
+
+  it('wires the office signal lamp to the manager and the controller', () => {
+    const light = scene.rooms.MainOffice.signalLight;
+    expect(light.signalManager).toBe(scene.signalManager);
+    expect(light.gameController).toBe(scene.gameController);
+  });
+
+  it('shows the real sky behind the radar grid', () => {
+    // The backdrop is the sky the window shows, subsampled — Phobos and
+    // Deimos riding the same turn — drawn through the radar's own mapping.
+    const backdrop = scene.radarOverlay._backdrop;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.moons.map(m => m.name)).toEqual(['Phobos', 'Deimos']);
+    expect(scene.sky.skyUniforms.uDawn.value).toBe(backdrop.dawn);
   });
 
   it('turns the night to day and back with the controller — sky, lights and fog', () => {
