@@ -14,7 +14,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - [x] Phase 6: credits and end states
 - [x] Phase 7 (optional): **Continue only**. The camera drift and layout-aware key names were skipped as low value for the risk.
 - [x] Phase 8: docs and production build
-- [ ] Phase 9: ship
+- [x] Phase 9: ship (PR opened against `main`)
 
 ## Baseline (Phase 0, `npm run test` on `origin/main`)
 
