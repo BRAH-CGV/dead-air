@@ -103,7 +103,7 @@ export class ServerRoom extends Room {
     // Console is at [-1, 0, -2.45]; slot is 1.5 units forward (z) and on top.
     const consoleTopY = 0.75;
     const slotSize = [0.12, 0.03, 0.15]; // same as MainOffice reader
-    const slotPos = [-1, consoleTopY + slotSize[1] / 2, -2.45 + 1.5];
+    const slotPos = [-1.160, 0.405, -1.750];
     const slotMat = this._own(new THREE.MeshStandardMaterial({
       color: 0x1a1a1a,
       roughness: 0.7,
@@ -112,6 +112,11 @@ export class ServerRoom extends Room {
       emissiveIntensity: 0.3,
     }));
     const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
+
+    // Tooltip on hover (no interact action — just a label)
+    const slotTooltip = new Interactable();
+    slotTooltip.promptLabel = 'Drive reader';
+    slotBox.addComponent(slotTooltip);
 
     // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
     const driveHeight = 0.02; // Drive._size[1] default

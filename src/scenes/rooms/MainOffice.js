@@ -193,12 +193,17 @@ export class MainOffice extends Room {
     // Desk surface is at about y = 0.73 m; the reader is 3 cm tall, so
     // its centre sits at 0.73 + 0.015 = 0.745.
     const readerSize = [0.12, 0.03, 0.15];
-    const readerPos  = [0.55, 0.745, -1.55];
+    const readerPos  = [0.650, 0.875, -2.260];
     const readerMat  = this._own(new THREE.MeshStandardMaterial({
       color: 0x1a1a1a, roughness: 0.7, metalness: 0.4,
       emissive: 0x003311, emissiveIntensity: 0.3,
     }));
     this.driveReader = this._addStaticBox('DriveReader', readerPos, readerSize, readerMat);
+
+    // Tooltip on hover (no interact action — just a label)
+    const readerTooltip = new Interactable();
+    readerTooltip.promptLabel = 'Drive reader';
+    this.driveReader.addComponent(readerTooltip);
 
     // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
     // The slot is configured with a snap offset that places the drive on
@@ -214,7 +219,7 @@ export class MainOffice extends Room {
    *  one drive. Creates 2× the maximum required drives for the night. */
   _buildDriveSupply() {
     const supplySize = [0.3, 0.2, 0.3];
-    const supplyPos  = [1.2, 0.1, -2.0];
+    const supplyPos  = [-0.630, 0.100, -1.910];
     const supplyMat  = this._own(new THREE.MeshStandardMaterial({
       color: 0x3a4a3a, roughness: 0.6, metalness: 0.3,
       emissive: 0x002200, emissiveIntensity: 0.2,
@@ -258,7 +263,7 @@ export class MainOffice extends Room {
    *  placeholder sphere until a proper warning-lamp model is sourced. */
   _buildSignalLight() {
     this.signalLight = this._own(new SignalAlertLight());
-    this.signalLight.object3d.position.set(0, 1.3, -2.45);
+    this.signalLight.object3d.position.set(-0.240, 1.090, -2.820);
     this.root.addChild(this.signalLight);
   }
 

@@ -198,6 +198,11 @@ export class Airlock extends Corridor {
 
     this.quotaBoxGO = this._addStaticBox('QuotaBox', boxPos, boxSize, boxMat);
 
+    // Tooltip on hover (no interact action — just a label)
+    const quotaTooltip = new Interactable();
+    quotaTooltip.promptLabel = 'Drives with signals';
+    this.quotaBoxGO.addComponent(quotaTooltip);
+
     // Add the QuotaBox component
     this.quotaBox = new QuotaBox({ requiredCount: 0 });
     this.quotaBoxGO.addComponent(this.quotaBox);
