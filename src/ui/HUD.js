@@ -269,6 +269,15 @@ export class RadarOverlay {
     return `rgba(0, 220, 200, ${0.8 * a})`;                          // unscanned cyan
   }
 
+  /** RGB triplet for a signal's state colour — used by the ripple
+   *  animation which applies its own alpha. */
+  _blipRgb(sig) {
+    if (sig.saved)   return '80, 200, 80';
+    if (sig.deleted) return '200, 60, 60';
+    if (sig.scanned) return '180, 180, 60';
+    return '0, 220, 200';
+  }
+
   /** Redraw the radar with current signal data, dish direction, cursor,
    *  and scan state. Blips and indicators share one sky mapping: azimuth
    *  (yaw) sweeps around the circle, elevation (-pitch) sets the radial
@@ -390,28 +399,33 @@ export class RadarOverlay {
       ctx.fill();
     }
 
-    // Signal blips — shared _skyToCanvas mapping. Each signal appears on
-    // its own schedule through the night and fades in (sig.opacity), so
-    // an un-appeared signal draws nothing at all.
-    for (const sig of signals) {
+    // Signal blips — each signal is a single expanding ripple that
+    // repeats continuously.  A ring grows outward from the signal's
+    // position and fades before starting again, staggered per signal
+    // so they never pulse in lock-step.
+    const now = Date.now();
+    const RIPPLE_CYCLE = 2000;       // ms per ripple
+    const RIPPLE_MAX   = 18;         // max ripple radius (in s units)
+    for (let i = 0; i < signals.length; i++) {
+      const sig = signals[i];
       if (sig.opacity <= 0) continue;
       const pos = this._skyToCanvas(sig.yaw, sig.pitch);
+      const rgb = this._blipRgb(sig);
 
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 5 * s, 0, Math.PI * 2);
-      ctx.fillStyle = this._blipColor(sig);
-      ctx.fill();
-    }
+      // Stagger each signal's phase so the sky never pulses as one.
+      const offset = (i * 737) % RIPPLE_CYCLE;
+      const phase  = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
 
-    // Hover highlight — pulsing glow around the hovered signal
-    if (hoveredSignal && !hoveredSignal.resolved) {
-      const hPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
-      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
-      ctx.beginPath();
-      ctx.arc(hPos.x, hPos.y, (10 + pulse * 3) * s, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0, 255, 230, ${0.3 + pulse * 0.3})`;
-      ctx.lineWidth = 2 * s;
-      ctx.stroke();
+      // The expanding ring — radius grows, alpha fades.
+      const ringR   = phase * RIPPLE_MAX * s;
+      const ringA   = (1 - phase) * 0.8 * sig.opacity;
+      if (ringA > 0.01) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${rgb}, ${ringA.toFixed(3)})`;
+        ctx.lineWidth = 1.5 * s;
+        ctx.stroke();
+      }
     }
 
     // Scan progress ring — arc around the hovered/scanning signal
