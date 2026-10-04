@@ -26,8 +26,10 @@ import { Component } from '../core/Component.js';
 //                bulbs blow and the generator trips (PowerGrid.breakLights).
 //                Anyone it can see is taken: everyone outside, and anyone in
 //                view of the window — unless the power was cut first, because
-//                a dark office has nothing to see in it. Stepping outside
-//                while it holds is fatal.
+//                a dark office has nothing to see in it. Caught with the
+//                power on, the window's rooms stay deadly for the whole
+//                visit, blown bulbs or not; stepping outside while it
+//                holds is fatal either way.
 //   gone         It teleports away. Bulbs stay broken until the next night;
 //                the generator brings back the vital functions.
 //
@@ -289,6 +291,7 @@ export class UfoThreat extends Component {
     this.phase = 'waiting';
     this._t = 0;
     this._judged = false;
+    this._sawLights = false;
 
     const bearing = (this.random() * 2 - 1) * UFO.bearingSpread;
     this._startPoint.set(
@@ -371,7 +374,9 @@ export class UfoThreat extends Component {
       this._setFlood(1);
       this.grid.surge = 0;
       this._stop('flicker');
-      // Judged before the bulbs go: the lit office is what gave you away.
+      // Judged before the bulbs go: the lit office is what gave you away —
+      // and having seen it lit, it watches those rooms for the whole visit.
+      this._sawLights = this.grid.lit;
       const caught = this._exposed();
       if (this.grid.lit) {
         this.grid.breakLights();
@@ -420,7 +425,7 @@ export class UfoThreat extends Component {
   _exposed() {
     const eye = this.hooks.eyePosition(_eye);
     if (this.hooks.isOutside(eye)) return true;
-    return this.grid.lit && this.hooks.exposedToBeam(eye);
+    return (this._sawLights || this.grid.lit) && this.hooks.exposedToBeam(eye);
   }
 
   _surge(t, tl) {

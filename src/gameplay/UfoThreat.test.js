@@ -350,7 +350,26 @@ describe('UfoThreat', () => {
     expect(grid.broken).toBe(true);
   });
 
-  it('catches anyone outside while it hovers, power or not', () => {
+  it('caught with the power on, the exposed rooms stay deadly all visit — walking in after the bulbs blew still kills', () => {
+    const rig = makeRig({ exposed: false });
+    run(rig.threat, toLethal + 0.5);
+    expect(rig.grid.broken).toBe(true);           // the bulbs went…
+    expect(rig.controller.fail).not.toHaveBeenCalled();
+    rig.hooks.exposedToBeam.mockReturnValue(true); // …then in from the hallway
+    run(rig.threat, 0.2);
+    expect(rig.controller.fail).toHaveBeenCalled();
+  });
+
+  it('power cut in advance, the exposed rooms stay safe all visit', () => {
+    const rig = makeRig({ exposed: false });
+    rig.grid.setOn(false);
+    run(rig.threat, toLethal + 0.5);
+    rig.hooks.exposedToBeam.mockReturnValue(true);
+    run(rig.threat, UFO.hoverSeconds);
+    expect(rig.controller.fail).not.toHaveBeenCalled();
+  });
+
+    it('catches anyone outside while it hovers, power or not', () => {
     const rig = makeRig({ outside: false });
     rig.grid.setOn(false);
     run(rig.threat, toLethal + 1);
