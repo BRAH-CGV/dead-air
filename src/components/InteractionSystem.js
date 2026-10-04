@@ -164,6 +164,11 @@ export class InteractionSystem extends Component {
         this._prevTarget = null;
       }
     } else {
+      // When the override just cleared, force a prompt re-evaluation even
+      // if source and _prevTarget are both null — otherwise the old prompt
+      // text (e.g. '[E] Drop') lingers after the player drops while looking
+      // away from any target.
+      const justUnsuppressed = this._promptWasSuppressed;
       this._promptWasSuppressed = false;
 
     // Re-shown on a new target, or when the same target changes its label
@@ -173,7 +178,7 @@ export class InteractionSystem extends Component {
     // '[E] Pick up').
     const source = this.currentTarget ?? this.currentPickupable;
     const label = source?.promptLabel ?? null;
-    if (source !== this._prevTarget) {
+    if (source !== this._prevTarget || justUnsuppressed) {
       this._prevTarget?.onHoverEnd?.();   // Pickupable carries no hover hooks
       this._prevTarget = source;
       if (source) this.prompt?.show(label);
