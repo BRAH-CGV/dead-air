@@ -54,13 +54,14 @@ describe('manifest', () => {
   });
 
   it('keeps the ambience loops out of the preload, so they never hold the loading screen', () => {
-    // ~6 MB of mp3 between them. Ambience fetches them once the scene is
+    // ~10 MB of mp3 between them. Ambience fetches them once the scene is
     // up and fades each in as it arrives.
     const keys = [
       'sfx:interior-base-ambience-bed-room',
       'sfx:interior-base-ambience-centre-room',
       'sfx:interior-base-ambience-server-room',
       'sfx:interior-base-spooky-music',
+      'sfx:interior-base-ambient-music',
       'sfx:exterior-base-ambience-wind',
     ];
     for (const key of keys) {

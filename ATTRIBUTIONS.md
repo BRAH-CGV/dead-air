@@ -696,6 +696,17 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | Music that creeps in under a scare (`Ambience.setTension`) |
 | **Modifications** | Renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
 
+### Ambient music
+
+"Space Ambient" (https://pixabay.com/music/ambient-space-ambient-354085/) by YuraSoop is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `yurasoop-space-ambient-354085.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-ambient-music.mp3` |
+| **Manifest key** | `sfx:interior-base-ambient-music` |
+| **Used for** | A second, calmer music track (`AMBIENCE.ambientMusic`); on a test key for now |
+| **Modifications** | Renamed; played at 0.07 of its file level; at load, the tail is crossfaded into the head (`blendLoopSeam`) |
+
 
 ## Downloaded but unattributed — TODO
 

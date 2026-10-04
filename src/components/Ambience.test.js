@@ -27,7 +27,7 @@ function fakeSound() {
 const box = (x0, x1) => new THREE.Box3(new THREE.Vector3(x0, 0, -2), new THREE.Vector3(x1, 3, 2));
 
 /** office [0,6] ── passage [6,10] ── server [10,16], ears at `ear`. */
-function build({ sounds, x = 3, volumes } = {}) {
+function build({ sounds, x = 3, volumes, testKeys } = {}) {
   const ear = new THREE.Vector3(x, 1, 0);
   const mix = new AmbienceMix({
     zones: [{ box: box(0, 6), track: 'centre' }, { box: box(10, 16), track: 'server' }],
@@ -36,7 +36,7 @@ function build({ sounds, x = 3, volumes } = {}) {
   sounds ??= { centre: fakeSound(), server: fakeSound(), [MUSIC]: fakeSound() };
   const go = new GameObject('Ambience');
   const ambience = go.addComponent(new Ambience({
-    mix, music: MUSIC, sounds, volumes,
+    mix, music: MUSIC, sounds, volumes, testKeys,
     listenerPosition: out => out.copy(ear),
   }));
   ambience.onStart();
@@ -123,11 +123,14 @@ describe('Ambience rooms', () => {
     expect(sounds[MUSIC].volume).toBe(1);
   });
 
-  it('trims the office loop up a little, and nothing else', () => {
+  it('trims the office loop up a little, and no other room', () => {
     expect(AMBIENCE.volumes[AMBIENCE.rooms.MainOffice]).toBeGreaterThan(1);
     expect(AMBIENCE.volumes[AMBIENCE.rooms.ServerRoom]).toBeUndefined();
     expect(AMBIENCE.volumes[AMBIENCE.rooms.LivingQuarters]).toBeUndefined();
-    expect(AMBIENCE.volumes[AMBIENCE.music]).toBeUndefined();
+  });
+
+  it('never plays the music above the level its clip was mixed at', () => {
+    expect(AMBIENCE.volumes[AMBIENCE.music] ?? 1).toBeLessThanOrEqual(1);
   });
 
   it('carries on without a clip that failed to load', () => {
@@ -211,6 +214,90 @@ describe('Ambience tension music', () => {
     ambience.setTension(1);
     run(ambience, 20);
     expect(sounds.centre.volume).toBeCloseTo(1);
+  });
+});
+
+describe('Ambience test keys', () => {
+  // Testing only: there is nothing on this branch to raise the tension yet,
+  // and two candidate tracks to compare.
+  const TRIAL = 'trial';
+
+  function buildWithKeys() {
+    const sounds = { centre: fakeSound(), server: fakeSound(), [MUSIC]: fakeSound(), [TRIAL]: fakeSound() };
+    return build({ sounds, testKeys: { KeyM: MUSIC, Comma: TRIAL } });
+  }
+
+  it('swings a key\'s track in on one press and back out on the next', () => {
+    const { ambience, sounds } = buildWithKeys();
+    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.tension).toBe(1);
+    run(ambience, 20);
+    expect(sounds[MUSIC].volume).toBe(1);
+    expect(sounds[TRIAL].play).not.toHaveBeenCalled();
+
+    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.tension).toBe(0);
+    run(ambience, 20);
+    expect(sounds[MUSIC].isPlaying).toBe(false);
+  });
+
+  it('plays the other track on the other key', () => {
+    const { ambience, sounds } = buildWithKeys();
+    ambience.onKeyDown({ code: 'Comma' });
+    run(ambience, 20);
+    expect(sounds[TRIAL].isPlaying).toBe(true);
+    expect(sounds[TRIAL].volume).toBe(1);
+    expect(sounds[MUSIC].play).not.toHaveBeenCalled();
+  });
+
+  it('crossfades from one track to the other when the keys are swapped', () => {
+    const { ambience, sounds } = buildWithKeys();
+    ambience.onKeyDown({ code: 'KeyM' });
+    run(ambience, 20);
+
+    ambience.onKeyDown({ code: 'Comma' });
+    expect(ambience.tension).toBe(1);
+    run(ambience, 1);
+    expect(sounds[MUSIC].isPlaying).toBe(true);
+    expect(sounds[MUSIC].volume).toBeLessThan(1);
+    expect(sounds[TRIAL].volume).toBeGreaterThan(0);
+
+    run(ambience, 20);
+    expect(sounds[MUSIC].isPlaying).toBe(false);
+    expect(sounds[TRIAL].volume).toBe(1);
+
+    // The key of the track now playing is the one that lets go.
+    ambience.onKeyDown({ code: 'Comma' });
+    expect(ambience.tension).toBe(0);
+  });
+
+  it('ignores other keys, and a key held down', () => {
+    const { ambience } = buildWithKeys();
+    ambience.onKeyDown({ code: 'KeyN' });
+    expect(ambience.tension).toBe(0);
+
+    ambience.onKeyDown({ code: 'KeyM' });
+    ambience.onKeyDown({ code: 'KeyM', repeat: true });
+    expect(ambience.tension).toBe(1);
+  });
+
+  it('leaves a real threat holding its own tension', () => {
+    const { ambience } = buildWithKeys();
+    ambience.setTension(0.5, 'stalker');
+    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.tension).toBe(1);
+    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.tension).toBe(0.5);
+  });
+
+  it('does nothing without test keys', () => {
+    const { ambience } = build();
+    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.tension).toBe(0);
+  });
+
+  it('keeps the real tension music as the one a threat raises', () => {
+    expect(AMBIENCE.music).toBe('sfx:interior-base-spooky-music');
   });
 });
 

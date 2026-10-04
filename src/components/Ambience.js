@@ -47,11 +47,17 @@ export const AMBIENCE = {
    *  Left out is 1. The office loop is lifted about 1.6 dB. */
   volumes: {
     'sfx:interior-base-ambience-centre-room': 1.2,
+    // Its file is ~23 dB hotter than the spooky track; this brings it down
+    // to the same loudness.
+    'sfx:interior-base-ambient-music': 0.07,
   },
   /** The loop heard everywhere that isn't the base: the wind. */
   outside: 'sfx:exterior-base-ambience-wind',
   /** The tension music. */
   music: 'sfx:interior-base-spooky-music',
+  /** A second, calmer music track. Nothing in the game raises it yet; it is
+   *  on a test key (BaseScene._addAmbience). */
+  ambientMusic: 'sfx:interior-base-ambient-music',
   /** Rate (per second) the room gains ease toward the mix at. */
   blendRate: 4,
   /** Time for the music to creep from silence to full… */
@@ -61,6 +67,9 @@ export const AMBIENCE = {
   /** Length of the crossfade over each loop's seam. */
   seamSeconds: 0.25,
 };
+
+/** The tension source the test key holds. */
+const TEST_SOURCE = 'test-key';
 
 /** Below this a gain counts as having arrived. */
 const SETTLED = 1e-3;
@@ -81,7 +90,7 @@ const _ear = new THREE.Vector3();
  * wrap is continuous.
  *
  * In place, unlike SuitVisor's seamlessLoop, because these loops are long:
- * a copy of them all would cost another ~150 MB.
+ * a copy of them all would cost another ~195 MB.
  *
  * @param {Float32Array[]} channels  One array per channel, equal lengths.
  * @param {number} sampleRate
@@ -111,14 +120,26 @@ export class Ambience extends Component {
    * @param {Record<string, number>} [opts.volumes]  Trim by track key.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  By track key. Left
    *        out, each is built on `engine.audioListener` as its clip loads.
+   * @param {Record<string, string>|null} [opts.testKeys]  Testing only:
+   *        KeyboardEvent.code → a music track. A press swings that track
+   *        fully in; pressing it again swings it back out.
    */
-  constructor({ mix, listenerPosition, music = AMBIENCE.music, volumes = AMBIENCE.volumes, sounds = null }) {
+  constructor({
+    mix, listenerPosition, music = AMBIENCE.music, volumes = AMBIENCE.volumes,
+    sounds = null, testKeys = null,
+  }) {
     super();
     this.mix = mix;
     this.listenerPosition = listenerPosition;
     this.music = music;
     this.volumes = volumes ?? {};
     this.sounds = sounds;
+    this.testKeys = testKeys;
+    this._onKey = null;
+    /** The track a threat's tension raises; a test key borrows `music`. */
+    this._ownMusic = music;
+    /** Every music track: the real one, and any on a test key. */
+    this._musics = [...new Set([music, ...Object.values(testKeys ?? {})])].filter(Boolean);
 
     /** Where the mix wants each room track, and where each is now. */
     this._targets = {};
@@ -128,7 +149,8 @@ export class Ambience extends Component {
     /** Tension asked for, by who asked. */
     this._tensions = new Map();
     this._tension = 0;
-    this._musicGain = 0;
+    this._musicGains = {};
+    for (const track of this._musics) this._musicGains[track] = 0;
     /** The volume last set on each sound, by track. */
     this._applied = {};
 
@@ -163,9 +185,26 @@ export class Ambience extends Component {
   }
 
   onStart() {
+    if (this.testKeys && typeof addEventListener === 'function') {
+      this._onKey = e => this.onKeyDown(e);
+      addEventListener('keydown', this._onKey);
+    }
     if (this.sounds) return;
     this.sounds = {};
     this._loadSounds();
+  }
+
+  /** A test key: its track at full tension on one press, let go on the
+   *  next. Another key's track crossfades in over the one playing. The keys
+   *  hold a tension source of their own, so a real threat's is left alone,
+   *  and letting go hands the music back to the real track. */
+  onKeyDown(e) {
+    const track = this.testKeys?.[e.code];
+    if (!track || e.repeat) return;
+    const release = this._tensions.has(TEST_SOURCE) && this.music === track;
+    this.music = release ? this._ownMusic : track;
+    this.setTension(release ? 0 : 1, TEST_SOURCE);
+    console.log(`[DEBUG] Tension music ${track} fading ${release ? 'out' : 'in'}`);
   }
 
   onUpdate(dt) {
@@ -182,15 +221,21 @@ export class Ambience extends Component {
     }
 
     // ── Music: a steady creep toward the tension ──
-    const gain = this._musicGain;
-    this._musicGain = this._tension > gain
-      ? Math.min(this._tension, gain + dt / AMBIENCE.musicFadeIn)
-      : Math.max(this._tension, gain - dt / AMBIENCE.musicFadeOut);
-    this._drive(this.music, this._musicGain);
+    // Only `music` follows it; a track a test key has let go of creeps out.
+    for (const track of this._musics) {
+      const target = track === this.music ? this._tension : 0;
+      const gain = this._musicGains[track];
+      this._musicGains[track] = target > gain
+        ? Math.min(target, gain + dt / AMBIENCE.musicFadeIn)
+        : Math.max(target, gain - dt / AMBIENCE.musicFadeOut);
+      this._drive(track, this._musicGains[track]);
+    }
   }
 
   onDestroy() {
     this._destroyed = true;
+    if (this._onKey) removeEventListener('keydown', this._onKey);
+    this._onKey = null;
     for (const sound of Object.values(this.sounds ?? {})) {
       if (sound.isPlaying) sound.stop();
       // THREE.Audio connects itself to the listener on construction; unhook
@@ -225,7 +270,7 @@ export class Ambience extends Component {
     const engine = this.gameObject?.scene?.userData?.engine;
     if (!engine?.audioListener || !engine.assets?.load) return;
 
-    const keys = this.music ? [...this.mix.tracks, this.music] : this.mix.tracks;
+    const keys = [...this.mix.tracks, ...this._musics];
     for (const key of keys) {
       engine.assets.load(key).then((buffer) => {
         if (this._destroyed) return;

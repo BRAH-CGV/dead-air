@@ -482,7 +482,7 @@ const LIBRARY = {
 
 /**
  * Heard every game, but fetched after the scene is up instead of behind the
- * loading screen: ~6 MB of mp3 that nothing has to wait for. `Ambience`
+ * loading screen: ~10 MB of mp3 that nothing has to wait for. `Ambience`
  * loads these and fades each in as it arrives.
  * @type {Record<string, AudioEntry>}
  */
@@ -504,7 +504,12 @@ const AMBIENT = {
     type: 'audio',
     url: 'assets/audio/exterior-base-ambience-wind.mp3',
   },
-  // Not a room: the music that creeps in under a scare (Ambience.setTension).
+  // Not rooms: the music that creeps in under a scare (Ambience.setTension),
+  // and a second, calmer track.
+  'sfx:interior-base-ambient-music': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambient-music.mp3',
+  },
   'sfx:interior-base-spooky-music': {
     type: 'audio',
     url: 'assets/audio/interior-base-spooky-music.mp3',

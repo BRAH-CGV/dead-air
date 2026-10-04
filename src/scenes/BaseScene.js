@@ -381,6 +381,10 @@ export class BaseScene extends Scene {
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
       listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      // Testing only — remove before release. Each key swings a music
+      // track in, and back out on the next press: M the spooky one, comma
+      // the ambient one. (N is the next-night key.)
+      testKeys: { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic },
     }));
   }
 
