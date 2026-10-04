@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolveGroups, DEFAULT_GROUPS } from './PhysicsLayers.js';
 
 // ─────────────────────────────────────────────
 // ColliderSpec  –  manifest physics block → concrete shape parts
@@ -33,6 +34,9 @@ import * as THREE from 'three';
  * @property {number}  [mass]         Dynamic bodies only. Overrides density.
  * @property {number}  [density]      Dynamic bodies only. Default 1000 (water).
  * @property {boolean} [sensor=false] Overlap events, no collision response.
+ * @property {number|{membership:(string|number)[], filter:(string|number)[]}} [groups]
+ *           Collision groups (layers). Omit for default (interact with everything).
+ *           See PhysicsLayers.js for named layer constants.
  *
  * @typedef {'auto'|'box'|'hull'|'trimesh'|'none'|ShapePart|ShapePart[]} ShapeSpec
  *
@@ -108,7 +112,8 @@ export function mergePhysics(base, override) {
 export function resolvePhysics(spec, collision, scale = 1) {
   if (spec.body === 'none') return null;
 
-  const parts = resolveShape(spec.shape, collision, scale);
+  const defaultGroups = resolveGroups(spec.groups);
+  const parts = resolveShape(spec.shape, collision, scale, defaultGroups);
   if (!parts.length) return null;
 
   const resolved = {
@@ -117,6 +122,7 @@ export function resolvePhysics(spec, collision, scale = 1) {
     friction: spec.friction,
     restitution: spec.restitution,
     sensor: spec.sensor === true,
+    collisionGroups: defaultGroups,
   };
 
   // Mass wins when both are given — it's the more direct knob, and silently
@@ -130,9 +136,10 @@ export function resolvePhysics(spec, collision, scale = 1) {
 /**
  * The shape half of `resolvePhysics`, exported for tests and for anything that
  * wants shapes without a body (query volumes, triggers).
+ * @param {number} [defaultGroups]  Collision groups for parts without their own.
  * @returns {Object[]} parts, possibly empty
  */
-export function resolveShape(shape, collision, scale = 1) {
+export function resolveShape(shape, collision, scale = 1, defaultGroups = DEFAULT_GROUPS) {
   const { bounds, hulls = [], mesh } = collision ?? {};
 
   // 'auto' is the whole point of the tiering: if the artist modelled collision
@@ -143,7 +150,7 @@ export function resolveShape(shape, collision, scale = 1) {
   if (shape === 'none' || !shape) return [];
 
   if (shape === 'box') {
-    return bounds ? [boxFromBounds(bounds, scale)] : [];
+    return bounds ? [boxFromBounds(bounds, scale, defaultGroups)] : [];
   }
 
   if (shape === 'hull') {
@@ -152,7 +159,7 @@ export function resolveShape(shape, collision, scale = 1) {
     const clouds = hulls.length ? hulls : (mesh ? [mesh.vertices] : []);
     return clouds
       .filter(points => points.length >= 12)   // 4 points minimum for a 3D hull
-      .map(points => ({ kind: 'hull', points: scalePoints(points, scale), ...atOrigin() }));
+      .map(points => ({ kind: 'hull', points: scalePoints(points, scale), collisionGroups: defaultGroups, ...atOrigin() }));
   }
 
   if (shape === 'trimesh') {
@@ -161,18 +168,19 @@ export function resolveShape(shape, collision, scale = 1) {
       kind: 'trimesh',
       vertices: scalePoints(mesh.vertices, scale),
       indices: mesh.indices,
+      collisionGroups: defaultGroups,
       ...atOrigin(),
     }];
   }
 
   const list = Array.isArray(shape) ? shape : [shape];
-  return list.map(part => resolvePart(part, scale)).filter(Boolean);
+  return list.map(part => resolvePart(part, scale, defaultGroups)).filter(Boolean);
 }
 
 /** Axis-aligned box around the model's measured extents. The offset is the part
  *  that's easy to forget: models are authored origin-on-floor, so the box centre
  *  sits at half the model's height, not at the origin. */
-function boxFromBounds(bounds, scale) {
+function boxFromBounds(bounds, scale, defaultGroups) {
   const [sx, sy, sz] = bounds.size;
   const [cx, cy, cz] = bounds.center;
   return {
@@ -180,14 +188,18 @@ function boxFromBounds(bounds, scale) {
     halfExtents: halfExtentsOf(sx, sy, sz, scale),
     position: scaleXYZ([cx, cy, cz], scale),
     rotation: IDENTITY_QUAT,
+    collisionGroups: defaultGroups,
   };
 }
 
 /** One hand-written primitive → one Rapier-shaped part. */
-function resolvePart(part, scale) {
+function resolvePart(part, scale, defaultGroups) {
   const position = scaleXYZ(part.position ?? [0, 0, 0], scale);
   const rotation = part.rotation ? eulerToQuat(part.rotation) : IDENTITY_QUAT;
   const radius   = (part.radius ?? 0.5) * horizontalScale(scale);
+  // Per-part groups override the spec-level default; lets one compound shape
+  // have colliders on different layers (e.g., shelf boards vs player-only box).
+  const collisionGroups = part.groups != null ? resolveGroups(part.groups) : defaultGroups;
 
   // Rapier measures capsules, cylinders and cones by the half-height of the
   // middle segment. For a capsule the two round caps add `radius` on top of
@@ -200,26 +212,26 @@ function resolvePart(part, scale) {
       return {
         kind: 'cuboid',
         halfExtents: halfExtentsOf(sx, sy, sz, scale),
-        position, rotation,
+        position, rotation, collisionGroups,
       };
     }
 
     case 'sphere':
-      return { kind: 'ball', radius, position, rotation };
+      return { kind: 'ball', radius, position, rotation, collisionGroups };
 
     case 'capsule':
       return {
         kind: 'capsule',
         radius,
         halfHeight: Math.max(halfHeight - radius, MIN_HALF_EXTENT),
-        position, rotation,
+        position, rotation, collisionGroups,
       };
 
     case 'cylinder':
-      return { kind: 'cylinder', radius, halfHeight, position, rotation };
+      return { kind: 'cylinder', radius, halfHeight, position, rotation, collisionGroups };
 
     case 'cone':
-      return { kind: 'cone', radius, halfHeight, position, rotation };
+      return { kind: 'cone', radius, halfHeight, position, rotation, collisionGroups };
 
     default:
       console.warn(`[physics] unknown collider shape '${part.type}' — skipped`);

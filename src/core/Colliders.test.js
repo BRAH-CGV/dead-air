@@ -83,4 +83,50 @@ describe('Rapier integration', () => {
     expect(vertices.length / 3).toBe(colors.length / 4);
     world.free();
   });
+
+  it('applies collision groups from the resolved spec to each collider', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    // Shelf-like groups: member of SHELF (bit 2), filters DEFAULT (bit 0)
+    const groups = { membership: ['SHELF'], filter: ['DEFAULT'] };
+    const resolved = resolvePhysics(mergePhysics({ body: 'static', groups }), CUBE);
+    const body = createBody(world, resolved, {});
+    const cols = attachColliders(world, body, resolved, 'test');
+
+    expect(cols).toHaveLength(1);
+    // membership: SHELF (bit 2) = 0x0004, filter: DEFAULT (bit 0) = 0x0001
+    // packed: (0x0004 << 16) | 0x0001 = 0x00040001
+    expect(cols[0].collisionGroups()).toBe(0x00040001);
+    world.free();
+  });
+
+  it('uses default groups (0xFFFFFFFF) when no groups specified', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    const resolved = resolvePhysics(mergePhysics('static'), CUBE);
+    const body = createBody(world, resolved, {});
+    const cols = attachColliders(world, body, resolved, 'test');
+
+    expect(cols[0].collisionGroups()).toBe(0xFFFFFFFF);
+    world.free();
+  });
+
+  it('applies per-part collision groups when specified, overriding spec-level', () => {
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    const resolved = resolvePhysics(mergePhysics({
+      body: 'static',
+      groups: { membership: ['SHELF'], filter: ['DEFAULT'] },
+      shape: [
+        { type: 'box', size: [1, 1, 1] },  // inherits spec groups
+        { type: 'box', size: [1, 1, 1], groups: { membership: ['DEFAULT'], filter: ['PLAYER'] } },
+      ],
+    }), CUBE);
+    const body = createBody(world, resolved, {});
+    const cols = attachColliders(world, body, resolved, 'test');
+
+    expect(cols).toHaveLength(2);
+    // First part: spec groups (SHELF membership, DEFAULT filter)
+    expect(cols[0].collisionGroups()).toBe(0x00040001);
+    // Second part: per-part groups (DEFAULT membership, PLAYER filter)
+    expect(cols[1].collisionGroups()).toBe(0x00010002);
+    world.free();
+  });
 });
