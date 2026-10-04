@@ -126,6 +126,19 @@ describe('Ufo', () => {
     expect(model.parent).toBe(ufo.body);
   });
 
+  it('appear() bursts in: its beacon flares far past its size on screen, then settles back', () => {
+    const ufo = new Ufo();
+    ufo.setVisible(true);
+    const rest = ufo.beacon.scale.x;
+    ufo.appear();
+    ufo.tick(0.1);
+    expect(ufo.beacon.scale.x).toBeGreaterThan(rest * 2);
+    expect(ufo.flash.visible).toBe(true);
+    for (let i = 0; i < 90; i++) ufo.tick(1 / 60);
+    expect(ufo.beacon.scale.x).toBeCloseTo(rest);
+    expect(ufo.flash.visible).toBe(false);
+  });
+
   it('teleport() flashes, and the flash dies away on its own', () => {
     const ufo = new Ufo();
     ufo.teleport();

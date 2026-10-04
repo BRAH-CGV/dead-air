@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  UfoThreat, loudestTime, scheduleApproach, ufoTimeline, approachDistance, pathPoint, skyAngles, UFO,
+  UfoThreat, loudestTime, scheduleApproach, ufoTimeline, approachDistance, pathPoint, skyAngles, spawnBearing, UFO,
 } from './UfoThreat.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
@@ -39,8 +39,15 @@ describe('ufoTimeline', () => {
 });
 
 describe('scheduleApproach', () => {
-  it('comes at a random time every night — night 1 too — always gone before 6 AM', () => {
-    for (const night of [1, 3])
+  it('comes only on its nights — night 3', () => {
+    expect(UFO.nights).toEqual([3]);
+    for (const night of [1, 2]) {
+      expect(scheduleApproach({ night, nightDuration: 300, total: 50, random: () => 0.5 })).toBe(Infinity);
+    }
+  });
+
+  it('comes at a random time on its night, always gone before 6 AM', () => {
+    for (const night of [3])
     for (const r of [0, 0.5, 0.999]) {
       const start = scheduleApproach({ night, nightDuration: 300, total: 50, random: () => r });
       expect(start).toBeGreaterThan(0);
@@ -49,6 +56,45 @@ describe('scheduleApproach', () => {
     const early = scheduleApproach({ night: 3, nightDuration: 300, total: 50, random: () => 0 });
     const late  = scheduleApproach({ night: 3, nightDuration: 300, total: 50, random: () => 0.999 });
     expect(late).toBeGreaterThan(early);
+  });
+});
+
+describe('spawnBearing', () => {
+  it('sometimes puts it in the open sky of the window, either side of the dish, so you see it spawn', () => {
+    for (const where of [0, 0.5, 0.99]) {
+      let n = 0;
+      const dice = [0.1, 0.3, where];   // under the chance: in view; a side; how far out
+      const { bearing, inView } = spawnBearing(() => dice[n++]);
+      expect(inView).toBe(true);
+      // Never straight out of the window: the dish tower fills that view.
+      expect(Math.abs(bearing)).toBeGreaterThanOrEqual(UFO.inViewFrom);
+      expect(Math.abs(bearing)).toBeLessThanOrEqual(UFO.inViewTo);
+    }
+    // Both sides of the dish.
+    let n = 0;
+    const left = spawnBearing(() => [0.1, 0.3, 0.5][n++]).bearing;
+    n = 0;
+    const right = spawnBearing(() => [0.1, 0.7, 0.5][n++]).bearing;
+    expect(Math.sign(left)).not.toBe(Math.sign(right));
+  });
+
+  it('otherwise somewhere around the valley the window cannot see', () => {
+    for (const r of [0.5, 0.75, 0.99]) {
+      let n = 0;
+      const dice = [r, 0.3, 0.8];   // chance roll, then where round the valley
+      const { bearing, inView } = spawnBearing(() => dice[n++ % dice.length]);
+      expect(inView).toBe(false);
+      expect(Math.abs(bearing)).toBeGreaterThanOrEqual(UFO.outOfViewFrom);
+      expect(Math.abs(bearing)).toBeLessThanOrEqual(Math.PI);
+    }
+  });
+
+  it('in view about as often as the chance says', () => {
+    let seed = 1;
+    const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    let seen = 0;
+    for (let i = 0; i < 2000; i++) if (spawnBearing(random).inView) seen++;
+    expect(seen / 2000).toBeCloseTo(UFO.inViewChance, 1);
   });
 });
 
@@ -75,10 +121,10 @@ describe('the approach path', () => {
     expect(speed(tl.soundStart + 1)).toBeGreaterThan(speed(tl.arrival - 2) * 5);
   });
 
-  it('clears the valley ridge and the tallest mast on any bearing it can come from', () => {
+  it('clears the valley ridge and the tallest mast from any bearing, all the way round', () => {
     const hoverPt = new THREE.Vector3(0, 35, 0);
     const out = new THREE.Vector3();
-    for (const b of [-UFO.bearingSpread, -UFO.bearingSpread / 2, 0, UFO.bearingSpread / 2, UFO.bearingSpread]) {
+    for (let b = -Math.PI; b < Math.PI; b += Math.PI / 24) {
       const from = new THREE.Vector3(Math.sin(b) * UFO.startDistance, UFO.startAltitude, -Math.cos(b) * UFO.startDistance);
       const length = from.distanceTo(hoverPt);
       for (let d = 60; d <= length; d += 10) {
@@ -124,11 +170,11 @@ function makeSound() {
 
 /** `summon`: start the visit at once (the U key), so timings below count
  *  from zero; off, it waits for the night's random time. */
-function makeRig({ outside = false, exposed = false, summon = true } = {}) {
+function makeRig({ outside = false, exposed = false, summon = true, night = 3 } = {}) {
   const listeners = new Set();
   const controller = {
     state: 'playing',
-    nightNumber: 1,
+    nightNumber: night,
     fail: vi.fn(function () { this.state = 'gameOver'; }),
     onNightStart: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
     _start(n) { this.state = 'playing'; this.nightNumber = n; for (const fn of listeners) fn(n); },
@@ -190,6 +236,31 @@ describe('UfoThreat', () => {
     expect(threat.phase).toBe('approaching');
     expect(radar.threat.active).toBe(true);
     expect(signalLight.frantic).toBe(true);
+  });
+
+  it('never comes on a night that is not one of its nights', () => {
+    const { threat, radar } = makeRig({ summon: false, night: 1 });
+    run(threat, 290, 0.5);
+    expect(threat.phase).toBe('waiting');
+    expect(radar.threat?.active ?? false).toBe(false);
+  });
+
+  it('the U key still summons it on any night, for testing', () => {
+    const { threat } = makeRig({ summon: false, night: 1 });
+    expect(threat.summon()).toBe(true);
+    run(threat, 0.2);
+    expect(threat.phase).toBe('approaching');
+  });
+
+  it('bursts into the sky when it appears — once, as its sound starts', () => {
+    const { threat, ufo } = makeRig();
+    ufo.appear = vi.fn();
+    run(threat, UFO.radarLead - 0.5);
+    expect(ufo.appear).not.toHaveBeenCalled();
+    run(threat, 2);
+    expect(ufo.appear).toHaveBeenCalledTimes(1);
+    run(threat, 5);
+    expect(ufo.appear).toHaveBeenCalledTimes(1);
   });
 
   it('summon() (the U key) starts a visit now, instead of at its random time', () => {

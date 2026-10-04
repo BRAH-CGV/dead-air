@@ -12,6 +12,7 @@ import { GameObject } from '../core/GameObject.js';
 //   ufo.setBeam(1, 1.5);         // level, and the beam's radius on the ground:
 //   ufo.setBeam(1, 32);          //   a thin shaft, or the whole facility
 //   ufo.tick(dt);                // spin, bob, beam animation, teleport flash
+//   ufo.appear();                // bursts into the sky: beacon flare + flash
 //   ufo.teleport();              // a flash where it was
 //
 //   object3d
@@ -52,6 +53,10 @@ const FLASH_SECONDS = 0.35;
 const MAX_CUTOUTS = 8;
 /** The beacon's on-screen size (sprite scale with sizeAttenuation off). */
 const BEACON_SIZE = 0.11;
+/** appear(): the beacon flares to this many times its size, settling back
+ *  over APPEAR_SECONDS — visible at any distance, through any haze. */
+const APPEAR_FLARE = 6;
+const APPEAR_SECONDS = 1.2;
 
 const BEAM_VERTEX_SHADER = /* glsl */ `
   uniform float uLength;
@@ -113,6 +118,7 @@ const BEAM_FRAGMENT_SHADER = /* glsl */ `
 export class Ufo extends GameObject {
   _owned = [];
   _flashLeft = 0;
+  _appearLeft = 0;
   _beam = 0;
   _radius = 1;
   _visible = false;
@@ -185,6 +191,14 @@ export class Ufo extends GameObject {
     u.uCutoutCount.value = n;
   }
 
+  /** Bursting into the sky: the beacon flares far past its size and the
+   *  flash blooms, then both settle. Seen from the office window, this is
+   *  the UFO spawning. */
+  appear() {
+    this._appearLeft = APPEAR_SECONDS;
+    this.teleport();
+  }
+
   /** A burst of light where it was — the teleport. */
   teleport() {
     this._flashLeft = FLASH_SECONDS;
@@ -199,6 +213,13 @@ export class Ufo extends GameObject {
     if (this._visible) {
       this.body.rotation.y += SPIN_RATE * dt;
       this.body.position.y = Math.sin(this._time * BOB.rate) * BOB.height;
+    }
+
+    if (this._appearLeft > 0) {
+      this._appearLeft = Math.max(0, this._appearLeft - dt);
+      const k = 1 - this._appearLeft / APPEAR_SECONDS;      // 0 → 1
+      const flare = k < 0.1 ? k / 0.1 : ((1 - k) / 0.9) ** 2;   // snap up, ease down
+      this.beacon.scale.setScalar(BEACON_SIZE * (1 + (APPEAR_FLARE - 1) * flare));
     }
 
     if (this._flashLeft > 0) {
