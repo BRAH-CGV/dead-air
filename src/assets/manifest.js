@@ -248,7 +248,25 @@ const PLACED = {
     type: 'model',
     url: 'assets/models/shelf.glb',
     scale: 0.9,
-    physics: 'static',
+    physics: {
+      body: 'static',
+      shape: [
+        // 5 shelf levels, evenly spaced from the top of the model down to
+        // 8/9 of the way to the bottom. Each board is 0.35 deep, 0.025 thick,
+        // 1 wide. Top board sits at the top of the bounding box (y ≈ 1.9 m).
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.9,    0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.4778, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.0556, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 0.6333, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 0.2111, 0] },
+        // 4 corner supports, full height, sticking out 0.01 m beyond the
+        // shelf edges in x and z.
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [ 0.1675, 0.95,  0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [ 0.1675, 0.95, -0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [-0.1675, 0.95,  0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [-0.1675, 0.95, -0.4925] },
+      ],
+    },
   },
   'model:fire-extinguisher': {
     type: 'model',
