@@ -152,4 +152,11 @@ describe('BreakerPanel', () => {
     fire(root.querySelector('.breaker-wires'), 'pointerdown');
     expect(panel._held).toBe(1);
   });
+
+  it('takes a title, so a start-up and a blow-out read differently', () => {
+    panel.close();
+    panel.open(new BreakerPuzzle({ flick: 'on', random: makeRandom(2) }), { title: 'Generator — start-up' });
+    expect(root.querySelector('.breaker-title').textContent).toBe('Generator — start-up');
+    expect(root.querySelectorAll('[data-link]').length).toBe(4);   // the leads are drawn home
+  });
 });

@@ -10,6 +10,10 @@
 //             the right, which have been shuffled so none runs straight
 //             across. A wrong colour won't go on.
 //
+// `flick: 'on'` / `flick: 'off'` is the everyday version, for switching the
+// generator on or off normally: every lead already home, every breaker the
+// wrong way — flick them all up (on) or all down (off).
+//
 // Pure state, no DOM — the panel draws it and forwards clicks.
 // ─────────────────────────────────────────────
 
@@ -27,9 +31,12 @@ export class BreakerPuzzle {
    * @param {object} [opts]
    * @param {number} [opts.switchCount=6]
    * @param {number} [opts.wireCount=4]   At most WIRE_COLORS.length.
+   * @param {'on'|'off'} [opts.flick]  Normal switching: every lead home, every
+   *        breaker the other way — flick them all `on` (up) or `off` (down).
+   *        Left out: the UFO's blow-out.
    * @param {() => number} [opts.random=Math.random]
    */
-  constructor({ switchCount = 6, wireCount = 4, random = Math.random } = {}) {
+  constructor({ switchCount = 6, wireCount = 4, flick, random = Math.random } = {}) {
     // Most of the breakers thrown — at least half, never none.
     const thrown = Math.ceil(switchCount / 2) + Math.floor(random() * (switchCount - Math.ceil(switchCount / 2) + 1));
     const order = shuffle([...Array(switchCount).keys()], random);
@@ -44,11 +51,20 @@ export class BreakerPuzzle {
     this.right = derange(colours, random);
     /** Right terminal each left wire is on, or null. @type {(number|null)[]} */
     this.links = Array(colours.length).fill(null);
+
+    /** Which way every breaker has to end up: true = up (on). */
+    this.target = flick !== 'off';
+    if (flick) {
+      this.switches.fill(!this.target);
+      this.links = this.left.map(c => this.right.indexOf(c));
+    }
   }
 
   get switchesOn() { return this.switches.filter(Boolean).length; }
+  /** Breakers already the way they have to end up. */
+  get switchesDone() { return this.switches.filter(on => on === this.target).length; }
   get wiresConnected() { return this.links.filter(l => l !== null).length; }
-  get solved() { return this.switchesOn === this.switches.length && this.wiresConnected === this.links.length; }
+  get solved() { return this.switchesDone === this.switches.length && this.wiresConnected === this.links.length; }
 
   toggle(i) {
     this.switches[i] = !this.switches[i];

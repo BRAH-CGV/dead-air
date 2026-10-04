@@ -60,8 +60,9 @@ export class BreakerPanel {
   }
 
   /** @param {import('../gameplay/BreakerPuzzle.js').BreakerPuzzle} puzzle
-   *  @param {{ onSolved?: () => void, onClose?: () => void, onFlick?: () => void }} [callbacks]
-   *         onFlick: a switch was flicked (the scene plays the click). */
+   *  @param {{ onSolved?: () => void, onClose?: () => void, onFlick?: () => void, title?: string }} [callbacks]
+   *         onFlick: a switch was flicked (the scene plays the click).
+   *         title: the panel's heading (default: the blow-out's). */
   open(puzzle, callbacks = {}) {
     this._puzzle = puzzle;
     this._callbacks = callbacks;
@@ -171,7 +172,7 @@ export class BreakerPanel {
     const height = ROW * p.left.length + 20;
     this.root.innerHTML = `
       <div class="breaker-box">
-        <div class="breaker-title">Generator — breakers tripped</div>
+        <div class="breaker-title">${this._callbacks.title ?? 'Generator — breakers tripped'}</div>
         <div class="breaker-switches">
           ${p.switches.map((_, i) => `<button class="breaker-switch" data-i="${i}" aria-label="Breaker ${i + 1}"><span class="breaker-lever"></span></button>`).join('')}
         </div>
@@ -234,7 +235,7 @@ export class BreakerPanel {
 
     const status = this.root.querySelector('.breaker-status');
     if (p.solved) {
-      status.textContent = 'Power restored';
+      status.textContent = p.target ? 'Power restored' : 'Power off';
       status.classList.add('is-solved');
       if (!this._done()) {
         this._solvedTimer = setTimeout(() => {
@@ -246,7 +247,7 @@ export class BreakerPanel {
         }, this.solvedDelayMs);
       }
     } else {
-      status.textContent = `Breakers ${p.switchesOn} / ${p.switches.length} · Leads ${p.wiresConnected} / ${p.links.length}`;
+      status.textContent = `Breakers ${p.switchesDone} / ${p.switches.length} · Leads ${p.wiresConnected} / ${p.links.length}`;
       status.classList.remove('is-solved');
     }
   }

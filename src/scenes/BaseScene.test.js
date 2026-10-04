@@ -292,10 +292,29 @@ describe('BaseScene', () => {
 
     expect(scene.power.on).toBe(true);
     expect(interactable.promptLabel).toMatch(/cut power/i);
+    const flickAll = () => {
+      const puzzle = scene.breakerPanel._puzzle;
+      puzzle.switches.forEach((_, i) => puzzle.toggle(i));
+      scene.breakerPanel._callbacks.onSolved();
+    };
+
+    // Off: the panel, every lead home, every breaker up — flick them down.
     interactable.onInteract({});
+    expect(scene.breakerPanel.isOpen).toBe(true);
+    let puzzle = scene.breakerPanel._puzzle;
+    expect(puzzle.wiresConnected).toBe(puzzle.left.length);
+    expect(puzzle.switchesOn).toBe(puzzle.switches.length);
+    expect(scene.power.on).toBe(true);   // not until it's done
+    flickAll();
     expect(scene.power.on).toBe(false);
     expect(interactable.promptLabel).toMatch(/restore power/i);
+
+    // On: the same, the other way — every breaker down, flick them up.
     interactable.onInteract({});
+    puzzle = scene.breakerPanel._puzzle;
+    expect(puzzle.wiresConnected).toBe(puzzle.left.length);
+    expect(puzzle.switchesOn).toBe(0);
+    flickAll();
     expect(scene.power.on).toBe(true);
   });
 
@@ -1088,6 +1107,9 @@ describe('BaseScene power and the UFO', () => {
     expect(generator.getComponent(GeneratorSound)).toBe(scene.generatorSound);
     const off = vi.spyOn(scene.generatorSound, 'switchOff');
     generator.getComponent(Interactable).onInteract({});
+    const puzzle = scene.breakerPanel._puzzle;
+    puzzle.switches.forEach((_, i) => puzzle.toggle(i));
+    scene.breakerPanel._callbacks.onSolved();
     expect(off).toHaveBeenCalled();
   });
 

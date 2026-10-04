@@ -77,4 +77,27 @@ describe('BreakerPuzzle', () => {
     p.toggle(2);
     expect(p.solved).toBe(false);
   });
+
+  it('switching on normally: every breaker down, every lead already home — flick them all up', () => {
+    const p = new BreakerPuzzle({ flick: 'on', random: makeRandom(9) });
+    expect(p.switches.every(on => !on)).toBe(true);
+    expect(p.wiresConnected).toBe(p.left.length);
+    p.links.forEach((r, l) => expect(p.right[r]).toBe(p.left[l]));
+    expect(p.solved).toBe(false);
+    switchUp(p);
+    expect(p.switchesDone).toBe(p.switches.length);
+    expect(p.solved).toBe(true);
+  });
+
+  it('switching off normally: every breaker up, every lead home — flick them all down', () => {
+    const p = new BreakerPuzzle({ flick: 'off', random: makeRandom(9) });
+    expect(p.switches.every(on => on)).toBe(true);
+    expect(p.wiresConnected).toBe(p.left.length);
+    expect(p.solved).toBe(false);
+    p.switches.forEach((_, i) => p.toggle(i));
+    expect(p.switchesDone).toBe(p.switches.length);
+    expect(p.solved).toBe(true);
+    p.toggle(0);
+    expect(p.solved).toBe(false);
+  });
 });

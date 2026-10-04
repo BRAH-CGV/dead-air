@@ -37,7 +37,7 @@ export const GENERATOR = {
   /** Metres from the generator at full volume; beyond it, inverse falloff. */
   refDistance: 4,
   /** Fraction of the outdoor volume that gets through the walls. */
-  insideLevel: 0.04,
+  insideLevel: 0.02,
   /** Rate (per second) the inside/outside level eases at. */
   placeRate: 4,
 };

@@ -683,18 +683,36 @@ export class BaseScene extends Scene {
     this.breakerPanel = new BreakerPanel();
     const click = this._sound('sfx:light-switch', 0.7);
     let puzzle = null;
-    const openPanel = () => {
-      puzzle ??= new BreakerPuzzle();
+    // Every use of the generator goes through its breaker panel:
+    //   on / off  switching it normally: every lead already home, every
+    //             breaker the other way — flick them all up (on) or down (off).
+    //   blowout   after the UFO tripped it: breakers thrown and leads torn
+    //             off. One puzzle per blow-out, so stepping away and back
+    //             carries on where you left off.
+    let blowout = null;
+    let showing = null;   // which job the open panel is doing
+    const TITLES = { on: 'Generator — start-up', off: 'Generator — shut-down', blowout: 'Generator — breakers tripped' };
+    const openPanel = (kind) => {
+      const puzzle = kind === 'blowout'
+        ? (blowout ??= new BreakerPuzzle())
+        : new BreakerPuzzle({ flick: kind });
+      showing = kind;
       this._usePanel(true);
       this.breakerPanel.open(puzzle, {
-        onClose: () => this._usePanel(false),
+        title: TITLES[kind],
+        onClose: () => { showing = null; this._usePanel(false); },
         onFlick: () => {
           if (!click) return;
           if (click.isPlaying) click.stop();
           click.play();
         },
         onSolved: () => {
+          showing = null;
           this._usePanel(false);
+          if (kind === 'off') {
+            sound.switchOff();
+            return;
+          }
           grid.resetBreakers();
           sound.switchOn();
         },
@@ -704,9 +722,8 @@ export class BaseScene extends Scene {
     const sw = generator.addComponent(new class extends Interactable {
       promptLabel = label();
       onInteract() {
-        if (grid.tripped) openPanel();
-        else if (grid.on) sound.switchOff();
-        else sound.switchOn();
+        if (grid.tripped) openPanel('blowout');
+        else openPanel(grid.on ? 'off' : 'on');
       }
     }());
     this._offPower = [grid.onChange(() => {
@@ -714,10 +731,13 @@ export class BaseScene extends Scene {
       sw.promptLabel = label();
       // Breakers back in (solved, or a new night's repair): this blow-out's
       // puzzle is done with.
-      if (!grid.tripped) {
-        puzzle = null;
-        this.breakerPanel.close();
-      }
+      if (!grid.tripped) blowout = null;
+      // A panel whose job has gone away closes: the power is already the way
+      // it was being switched (a new night), or the UFO blew it meanwhile.
+      const stale = (showing === 'blowout' && !grid.tripped)
+        || (showing === 'on' && (grid.on || grid.tripped))
+        || (showing === 'off' && (!grid.on || grid.tripped));
+      if (stale) this.breakerPanel.close();
     })];
   }
 
