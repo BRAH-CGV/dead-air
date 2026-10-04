@@ -126,9 +126,13 @@ export class QuotaBox extends Component {
       this._collected++;
       drive.makeKinematic?.();
 
-      // Set a hook so if the player picks it up, we detect it next frame
-      // (step 1 above). The drive stays kinematic until PickupSystem
-      // converts it; we detect the held flag instead.
+      // Set a hook so if the player picks it up, we convert the body back
+      // to dynamic first (kinematic bodies can't be picked up).
+      if (pickupable) {
+        pickupable.onBeforePickUp = () => {
+          drive.makeDynamic?.();
+        };
+      }
     }
   }
 }
