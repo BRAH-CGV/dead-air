@@ -28,6 +28,8 @@ import { MainOffice } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
+import { DriveSupply } from '../../gameplay/DriveSupply.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
@@ -338,96 +340,46 @@ describe('MainOffice', () => {
     expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
   });
 
-  it('has a drive reader on the desk surface with an Interactable', () => {
+  it('has a drive reader on the desk surface with a DriveSlot component', () => {
     const reader = room.root.find('DriveReader');
     expect(reader).not.toBeNull();
     expect(reader.rigidBody.isFixed()).toBe(true);
-    const interact = reader.getComponent(Interactable);
+    const slot = reader.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    expect(slot.snapDistance).toBeGreaterThan(0);
+  });
+
+  it('has a drive supply box with a DriveSupply component and Interactable', () => {
+    const supplyBox = room.root.find('DriveSupplyBox');
+    expect(supplyBox).not.toBeNull();
+    expect(supplyBox.rigidBody.isFixed()).toBe(true);
+
+    const supply = supplyBox.getComponent(DriveSupply);
+    expect(supply).not.toBeNull();
+    expect(room.driveSupply).toBe(supply);
+
+    // The interactable lets the player take drives
+    const interact = supplyBox.getComponent(Interactable);
     expect(interact).not.toBeNull();
     expect(interact.promptLabel).toMatch(/\[E\].*drive/i);
   });
 
-  it('places three placeholder drive cubes beside the desk', () => {
-    expect(room.drives).toHaveLength(3);
+  it('creates drives in the supply pool, not in the scene', () => {
+    expect(room.drives.length).toBeGreaterThan(0);
+    expect(room.driveSupply.remaining).toBe(room.drives.length);
+
+    // Drives are Drive instances but not yet children of the room
     for (const drive of room.drives) {
       expect(drive).toBeInstanceOf(Drive);
-      expect(drive.parent).toBe(room.root);
-    }
-    // Drives are on the floor, near the desk (not inside the room shell walls)
-    for (const drive of room.drives) {
-      const pos = drive.object3d.position;
-      expect(pos.y).toBeCloseTo(0.01, 1);
-      expect(Math.abs(pos.x)).toBeLessThan(5.8);
-      expect(Math.abs(pos.z)).toBeLessThan(4.8);
     }
   });
 
-  it('bindDriveManager wires the manager and refreshes the reader prompt', () => {
-    const dm = { driveInserted: false, hasAvailableDrives: () => true, addDrive: vi.fn() };
-    room.bindDriveManager(dm);
-    const interact = room.driveReader.getComponent(Interactable);
-    // With available drives but nothing held, the prompt tells the player to pick one up.
-    expect(interact.promptLabel).toMatch(/Pick up a drive first/);
-
-    // When a drive is inserted, the prompt offers to eject it.
-    dm.driveInserted = true;
-    room.updateDriveReaderPrompt();
-    expect(interact.promptLabel).toMatch(/Eject drive/);
-
-    // When the player is holding one of our drives, the prompt offers to insert it.
-    dm.driveInserted = false;
-    room._pickupSystem = { heldPickupable: { gameObject: room.drives[0] } };
-    room.updateDriveReaderPrompt();
-    expect(interact.promptLabel).toMatch(/Insert drive/);
-
-    // Anything else in hand is not insertable — only the drives are.
-    room._pickupSystem = { heldPickupable: { gameObject: new GameObject('Crate') } };
-    room.updateDriveReaderPrompt();
-    expect(interact.promptLabel).toMatch(/Pick up a drive first/);
-  });
-
-  it('inserts a carried drive: registers it, locks it, and snaps it onto the reader upright', () => {
-    const drive = room.drives[0];
-    drive.rigidBody = { setTranslation: vi.fn(), setRotation: vi.fn() };
-    const makeKinematic = vi.spyOn(drive, 'makeKinematic').mockImplementation(() => {});
-    const dropHeld = vi.fn();
-    room._pickupSystem = { heldPickupable: { gameObject: drive, held: true }, dropHeld };
-    const dm = { driveInserted: false, hasAvailableDrives: () => true, addDrive: vi.fn(), insertDrive: vi.fn() };
-    room.bindDriveManager(dm);
-
-    room.driveReader.getComponent(Interactable).onInteract({});
-
-    expect(dropHeld).toHaveBeenCalled();
-    expect(dm.insertDrive).toHaveBeenCalledWith(drive);
-    expect(makeKinematic).toHaveBeenCalled();
-
-    // Snapped onto the reader lid, upright — not left floating mid-air.
-    const slot = new THREE.Vector3();
-    room.driveReader.object3d.getWorldPosition(slot);
-    const [snap, wake] = drive.rigidBody.setTranslation.mock.calls[0];
-    expect(wake).toBe(true);
-    expect(snap.x).toBeCloseTo(slot.x, 5);
-    expect(snap.y).toBeCloseTo(slot.y + 0.015 + drive._size[1] / 2, 5);
-    expect(snap.z).toBeCloseTo(slot.z, 5);
-    expect(drive.rigidBody.setRotation).toHaveBeenCalledWith({ x: 0, y: 0, z: 0, w: 1 }, true);
-  });
-
-  it('ejects the inserted drive and hands it to the player when their hands are free', () => {
-    const drive = room.drives[2];
-    drive.setSaved(true);                                      // written to during its night
-    const pickupable = drive.addComponent(new Pickupable());   // _init does this at runtime
-    const pickUp = vi.fn();
-    room._pickupSystem = { heldPickupable: null, pickUp };
-    const dm = { driveInserted: true, hasAvailableDrives: () => true, addDrive: vi.fn(), ejectDrive: vi.fn(() => drive) };
-    room.bindDriveManager(dm);
-
-    room.driveReader.getComponent(Interactable).onInteract({});
-
-    expect(dm.ejectDrive).toHaveBeenCalled();
-    // The drive keeps its signal state after eject — it's not reset until
-    // the ServerRoom console clears it.
-    expect(drive.saved).toBe(true);
-    expect(pickUp).toHaveBeenCalledWith(pickupable);
+  it('DriveSlot component is configured with a snap offset for the reader surface', () => {
+    const reader = room.driveReader;
+    const slot = reader.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    // The snap offset lifts the drive above the reader surface.
+    expect(slot.snapOffset.y).toBeGreaterThan(0);
   });
 
   it('leaves global lights (ambient, moon) to the scene', () => {

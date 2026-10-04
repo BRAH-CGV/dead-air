@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
-import { Pickupable } from '../../components/Pickupable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
+import { DriveSupply, createSupplyInteractable } from '../../gameplay/DriveSupply.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -39,7 +40,13 @@ export class MainOffice extends Room {
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
 
-  /** Physical drives on the floor beside the desk. @type {Drive[]} */
+  /** Drive supply box (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
+  driveSupplyBox = null;
+
+  /** The DriveSupply component on the supply box. @type {DriveSupply|null} */
+  driveSupply = null;
+
+  /** Physical drives managed by the supply. @type {Drive[]} */
   drives = [];
 
   /**
@@ -133,8 +140,9 @@ export class MainOffice extends Room {
     // By the airlock door, where a fire would be fought from.
     this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
 
-    // Drive reader on the desk and placeholder drives beside it.
+    // Drive reader on the desk and a supply box for drives.
     this._buildDriveStation();
+    this._buildDriveSupply();
   }
 
   /** Where food comes from: a wall-mounted machine that dispenses rations
@@ -178,149 +186,65 @@ export class MainOffice extends Room {
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small
-   *  static box with an Interactable whose prompt follows the drive state.
-   *  Three physical drive cubes sit on the floor beside the desk — the player
-   *  picks them up and carries them to the reader. */
+   *  static box with a DriveSlot component that auto-snaps nearby unheld
+   *  drives. The inserted drive can be picked up directly (no [E] prompt). */
   _buildDriveStation() {
     // Reader: a small dark box on the desk surface, right of centre.
     // Desk surface is at about y = 0.73 m; the reader is 3 cm tall, so
     // its centre sits at 0.73 + 0.015 = 0.745.
     const readerSize = [0.12, 0.03, 0.15];
-    const readerPos  = [0.55, 0.745, -2.55];
+    const readerPos  = [0.55, 0.745, -1.55];
     const readerMat  = this._own(new THREE.MeshStandardMaterial({
       color: 0x1a1a1a, roughness: 0.7, metalness: 0.4,
       emissive: 0x003311, emissiveIntensity: 0.3,
     }));
     this.driveReader = this._addStaticBox('DriveReader', readerPos, readerSize, readerMat);
 
-    // The Interactable prompt is driven by the driveManager + pickupSystem,
-    // set later by the scene. Until then, the reader shows a static fallback.
-    const reader = this.driveReader;
-    const self = this;
-    reader.addComponent(new class extends Interactable {
-      promptLabel = '[E] Insert drive';
-      interactRange = 2;
+    // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
+    // The slot is configured with a snap offset that places the drive on
+    // top of the reader (half reader height + half drive height).
+    const driveHeight = 0.02; // Drive._size[1] default
+    this.driveReader.addComponent(new DriveSlot({
+      snapDistance: 0.25,
+      snapOffset: { y: readerSize[1] / 2 + driveHeight / 2 },
+    }));
+  }
 
-      // The prompt follows the drive state — InteractionSystem re-shows it
-      // when this value changes (data field, not getter, per AGENTS.md).
-      refreshPrompt() {
-        const dm = self._driveManager;
-        const ps = self._pickupSystem;
-        if (!dm) { this.promptLabel = '[E] Insert drive'; return; }
+  /** A placeholder box of drives near the desk. Each [E] press dispenses
+   *  one drive. Creates 2× the maximum required drives for the night. */
+  _buildDriveSupply() {
+    const supplySize = [0.3, 0.2, 0.3];
+    const supplyPos  = [1.2, 0.1, -2.0];
+    const supplyMat  = this._own(new THREE.MeshStandardMaterial({
+      color: 0x3a4a3a, roughness: 0.6, metalness: 0.3,
+      emissive: 0x002200, emissiveIntensity: 0.2,
+    }));
+    this.driveSupplyBox = this._addStaticBox('DriveSupplyBox', supplyPos, supplySize, supplyMat);
 
-        const heldDrive = ps?.heldPickupable &&
-          self.drives.includes(ps.heldPickupable.gameObject);
+    // Add the DriveSupply component
+    this.driveSupply = new DriveSupply({ dispenseOffset: [0.3, 0.1, 0.5] });
+    this.driveSupplyBox.addComponent(this.driveSupply);
 
-        if (dm.driveInserted) {
-          // Show whether the inserted drive has a signal on it.
-          if (dm.insertedDriveHasSignal) {
-            this.promptLabel = '[E] Eject drive (has signal)';
-          } else {
-            this.promptLabel = '[E] Eject drive';
-          }
-        } else if (heldDrive) {
-          // The player is carrying one of our drives — offer to insert it.
-          this.promptLabel = '[E] Insert drive';
-        } else if (dm.hasAvailableDrives()) {
-          this.promptLabel = 'Pick up a drive first';
-        } else {
-          this.promptLabel = 'No drives available';
-        }
-      }
+    // Add the Interactable for dispensing
+    this.driveSupplyBox.addComponent(createSupplyInteractable(this.driveSupply));
 
-      // The state can change while the player looks at the reader (a drive
-      // picked up, inserted or ejected) — keep the label live.
-      onHover() {
-        this.refreshPrompt();
-      }
-
-      onInteract() {
-        const dm = self._driveManager;
-        const ps = self._pickupSystem;
-        if (!dm) return;
-
-        if (dm.driveInserted) {
-          // Eject: return the drive to the world. The drive keeps its
-          // signal state — a green drive stays green until the ServerRoom
-          // console clears it.
-          const ejected = dm.ejectDrive();
-          if (ejected) {
-            // Make the drive dynamic again (it was kinematic in the reader).
-            ejected.makeDynamic?.();
-            ejected.enablePhysics?.();
-            // If the player's PickupSystem is free, give them the drive directly.
-            if (ps && !ps.heldPickupable) {
-              const pickupable = ejected.getComponent(Pickupable);
-              if (pickupable) ps.pickUp(pickupable);
-            }
-          }
-        } else if (ps?.heldPickupable) {
-          // Player is holding a drive — insert it into the reader.
-          const heldGO = ps.heldPickupable.gameObject;
-          // Check if the held object is one of our drives.
-          const drive = self.drives.find(d => d === heldGO);
-          if (drive) {
-            ps.dropHeld();
-            dm.insertDrive(drive);
-            // Lock the drive in the reader slot: convert it to a kinematic
-            // body and snap it onto the reader, upright.
-            drive.makeKinematic?.();
-            if (drive.rigidBody) {
-              const slot = new THREE.Vector3();
-              reader.object3d.getWorldPosition(slot);
-              slot.y += readerSize[1] / 2 + drive._size[1] / 2;
-              drive.rigidBody.setTranslation({ x: slot.x, y: slot.y, z: slot.z }, true);
-              drive.rigidBody.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-            }
-          }
-        }
-        this.refreshPrompt();
-      }
-    }());
-
-    // Three physical drive cubes on the floor beside the desk.
-    // They get physics bodies when _init runs (Drive._init creates the
-    // rigid body + Pickupable component).
-    const drivePositions = [
-      [1.2, 0.01, -1.8],
-      [1.4, 0.01, -2.1],
-      [1.0, 0.01, -2.4],
-    ];
-    for (let i = 0; i < 3; i++) {
+    // Create drives and add them to the supply pool.
+    // The scene will set the required count later; for now create enough for
+    // the highest night (10 drives = 2×5 max required).
+    // Drives are added to the room root so they're in the scene graph when
+    // the engine calls _init — they get physics bodies automatically.
+    const driveCount = 10;
+    for (let i = 0; i < driveCount; i++) {
       const drive = new Drive(`Drive_${i + 1}`);
-      drive.object3d.position.set(...drivePositions[i]);
-      this.root.addChild(drive);
+      // Position at the supply box so they sit in/around it
+      drive.object3d.position.set(supplyPos[0], supplyPos[1] + 0.05, supplyPos[2]);
+      this.driveSupply.addDrive(drive);
       this.drives.push(drive);
+      // Add to the room so the engine lifecycle inits their physics
+      this.root.addChild(drive);
     }
   }
 
-  /** Wire the DriveManager to the reader's Interactable. Called by the
-   *  scene after gameplay systems are up. Also registers all drives. */
-  bindDriveManager(driveManager) {
-    this._driveManager = driveManager;
-    // Register each drive with the manager.
-    for (const drive of this.drives) {
-      driveManager.addDrive(drive);
-    }
-    // Refresh the prompt now that the manager is available.
-    const interact = this.driveReader?.getComponent(Interactable);
-    interact?.refreshPrompt();
-  }
-
-  /** Wire the player's PickupSystem to the reader's Interactable. Called by
-   *  the scene after the PickupSystem is created. */
-  bindPickupSystem(pickupSystem) {
-    this._pickupSystem = pickupSystem;
-    const interact = this.driveReader?.getComponent(Interactable);
-    interact?.refreshPrompt();
-  }
-
-  /** Frame update for the drive reader prompt — call from the terminal or
-   *  game loop when the drive state may have changed externally. */
-  updateDriveReaderPrompt() {
-    const interact = this.driveReader?.getComponent(Interactable);
-    interact?.refreshPrompt();
-  }
 
   /** Right of the window, between its frame (x 4.43) and the side wall
    *  (x 5.9), flush on the back wall's inner face. */

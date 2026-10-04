@@ -554,7 +554,8 @@ describe('BaseScene gameplay loop', () => {
 
   it('wires the drive manager to the office drive reader', () => {
     expect(scene.driveManager).toBeDefined();
-    expect(scene.driveManager.totalDrives).toBe(3);
+    // Drives come from the supply box (10 drives = 2× max required)
+    expect(scene.driveManager.totalDrives).toBe(10);
     const reader = scene.rooms.MainOffice.driveReader;
     expect(reader).not.toBeNull();
   });
@@ -572,8 +573,14 @@ describe('BaseScene gameplay loop', () => {
 
   /** Save the night's whole quota and run the clock out: it is morning. */
   function workTheShift() {
-    const { signalManager, gameController } = scene;
-    for (let id = 1; id <= signalManager.required; id++) signalManager.saveSignal(id);
+    const { signalManager, gameController, rooms } = scene;
+    // Simulate drives being deposited in the quota box
+    const quotaBox = rooms.Airlock.quotaBox;
+    if (quotaBox) {
+      for (let i = 0; i < quotaBox.requiredCount; i++) {
+        quotaBox._collected++;
+      }
+    }
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');

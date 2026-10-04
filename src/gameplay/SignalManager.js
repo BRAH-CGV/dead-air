@@ -20,7 +20,7 @@ import { SignalTarget } from './SignalTarget.js';
 //   mgr.markScanned(2);
 //   mgr.saveSignal(2);        // counts toward quota
 //   mgr.deleteSignal(3);      // discarded
-//   mgr.isComplete();          // saved >= required
+//   mgr.getProgress();         // { required }
 // ─────────────────────────────────────────────
 
 /** Pitch range for generated signals (radians, negative = up). Sized to
@@ -54,10 +54,8 @@ export class SignalManager {
   /** @type {SignalTarget[]} */
   signals = [];
 
-  /** Number of signals the player has saved. */
-  saved = 0;
-
-  /** Minimum saved signals needed to pass the night. */
+  /** Minimum signals needed to pass the night (informational — the actual
+   *  quota is now tracked by the QuotaBox via physical drives). */
   required = 0;
 
   /** @type {number} */
@@ -79,7 +77,6 @@ export class SignalManager {
   /** Generate a fresh set of signals for a new night. */
   startNight(nightNumber) {
     this.signals = [];
-    this.saved = 0;
     this.required = Math.min(
       this.signalsPerNight,
       BASE_REQUIRED + (nightNumber - 1),
@@ -145,12 +142,12 @@ export class SignalManager {
     if (sig) sig.scanned = true;
   }
 
-  /** Save a scanned signal — increments the saved counter. */
+  /** Save a scanned signal — marks it as saved (no counter; quota is
+   *  tracked by the QuotaBox via physical drives). */
   saveSignal(id) {
     const sig = this._find(id);
     if (!sig || sig.saved || sig.deleted) return;
     sig.saved = true;
-    this.saved++;
   }
 
   /** Delete a scanned signal — discarded, does NOT increment counter. */
@@ -160,17 +157,11 @@ export class SignalManager {
     sig.deleted = true;
   }
 
-  /** True when enough signals have been saved to pass the night. */
-  isComplete() {
-    return this.saved >= this.required;
-  }
-
-  /** Snapshot of current progress. */
+  /** Snapshot of current progress (informational — quota is driven by
+   *  the QuotaBox, not by signal counts). */
   getProgress() {
     return {
-      saved: this.saved,
       required: this.required,
-      remaining: Math.max(0, this.required - this.saved),
     };
   }
 

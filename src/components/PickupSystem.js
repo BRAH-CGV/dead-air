@@ -40,9 +40,6 @@ const SPRING_DAMPING = 25;
 /** Mouse wheel step size in metres per tick. */
 const SCROLL_STEP = 0.1;
 
-/** Small forward impulse applied when dropping (metres/second). */
-const DROP_IMPULSE = 1.5;
-
 // Pre-allocated scratch vectors to avoid per-frame allocations.
 const _target = new THREE.Vector3();
 const _disp   = new THREE.Vector3();
@@ -81,21 +78,9 @@ export class PickupSystem extends Component {
       go.rigidBody.setLinearDamping(0.5, true);
       go.rigidBody.setAngularDamping(1.0, true);
       // Kill the spring's accumulated force so it doesn't keep pulling the
-      // drive toward the old target, but keep the velocity — that's the
-      // momentum from the player's camera turn, and it should carry through
-      // so the drive flies across the room if thrown.
+      // object toward the old target. Velocity is preserved — whatever
+      // momentum the hold spring imparted carries through naturally.
       go.rigidBody.resetForces(true);
-      const engine = this._getEngine();
-      if (engine) {
-        _camFwd.set(0, 0, -1).applyQuaternion(engine.camera.quaternion);
-        const mass = go.rigidBody.mass();
-        go.rigidBody.applyImpulse(
-          { x: _camFwd.x * DROP_IMPULSE * mass,
-            y: 0,
-            z: _camFwd.z * DROP_IMPULSE * mass },
-          true,
-        );
-      }
     }
     return pickupable;
   }
@@ -104,6 +89,12 @@ export class PickupSystem extends Component {
    *  looking at a Pickupable. */
   pickUp(pickupable) {
     if (this.heldPickupable || !pickupable) return false;
+
+    // Hook: let the DriveSlot (or any other owner) prepare the body before
+    // we change physics. This is how an inserted drive gets converted from
+    // kinematic back to dynamic before we set gravity/damping.
+    pickupable.onBeforePickUp?.();
+
     pickupable.held = true;
     this.heldPickupable = pickupable;
 

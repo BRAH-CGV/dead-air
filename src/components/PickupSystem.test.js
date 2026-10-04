@@ -106,6 +106,22 @@ describe('PickupSystem', () => {
     expect(system.pickUp(null)).toBe(false);
   });
 
+  it('pickUp calls onBeforePickUp hook before changing physics', () => {
+    const { go, pickupable } = makePickupableGO();
+    const onBeforePickUp = vi.fn();
+    pickupable.onBeforePickUp = onBeforePickUp;
+
+    system.pickUp(pickupable);
+
+    // The hook fires before physics changes — so it runs before setGravityScale.
+    expect(onBeforePickUp).toHaveBeenCalledTimes(1);
+    // Verify ordering: onBeforePickUp call should come before the first
+    // setGravityScale call (both are on the same tick).
+    const gravityCallOrder = go.rigidBody.setGravityScale.mock.invocationCallOrder[0];
+    const hookCallOrder = onBeforePickUp.mock.invocationCallOrder[0];
+    expect(hookCallOrder).toBeLessThan(gravityCallOrder);
+  });
+
   // ── Drop ──
 
   it('dropHeld releases the object and restores physics', () => {
@@ -118,7 +134,7 @@ describe('PickupSystem', () => {
     expect(go.rigidBody.setGravityScale).toHaveBeenCalledWith(1, true);
     expect(go.rigidBody.setLinearDamping).toHaveBeenCalledWith(0.5, true);
     expect(go.rigidBody.setAngularDamping).toHaveBeenCalledWith(1.0, true);
-    expect(go.rigidBody.applyImpulse).toHaveBeenCalled();
+    expect(go.rigidBody.resetForces).toHaveBeenCalled();
   });
 
   it('dropHeld returns null when nothing is held', () => {

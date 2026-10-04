@@ -39,4 +39,17 @@ describe('Pickupable', () => {
     p.holdDistance = p.maxHoldDistance;
     expect(p.holdDistance).toBe(2.0);
   });
+
+  it('has a null onBeforePickUp hook by default', () => {
+    const p = new Pickupable();
+    expect(p.onBeforePickUp).toBeNull();
+  });
+
+  it('onBeforePickUp hook can be set and called', () => {
+    const p = new Pickupable();
+    let called = false;
+    p.onBeforePickUp = () => { called = true; };
+    p.onBeforePickUp();
+    expect(called).toBe(true);
+  });
 });

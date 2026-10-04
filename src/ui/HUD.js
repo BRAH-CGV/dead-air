@@ -36,7 +36,7 @@ export class HUD {
   }
 
   setSignals(saved, required) {
-    if (this._signals) this._signals.textContent = `Signals: ${saved} / ${required}`;
+    if (this._signals) this._signals.textContent = `Drives: ${saved} / ${required}`;
   }
 
   setNight(number) {

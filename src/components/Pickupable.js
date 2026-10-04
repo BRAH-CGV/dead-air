@@ -16,6 +16,10 @@ import { Component } from '../core/Component.js';
 // The PickupSystem reads holdDistance to position the object in front of the
 // camera while carried. Mouse wheel scrolling adjusts this distance within
 // the [minHoldDistance, maxHoldDistance] range.
+//
+// Optional hook: onBeforePickUp — called by PickupSystem.pickUp() BEFORE
+// changing physics. Used by DriveSlot to eject an inserted drive (make it
+// dynamic) before the pickup system configures the body for carrying.
 // ─────────────────────────────────────────────
 
 export class Pickupable extends Component {
@@ -36,4 +40,12 @@ export class Pickupable extends Component {
 
   /** Prompt shown when the player looks at this object (not holding). */
   promptLabel = '[E] Pick up';
+
+  /**
+   * Optional callback invoked by PickupSystem.pickUp() BEFORE physics changes.
+   * Used by DriveSlot to eject an inserted drive (convert kinematic → dynamic)
+   * before the pickup system configures the body for carrying.
+   * @type {(() => void)|null}
+   */
+  onBeforePickUp = null;
 }

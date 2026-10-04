@@ -6,6 +6,7 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.j
 import { ServerRoom } from './ServerRoom.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
 
@@ -114,59 +115,42 @@ describe('ServerRoom', () => {
     expect(after).not.toEqual(before);
   });
 
-  it('the console is an Interactable that clears the signal from the inserted drive', () => {
+  it('the console has a separate DriveSlot box for inserting drives', () => {
+    const slotBox = room.root.find('DriveSlot');
+    expect(slotBox).not.toBeNull();
+    const slot = slotBox.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    expect(slot.snapDistance).toBe(0.25);
+  });
+
+  it('the console Interactable clears the signal from the inserted drive in the slot', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    const slotBox = room.root.find('DriveSlot');
+    const slot = slotBox.getComponent(DriveSlot);
     expect(interactable).not.toBeNull();
+    expect(slot).not.toBeNull();
 
-    // Bind a fake DriveManager with a saved drive.
+    // Simulate a saved drive inserted in the slot.
     const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
-    const dm = {
-      drives: [fakeDrive],
-      driveInserted: true,
-      insertedDrive: fakeDrive,
-      insertedDriveHasSignal: true,
-      signalsOnDrive: 1,
-    };
-    room.bindDriveManager(dm);
+    slot._insertedDrive = fakeDrive;
 
-    // After binding with a saved drive, the prompt shows the delete option.
+    // The prompt shows the delete option.
+    interactable.refreshPrompt();
     expect(interactable.promptLabel).toBe('[E] Delete signal');
 
     // Interact to clear the signal.
     interactable.onInteract({});
-    expect(fakeDrive.saved).toBe(false);  // drive was reset
-    expect(dm.signalsOnDrive).toBe(0);    // counter was zeroed
+    expect(fakeDrive.saved).toBe(false);
 
     // After clearing, the prompt should revert.
-    dm.insertedDriveHasSignal = false;
     interactable.refreshPrompt();
     expect(interactable.promptLabel).toBe('No signal to delete');
   });
 
-  it('the console clears the signal from a carried drive, not just an inserted one', () => {
+  it('the console shows "No signal to delete" when the slot has no drive', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
-
-    // A green drive being carried by the player (not inserted).
-    const carriedDrive = { saved: true, setSaved(v) { this.saved = v; } };
-    const dm = {
-      drives: [carriedDrive],
-      driveInserted: false,
-      insertedDrive: null,
-      insertedDriveHasSignal: false,
-      signalsOnDrive: 0,
-    };
-    const ps = {
-      heldPickupable: { gameObject: carriedDrive },
-    };
-    room.bindDriveManager(dm);
-    room.bindPickupSystem(ps);
-
-    // The prompt should show the delete option for the carried green drive.
-    expect(interactable.promptLabel).toBe('[E] Delete signal');
-
-    // Interact to clear the signal.
-    interactable.onInteract({});
-    expect(carriedDrive.saved).toBe(false);
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
   });
 
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {

@@ -15,6 +15,7 @@ import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
 import { PickupSystem } from '../components/PickupSystem.js';
+import { DriveSlot } from '../components/DriveSlot.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
@@ -346,10 +347,76 @@ export class BaseScene extends Scene {
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
 
-    // Wire the drive manager to the office's drive reader and the server
-    // room's console (for clearing signals from drives).
-    this.rooms.MainOffice.bindDriveManager(this.driveManager);
-    this.rooms.ServerRoom?.bindDriveManager(this.driveManager);
+    // Wire the drive manager to the office's drive reader slot.
+    const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
+    if (driveSlot) {
+      driveSlot.bindDriveManager(this.driveManager);
+    }
+
+    // Wire the server room's drive slot to watch the same drives.
+    // The slot works independently (no DriveManager) — the console's
+    // Interactable checks the slot's insertedDrive for signals.
+    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Wire the quota box in the airlock
+    const quotaBox = this.rooms.Airlock.quotaBox;
+    if (quotaBox) {
+      quotaBox.requiredCount = this.signalManager.required;
+      this.gameController.quotaBox = quotaBox;
+    }
+
+    // Wire the drive supply: drives are already in the room (added by
+    // MainOffice._buildDriveSupply) so they have physics from the engine
+    // lifecycle. When dispensed, they're positioned near the box and
+    // registered with slots.
+    const supply = this.rooms.MainOffice.driveSupply;
+    const office = this.rooms.MainOffice;
+    if (supply) {
+      // Register all drives with the drive manager
+      for (const drive of supply.drives) {
+        this.driveManager.addDrive(drive);
+      }
+
+      // Hook into the supply's interactable to register dispensed drives with slots
+      const supplyInteractable = this.rooms.MainOffice.driveSupplyBox?.getComponent(Interactable);
+      if (supplyInteractable) {
+        const originalOnInteract = supplyInteractable.onInteract;
+        supplyInteractable.onInteract = (...args) => {
+          originalOnInteract?.call(supplyInteractable, ...args);
+          // The drive was just dispensed — find it (no longer in the pool)
+          // and register with all slots so they can snap it.
+          const dispensedDrive = supply.drives.find(d => !supply._pool.includes(d));
+          if (dispensedDrive) {
+            if (driveSlot) driveSlot.addDrive(dispensedDrive);
+            if (serverSlot) serverSlot.addDrive(dispensedDrive);
+            if (quotaBox) quotaBox.addDrive(dispensedDrive);
+          }
+        };
+      }
+
+      // Hook into slot eject callbacks to ensure drives stay in the room
+      const addDriveToRoom = (drive) => {
+        if (drive.object3d.parent !== office.root.object3d) {
+          office.root.addChild(drive);
+        }
+      };
+      if (driveSlot) {
+        const origOnRemoved = driveSlot.onDriveRemoved;
+        driveSlot.onDriveRemoved = (drive) => {
+          origOnRemoved?.(drive);
+          addDriveToRoom(drive);
+        };
+      }
+      // QuotaBox no longer uses eject callbacks — it detects pickup via
+      // the held flag in its own onUpdate.
+      if (serverSlot) {
+        const origOnRemoved = serverSlot.onDriveRemoved;
+        serverSlot.onDriveRemoved = (drive) => {
+          origOnRemoved?.(drive);
+          addDriveToRoom(drive);
+        };
+      }
+    }
 
     // ── Pickup system (generic carry mechanic) ──
     // Attached to the player so it can detect Pickupable objects via
@@ -358,10 +425,6 @@ export class BaseScene extends Scene {
     this.engine.player.addComponent(this.pickupSystem);
     this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
     this.pickupSystem.terminal = this.terminal;
-    // Wire the pickup system to the office's drive reader and the server
-    // room's console (for clearing signals from carried drives).
-    this.rooms.MainOffice.bindPickupSystem(this.pickupSystem);
-    this.rooms.ServerRoom?.bindPickupSystem(this.pickupSystem);
 
     // The review panel is now display-only — Q auto-saves via the terminal.
     // No onSave/onDelete callbacks needed.
@@ -372,6 +435,7 @@ export class BaseScene extends Scene {
     // while the HUD still read "Night 1". autoStart is off for the same
     // reason: it hardcodes night 1.
     this.gameController.autoStart = false;
+    this.gameController.onNightStart = () => this._resetDrivesForNight();
     this._offNightStart = this.gameController.bindNights(this.nights);
 
     // The day. Added after the controller so, within a frame, it reads the
@@ -400,6 +464,50 @@ export class BaseScene extends Scene {
 
     this.hud.setSuit(this.suit.worn);
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
+  }
+
+  /** Reset drives and quota for a new night. Ejects drives from all slots,
+   *  resets the supply pool, and resets the quota box. Called by the
+   *  GameController at the start of each night.
+   *  Drives are already in the room with physics (added by MainOffice at
+   *  build time); we just need to reset their state and re-pool them. */
+  _resetDrivesForNight() {
+    const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
+    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const quotaBox = this.rooms.Airlock.quotaBox;
+    const supply = this.rooms.MainOffice.driveSupply;
+    const office = this.rooms.MainOffice;
+
+    // 1. Eject drives from all slots (drives stay in the room)
+    if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
+    if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+    quotaBox?.reset();
+
+    // 2. Reset the supply pool (all drives go back to the pool)
+    if (supply) {
+      supply._pool.length = 0;
+      for (const drive of supply.drives) {
+        supply._pool.push(drive);
+        // Ensure drive is in the room (may have been picked up and carried away)
+        if (drive.object3d.parent !== office.root.object3d) {
+          office.root.addChild(drive);
+        }
+        // Reset drive state and physics
+        drive.setEjected?.();
+        drive.enablePhysics?.();
+      }
+    }
+
+    // 3. (quotaBox.reset() already called above — ejects deposited drives, zeroes count)
+
+    // 4. Re-register all drives with all slots (addDrive is idempotent)
+    if (supply) {
+      for (const drive of supply.drives) {
+        if (driveSlot) driveSlot.addDrive(drive);
+        if (serverSlot) serverSlot.addDrive(drive);
+        if (quotaBox) quotaBox.addDrive(drive);
+      }
+    }
   }
 
   // ──────────────────────────────────────────

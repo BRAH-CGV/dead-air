@@ -8,6 +8,7 @@ import { Interactable } from '../../components/Interactable.js';
 import { EVASuit } from '../../components/EVASuit.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Door } from '../../gameobjects/Door.js';
+import { QuotaBox } from '../../gameplay/QuotaBox.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -392,6 +393,20 @@ describe('Airlock', () => {
     expect(lights).toContain(beacon);
     expect(beacon.position.z).toBeGreaterThan(1);   // over the hatch
     expect(beacon.color.r).toBeGreaterThan(beacon.color.g);
+  });
+
+  it('has a quota box inside the chamber with a QuotaBox component', () => {
+    const quotaBoxGO = airlock.root.find('QuotaBox');
+    expect(quotaBoxGO).not.toBeNull();
+    expect(quotaBoxGO.rigidBody.isFixed()).toBe(true);
+
+    const quotaBox = quotaBoxGO.getComponent(QuotaBox);
+    expect(quotaBox).not.toBeNull();
+    expect(airlock.quotaBox).toBe(quotaBox);
+
+    // The quota box starts with zero required (scene sets it later)
+    expect(quotaBox.requiredCount).toBe(0);
+    expect(quotaBox.collectedCount).toBe(0);
   });
 
   it('dispose lets go of the suit and the inner door, and removes its bodies', () => {

@@ -145,7 +145,10 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = closest;
   }
 
-  /** Save the currently reviewed signal (auto-called on review dismiss). */
+  /** Save the currently reviewed signal (auto-called on review dismiss).
+   *  Marks the signal as resolved and the drive as saved (green). The quota
+   *  is NOT incremented here — it is counted by the QuotaBox when the
+   *  player deposits the drive. */
   saveSignal() {
     if (this.state !== 'review') return;
     const mgr = this.signalManager;
@@ -153,7 +156,6 @@ export class ComputerTerminal extends Component {
 
     mgr.saveSignal(this._hoveredSignal.id);
     this.driveManager?.saveToDrive();
-    this.gameController?.onSignalSaved();
     this._onSignalResolved();
   }
 

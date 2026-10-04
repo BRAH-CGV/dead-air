@@ -593,7 +593,6 @@ describe('ComputerTerminal', () => {
 
     term.saveSignal();
     expect(sig.saved).toBe(true);
-    expect(mgr.saved).toBe(1);
     expect(driveMgr.saveToDrive).toHaveBeenCalled();
     expect(term.state).toBe('radar');
     expect(review.hide).toHaveBeenCalled();

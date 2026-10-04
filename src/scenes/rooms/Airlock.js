@@ -3,6 +3,7 @@ import { Corridor } from './Corridor.js';
 import { Component } from '../../core/Component.js';
 import { Interactable } from '../../components/Interactable.js';
 import { PLAYER_BODY } from '../../components/PlayerBody.js';
+import { QuotaBox } from '../../gameplay/QuotaBox.js';
 
 // ─────────────────────────────────────────────
 // Airlock  –  the only way out, sealed without the EVA suit
@@ -110,6 +111,11 @@ export class Airlock extends Corridor {
     /** Hatch status light — red sealed, amber cycling, green open. @type {THREE.PointLight|null} */
     this.beacon = null;
 
+    /** The quota box (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
+    this.quotaBoxGO = null;
+    /** The QuotaBox component. @type {QuotaBox|null} */
+    this.quotaBox = null;
+
     /** @type {'pressurised'|'depressurising'|'depressurised'|'pressurising'} */
     this.state = 'pressurised';
     /** Seconds to cycle from one door to the other. */
@@ -172,6 +178,29 @@ export class Airlock extends Corridor {
     }());
 
     this.root.addComponent(new AirlockCycle(this));
+
+    // Quota box next to the airlock (inside the chamber, against the right wall)
+    this._buildQuotaBox();
+  }
+
+  /** A placeholder box for collecting drives toward the night quota.
+   *  Inside the airlock chamber, against the right wall. */
+  _buildQuotaBox() {
+    const boxSize = [0.3, 0.2, 0.3];
+    // Inside the airlock chamber, against the right wall (positive x side)
+    const inX = this.corridorWidth / 2 - this.wallThick / 2;
+    const boxPos = [inX - boxSize[0] / 2 - 0.05, boxSize[1] / 2, 0];
+    const boxMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3a3a, roughness: 0.6, metalness: 0.3,
+      emissive: 0x220000, emissiveIntensity: 0.2,
+    });
+    this._own(boxMat);
+
+    this.quotaBoxGO = this._addStaticBox('QuotaBox', boxPos, boxSize, boxMat);
+
+    // Add the QuotaBox component
+    this.quotaBox = new QuotaBox({ requiredCount: 0 });
+    this.quotaBoxGO.addComponent(this.quotaBox);
   }
 
   /** Give the airlock the office door it opens from. It is locked and
