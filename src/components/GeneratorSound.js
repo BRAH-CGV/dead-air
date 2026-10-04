@@ -33,7 +33,7 @@ export const GENERATOR = {
   /** …which has fully taken over by here. */
   humFadeEnd: 4.2,
   /** Volume at the reference distance, outdoors. */
-  volume: 0.6,
+  volume: 0.4,
   /** Metres from the generator at full volume; beyond it, inverse falloff. */
   refDistance: 4,
   /** Fraction of the outdoor volume that gets through the walls. */
