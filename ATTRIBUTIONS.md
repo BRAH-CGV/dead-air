@@ -663,6 +663,40 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A dust eye catching the player (`DustEyes`) |
 | **Modifications** | Renamed |
 
+### Base ambience (room tone loops)
+
+Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-ambience-centre-room.mp3`, `interior-base-ambience-server-room.mp3`, `interior-base-ambience-bed-room.mp3` |
+| **Manifest key** | `sfx:interior-base-ambience-centre-room`, `sfx:interior-base-ambience-server-room`, `sfx:interior-base-ambience-bed-room` |
+| **Used for** | Room tone (`Ambience`): the main office, the server room, the living quarters |
+| **Modifications** | Layered and mixed down into three loops; each cut to its first 60 s at an MPEG frame boundary (no re-encode) to keep decoded memory down; at load, each loop's tail is crossfaded into its head so it repeats cleanly (`blendLoopSeam`) |
+
+### Exterior wind
+
+One wind loop, mixed by us from four Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "Perpignan outdoor wind - 2024 12 08" by Sadiquecat (https://freesound.org/people/Sadiquecat/sounds/773670/), "Ambient Rumble" by Robo9418 (https://freesound.org/people/Robo9418/sounds/840409/), "Wind Over Holehead Hill" by Sandy-Ogilvie (https://freesound.org/people/Sandy-Ogilvie/sounds/847257/) and "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/exterior-base-ambience-wind.mp3` |
+| **Manifest key** | `sfx:exterior-base-ambience-wind` |
+| **Used for** | The wind outside the base (`Ambience`) |
+| **Modifications** | Layered and mixed down into one 70 s loop; renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
+
+### Tension music
+
+"Lost in a bad place (horror ambience loop)" (https://opengameart.org/content/lost-in-a-bad-place-horror-ambience-loop) by congusbongus on OpenGameArt is used under CC0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-spooky-music.mp3` |
+| **Manifest key** | `sfx:interior-base-spooky-music` |
+| **Used for** | Music that creeps in under a scare (`Ambience.setTension`) |
+| **Modifications** | Renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
+
+
 ## Downloaded but unattributed — TODO
 
 These files sit in `public/assets/models/` with no source link on record.

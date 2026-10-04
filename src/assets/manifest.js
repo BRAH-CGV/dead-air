@@ -481,12 +481,43 @@ const LIBRARY = {
 };
 
 /**
+ * Heard every game, but fetched after the scene is up instead of behind the
+ * loading screen: ~6 MB of mp3 that nothing has to wait for. `Ambience`
+ * loads these and fades each in as it arrives.
+ * @type {Record<string, AudioEntry>}
+ */
+const AMBIENT = {
+  'sfx:interior-base-ambience-centre-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-centre-room.mp3',
+  },
+  'sfx:interior-base-ambience-server-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-server-room.mp3',
+  },
+  'sfx:interior-base-ambience-bed-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-bed-room.mp3',
+  },
+  // Everywhere that isn't the base: the yard, the roof, the valley.
+  'sfx:exterior-base-ambience-wind': {
+    type: 'audio',
+    url: 'assets/audio/exterior-base-ambience-wind.mp3',
+  },
+  // Not a room: the music that creeps in under a scare (Ambience.setTension).
+  'sfx:interior-base-spooky-music': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-spooky-music.mp3',
+  },
+};
+
+/**
  * Every asset the game knows how to load, placed or not. `assets.load(key)`
  * and `validateManifest()` both walk this, so a library model is a first-class
  * manifest entry — it just isn't fetched until something asks for it.
  * @type {Record<string, ModelEntry | TextureEntry | AudioEntry>}
  */
-export const ASSETS = { ...PLACED, ...LIBRARY };
+export const ASSETS = { ...PLACED, ...LIBRARY, ...AMBIENT };
 
 /**
  * Assets fetched before the first frame is drawn. Everything else can be

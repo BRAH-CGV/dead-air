@@ -1,0 +1,172 @@
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import * as THREE from 'three';
+
+vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
+
+import { BaseScene } from './BaseScene.js';
+import { GameObject } from '../core/GameObject.js';
+import { makeEngine } from '../test/fakeRapier.js';
+import { Ambience, AMBIENCE } from '../components/Ambience.js';
+import { ASSETS } from '../assets/manifest.js';
+
+// A full base build is slow under jsdom — see BaseScene.test.js.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
+// ─────────────────────────────────────────────
+// Which loop the real base plays where. The blending itself is covered in
+// AmbienceMix.test.js; this pins the wiring to the rooms as they are built.
+// ─────────────────────────────────────────────
+
+function makeSceneEngine() {
+  const engine = makeEngine();
+  engine.scene = new THREE.Scene();
+  engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+  engine.assets = { get: vi.fn(() => null) };
+  engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
+    const player = new GameObject('Player');
+    player.object3d.position.set(...position);
+    engine.player = player;
+    engine._rootObjects.push(player);
+    return player;
+  });
+  return engine;
+}
+
+const centreOf = part => part.bounds().getCenter(new THREE.Vector3());
+
+describe('BaseScene ambience', () => {
+  let scene, mix;
+  const { rooms: TRACK } = AMBIENCE;
+
+  beforeAll(() => {
+    scene = new BaseScene(makeSceneEngine());
+    scene.build();
+    mix = scene.ambience.mix;
+  });
+
+  /** The tracks audible at `p`, loudest first. */
+  const heardAt = (p) => {
+    const w = mix.weightsAt(p, {});
+    return Object.keys(w).filter(k => w[k] > 1e-6).sort((a, b) => w[b] - w[a]);
+  };
+
+  it('puts an Ambience on the scene', () => {
+    expect(scene.ambience).toBeInstanceOf(Ambience);
+  });
+
+  it('names clips the manifest knows', () => {
+    for (const key of [...Object.values(TRACK), AMBIENCE.outside, AMBIENCE.music]) {
+      expect(ASSETS[key], key).toBeDefined();
+    }
+  });
+
+  it('gives each room its own loop', () => {
+    expect(heardAt(centreOf(scene.rooms.MainOffice))).toEqual([TRACK.MainOffice]);
+    expect(heardAt(centreOf(scene.rooms.ServerRoom))).toEqual([TRACK.ServerRoom]);
+    expect(heardAt(centreOf(scene.rooms.LivingQuarters))).toEqual([TRACK.LivingQuarters]);
+    expect(new Set([TRACK.MainOffice, TRACK.ServerRoom, TRACK.LivingQuarters]).size).toBe(3);
+  });
+
+  describe('in the airlock', () => {
+    const wind = AMBIENCE.outside;
+    const heardInAirlock = () => heardAt(centreOf(scene.rooms.Airlock));
+    /** Tick the interlock on by `seconds`. */
+    const cycle = (seconds) => {
+      const airlock = scene.rooms.Airlock;
+      for (let i = 0; i < Math.round(seconds * 60); i++) airlock.update(1 / 60);
+    };
+    const full = () => scene.rooms.Airlock.cycleTime + 0.5;
+
+    afterEach(() => {
+      scene.suit.takeOff();
+      cycle(full());
+      expect(scene.rooms.Airlock.state).toBe('pressurised');
+    });
+
+    it('plays the office loop while the inner door stands open, from end to end', () => {
+      const airlock = scene.rooms.Airlock;
+      expect(airlock.state).toBe('pressurised');
+      const p = centreOf(airlock);
+      for (const z of [airlock.bounds().min.z + 0.1, p.z, airlock.bounds().max.z - 0.1]) {
+        p.z = z;
+        expect(heardAt(p)).toEqual([TRACK.MainOffice]);
+      }
+    });
+
+    it('holds the office loop while it cycles, and switches to the wind when the hatch opens', () => {
+      scene.suit.putOn();
+      cycle(1);
+      expect(scene.rooms.Airlock.state).toBe('depressurising');
+      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+
+      cycle(full());
+      expect(scene.rooms.Airlock.state).toBe('depressurised');
+      expect(heardInAirlock()).toEqual([wind]);
+    });
+
+    it('holds the wind on the way back in, and switches when the inner door opens', () => {
+      scene.suit.putOn();
+      cycle(full());
+      scene.suit.takeOff();
+      cycle(1);
+      expect(scene.rooms.Airlock.state).toBe('pressurising');
+      expect(heardInAirlock()).toEqual([wind]);
+
+      cycle(full());
+      expect(scene.rooms.Airlock.state).toBe('pressurised');
+      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+    });
+
+    it('never lets the wind in on a change of mind: the hatch did not open', () => {
+      scene.suit.putOn();
+      cycle(1);
+      scene.suit.takeOff();
+      expect(scene.rooms.Airlock.state).toBe('pressurising');
+      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+      cycle(full());
+      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+    });
+
+    it('leaves the office and the yard to their own sound, whichever door is open', () => {
+      scene.suit.putOn();
+      cycle(full());
+      expect(heardAt(centreOf(scene.rooms.MainOffice))).toEqual([TRACK.MainOffice]);
+      expect(heardAt(new THREE.Vector3(0, 1, 40))).toEqual([wind]);
+    });
+  });
+
+  it('keeps the wind out of the rooms and the corridors', () => {
+    const wind = AMBIENCE.outside;
+    const inside = [...Object.values(scene.rooms), ...Object.values(scene.corridors)]
+      .filter(part => part !== scene.rooms.Airlock);
+    for (const part of inside) {
+      expect(heardAt(centreOf(part)), part.name).not.toContain(wind);
+    }
+  });
+
+  it('blends the office with the server room down their corridor', () => {
+    const corridor = scene.corridors.OfficeToServer;
+    expect(heardAt(centreOf(corridor)).sort()).toEqual([TRACK.MainOffice, TRACK.ServerRoom].sort());
+
+    // Nearer the server room, the server room is the louder of the two.
+    const p = centreOf(corridor);
+    p.x = corridor.bounds().max.x - 0.5;
+    expect(heardAt(p)).toEqual([TRACK.ServerRoom, TRACK.MainOffice]);
+  });
+
+  it('blends the office with the living quarters down theirs', () => {
+    const corridor = scene.corridors.OfficeToQuarters;
+    expect(heardAt(centreOf(corridor)).sort()).toEqual([TRACK.MainOffice, TRACK.LivingQuarters].sort());
+
+    const p = centreOf(corridor);
+    p.x = corridor.bounds().min.x + 0.5;
+    expect(heardAt(p)).toEqual([TRACK.LivingQuarters, TRACK.MainOffice]);
+  });
+
+  it('plays the wind alone out in the yard, and up on the roof', () => {
+    expect(heardAt(new THREE.Vector3(0, 1, 40))).toEqual([AMBIENCE.outside]);
+    const roof = centreOf(scene.rooms.MainOffice);
+    roof.y = scene.rooms.MainOffice.bounds().max.y + 1;
+    expect(heardAt(roof)).toEqual([AMBIENCE.outside]);
+  });
+});

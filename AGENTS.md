@@ -66,6 +66,7 @@ src/
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
+│   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
 │   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
@@ -94,6 +95,7 @@ src/
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
 ├── systems/
 │   ├── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
+│   ├── AmbienceMix.js   # Which room loops are heard where: rooms, corridor crossfades (pure)
 │   ├── OcclusionZones.js # Named object sets drawn/skipped together, with a readiness gate
 │   ├── Sightlines.js    # Window half-spaces, instance splitting, hideable-part collection
 │   └── PowerGrid.js     # Every lamp on the generator's switch; surge flicker; blown bulbs
@@ -161,6 +163,23 @@ Every prop has a job:
 - **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
+
+### Ambience
+
+`Ambience` (on the scene's `Ambience` group, as `scene.ambience`) plays two layers of looping sound. `BaseScene._addAmbience` builds it from the rooms and corridors.
+
+- **Rooms.** Each room has a loop of its own (`AMBIENCE.rooms`, by room name), and the wind (`AMBIENCE.outside`) is everywhere that isn't the base. `AmbienceMix` says how loud each is at the camera:
+  - **In a room** (its whole shell, `bounds()`): that room's loop, alone.
+  - **In a corridor:** the two rooms it joins, crossfaded by how far along it you are. The fade is equal power (cos / sin), so the loudness holds level. The mix finds what a corridor joins by looking just past each end, so nobody lists which room is on which side.
+  - **Outside** (the yard, the roof, the valley): the wind, alone. It is never heard in a room or a corridor.
+  - **In the airlock:** whichever side's door last stood open. The sound switches as a door opens: the wind when the hatch does, the office when the inner door does. While both doors are shut it holds what it had, so a change of mind mid-cycle never lets the wind in. `_addAmbience` does this by changing the airlock zone's `track` on `Airlock.onStateChange`. The airlock's transition sound, when it lands, plays over that cycle.
+  - The gains ease toward the mix (`blendRate`), so a teleport or a door opening is a quick fade, not a cut.
+- **Tension music.** One loop that follows a tension level, 0..1. A threat raises it under a name of its own: `scene.ambience.setTension(1, 'window-entity')`, and `setTension(0, 'window-entity')` when it has gone. The music follows the highest level anyone holds, and creeps in and out over `musicFadeIn` / `musicFadeOut` (4 s / 6 s). `clearTension()` drops every source.
+- **Volumes are the clips' own**, each mixed to the loudest it should be. `AMBIENCE.volumes` is a per-track trim on top (a multiplier, by manifest key; left out is 1), for balancing one room against the others: the office loop is at 1.2, about +1.6 dB. The music has no trim — its file level is its ceiling.
+- **A loop at zero is stopped**, and starts from its top the next time it is wanted.
+- **Loading.** The five clips are in the manifest's `AMBIENT` group, not `PRELOAD`: `Ambience` fetches them once the scene is up and each fades in as it arrives, so 6 MB of mp3 never holds the loading screen.
+- **Looping.** `blendLoopSeam` crossfades each clip's tail into its head **in place**, in the cached buffer, and the loop restarts one fade in (`setLoopStart`). SuitVisor's `seamlessLoop` copies instead, which is fine for a short clip; copies of these would cost another ~150 MB.
+- **Memory.** Decoded audio is 32-bit float PCM, ~23 MB per stereo minute at 48 kHz, whatever the mp3 weighs. The three room loops are 60 s each (~23 MB apiece), the wind is 70 s (~27 MB) and the music is 135 s (~52 MB): ~150 MB in all. The room loops were first mixed at 3 minutes, which came to ~260 MB; they are steady room tone, so they were cut to their first 60 s. Keep a new loop short. The room loops are also nearly mono (L/R correlation 0.98–0.999), so a mono export would halve them again; the wind and the music are true stereo, and the music loops as a piece, so it can't be cut.
 
 ### Shift and day
 
