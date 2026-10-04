@@ -382,10 +382,11 @@ export class BaseScene extends Scene {
       if (supplyInteractable) {
         const originalOnInteract = supplyInteractable.onInteract;
         supplyInteractable.onInteract = (...args) => {
+          // Snapshot the pool before dispensing so we can identify the
+          // just-dispensed drive (even when wild drives are also not in the pool).
+          const poolBefore = [...supply._pool];
           originalOnInteract?.call(supplyInteractable, ...args);
-          // The drive was just dispensed — find it (no longer in the pool)
-          // and register with all slots so they can snap it.
-          const dispensedDrive = supply.drives.find(d => !supply._pool.includes(d));
+          const dispensedDrive = poolBefore.find(d => !supply._pool.includes(d));
           if (dispensedDrive) {
             if (driveSlot) driveSlot.addDrive(dispensedDrive);
             if (serverSlot) serverSlot.addDrive(dispensedDrive);
@@ -466,11 +467,18 @@ export class BaseScene extends Scene {
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
   }
 
-  /** Reset drives and quota for a new night. Ejects drives from all slots,
-   *  resets the supply pool, and resets the quota box. Called by the
-   *  GameController at the start of each night.
-   *  Drives are already in the room with physics (added by MainOffice at
-   *  build time); we just need to reset their state and re-pool them. */
+  /** Reset drives and quota for a new night.
+   *
+   *  Three categories of drive:
+   *    deposited  were in the QuotaBox (out box) — signal cleared, moved back
+   *               to the supply box, returned to the pool for re-dispensing.
+   *    wild       were dispensed but not deposited — keep their signal, stay
+   *               where they are in the room, NOT returned to the pool (the
+   *               player can still pick them up and deposit them).
+   *    pooled     were never dispensed — stay in the pool untouched.
+   *
+   *  Drives in the reader or server slot are ejected but keep their signal
+   *  (they are not in the out box). */
   _resetDrivesForNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
     const serverSlot = this.rooms.ServerRoom?.driveSlot;
@@ -478,29 +486,40 @@ export class BaseScene extends Scene {
     const supply = this.rooms.MainOffice.driveSupply;
     const office = this.rooms.MainOffice;
 
-    // 1. Eject drives from all slots (drives stay in the room)
+    // 1. Snapshot which drives were deposited (before reset clears them)
+    const depositedDrives = quotaBox ? [...quotaBox._deposited] : [];
+
+    // 2. Eject drives from reader and server slot (they keep their signal)
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
     if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+
+    // 3. Reset the QuotaBox (ejects deposited drives, zeroes count)
     quotaBox?.reset();
 
-    // 2. Reset the supply pool (all drives go back to the pool)
-    if (supply) {
-      supply._pool.length = 0;
-      for (const drive of supply.drives) {
-        supply._pool.push(drive);
-        // Ensure drive is in the room (may have been picked up and carried away)
-        if (drive.object3d.parent !== office.root.object3d) {
-          office.root.addChild(drive);
-        }
-        // Reset drive state and physics
-        drive.setEjected?.();
-        drive.enablePhysics?.();
+    // 4. Move deposited drives back to the supply box and clear their signals
+    const supplyBoxPos = this.rooms.MainOffice.driveSupplyBox?.object3d?.position;
+    for (const drive of depositedDrives) {
+      drive.setEjected?.();
+      if (supplyBoxPos) {
+        drive.object3d.position.set(supplyBoxPos.x, supplyBoxPos.y + 0.05, supplyBoxPos.z);
+      }
+      drive.enablePhysics?.();
+      // Ensure in room
+      if (drive.object3d.parent !== office.root.object3d) {
+        office.root.addChild(drive);
       }
     }
 
-    // 3. (quotaBox.reset() already called above — ejects deposited drives, zeroes count)
+    // 5. Return deposited drives to the supply pool (undispensed drives stay)
+    if (supply) {
+      for (const drive of depositedDrives) {
+        if (!supply._pool.includes(drive)) {
+          supply._pool.push(drive);
+        }
+      }
+    }
 
-    // 4. Re-register all drives with all slots (addDrive is idempotent)
+    // 6. Re-register all drives with all slots (addDrive is idempotent)
     if (supply) {
       for (const drive of supply.drives) {
         if (driveSlot) driveSlot.addDrive(drive);
