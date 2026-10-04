@@ -198,7 +198,7 @@ The generator outside is the base's one power switch. `BaseScene._addPower` puts
   - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`).
   - **The clips** are cut at MPEG frame boundaries from one 3-minute recording, so only about 22 s of audio is decoded.
 
-`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), once, at a random time (`scheduleApproach`). For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:
+`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 1:00 and 4:30 on the night clock (`UFO.spawnHours`, via `scheduleApproach`, which follows the clock's own length), with the radar warning `radarLead` seconds before. For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:
 
 ```
 waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
@@ -209,9 +209,7 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
   - For `radarLead` (20 s) it is only on the radar: a wobbling, glitching blob (`RadarOverlay.threat`, on the shared `_skyToCanvas` mapping) crawling toward the centre, which is overhead. The signal lamp goes `frantic`.
   - Parking the radar cursor on the blob (`RadarOverlay.threatAt`) flashes the red `ANOMALY_WARNING` line ("extreme electrical anomaly detected — turn off power…") above the radar's info line.
   - When the flight sound starts, the UFO bursts into the sky (`Ufo.appear`: its beacon flares to several times its size, plus a flash). It's ~700 m out along its path, with its searchlight already on as a thin shaft, and a beacon glow that holds its size on screen through the haze. It slows all the way in.
-  - **Where it appears** is `spawnBearing`.
-    - `inViewChance` (40 %) of the time it's in the open sky either side of the dish tower, which fills the window's view straight out (`inViewFrom`–`inViewTo` off the window's bearing), so you can watch it spawn.
-    - Otherwise it appears somewhere round the valley the window can't see.
+  - **Where it appears** (`spawnBearing`): always in view of the office window, far off, in the open sky either side of the dish tower (`inViewFrom`–`inViewTo` off the window's bearing). The tower fills the view straight out. So you can always watch it flash in.
   - The path is a straight line from 800 m up down to the hover point. It never drops below the hover height, so it clears the dish, and from any bearing it stays ~45 m over the valley ridge and its masts (both pinned by tests).
   - It arrives on the flight clip's loudest moment: `loudestTime` measures it from the decoded buffer, about 22 s in. The threat's clock is pulled toward the audio clock (at most ±50 % speed), so the picture stays on the sound.
   - Over the last `surgeSeconds` the grid's `surge` drives every lamp far past normal, flickering.

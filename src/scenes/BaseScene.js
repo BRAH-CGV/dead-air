@@ -842,6 +842,7 @@ export class BaseScene extends Scene {
       terminal:    this.terminal,
       whiteOut:    this.whiteOut,
       nightDuration: this.nightClock.nightDuration,
+      nightHours:    this.nightClock.endHour - this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }

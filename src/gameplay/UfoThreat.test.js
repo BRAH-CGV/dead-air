@@ -39,62 +39,59 @@ describe('ufoTimeline', () => {
 });
 
 describe('scheduleApproach', () => {
+  /** Night-clock hour at `seconds` into a 300 s, 6-hour night. */
+  const hourAt = seconds => seconds / 300 * 6;
+
   it('comes only on its nights — night 3', () => {
     expect(UFO.nights).toEqual([3]);
     for (const night of [1, 2]) {
-      expect(scheduleApproach({ night, nightDuration: 300, total: 50, random: () => 0.5 })).toBe(Infinity);
+      expect(scheduleApproach({ night, nightDuration: 300, random: () => 0.5 })).toBe(Infinity);
     }
   });
 
-  it('comes at a random time on its night, always gone before 6 AM', () => {
-    for (const night of [3])
-    for (const r of [0, 0.5, 0.999]) {
-      const start = scheduleApproach({ night, nightDuration: 300, total: 50, random: () => r });
+  it('spawns at a random time between 1:00 and 4:30 on the night clock, the radar warning ahead of it', () => {
+    for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const start = scheduleApproach({ night: 3, nightDuration: 300, random: () => r });
+      const spawn = start + UFO.radarLead;   // the flash, as the sound starts
+      expect(hourAt(spawn)).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(hourAt(spawn)).toBeLessThanOrEqual(4.5 + 1e-9);
       expect(start).toBeGreaterThan(0);
-      expect(start + 50).toBeLessThan(300);
     }
-    const early = scheduleApproach({ night: 3, nightDuration: 300, total: 50, random: () => 0 });
-    const late  = scheduleApproach({ night: 3, nightDuration: 300, total: 50, random: () => 0.999 });
-    expect(late).toBeGreaterThan(early);
+    expect(hourAt(scheduleApproach({ night: 3, nightDuration: 300, random: () => 0 }) + UFO.radarLead)).toBeCloseTo(1);
+    expect(hourAt(scheduleApproach({ night: 3, nightDuration: 300, random: () => 1 }) + UFO.radarLead)).toBeCloseTo(4.5);
+  });
+
+  it('even the latest spawn is gone well before 6 AM', () => {
+    const tl = ufoTimeline({ soundArrival: 23 });
+    const start = scheduleApproach({ night: 3, nightDuration: 300, random: () => 1 });
+    expect(start + tl.departure).toBeLessThan(300);
+  });
+
+  it('follows the night clock’s own length', () => {
+    const start = scheduleApproach({ night: 3, nightDuration: 600, random: () => 0 });
+    expect((start + UFO.radarLead) / 600 * 6).toBeCloseTo(1);
   });
 });
 
 describe('spawnBearing', () => {
-  it('sometimes puts it in the open sky of the window, either side of the dish, so you see it spawn', () => {
-    for (const where of [0, 0.5, 0.99]) {
+  it('always spawns it in the open sky of the window, either side of the dish', () => {
+    for (const side of [0.2, 0.8])
+    for (const where of [0, 0.5, 0.999]) {
       let n = 0;
-      const dice = [0.1, 0.3, where];   // under the chance: in view; a side; how far out
-      const { bearing, inView } = spawnBearing(() => dice[n++]);
-      expect(inView).toBe(true);
+      const dice = [side, where];
+      const bearing = spawnBearing(() => dice[n++]);
       // Never straight out of the window: the dish tower fills that view.
       expect(Math.abs(bearing)).toBeGreaterThanOrEqual(UFO.inViewFrom);
       expect(Math.abs(bearing)).toBeLessThanOrEqual(UFO.inViewTo);
     }
-    // Both sides of the dish.
+  });
+
+  it('uses both sides of the dish', () => {
     let n = 0;
-    const left = spawnBearing(() => [0.1, 0.3, 0.5][n++]).bearing;
+    const left = spawnBearing(() => [0.2, 0.5][n++]);
     n = 0;
-    const right = spawnBearing(() => [0.1, 0.7, 0.5][n++]).bearing;
+    const right = spawnBearing(() => [0.8, 0.5][n++]);
     expect(Math.sign(left)).not.toBe(Math.sign(right));
-  });
-
-  it('otherwise somewhere around the valley the window cannot see', () => {
-    for (const r of [0.5, 0.75, 0.99]) {
-      let n = 0;
-      const dice = [r, 0.3, 0.8];   // chance roll, then where round the valley
-      const { bearing, inView } = spawnBearing(() => dice[n++ % dice.length]);
-      expect(inView).toBe(false);
-      expect(Math.abs(bearing)).toBeGreaterThanOrEqual(UFO.outOfViewFrom);
-      expect(Math.abs(bearing)).toBeLessThanOrEqual(Math.PI);
-    }
-  });
-
-  it('in view about as often as the chance says', () => {
-    let seed = 1;
-    const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    let seen = 0;
-    for (let i = 0; i < 2000; i++) if (spawnBearing(random).inView) seen++;
-    expect(seen / 2000).toBeCloseTo(UFO.inViewChance, 1);
   });
 });
 
@@ -236,6 +233,16 @@ describe('UfoThreat', () => {
     expect(threat.phase).toBe('approaching');
     expect(radar.threat.active).toBe(true);
     expect(signalLight.frantic).toBe(true);
+  });
+
+  it('on night 3, unsummoned, it flashes in between 1:00 and 4:30', () => {
+    const { threat, ufo } = makeRig({ summon: false });
+    ufo.appear = vi.fn();
+    let elapsed = 0;
+    while (!ufo.appear.mock.calls.length && elapsed < 300) { threat.onUpdate(0.1); elapsed += 0.1; }
+    const hour = elapsed / 300 * 6;
+    expect(hour).toBeGreaterThanOrEqual(1 - 0.01);
+    expect(hour).toBeLessThanOrEqual(4.5 + 0.01);
   });
 
   it('never comes on a night that is not one of its nights', () => {

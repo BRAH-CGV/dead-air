@@ -4,9 +4,10 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 // UfoThreat  –  the visitor that comes once a night
 // ─────────────────────────────────────────────
-// On its nights (UFO.nights — night 3), at a random time, something comes
-// for the base. (For testing, summon() — the U key — brings it at once, on
-// any night.)
+// On its nights (UFO.nights — night 3), guaranteed, something comes for
+// the base: it flashes into the sky beside the dish, in view of the office
+// window, at a random time between 1:00 and 4:30 on the night clock. (For
+// testing, summon() — the U key — brings it at once, on any night.)
 //
 //   waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
 //                                              │
@@ -41,8 +42,12 @@ import { Component } from '../core/Component.js';
 
 /** Tuning. Seconds and metres unless stated. */
 export const UFO = {
-  /** The nights it comes on — once each, at a random time. */
+  /** The nights it comes on — once each. */
   nights: [3],
+  /** When it spawns (flashes into the sky), in night-clock hours after
+   *  midnight: a random time between these. The radar warning comes
+   *  radarLead seconds before. */
+  spawnHours: [1, 4.5],
   /** Radar-only approach before the flight sound starts and it shows up. */
   radarLead: 20,
   /** Where the flight clip is loudest, if it can't be measured. */
@@ -60,15 +65,12 @@ export const UFO = {
    *  bearing. */
   startDistance: 4000,
   startAltitude: 800,
-  /** How often it materialises in plain view of the office window, so you
-   *  watch it spawn: between inViewFrom and inViewTo (radians) either side
-   *  of the window's bearing — the open sky beside the dish tower, which
-   *  fills the view straight out. Otherwise it appears somewhere round the
-   *  valley the window can't see: at least outOfViewFrom off its bearing. */
-  inViewChance: 0.4,
+  /** Where it spawns: always in plain view of the office window, between
+   *  inViewFrom and inViewTo (radians) either side of the window's bearing
+   *  — the open sky beside the dish tower, which fills the view straight
+   *  out — far off near the edge of the valley. */
   inViewFrom: 0.2,
   inViewTo: 0.55,
-  outOfViewFrom: 1.2,
   /** Metres out (along its path) when the sound starts and it appears —
    *  inside the camera's far plane, and through the haze. */
   visibleDistance: 700,
@@ -134,15 +136,31 @@ export function ufoTimeline({
 }
 
 /**
- * Seconds into the night the approach begins: a random time past the
- * opening that still leaves the whole visit (`total` seconds) before 6 AM.
- * Infinity — never — on a night that isn't one of UFO.nights.
+ * Seconds into the night the approach begins — its radar warning — so that
+ * it spawns (flashes into the sky, as its sound starts) at a random time in
+ * UFO.spawnHours on the night clock. Infinity — never — on a night that
+ * isn't one of UFO.nights.
+ * @param {object} opts
+ * @param {number} opts.night
+ * @param {number} opts.nightDuration  Real seconds in the shift.
+ * @param {number} [opts.nightHours=6] Clock hours in it (12:00 → 6:00 AM).
+ * @param {() => number} [opts.random]
  */
-export function scheduleApproach({ night, nightDuration, total, random = Math.random }) {
+export function scheduleApproach({ night, nightDuration, nightHours = 6, random = Math.random }) {
   if (!UFO.nights.includes(night)) return Infinity;   // not one of its nights
-  const earliest = nightDuration * 0.1;
-  const latest = Math.max(earliest, nightDuration - total - 10);
-  return earliest + random() * (latest - earliest);
+  const [from, to] = UFO.spawnHours;
+  const hour = from + random() * (to - from);
+  return Math.max(0, hour * (nightDuration / nightHours) - UFO.radarLead);
+}
+
+/**
+ * Which way it comes from, as a bearing off the window's (0 = straight out
+ * of it): always in the window's open sky, either side of the dish tower.
+ * @returns {number} radians
+ */
+export function spawnBearing(random = Math.random) {
+  const side = random() < 0.5 ? -1 : 1;
+  return side * (UFO.inViewFrom + random() * (UFO.inViewTo - UFO.inViewFrom));
 }
 
 /**
@@ -161,21 +179,6 @@ export function approachDistance(t, { soundStart, arrival }, total) {
   }
   const u = Math.min((t - soundStart) / (arrival - soundStart), 1);
   return visible * (1 - u) * (1 - u);
-}
-
-/**
- * Which way it comes from, as a bearing from the window's (0 = straight out
- * of it). inViewChance of the time it is in plain view of the window, so
- * the player can watch it spawn; otherwise somewhere the window can't see.
- * @returns {{ bearing: number, inView: boolean }}
- */
-export function spawnBearing(random = Math.random) {
-  if (random() < UFO.inViewChance) {
-    const side = random() < 0.5 ? -1 : 1;
-    return { bearing: side * (UFO.inViewFrom + random() * (UFO.inViewTo - UFO.inViewFrom)), inView: true };
-  }
-  const side = random() < 0.5 ? -1 : 1;
-  return { bearing: side * (UFO.outOfViewFrom + random() * (Math.PI - UFO.outOfViewFrom)), inView: false };
 }
 
 /** Where it is with `remaining` metres to go on the straight line from
@@ -228,7 +231,8 @@ export class UfoThreat extends Component {
    * @param {{ exit: () => void }} [opts.terminal]
    * @param {{ play: Function, clear: Function }} [opts.whiteOut]
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from UFO_SOUNDS when left out.
-   * @param {number} [opts.nightDuration=300]
+   * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
+   * @param {number} [opts.nightHours=6]      Clock hours in it.
    * @param {number} [opts.soundArrival]  Seconds into the flight clip to arrive
    *        at. Left out, it is measured off the clip (loudestTime).
    * @param {() => number} [opts.random]
@@ -236,10 +240,10 @@ export class UfoThreat extends Component {
   constructor({
     controller, grid, ufo, hooks, hoverPoint = new THREE.Vector3(0, 35, 0), flood = null,
     signalLight = null, radar = null, terminal = null, whiteOut = null, sounds = null,
-    nightDuration = 300, soundArrival, random = Math.random,
+    nightDuration = 300, nightHours = 6, soundArrival, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, grid, ufo, hooks, flood, signalLight, radar, terminal, whiteOut, sounds, nightDuration, random });
+    Object.assign(this, { controller, grid, ufo, hooks, flood, signalLight, radar, terminal, whiteOut, sounds, nightDuration, nightHours, random });
     this.hoverPoint = hoverPoint.clone();
     this._soundArrival = soundArrival;
 
@@ -286,8 +290,7 @@ export class UfoThreat extends Component {
   reset(night) {
     this._elapsed = 0;
     this._newVisit();
-    const { departure } = this.timeline;
-    this._start = scheduleApproach({ night, nightDuration: this.nightDuration, total: departure + 2, random: this.random });
+    this._start = scheduleApproach({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, random: this.random });
     this._stop('ringing');
 
     this.grid.repair();
@@ -321,7 +324,7 @@ export class UfoThreat extends Component {
     this._sawLights = false;
     this._appeared = false;
 
-    const { bearing } = spawnBearing(this.random);
+    const bearing = spawnBearing(this.random);
     this._startPoint.set(
       this.hoverPoint.x + Math.sin(bearing) * UFO.startDistance,
       UFO.startAltitude,
