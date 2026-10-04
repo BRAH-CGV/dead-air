@@ -130,9 +130,9 @@ export class PickupSystem extends Component {
     // ── Scroll to adjust hold distance ──
     if (this.heldPickupable && engine.input.mouse.wheel !== 0) {
       const p = this.heldPickupable;
-      // Scroll down (positive wheel) = push further.
-      // Scroll up (negative wheel) = bring closer.
-      p.holdDistance += engine.input.mouse.wheel * SCROLL_STEP;
+      // Scroll up (negative wheel) = push further.
+      // Scroll down (positive wheel) = bring closer.
+      p.holdDistance -= engine.input.mouse.wheel * SCROLL_STEP;
       p.holdDistance = Math.max(p.minHoldDistance, Math.min(p.maxHoldDistance, p.holdDistance));
     }
 

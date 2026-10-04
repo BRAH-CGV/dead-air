@@ -11,7 +11,7 @@ describe('Pickupable', () => {
     const p = new Pickupable();
     expect(p.holdDistance).toBe(1.0);
     expect(p.minHoldDistance).toBe(0.5);
-    expect(p.maxHoldDistance).toBe(3.0);
+    expect(p.maxHoldDistance).toBe(2.0);
   });
 
   it('has a default interact range', () => {
@@ -32,11 +32,11 @@ describe('Pickupable', () => {
 
   it('hold distance can be adjusted within bounds', () => {
     const p = new Pickupable();
-    p.holdDistance = 2.0;
-    expect(p.holdDistance).toBe(2.0);
+    p.holdDistance = 1.5;
+    expect(p.holdDistance).toBe(1.5);
     p.holdDistance = p.minHoldDistance;
     expect(p.holdDistance).toBe(0.5);
     p.holdDistance = p.maxHoldDistance;
-    expect(p.holdDistance).toBe(3.0);
+    expect(p.holdDistance).toBe(2.0);
   });
 });

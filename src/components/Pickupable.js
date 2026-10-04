@@ -28,8 +28,8 @@ export class Pickupable extends Component {
   /** Closest the player can pull the object (mouse wheel scroll up). */
   minHoldDistance = 0.5;
 
-  /** Furthest the player can push the object (mouse wheel scroll down). */
-  maxHoldDistance = 3.0;
+  /** Furthest the player can push the object (mouse wheel scroll up). */
+  maxHoldDistance = 2.0;
 
   /** How far the player can see the pickup prompt. */
   interactRange = 3;

@@ -197,39 +197,39 @@ describe('PickupSystem', () => {
 
   // ── Scroll to adjust hold distance ──
 
-  it('scroll down increases hold distance', () => {
+  it('scroll down decreases hold distance (brings closer)', () => {
     const { pickupable } = makePickupableGO();
     system.pickUp(pickupable);
     const initial = pickupable.holdDistance;
 
     engine.input.mouse.wheel = 3;  // scroll down 3 ticks
     system.onUpdate(1 / 60);
-    expect(pickupable.holdDistance).toBe(initial + 0.3);
+    expect(pickupable.holdDistance).toBe(initial - 0.3);
   });
 
-  it('scroll up decreases hold distance', () => {
+  it('scroll up increases hold distance (pushes further)', () => {
     const { pickupable } = makePickupableGO();
     system.pickUp(pickupable);
     const initial = pickupable.holdDistance;
 
     engine.input.mouse.wheel = -2;  // scroll up 2 ticks
     system.onUpdate(1 / 60);
-    expect(pickupable.holdDistance).toBe(initial - 0.2);
+    expect(pickupable.holdDistance).toBe(initial + 0.2);
   });
 
   it('hold distance is clamped to min/max', () => {
     const { pickupable } = makePickupableGO();
     system.pickUp(pickupable);
 
-    // Scroll way down
+    // Scroll way down (brings closer → hits min)
     engine.input.mouse.wheel = 100;
     system.onUpdate(1 / 60);
-    expect(pickupable.holdDistance).toBe(pickupable.maxHoldDistance);
+    expect(pickupable.holdDistance).toBe(pickupable.minHoldDistance);
 
-    // Scroll way up
+    // Scroll way up (pushes further → hits max)
     engine.input.mouse.wheel = -100;
     system.onUpdate(1 / 60);
-    expect(pickupable.holdDistance).toBe(pickupable.minHoldDistance);
+    expect(pickupable.holdDistance).toBe(pickupable.maxHoldDistance);
   });
 
   it('scroll does nothing when not holding', () => {
