@@ -855,6 +855,12 @@ function zoneFor(seenInside, seenOutside) {
  * straddling a line still gives up the children that don't. A light is
  * never taken — it would recompile every lit shader (see collectHideable).
  *
+ * An InstancedMesh marked `userData.liveInstances` is never split: something
+ * rewrites its instances every frame through the mesh it was handed, and a
+ * split replaces that mesh with copies nobody is writing to. (The mast
+ * beacons' lamps: split, they stayed the red they were copied with.) It is
+ * sorted whole, by its bounds, like any other object.
+ *
  * @param {THREE.Object3D} object
  * @param {{ windows: import('../systems/Sightlines.js').HalfSpace[],
  *           eyes: THREE.Box3, occluders: THREE.Box3[] }} view
@@ -863,7 +869,7 @@ function zoneFor(seenInside, seenOutside) {
 function sortOutdoors(object, view, out) {
   const { windows, eyes, occluders } = view;
   if (object.isLight) return;
-  if (object.isInstancedMesh) {
+  if (object.isInstancedMesh && !object.userData.liveInstances) {
     // Label every instance, then let a small inside-only or unseen group go
     // back to 'always': splitting it off costs a draw call of its own, and
     // for a handful of instances that costs more than drawing them does.

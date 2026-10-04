@@ -141,6 +141,11 @@ export function createCommTowers(opts = {}) {
   const masts = new THREE.InstancedMesh(mastGeometry, steel, sites.length);
   const arms  = new THREE.InstancedMesh(armGeometry, steel, sites.length * 2);
   const lamps = new THREE.InstancedMesh(lampGeometry, lampMaterial, sites.length);
+  // BeaconFlash rewrites every lamp's colour each frame, through this mesh.
+  // The occlusion sort must leave it whole (BaseScene's sortOutdoors): split
+  // into copies, the lamps on screen are no longer the ones being written,
+  // and they sit at full red instead of going dark between flashes.
+  lamps.userData.liveInstances = true;
   for (const mesh of [masts, arms, lamps]) {
     // Nothing out here is inside the moonlight's shadow camera, so shadows
     // would be pure cost.
