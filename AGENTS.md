@@ -196,7 +196,7 @@ The generator outside is the base's one power switch. `BaseScene._addPower` puts
   - **Switching on** plays the start-up clip, which crossfades into a looping hum.
   - **Switching off** plays only the wind-down.
   - **The hum** follows the grid by itself. It is already running when a night starts, and it cuts dead when the UFO trips the generator.
-  - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`, 2 %).
+  - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`, 1 %).
   - **The clips** are cut at MPEG frame boundaries from one 3-minute recording, so only about 22 s of audio is decoded.
 
 `UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 1:00 and 4:30 on the night clock (`UFO.spawnHours`, via `scheduleApproach`, which follows the clock's own length), with the radar warning `radarLead` seconds before. For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:

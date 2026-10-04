@@ -82,7 +82,7 @@ export const UFO = {
   soundFadeOut: 1.2,
 };
 
-const VOLUME = { flight: 0.9, flicker: 0.5, bulbBreak: 0.9, powerDown: 0.8, whoosh: 0.5, ringing: 0.7 };
+const VOLUME = { flight: 0.675, flicker: 0.5, bulbBreak: 0.9, powerDown: 0.8, whoosh: 0.5, ringing: 0.7 };
 
 /** Manifest keys behind each sound. */
 export const UFO_SOUNDS = {
