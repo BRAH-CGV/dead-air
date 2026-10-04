@@ -134,11 +134,9 @@ export class PickupSystem extends Component {
     const wantInteract = engine.isAction('interact');
     if (wantInteract && !this._interactHeld) {
       if (this.heldPickupable) {
-        // Holding something: drop unless an Interactable is targeted
-        // (the Interactable's onInteract fires first — e.g. the drive reader).
-        if (!this.interactionSystem?.currentTarget) {
-          this.dropHeld();
-        }
+        // Holding something: always drop (held objects take priority over
+        // tooltip Interactables like the drive reader label).
+        this.dropHeld();
       } else {
         // Not holding: pick up if looking at a Pickupable.
         const pickupTarget = this._getPickupTarget();
@@ -208,10 +206,9 @@ export class PickupSystem extends Component {
     // targetable.
     this.interactionSystem.excludeBody = held ? (held.gameObject?.rigidBody ?? null) : null;
 
-    // While carrying, the prompt is ours ('[E] Drop') — unless an
-    // Interactable is in view (the drive reader), whose own prompt wins and
-    // is shown by InteractionSystem.
-    if (held && !this.interactionSystem.currentTarget) {
+    // While carrying, the prompt is always ours ('[E] Drop') — held objects
+    // take priority over tooltip Interactables like the drive reader label.
+    if (held) {
       this.interactionSystem.promptOverride = this;
       this.interactionSystem.prompt?.show('[E] Drop');
     } else {

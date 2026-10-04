@@ -172,11 +172,11 @@ describe('PickupSystem', () => {
     expect(pickupable.held).toBe(false);
   });
 
-  it('does not drop when E is pressed while holding and an Interactable is targeted', () => {
+  it('drops when E is pressed while holding, even if an Interactable is targeted', () => {
     const { pickupable } = makePickupableGO();
     system.pickUp(pickupable);
 
-    // Target a non-pickup Interactable (like the drive reader)
+    // Target a non-pickup Interactable (like the drive reader tooltip)
     const readerGO = new GameObject('Reader');
     const readerInteractable = new Interactable();
     readerInteractable.onInteract = vi.fn();
@@ -185,8 +185,8 @@ describe('PickupSystem', () => {
 
     engine.input.keys['KeyE'] = true;
     system.onUpdate(1 / 60);
-    // Still holding — the reader's onInteract should fire instead
-    expect(system.heldPickupable).toBe(pickupable);
+    // Held objects take priority — always drop
+    expect(system.heldPickupable).toBeNull();
   });
 
   // ── Terminal gating ──
@@ -321,15 +321,15 @@ describe('PickupSystem', () => {
     expect(interactionSys.excludeBody).toBeNull();
   });
 
-  it("keeps a targeted Interactable's own prompt while holding", () => {
-    // Looking at the drive reader while carrying a drive: the reader's
-    // '[E] Insert drive' wins — no '[E] Drop' override.
+  it("shows drop prompt while holding, even if an Interactable is targeted", () => {
+    // Looking at the drive reader tooltip while carrying a drive: the held
+    // object takes priority — '[E] Drop' wins over the tooltip label.
     const { pickupable } = makePickupableGO();
     system.pickUp(pickupable);
     interactionSys.currentTarget = new Interactable();
 
     system.onLateUpdate(1 / 60);
-    expect(interactionSys.promptOverride).toBeNull();
-    expect(interactionSys.prompt.show).not.toHaveBeenCalled();
+    expect(interactionSys.promptOverride).toBe(system);
+    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop');
   });
 });
