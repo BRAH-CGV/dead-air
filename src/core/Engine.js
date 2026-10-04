@@ -115,11 +115,26 @@ export class Engine {
     summonUfo:  'KeyU',
   };
 
-  /** Returns true while the key mapped to [action] is held down. */
+  /** Returns true while the key mapped to [action] is held down — unless
+   *  that press was consumed (consumeAction), until the key is let go. */
   isAction(action) {
     const code = this.keyBinds[action];
-    return code ? !!this.input.keys[code] : false;
+    if (!code || !this.input.keys[code]) return false;
+    return !this._consumed.has(code);
   }
+
+  /** Use up the current press of [action]: isAction() and input.pressed
+   *  read it as up until the key is released. For a press that has done its
+   *  job (E retrying the night) and must not also reach anything else. */
+  consumeAction(action) {
+    const code = this.keyBinds[action];
+    if (!code) return;
+    this.input.pressed[code] = false;
+    if (this.input.keys[code]) this._consumed.add(code);
+  }
+
+  /** Key codes whose current press was consumed. */
+  _consumed = new Set();
 
   // ──────────────────────────────────────────
   // Bootstrap
@@ -191,7 +206,10 @@ export class Engine {
       this.input.keys[e.code] = true;
       if (!e.repeat) this.input.pressed[e.code] = true;
     });
-    addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
+    addEventListener('keyup',   (e) => {
+      this.input.keys[e.code] = false;
+      this._consumed.delete(e.code);
+    });
 
     // ── Debug tooling ──
     // Built before their key handlers are registered, so a debug key can

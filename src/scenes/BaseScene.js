@@ -226,6 +226,7 @@ export class BaseScene extends Scene {
   dispose() {
     this._offNightStart?.();
     this._offSuitHud?.();
+    this._offRetry?.();
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
     this.breakerPanel?.close();
@@ -424,6 +425,13 @@ export class BaseScene extends Scene {
 
     this.hud.setSuit(this.suit.worn);
     this._offSuitHud = this.suit.onChange(worn => this.hud.setSuit(worn));
+
+    // A retry after a game over starts the night over from the beginning:
+    // back at the spawn, facing the window, suit off (the airlock cycles
+    // back with it). A new night after sleeping leaves you where you woke.
+    this._offRetry = this.gameController.onNightStart((_night, { retry }) => {
+      if (retry) this._respawn();
+    });
 
     // The terminal is a vital function: it runs whenever the generator
     // does, blown bulbs or not.
@@ -738,6 +746,15 @@ export class BaseScene extends Scene {
       this.engine.crosshair?.show();
       try { canvas?.requestPointerLock?.()?.catch?.(() => {}); } catch (_) { /* no gesture: the next click locks */ }
     }
+  }
+
+  /** Back to where the night starts: the office, facing the window. */
+  _respawn() {
+    this.suit?.takeOff();
+    const player = this.engine.player;
+    const ctrl = player?.getComponent(FirstPersonController);
+    if (ctrl) ctrl.teleport(PLAYER_SPAWN, { yaw: 0, pitch: 0 });
+    else player?.object3d.position.set(...PLAYER_SPAWN);
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */

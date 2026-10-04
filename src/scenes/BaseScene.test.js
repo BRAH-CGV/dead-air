@@ -1143,6 +1143,24 @@ describe('BaseScene power and the UFO', () => {
     expect(exposedToBeam(new THREE.Vector3(corridor[0], 1.24, corridor[2]))).toBe(false);
   });
 
+    it('a retry puts the player back at the start, suit off — a new night after sleeping does not', () => {
+    const spawn = engine.buildPlayer.mock.calls[0][0].position;
+    const player = engine.player;
+
+    // Taken out in the yard, suit on.
+    scene.suit.putOn();
+    player.object3d.position.set(7, 1, 9);
+    scene.gameController.fail('taken');
+    scene.gameController.retryNight();
+    expect(player.object3d.position.toArray()).toEqual(spawn);
+    expect(scene.suit.worn).toBe(false);
+
+    // Sleeping into the next night leaves you where you are (in bed).
+    player.object3d.position.set(-15, 1, 1);
+    scene.nights.advance();
+    expect(player.object3d.position.toArray()).toEqual([-15, 1, 1]);
+  });
+
     it('knows outside from in: rooms and corridors are inside, the yard is not', () => {
     const { isOutside } = scene.ufoThreat.hooks;
     expect(isOutside(new THREE.Vector3(0, 1.2, 0))).toBe(false);                 // the office

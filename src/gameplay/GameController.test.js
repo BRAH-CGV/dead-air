@@ -327,7 +327,7 @@ describe('GameController', () => {
     const fn = vi.fn();
     const off = gc.onNightStart(fn);
     gc.startNight(2);
-    expect(fn).toHaveBeenCalledWith(2);
+    expect(fn).toHaveBeenCalledWith(2, { retry: false });
     off();
     gc.startNight(3);
     expect(fn).toHaveBeenCalledTimes(1);
@@ -347,5 +347,29 @@ describe('GameController', () => {
     gc._morning();
     gc.fail('nope');
     expect(gc.state).toBe('morning');
+  });
+
+  it('tells night-start listeners whether the night is a retry', () => {
+    const fn = vi.fn();
+    gc.onNightStart(fn);
+    gc.startNight(1);
+    expect(fn).toHaveBeenLastCalledWith(1, { retry: false });
+    gc.fail('taken');
+    gc.retryNight();
+    expect(fn).toHaveBeenLastCalledWith(1, { retry: true });
+  });
+
+  it('the E that retries is used up — nothing else acts on that press', () => {
+    const engine = {
+      keyBinds: { interact: 'KeyE' },
+      input: { pressed: { KeyE: true } },
+      consumeAction: vi.fn(),
+    };
+    gc.gameObject = { scene: { userData: { engine } } };
+    gc.startNight(1);
+    gc.fail('taken');
+    gc.onUpdate(0.016);
+    expect(gc.state).toBe('playing');
+    expect(engine.consumeAction).toHaveBeenCalledWith('interact');
   });
 });

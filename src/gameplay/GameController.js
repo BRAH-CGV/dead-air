@@ -62,8 +62,11 @@ export class GameController extends Component {
   // Public API
   // ──────────────────────────────────────────────────────────
 
-  /** Begin a new night. Resets clock and signals. */
-  startNight(nightNumber) {
+  /** Begin a new night. Resets clock and signals.
+   *  @param {number} nightNumber
+   *  @param {{ retry?: boolean }} [opts]  A retry of the same night after a
+   *         game over — listeners put the player back at the start. */
+  startNight(nightNumber, { retry = false } = {}) {
     this.nightNumber = nightNumber;
     this.state = 'playing';
 
@@ -77,11 +80,12 @@ export class GameController extends Component {
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
 
-    for (const fn of this._nightStartListeners) fn(nightNumber);
+    for (const fn of this._nightStartListeners) fn(nightNumber, { retry });
   }
 
   /** Hear about every night that starts — a new night, a skip or a retry.
-   *  Threats reschedule here. @param {(night: number) => void} fn
+   *  Threats reschedule here; a retry also respawns the player.
+   *  @param {(night: number, info: { retry: boolean }) => void} fn
    *  @returns {() => void} unsubscribe */
   onNightStart(fn) {
     this._nightStartListeners.add(fn);
@@ -128,7 +132,7 @@ export class GameController extends Component {
   /** Retry the current night (from gameOver). */
   retryNight() {
     if (this.state !== 'gameOver') return;
-    this.startNight(this.nightNumber);
+    this.startNight(this.nightNumber, { retry: true });
   }
 
   /** Go to bed. Only the morning after a successful shift: moves to the next
@@ -158,6 +162,10 @@ export class GameController extends Component {
     }
 
     if (this.state === 'gameOver' && this._interactPressed()) {
+      // This press is the retry's alone: left live, the interaction system
+      // would also use whatever the player died looking at (the generator's
+      // switch, which turned the freshly restored power straight off).
+      this.scene?.userData?.engine?.consumeAction?.('interact');
       this.retryNight();
       return;
     }

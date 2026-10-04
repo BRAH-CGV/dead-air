@@ -225,6 +225,8 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
   - So: cut the power in advance and the office and airlock are safe. Leave it on and get out of them (a corridor, another room), and you survive but lose the lights for the night. Once the bulbs have blown, the office is safe again for the rest of the visit: the rule is about the lit office, not about the UFO. The generator brings back the terminal, the dish floods and the screen glow — not the bulbs.
   - It holds for `hoverSeconds` (5 s); stepping outside now is fatal. Then it teleports away with a flash and a whoosh.
 - **Caught.** `WhiteOut` burns the screen white (the beam still blazing), the ear ringing plays and the player is frozen. `controller.fail()` makes it a game over, and `[E]` retries.
+  - **Back to the spawn.** A retry starts the night over from the beginning: the controller tells its night-start listeners `{ retry: true }`, and `BaseScene._respawn` takes the suit off and `FirstPersonController.teleport`s the player to the spawn, facing the window. A new night after sleeping doesn't move you.
+  - **The E is used up.** The retry calls `engine.consumeAction('interact')`, so that press can't also reach whatever the player died looking at. Before this, dying at the generator meant the retry's E switched the freshly restored power straight back off.
 - **Every night start** (`controller.onNightStart`) repairs the bulbs and breakers, switches the generator on, closes a breaker panel left open, clears the white-out and schedules the next visit.
 
 ### Input system
@@ -234,7 +236,7 @@ Centralized on `Engine.input`:
 - `mouse` — `{ dx, dy }` accumulated deltas, consumed each frame
 - `locked` — boolean, pointer-lock active
 
-`Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
+`Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). `engine.consumeAction(action)` uses up the current press: `isAction` reads it as up until the key is released. Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
 
 ## Debug tooling
 
