@@ -746,18 +746,22 @@ export class BaseScene extends Scene {
     if (ctrl) ctrl.inputLocked = locked;
   }
 
-  /** Anywhere not inside a room or corridor — the yard, the valley. */
+  /** Anywhere not inside a room or corridor — the yard, the valley.
+   *  Measured against each part's whole shell (outer wall faces, floor to
+   *  roof), not Room.containsPoint, which stops at the walls' centre lines:
+   *  neighbouring parts' shells touch, so a doorway is never a sliver of
+   *  "outside" — the UFO took players walking through one. */
   _isOutside(p) {
-    this._insideParts ??= [...Object.values(this.rooms), ...Object.values(this.corridors)];
-    return !this._insideParts.some(part => part.containsPoint(p));
+    this._insideBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
+    return !this._insideBoxes.some(box => box.containsPoint(p));
   }
 
   // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
-   *  beam widens over the whole facility. Anyone in the office — the room
-   *  its window looks into — is in view. Built after the gameplay
+   *  beam widens over the whole facility. With the lights on, anyone in the
+   *  office (the room its window looks into) or the airlock is in view. Built after the gameplay
    *  systems, which it reads. Parented on the scene root, not Outside: it
    *  flies, so the occlusion sort must never file it away. */
   _addUfo() {
@@ -796,13 +800,15 @@ export class BaseScene extends Scene {
     this._sceneRoot.addChild(floodGO);
     this.windowFlood = flood;
 
+    const exposedRooms = [office.bounds(), this.rooms.Airlock.bounds()];
     const hooks = {
       eyePosition: out => engine.camera.getWorldPosition(out),
       isOutside: p => this._isOutside(p),
-      // In view of the window = anywhere in the room it looks into. The
-      // furniture doesn't count: no hiding under the desk or behind the
-      // chair — a rule that can't drift when the props change.
-      exposedToBeam: eye => office.containsPoint(eye),
+      // Where a lit base gives you away: the office (the room its window
+      // looks into) and the airlock (only a hatch from the yard). Whole
+      // shells, as in _isOutside; the furniture doesn't count, so there is
+      // no hiding under the desk — a rule that can't drift when props change.
+      exposedToBeam: eye => exposedRooms.some(box => box.containsPoint(eye)),
       setPlayerLocked: locked => this._setPlayerLocked(locked),
     };
 

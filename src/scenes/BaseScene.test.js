@@ -1115,6 +1115,34 @@ describe('BaseScene power and the UFO', () => {
     expect(exposedToBeam(new THREE.Vector3(quarters[0], 1.24, quarters[2]))).toBe(false);
   });
 
+    it('never counts a doorway as outside: walking room to corridor to room is indoors all the way', () => {
+    const { isOutside } = scene.ufoThreat.hooks;
+    const centre = r => new THREE.Vector3(r.position[0], 1.24, r.position[2]);
+    const walk = (from, to) => {
+      for (let k = 0; k <= 400; k++) {
+        const p = from.clone().lerp(to, k / 400);
+        expect(isOutside(p), `(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).toBe(false);
+      }
+    };
+    const { MainOffice, ServerRoom, LivingQuarters, Airlock } = scene.rooms;
+    // Through each side doorway, along the corridor's line.
+    for (const [corridor, room] of [[scene.corridors.OfficeToServer, ServerRoom], [scene.corridors.OfficeToQuarters, LivingQuarters]]) {
+      const z = corridor.position[2];
+      walk(new THREE.Vector3(MainOffice.position[0], 1.24, z), new THREE.Vector3(room.position[0], 1.24, z));
+    }
+    // Through the front door into the airlock.
+    const door = MainOffice.doors.find(d => d.targetRoom === 'Airlock').object3d.getWorldPosition(new THREE.Vector3());
+    walk(new THREE.Vector3(door.x, 1.24, MainOffice.position[2]), new THREE.Vector3(door.x, 1.24, centre(Airlock).z));
+  });
+
+  it('with the lights on, the airlock is as unsafe as the office; the corridors are not', () => {
+    const { exposedToBeam } = scene.ufoThreat.hooks;
+    const airlock = scene.rooms.Airlock.position;
+    expect(exposedToBeam(new THREE.Vector3(airlock[0], 1.24, airlock[2]))).toBe(true);
+    const corridor = scene.corridors.OfficeToQuarters.position;
+    expect(exposedToBeam(new THREE.Vector3(corridor[0], 1.24, corridor[2]))).toBe(false);
+  });
+
     it('knows outside from in: rooms and corridors are inside, the yard is not', () => {
     const { isOutside } = scene.ufoThreat.hooks;
     expect(isOutside(new THREE.Vector3(0, 1.2, 0))).toBe(false);                 // the office
