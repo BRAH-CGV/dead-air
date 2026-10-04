@@ -311,6 +311,11 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/mask-breathing.mp3',
   },
+  'model:crate': {
+    type: 'model',
+    url: 'assets/models/crate.glb',
+    physics: 'static',
+  },
 };
 
 /**
@@ -370,11 +375,6 @@ const LIBRARY = {
   'model:break-panel': {
     type: 'model',
     url: 'assets/models/break-panel.glb',
-    physics: 'static',
-  },
-  'model:crate': {
-    type: 'model',
-    url: 'assets/models/crate.glb',
     physics: 'static',
   },
   'model:door-interior': {
