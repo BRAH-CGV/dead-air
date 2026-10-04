@@ -195,7 +195,10 @@ export class InteractionSystem extends Component {
     // ── Input: trigger interaction on key press (edge-detected) ──
     const wantInteract = engine.isAction('interact');
     if (wantInteract && !this._held) {
-      if (this.currentTarget && this.currentHit) {
+      // Held objects take priority: when another system claims the prompt
+      // (e.g. PickupSystem showing '[E] Drop'), skip our interact action
+      // so we don't fire the targeted Interactable's onInteract.
+      if (!this.promptOverride && this.currentTarget && this.currentHit) {
         this.currentTarget.onInteract(this.currentHit);
       }
     }
