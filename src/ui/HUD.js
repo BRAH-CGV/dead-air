@@ -75,6 +75,8 @@ export class RadarOverlay {
     this._ctx    = this._canvas?.getContext('2d')        ?? null;
     this._info   = root?.querySelector('#radar-info')    ?? null;
     this._hint   = root?.querySelector('#radar-hint')    ?? null;
+    this._warning = root?.querySelector('#radar-warning') ?? null;
+    this._warningText = '';
     this._resizeHandler = null;
     this._resize();
     // Resize when the window changes
@@ -117,6 +119,36 @@ export class RadarOverlay {
 
   setHint(text) {
     if (this._hint) this._hint.textContent = text || '';
+  }
+
+  /** The flashing red warning line above the info line; '' hides it.
+   *  Called every frame by the terminal, so it only touches the DOM when
+   *  the text changes. */
+  setWarning(text) {
+    const next = text || '';
+    if (next === this._warningText) return;
+    this._warningText = next;
+    if (!this._warning) return;
+    if (next) this._warning.textContent = next;
+    this._warning.classList.toggle('is-shown', !!next);
+  }
+
+  /** Is the cursor (unit-circle coords, as the terminal keeps it) over the
+   *  UFO blob? The same centre and radius _drawThreat draws it with, a
+   *  little generous so the wobbling edge still counts. */
+  threatAt(cursorX, cursorY) {
+    const th = this.threat;
+    if (!th?.active) return false;
+    const maxR = this._radius * 0.85;
+    const p = this._skyToCanvas(th.yaw, th.pitch);
+    const x = this._cx + cursorX * maxR;
+    const y = this._cy - cursorY * maxR;
+    return Math.hypot(x - p.x, y - p.y) <= this._threatRadius(th) * 1.2;
+  }
+
+  /** The blob's base radius in canvas pixels. */
+  _threatRadius(th) {
+    return (0.06 + 0.3 * th.size) * this._radius * 0.85;
   }
 
   /** The faint sky behind the grid, or null for the plain dark disc. */
@@ -269,6 +301,84 @@ export class RadarOverlay {
     return `rgba(0, 220, 200, ${0.8 * a})`;                          // unscanned cyan
   }
 
+  /** The UFO on its way in, or null. UfoThreat owns the object and rewrites
+   *  it in place every frame: { active, yaw, pitch, size 0..1,
+   *  intensity 0..1, time }. */
+  threat = null;
+
+  /** A big, wobbling, glitching blob where the UFO is in the sky — on the
+   *  shared _skyToCanvas mapping, like everything else. Its outline is a
+   *  ring of points pushed in and out by sines that drift with time; it
+   *  swells as `size` grows, and the higher `intensity` climbs the harder
+   *  it shakes, the more static it throws off and the more the whole disc
+   *  tears into displaced strips. */
+  _drawThreat(ctx, s) {
+    const th = this.threat;
+    if (!th?.active) return;
+    const maxR = this._radius * 0.85;
+    const p = this._skyToCanvas(th.yaw, th.pitch);
+    const t = th.time;
+    const k = th.intensity;
+    const R = this._threatRadius(th);
+
+    // Body: a filled, many-sided outline that never holds still.
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R * 1.4);
+    glow.addColorStop(0, `rgba(255, 70, 110, ${(0.55 + 0.4 * k).toFixed(3)})`);
+    glow.addColorStop(0.6, `rgba(200, 20, 90, ${(0.35 + 0.3 * k).toFixed(3)})`);
+    glow.addColorStop(1, 'rgba(120, 0, 60, 0)');
+    ctx.fillStyle = glow;
+    this._blobPath(ctx, p, R, t, k, 0);
+    ctx.fill();
+
+    // Two loose rings shivering around it.
+    for (let ring = 1; ring <= 2; ring++) {
+      ctx.strokeStyle = `rgba(255, 90, 140, ${(0.25 + 0.3 * k) / ring})`;
+      ctx.lineWidth = 1.5 * s;
+      this._blobPath(ctx, p, R * (1 + 0.35 * ring), t * (1 + 0.4 * ring), k, ring * 1.7);
+      ctx.stroke();
+    }
+
+    // Static: specks thrown off the blob.
+    const specks = Math.floor(6 + 30 * k);
+    ctx.fillStyle = `rgba(255, 160, 190, ${(0.3 + 0.5 * k).toFixed(3)})`;
+    for (let i = 0; i < specks; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = R * (0.8 + Math.random() * 1.6);
+      ctx.fillRect(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 2 * s, 2 * s);
+    }
+
+    // Tearing: strips of the finished disc copied back a few pixels off.
+    if (this._canvas && ctx.drawImage) {
+      const strips = Math.floor(k * 5);
+      const w = this._radius * 2;
+      for (let i = 0; i < strips; i++) {
+        const y = Math.random() * w;
+        const h = (2 + Math.random() * 10) * s;
+        const dx = (Math.random() - 0.5) * 30 * s * k;
+        ctx.drawImage(this._canvas, 0, y, w, h, dx, y, w, h);
+      }
+    }
+  }
+
+  /** The blob's outline around `p`: 48 points, radius pushed about by three
+   *  drifting sines — the fastest one only once it's close (`k`). */
+  _blobPath(ctx, p, R, t, k, phase) {
+    const N = 48;
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const wobble = 1
+        + 0.22 * Math.sin(3 * a + t * 2.1 + phase)
+        + 0.14 * Math.sin(5 * a - t * 3.7 + phase * 2)
+        + 0.12 * k * Math.sin(11 * a + t * 9.3);
+      const x = p.x + Math.cos(a) * R * wobble;
+      const y = p.y + Math.sin(a) * R * wobble;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
   /** Redraw the radar with current signal data, dish direction, cursor,
    *  and scan state. Blips and indicators share one sky mapping: azimuth
    *  (yaw) sweeps around the circle, elevation (-pitch) sets the radial
@@ -402,6 +512,9 @@ export class RadarOverlay {
       ctx.fillStyle = this._blipColor(sig);
       ctx.fill();
     }
+
+    // Something big coming in — over the blips, under the dish and cursor.
+    this._drawThreat(ctx, s);
 
     // Hover highlight — pulsing glow around the hovered signal
     if (hoveredSignal && !hoveredSignal.resolved) {

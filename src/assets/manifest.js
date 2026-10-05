@@ -262,6 +262,17 @@ const PLACED = {
     url: 'assets/models/poster.glb',
     scale: 0.008,
   },
+  // The UFO threat (UfoThreat, Ufo). 2 × 0.66 × 2 as downloaded, centred on
+  // its middle — it flies, so no floor origin. Five times up makes a 10 m
+  // saucer that fills the office window from the yard behind it. No shadow:
+  // it moves, and shadow maps are frozen between changes.
+  'model:ufo': {
+    type: 'model',
+    url: 'assets/models/ufo.glb',
+    scale: 5,
+    castShadow: false,
+    receiveShadow: false,
+  },
 
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {
@@ -281,6 +292,54 @@ const PLACED = {
   'sfx:mask-breathing': {
     type: 'audio',
     url: 'assets/audio/mask-breathing.mp3',
+  },
+  // The UFO's visit (UfoThreat). Preloaded: night 1 brings it within the
+  // first minute. The flight clip sets the UFO's timing — it arrives on the
+  // clip's loudest moment, measured at runtime.
+  'sfx:ufo-flight': {
+    type: 'audio',
+    url: 'assets/audio/ufo-flight.mp3',
+  },
+  'sfx:flickering-light': {
+    type: 'audio',
+    url: 'assets/audio/flickering-light.mp3',
+  },
+  'sfx:lightbulb-break': {
+    type: 'audio',
+    url: 'assets/audio/lightbulb-break.mp3',
+  },
+  'sfx:power-down': {
+    type: 'audio',
+    url: 'assets/audio/power-down.mp3',
+  },
+  'sfx:teleport-whoosh': {
+    type: 'audio',
+    url: 'assets/audio/teleport-whoosh.mp3',
+  },
+  'sfx:ear-ringing': {
+    type: 'audio',
+    url: 'assets/audio/ear-ringing.mp3',
+  },
+  // The generator outside (GeneratorSound): three clips cut, at MPEG frame
+  // boundaries, from one 3-minute recording — decoding all of it would hold
+  // ~34 MB of samples for 12 s of use. Start-up = 0–5 s, running = 40–50 s
+  // (looped), stop = 171.5 s to the end. See ATTRIBUTIONS.md.
+  'sfx:generator-start': {
+    type: 'audio',
+    url: 'assets/audio/generator-start.mp3',
+  },
+  'sfx:generator-running': {
+    type: 'audio',
+    url: 'assets/audio/generator-running.mp3',
+  },
+  'sfx:generator-stop': {
+    type: 'audio',
+    url: 'assets/audio/generator-stop.mp3',
+  },
+  // A breaker flicked on the generator's repair panel (BreakerPanel).
+  'sfx:light-switch': {
+    type: 'audio',
+    url: 'assets/audio/light-switch.mp3',
   },
 };
 
