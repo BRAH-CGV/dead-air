@@ -232,6 +232,8 @@ export class SuitVisor extends Component {
    * @param {string} [opts.soundKey='sfx:mask-breathing']
    * @param {number} [opts.volume=0.4]       Breathing volume with the visor fully on.
    * @param {number} [opts.fadeSeconds=0.6]  Time to fade glass and breath in or out.
+   * @param {() => boolean} [opts.silenced]  While true the breathing stops at
+   *        once (a death screen); it starts again after if the suit is on.
    */
   constructor({
     suit = null,
@@ -239,8 +241,10 @@ export class SuitVisor extends Component {
     soundKey = 'sfx:mask-breathing',
     volume = 0.4,
     fadeSeconds = 0.6,
+    silenced = null,
   } = {}) {
     super();
+    this.silenced = silenced;
     this.suit = suit;
     this.sound = sound;
     this.soundKey = soundKey;
@@ -292,6 +296,13 @@ export class SuitVisor extends Component {
     // ── Breathing, and the fog it leaves ──
     let level = 0;
     const sound = this.sound;
+    // Silenced (dead): no breathing at all — back once that is over.
+    const quiet = this.silenced?.() ?? false;
+    if (quiet) {
+      if (sound?.isPlaying) sound.stop();
+    } else if (this._worn && sound && !sound.isPlaying && opacity > 0) {
+      this._startBreathing();
+    }
     if (sound?.isPlaying) {
       if (opacity === 0) {
         sound.stop();

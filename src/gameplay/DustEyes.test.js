@@ -384,7 +384,7 @@ describe('DustEyes — how they look and sound', () => {
     for (let i = 1; i < xs.length; i++) expect(xs[i].distanceTo(xs[i - 1])).toBeLessThan(0.5);
   });
 
-  it('stand out of the storm as a silhouette a little darker than the fog', () => {
+  it('a light-brown silhouette, only just darker than the storm — it blends in', () => {
     const rig = makeRig();
     rig.system.summon('fence');
     run(rig.system, 0.1);
@@ -392,7 +392,7 @@ describe('DustEyes — how they look and sound', () => {
     const body = go.bodyMaterial.uniforms.uColor.value;
     const fog = rig.fog.color;
     expect(body.r).toBeLessThan(fog.r);
-    expect(body.r).toBeGreaterThan(fog.r * 0.3);
+    expect(body.r).toBeGreaterThan(fog.r * 0.8);
     expect(body.r / body.b).toBeCloseTo(fog.r / fog.b, 1);   // the same brown, darker
   });
 

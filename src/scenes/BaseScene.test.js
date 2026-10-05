@@ -14,6 +14,7 @@ import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { EVASuit } from '../components/EVASuit.js';
+import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -1395,5 +1396,18 @@ describe('BaseScene generator noise', () => {
     use.onInteract({});       // and back on
     solve();
     expect(noise).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('BaseScene suit breathing', () => {
+  it('the mask breathing is silenced on a death screen', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const visor = engine.player.getComponent(SuitVisor);
+    scene.gameController.state = 'playing';
+    expect(visor.silenced()).toBe(false);
+    scene.gameController.state = 'gameOver';
+    expect(visor.silenced()).toBe(true);
   });
 });

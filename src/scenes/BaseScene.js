@@ -1254,7 +1254,11 @@ export class BaseScene extends Scene {
     this.suit = engine.player.addComponent(new EVASuit());
     this.rooms.Airlock.bindSuit(this.suit);
     // Helmet glass and mask breathing while it's on.
-    engine.player.addComponent(new SuitVisor({ suit: this.suit }));
+    // No breathing on a death screen — the night has been lost.
+    engine.player.addComponent(new SuitVisor({
+      suit: this.suit,
+      silenced: () => this.gameController?.state === 'gameOver',
+    }));
   }
 
   /** Per-room atmosphere: dense fog in the sealed server room, light in the

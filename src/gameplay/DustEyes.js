@@ -173,8 +173,9 @@ export const DUST_EYES = {
    *  radians per second. */
   swayAmplitude: 1.5,
   swayRate: 0.35,
-  /** The silhouette: the fog's own colour, times this. */
-  silhouetteShade: 0.6,
+  /** The silhouette: the fog's own colour, times this — a light brown,
+   *  only just darker than the storm, so it blends in. */
+  silhouetteShade: 0.85,
   /** The chase sound: its loudest (it is never jarring), the distance it
    *  reaches that at, and the quietest it gets when far. */
   attackVolume: 0.25,
