@@ -70,6 +70,15 @@ describe('BaseScene wind dust', () => {
     expect(scene.windDust.getComponent(WindDustMotion).daylight).toBe(scene.daylight);
   });
 
+  it('takes a storm quality for the settings menu, and hands it to the clouds', () => {
+    const motion = scene.windDust.getComponent(WindDustMotion);
+    expect(motion.quality).toBe(1);
+    scene.setStormQuality(0.25);
+    expect(motion.quality).toBe(0.25);
+    scene.setStormQuality(1);
+    expect(motion.quality).toBe(1);
+  });
+
   it('frees the cloud texture with the scene', () => {
     expect(scene._owned).toContain(scene.windDust.dustTexture);
   });

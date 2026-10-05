@@ -299,6 +299,28 @@ Centralized on `Engine.input`:
 - **Colour** goes from `nightColor` (dark rust) to `dayColor` (a lit orange-brown, `0xa05a2e`; a pale one disappears into the day's butterscotch sky and fog and reads as white wisps) with the dawn: `BaseScene` hands `WindDustMotion` the `Daylight` component as `daylight`, and it reads `factor`. Not the fog's brightness — a sandstorm turns the fog dust-brown, brighter than the night's blue, and the clouds paled as if the Sun were rising.
 - Unlit, no shadows, no depth write, no fog: nothing added to the lit shaders or the frozen shadow maps. It keeps its own colour at any distance; the storm's fog is matched to it (`SANDSTORM.dustColor`), not the other way round.
 
+#### Storm quality — waiting on the settings menu
+
+A full storm is the most expensive thing the game draws: about three screens' worth of see-through cloud pixels in the worst spot (the yard, near the building), against none worth counting on a calm night. A laptop on mains power held 55–60 fps through a full storm (its 60 Hz cap, so that shows it fits the frame, not how much room is left); the same laptop on a low battery fell from 50–55 to 36–45. Lab hardware has not been measured. So the cost has a knob, as insurance, and **the settings menu (`feat/menus-navigation`) should put a slider on it**:
+
+```js
+scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
+```
+
+- **What it scales.** Only what costs: how many clouds a storm draws (`storm.low.count` 100 … `storm.count` 240) and how near the camera they come (`storm.low.nearFade` … `storm.nearFade`), since the nearest clouds cover the most screen. Size, thickness, colour and how close they stand to the walls stay — the same storm, thinner. A calm night is untouched. It takes effect on the next frame, mid-storm included.
+- **Not the grit or the fog.** `DustStorm`'s points and the scene fog are as they were at any quality. If the grit turns out to cost, give `setStormQuality` its draw range too; the fog is free.
+- **Wiring it, in that branch's terms.** One entry in `SCHEMA` (`src/app/SettingsStore.js`) and one line in `applySettings` (`src/app/applySettings.js`). `applySettings` already runs at startup, on every change and after every scene build, which is what this needs: a new scene starts at 1.
+
+  ```js
+  // SettingsStore.js — SCHEMA, video tab
+  stormQuality: { tab: 'video', type: 'number', label: 'Dust storm quality', min: 0, max: 1, step: 0.05, default: 1,
+                  format: (v) => `${Math.round(v * 100)}%` },
+
+  // applySettings.js — applySettings(engine, s)
+  engine.activeScene?.setStormQuality?.(s.stormQuality);
+  ```
+- **Trying it now**, in a dev build's console, at full storm (`K`) with the FPS readout on (`I`): `__engine.activeScene.setStormQuality(0)`, then `(1)`.
+
 ## Debug tooling
 
 Three toggles, all edge-triggered and free while off:

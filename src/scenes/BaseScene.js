@@ -477,6 +477,15 @@ export class BaseScene extends Scene {
     this._own(this.windDust.dustTexture);
   }
 
+  /** How much of a dust storm is drawn, 0 (thinnest) … 1 (all of it): the
+   *  settings menu's slider. The storm's cost is its clouds' overdraw, so
+   *  that is what it scales (WIND_DUST.storm.low). A new scene starts at 1,
+   *  so whoever holds the setting applies it after each build.
+   *  @param {number} quality  0..1 */
+  setStormQuality(quality) {
+    this.windDust?.getComponent(WindDustMotion)?.setQuality(quality);
+  }
+
   // ──────────────────────────────────────────
   // Sky (procedural Mars night dome and moons)
   // ──────────────────────────────────────────

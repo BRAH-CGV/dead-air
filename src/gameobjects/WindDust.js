@@ -167,6 +167,16 @@ export const WIND_DUST = {
     /** …and closer to the camera than the calm clouds do: at full strength
      *  by 7 m, which from the desk is the dust just outside the glass. */
     nearFade: [3, 7],
+    /** What a storm drops to at the lowest quality (WindDustMotion.setQuality,
+     *  0 … 1; these numbers are 0, the ones above 1). A storm costs overdraw
+     *  — big see-through clouds, stacked, the nearest covering the most
+     *  screen — so quality scales just that: how many are drawn, and how
+     *  near the camera they come. Size, thickness and how close they stand
+     *  to the walls stay, so it is the same storm, thinner. */
+    low: {
+      count: 100,
+      nearFade: [4.5, 11],
+    },
     /** Seconds to go from calm to a full storm, or back, if handed the
      *  level all at once. Short: Sandstorm has already eased the level it
      *  hands over, and drops to calm at once on a new night. */
@@ -376,6 +386,9 @@ export class WindDustMotion extends Component {
      *  frame for the dust's colour. Night with none.
      *  @type {{ factor: number }|null} */
     this.daylight = null;
+    /** How much of a storm is drawn, 0 (WIND_DUST.storm.low) … 1 (all of
+     *  it): the settings menu's slider, through BaseScene.setStormQuality. */
+    this.quality = 1;
     /** Where the storm is heading, and where it has got to. */
     this._stormTarget = 0;
     this._storm = 0;
@@ -391,6 +404,12 @@ export class WindDustMotion extends Component {
    *  @param {number} level  0..1 */
   setStorm(level) {
     this._stormTarget = Math.min(Math.max(level, 0), 1);
+  }
+
+  /** How much of a storm to draw: fewer clouds, further from the camera,
+   *  toward 0. Takes effect on the next frame. @param {number} quality  0..1 */
+  setQuality(quality) {
+    this.quality = Math.min(Math.max(quality, 0), 1);
   }
 
   onLateUpdate(dt) {
@@ -427,12 +446,16 @@ export class WindDustMotion extends Component {
     u.uOpacity.value = opacity + (tuning.opacity - opacity) * s;
     u.uClearance.value = clearance + (tuning.clearance - clearance) * s;
     u.uWallFade.value = wallFade + (tuning.wallFade - wallFade) * s;
-    u.uNearFade.value.set(
-      nearFade[0] + (tuning.nearFade[0] - nearFade[0]) * s,
-      nearFade[1] + (tuning.nearFade[1] - nearFade[1]) * s,
-    );
+    // A storm's cost is its count and how near it comes: quality scales
+    // both, between storm.low and the storm as tuned.
+    const q = this.quality, { low } = tuning;
+    const near0 = low.nearFade[0] + (tuning.nearFade[0] - low.nearFade[0]) * q;
+    const near1 = low.nearFade[1] + (tuning.nearFade[1] - low.nearFade[1]) * q;
+    u.uNearFade.value.set(nearFade[0] + (near0 - nearFade[0]) * s, nearFade[1] + (near1 - nearFade[1]) * s);
     // The storm's own clouds are only sent to the GPU while there is one.
-    this.geometry?.setDrawRange(0, s > 0 ? this.stormIndices : this.calmIndices);
+    const full = this.stormIndices / 6, least = Math.min(low.count, full);
+    const drawn = Math.max(Math.round(least + (full - least) * q) * 6, this.calmIndices);
+    this.geometry?.setDrawRange(0, s > 0 ? drawn : this.calmIndices);
     return s;
   }
 }

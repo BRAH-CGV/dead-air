@@ -529,3 +529,77 @@ describe('WindDustMotion storm', () => {
     expect(() => dust.getComponent(WindDustMotion).onLateUpdate(1 / 60)).not.toThrow();
   });
 });
+
+describe('WindDustMotion quality', () => {
+  // What a storm costs is overdraw: big see-through clouds, stacked, the
+  // nearest covering the most screen. Quality 0 … 1 scales exactly that —
+  // how many a storm draws and how near the camera they come — for the
+  // settings menu to put a slider on. 1 is the storm as tuned.
+  const run = (motion, seconds) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) motion.onLateUpdate(1 / 60);
+  };
+  const { storm } = WIND_DUST;
+  const stormAt = (quality) => {
+    const rig = build();
+    if (quality !== undefined) rig.motion.setQuality(quality);
+    rig.motion.setStorm(1);
+    run(rig.motion, storm.ramp + 1);
+    return rig;
+  };
+
+  it('is full unless asked: the storm as tuned', () => {
+    const { motion, mesh, uniforms } = stormAt();
+    expect(motion.quality).toBe(1);
+    expect(mesh.geometry.drawRange.count).toBe(storm.count * 6);
+    expect(uniforms.uNearFade.value.x).toBeCloseTo(storm.nearFade[0]);
+    expect(uniforms.uNearFade.value.y).toBeCloseTo(storm.nearFade[1]);
+  });
+
+  it('at its lowest a storm draws far fewer clouds, and keeps them further from the camera', () => {
+    const { low } = storm;
+    expect(low.count).toBeLessThanOrEqual(storm.count / 2);
+    expect(low.count).toBeGreaterThan(WIND_DUST.count);       // still a storm
+    expect(low.nearFade[0]).toBeGreaterThan(storm.nearFade[0]);
+    expect(low.nearFade[1]).toBeGreaterThan(storm.nearFade[1]);
+
+    const { mesh, uniforms } = stormAt(0);
+    expect(mesh.geometry.drawRange.count).toBe(low.count * 6);
+    expect(uniforms.uNearFade.value.x).toBeCloseTo(low.nearFade[0]);
+    expect(uniforms.uNearFade.value.y).toBeCloseTo(low.nearFade[1]);
+  });
+
+  it('keeps the storm\'s look at any quality: as big, as thick, as close to the walls', () => {
+    const full = stormAt(1).uniforms, lowest = stormAt(0).uniforms;
+    expect(lowest.uOpacity.value).toBe(full.uOpacity.value);
+    expect(lowest.uClearance.value).toBe(full.uClearance.value);
+    expect(lowest.uWallFade.value).toBe(full.uWallFade.value);
+    expect(lowest.uStormSize.value.toArray()).toEqual(full.uStormSize.value.toArray());
+  });
+
+  it('is a slider: half-way is half-way, and out of range is clamped', () => {
+    const { low } = storm;
+    const { motion, mesh, uniforms } = stormAt(0.5);
+    expect(mesh.geometry.drawRange.count).toBe(Math.round((low.count + storm.count) / 2) * 6);
+    expect(uniforms.uNearFade.value.x).toBeCloseTo((low.nearFade[0] + storm.nearFade[0]) / 2);
+
+    motion.setQuality(9);
+    expect(motion.quality).toBe(1);
+    motion.setQuality(-3);
+    expect(motion.quality).toBe(0);
+  });
+
+  it('can be changed mid-storm', () => {
+    const { motion, mesh } = stormAt(1);
+    motion.setQuality(0);
+    run(motion, 0.1);
+    expect(mesh.geometry.drawRange.count).toBe(storm.low.count * 6);
+  });
+
+  it('leaves a calm night alone: there is nothing there to save', () => {
+    const { motion, mesh, uniforms } = build();
+    motion.setQuality(0);
+    run(motion, 1);
+    expect(mesh.geometry.drawRange.count).toBe(WIND_DUST.count * 6);
+    expect(uniforms.uNearFade.value.toArray()).toEqual(WIND_DUST.nearFade);
+  });
+});
