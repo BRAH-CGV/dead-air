@@ -25,8 +25,9 @@ import { WIND_DIRECTION } from '../gameplay/Sandstorm.js';
 //   fading    out toward the square's edge (no dust beyond ~45 m), out close
 //             to the camera (CLOUDS…near: a cloud never fills the screen),
 //             and thinning and thickening on its own.
-//   indoors   a cloud whose centre is near the building (uFootprint, grown
-//             by uClearance) isn't drawn.
+//   indoors   a cloud fades away as its centre drifts up to the building
+//             (uFootprint: over uWallFade metres outside uClearance), and
+//             inside the clearance isn't drawn — no popping at the window.
 //
 // The fragment shader cuts the cloud's outline: a billowing top line read
 // from a small tiling noise texture (built here, no file) twice, scrolling,
@@ -58,12 +59,15 @@ export const CLOUDS = {
   /** Rust at night, pale dust by day. */
   nightColor: 0x583427,
   dayColor: 0xc9a27a,
+  /** Metres outside the clearance over which a cloud fades away as it
+   *  drifts up to the building — so it never pops out at the wall. */
+  wallFade: 5,
   /** A calm night: a rare few, faint, and mostly the fog's own colour
    *  (blend: 0 their own colour … 1 the fog's), so they barely stand out. */
   calm: {
-    count: 16,
-    opacity: 0.15,
-    blend: 0.65,
+    count: 24,
+    opacity: 0.22,
+    blend: 0.5,
     /** Kept this far off the building's walls. */
     clearance: 5.5,
     /** Faded in between these distances from the camera. */
@@ -161,6 +165,7 @@ export class DustClouds extends GameObject {
         uFogColor:    { value: new THREE.Color() },
         uFogDensity:  { value: 0 },
         uBlend:       { value: CLOUDS.calm.blend },
+        uWallFade:    { value: CLOUDS.wallFade },
       },
       vertexShader: CLOUD_VERTEX_SHADER,
       fragmentShader: CLOUD_FRAGMENT_SHADER,
@@ -337,6 +342,7 @@ const CLOUD_VERTEX_SHADER = /* glsl */`
   uniform float uClearance;
   uniform vec2  uNear;
   uniform vec4  uFootprint;   // minX, minZ, maxX, maxZ
+  uniform float uWallFade;
 
   varying vec2  vUv;
   varying float vAlpha;
@@ -370,15 +376,17 @@ const CLOUD_VERTEX_SHADER = /* glsl */`
     vec2 right = vec2(-toCam.y, toCam.x);
     vec3 world = vec3(centre.x + right.x * position.x * w, position.y * h + sink, centre.y + right.y * position.x * w);
 
-    // Not near the building.
-    bool nearWalls = centre.x > uFootprint.x - uClearance && centre.x < uFootprint.z + uClearance
-                  && centre.y > uFootprint.y - uClearance && centre.y < uFootprint.w + uClearance;
+    // Near the building it fades away as it comes — over uWallFade metres
+    // outside the clearance — and inside the clearance it isn't drawn at all.
+    vec2 off = max(max(uFootprint.xy - centre, centre - uFootprint.zw), vec2(0.0));
+    float wallFade = smoothstep(uClearance, uClearance + uWallFade, length(off));
+    bool nearWalls = wallFade <= 0.0;
 
     float dist = length(rel);
     float edge = 1.0 - smoothstep(0.38 * uArea, 0.5 * uArea, dist);
     float nearFade = smoothstep(uNear.x, uNear.y, dist);
     float thin = 0.75 + 0.25 * sin(t * (0.17 + 0.2 * r2) + r3 * 6.283);
-    vAlpha = nearWalls ? 0.0 : edge * nearFade * thin * uOpacity;
+    vAlpha = nearWalls ? 0.0 : edge * nearFade * thin * wallFade * uOpacity;
 
     vUv = vec2(position.x + 0.5, position.y);
     vSeed = r1 * 7.0 + r2 * 3.0;

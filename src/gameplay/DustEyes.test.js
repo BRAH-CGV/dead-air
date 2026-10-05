@@ -892,3 +892,28 @@ describe('DustEyes — agitated ones stay', () => {
     expect(eye.phase).toBe('off');
   });
 });
+
+describe('DustEyes — yard eyes spread out', () => {
+  it('fenceSpawnPoint keeps clear of the eyes already out there', () => {
+    const player = new THREE.Vector3(0, 1.24, 15);
+    const others = [new THREE.Vector3(0, 2, FENCE.maxZ + 7), new THREE.Vector3(FENCE.minX - 7, 2, 12)];
+    for (let i = 0; i < 40; i++) {
+      const p = fenceSpawnPoint(FENCE, player, Math.random, new THREE.Vector3(), { others });
+      const nearest = Math.min(...others.map(o => Math.hypot(o.x - p.x, o.z - p.z)));
+      expect(nearest, p.toArray().join()).toBeGreaterThanOrEqual(DUST_EYES.spreadDistance);
+    }
+  });
+
+  it('several in the yard stand well apart', () => {
+    const rig = makeRig({ night: 3, random: Math.random, hatchShut: true });
+    rig.system.random = Math.random;
+    for (let i = 0; i < 4; i++) rig.system._spawn('fence', { force: true });
+    const eyes = rig.system.active.filter(s => s.kind === 'fence').map(s => s.anchor);
+    expect(eyes).toHaveLength(4);
+    for (let a = 0; a < eyes.length; a++) {
+      for (let b = a + 1; b < eyes.length; b++) {
+        expect(Math.hypot(eyes[a].x - eyes[b].x, eyes[a].z - eyes[b].z)).toBeGreaterThan(DUST_EYES.spreadDistance * 0.6);
+      }
+    }
+  });
+});

@@ -59,7 +59,7 @@ export const DUST_EYE = {
   /** The eyes swell by this much when it turns. */
   aggressiveScale: 1.35,
   /** The jaw's quad, hung just below the eyes. */
-  jawSize: [0.8, 1.05],
+  jawSize: [0.8, 0.85],
   jawDrop: 0.1,
   /** How fast the jaw grows in (and opens), per second. */
   jawRate: 3,

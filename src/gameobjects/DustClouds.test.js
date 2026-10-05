@@ -66,10 +66,12 @@ describe('DustClouds', () => {
     const clouds = new DustClouds();
     run(clouds, 0.1);
     expect(CLOUDS.calm.count).toBeGreaterThan(0);
-    expect(CLOUDS.calm.count).toBeLessThanOrEqual(20);
+    expect(CLOUDS.calm.count).toBeGreaterThanOrEqual(20);
+    expect(CLOUDS.calm.count).toBeLessThanOrEqual(30);
     expect(clouds.mesh.geometry.drawRange.count).toBe(CLOUDS.calm.count * 6);
     expect(clouds.mesh.visible).toBe(true);
-    expect(u(clouds).uOpacity.value).toBeLessThanOrEqual(0.2);
+    expect(u(clouds).uOpacity.value).toBeGreaterThan(0.15);
+    expect(u(clouds).uOpacity.value).toBeLessThanOrEqual(0.3);
     // Mostly the fog's own colour: they blend in rather than stand out.
     expect(u(clouds).uBlend.value).toBeGreaterThan(0.4);
     expect(u(clouds).uSizeScale.value.toArray()).toEqual([1, 1]);
@@ -157,6 +159,14 @@ describe('DustClouds', () => {
     expect(uni.uFootprint.value.toArray()).toEqual([-6, -5, 6, 5]);
     expect(clouds.mesh.material.vertexShader).toMatch(/uFootprint/);
     expect(clouds.mesh.material.fragmentShader).toMatch(/uCutoutMin/);
+  });
+
+  it('fades out as it drifts up to the building, rather than popping out at the wall', () => {
+    const clouds = new DustClouds();
+    expect(CLOUDS.wallFade).toBeGreaterThanOrEqual(3);
+    expect(u(clouds).uWallFade.value).toBe(CLOUDS.wallFade);
+    // The fade runs from the clearance outward, in the shader.
+    expect(clouds.mesh.material.vertexShader).toMatch(/smoothstep\(uClearance, uClearance \+ uWallFade/);
   });
 
   it('frees what it built', () => {

@@ -132,6 +132,9 @@ export const DUST_EYES = {
   obstacleMargin: 0.8,
   /** Tries at a clear spot beyond the fence before settling for the wire. */
   spawnTries: 24,
+  /** A new yard eye looks for a spot at least this far from the others,
+   *  so they spread out round the fence — or as far as it can get. */
+  spreadDistance: 10,
   /** A yard eye "in view" is within this many degrees of where the player
    *  is looking. The J key always puts one there; a natural one is there
    *  inViewChance of the time, and anywhere in sight otherwise. */
@@ -226,26 +229,43 @@ const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
  * @param {THREE.Vector3} out
  * @param {{ trees?: Array<{x:number, z:number, reach:number}> }} [opts]
  */
-export function fenceSpawnPoint(rect, player, random, out, { trees = [], obstacles = [], facing = null, inView = false } = {}) {
+export function fenceSpawnPoint(rect, player, random, out, { trees = [], obstacles = [], facing = null, inView = false, others = [] } = {}) {
   const clear = () => !sightBlocked(player, out, trees, obstacles)
     && Math.hypot(out.x - player.x, out.z - player.z) < DUST_EYES.sightRange;
+  // Spread out: how far this spot is from the nearest eye already there.
+  const spread = () => {
+    let d = Infinity;
+    for (const o of others) d = Math.min(d, Math.hypot(o.x - out.x, o.z - out.z));
+    return d;
+  };
+  let best = -1;
+  const keep = () => {
+    const d = spread();
+    if (d > best) { best = d; _best.copy(out); }
+    return d >= DUST_EYES.spreadDistance;
+  };
   // In front of the player first, if asked: along their view, a little
-  // either side, out to where that meets the fence.
+  // either side, out to where that meets the fence — as spread out as the
+  // view allows.
   if (inView && facing) {
     const cone = Math.cos(THREE.MathUtils.degToRad(DUST_EYES.inViewAngle));
     for (let i = 0; i < DUST_EYES.spawnTries; i++) {
       const turn = (random() * 2 - 1) * THREE.MathUtils.degToRad(DUST_EYES.inViewAngle) * 0.85;
       if (!fenceAlong(rect, player, facing, turn, lerp(...DUST_EYES.beyondFence, random()), random, out)) continue;
-      if (clear() && inCone(player, facing, out, cone)) return out;
+      if (clear() && inCone(player, facing, out, cone) && keep()) return out;
     }
+    if (best >= 0) return out.copy(_best);
   }
   for (let i = 0; i < DUST_EYES.spawnTries; i++) {
     fencePoint(rect, player, random, lerp(...DUST_EYES.beyondFence, random()), out);
-    if (clear()) return out;
+    if (clear() && keep()) return out;
   }
+  if (best >= 0) return out.copy(_best);
   fencePoint(rect, player, random, DUST_EYES.fallbackBeyond, out);
   return out;
 }
+
+const _best = new THREE.Vector3();
 
 /** Is `p` within the cone (cos of its half-angle) round `facing`, on the ground plan? */
 function inCone(player, facing, p, cosHalf) {
@@ -931,8 +951,10 @@ export class DustEyes extends Component {
     slot.go.setAgitated(false);
     slot.go.setIntensity(kind === 'window' ? DUST_EYES.windowIntensity : 1);
     if (slot.kind === 'fence') {
+      // Spread out from the yard eyes already there.
+      const others = this.slots.filter(s => s !== slot && s.phase !== 'off' && s.kind === 'fence').map(s => s.anchor);
       fenceSpawnPoint(this.fence, eye, this.random, slot.anchor, {
-        trees: this.trees, obstacles: this.obstacles, facing: this.hooks.viewDirection(_facing), inView,
+        trees: this.trees, obstacles: this.obstacles, facing: this.hooks.viewDirection(_facing), inView, others,
       });
     }
     else windowSpawnPoint(this.window, this.random, slot.anchor);

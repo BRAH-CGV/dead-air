@@ -67,9 +67,9 @@ describe('DustEye', () => {
   it('has a canine jaw — upper teeth and a lower jaw — that is only teeth, nothing behind them', () => {
     const eye = new DustEye();
     const [w, h] = DUST_EYE.jawSize;
-    // Wide enough to read as a mouth, not a thin slot.
+    // Wide enough to read as a mouth, not a thin slot — and not long.
     expect(w).toBeGreaterThanOrEqual(0.7);
-    expect(h).toBeLessThanOrEqual(1.2);
+    expect(h).toBeLessThanOrEqual(0.9);
     const shader = eye.jawMaterial.fragmentShader;
     expect(shader).toMatch(/canine/i);
     expect(shader).toMatch(/lower jaw/i);
