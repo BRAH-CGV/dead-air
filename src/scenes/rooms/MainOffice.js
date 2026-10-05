@@ -99,6 +99,17 @@ export class MainOffice extends Room {
     const desk = new THREE.PointLight(0x66ccff, 4.0, 6, 1.6);
     desk.position.set(0, 1.1, -2.1);
     deskGO.object3d.add(desk);
+
+    // The terminal screen's own faint green spill. It is a vital function,
+    // not a bulb: with the generator running it glows even after the UFO has
+    // blown every lamp in the base — the one sign in a dark office that the
+    // computer still works (PowerGrid reads `unbreakable`).
+    const screenGO = this._addGroup('ScreenGlow');
+    screenGO.object3d.userData.unbreakable = true;
+    const screen = new THREE.PointLight(0x4dff7a, 0.8, 3, 2);
+    screen.position.set(0, 1.0, -2.2);
+    screenGO.object3d.add(screen);
+    this.screenGlow = screen;
   }
 
   buildProps() {
@@ -133,6 +144,25 @@ export class MainOffice extends Room {
     // Right wall: spare parts on a shelf; a poster where the eye lands
     // walking in from the airlock. The shelf's open sides face ±x.
     this._spawnProp('model:shelf', { name: 'Shelf', position: [5.68, 0, -2.0] });
+
+    // Tiny dynamic crate on the second shelf level to demonstrate collision layers:
+    // the crate rests on the SHELF-layer boards, while the player is blocked by
+    // the DEFAULT-layer outer box. Toggle physics debug (`) to see the layers.
+    // The crate uses explicit groups (DEFAULT membership, not PLAYER) so it
+    // passes through the player-only bounding box.
+    this._spawnProp('model:crate', {
+      name: 'ShelfCube',
+      position: [5.68, 1.09, -2.0],  // third shelf level (y≈1.06)
+      scale: 0.0016,                  // doubled from 0.0008
+      physics: {
+        body: 'dynamic',
+        mass: 0.5,
+        // DEFAULT membership (not PLAYER) so it passes through the player-only box.
+        // Filters for DEFAULT + SHELF so it rests on the shelf boards.
+        groups: { membership: ['DEFAULT'], filter: ['DEFAULT', 'SHELF'] },
+      },
+    });
+
     this._spawnProp('model:poster', {
       name: 'Poster', position: [5.9, 1.05, 0.6], rotationY: -Math.PI / 2, physics: 'none',
     });

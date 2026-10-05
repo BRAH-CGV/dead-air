@@ -476,6 +476,11 @@ function latticeMaterial() {
     map: texture,
     alphaMap: texture,
     transparent: true,
+    // Throw the gap pixels away rather than blend them to nothing: blended,
+    // they still wrote depth, and anything see-through behind the fence (the
+    // wind dust) was cut out in the shape of the whole panel. Below the
+    // wire's own alpha (60/255, the lattice's green), so the wire is kept.
+    alphaTest: 0.1,
     side: THREE.DoubleSide,
     roughness: 0.8,
     metalness: 0.4,

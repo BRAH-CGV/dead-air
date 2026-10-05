@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 
 import * as THREE from 'three';
-import { ComputerTerminal } from './ComputerTerminal.js';
+import { ComputerTerminal, createComputerInteractable } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
@@ -70,6 +70,7 @@ function makeRadar() {
   return {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
+    setWarning: vi.fn(), threatAt: vi.fn(() => false),
   };
 }
 
@@ -686,5 +687,55 @@ describe('ComputerTerminal', () => {
     // Open terminal — should go directly to review
     term.enter();
     expect(term.state).toBe('review');
+  });
+
+  // ── Power ──
+
+  it('will not open with the power off, and says why', () => {
+    const interact = createComputerInteractable(term);
+    term.setPowered(false);
+    term.enter();
+    expect(term.state).toBe('idle');
+    expect(interact.promptLabel).toMatch(/no power/i);
+    term.setPowered(true);
+    expect(interact.promptLabel).toBe('[E] Use Computer');
+    term.enter();
+    expect(term.state).toBe('radar');
+  });
+
+  it('losing power mid-scan shuts the terminal and drops the scan', () => {
+    term.enter();
+    sat.isScanning = true;
+    term.setPowered(false);
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(false);
+  });
+
+  // ── The UFO on the radar ──
+
+  it('warns of the anomaly while the cursor sits on the UFO blob, and clears it after', () => {
+    term.enter();
+    radar.threatAt.mockReturnValue(true);
+    term._updateRadarDisplay();
+    expect(radar.setWarning).toHaveBeenLastCalledWith(expect.stringMatching(/electrical anomaly/i));
+    expect(radar.setWarning.mock.lastCall[0]).toMatch(/turn off (the )?power/i);
+    radar.threatAt.mockReturnValue(false);
+    term._updateRadarDisplay();
+    expect(radar.setWarning).toHaveBeenLastCalledWith('');
+  });
+
+  it('asks the radar about the cursor where it actually is', () => {
+    term.enter();
+    term.moveCursor({ right: true, up: true }, 1);
+    term._updateRadarDisplay();
+    expect(radar.threatAt).toHaveBeenLastCalledWith(term._cursorX, term._cursorY);
+  });
+
+  it('drops the warning when the terminal closes', () => {
+    term.enter();
+    radar.threatAt.mockReturnValue(true);
+    term._updateRadarDisplay();
+    term.exit();
+    expect(radar.setWarning).toHaveBeenLastCalledWith('');
   });
 });

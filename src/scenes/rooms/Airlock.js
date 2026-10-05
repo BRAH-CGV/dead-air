@@ -150,6 +150,9 @@ export class Airlock extends Corridor {
     // Just inside, over the hatch. Small range: it colours the hatch and
     // the end of the passage, not the office behind.
     const beaconGO = this._addGroup('HatchBeacon');
+    // On its own battery, off the PowerGrid: the interlock — and the lamp
+    // that says which door is safe — must work with the generator off.
+    beaconGO.object3d.userData.offGrid = true;
     const y = 2.2 + 0.3;
     const z = this.length / 2 - this.wallThick / 2 - 0.08;
 

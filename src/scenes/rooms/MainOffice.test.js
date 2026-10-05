@@ -290,9 +290,16 @@ describe('MainOffice', () => {
     }
   });
 
+  it('a faint green, unbreakable glow off the terminal screen — the sign it still works in the dark', () => {
+    const glow = room.root.find('ScreenGlow');
+    expect(glow.object3d.userData.unbreakable).toBe(true);
+    expect(room.screenGlow.color.getHex()).toBe(0x4dff7a);
+    expect(room.screenGlow.intensity).toBeLessThan(2);
+  });
+
   it('lighting matches the original office: warm ceiling light and cool desk glow', () => {
     const lights = pointLights(room);
-    expect(lights.length).toBe(2);
+    expect(lights.length).toBe(3);   // + the screen's glow
     const ceiling = room.root.find('CeilingLight').object3d.children.find(o => o.isPointLight);
     const desk    = room.root.find('DeskGlow').object3d.children.find(o => o.isPointLight);
     expect(ceiling.position.toArray()).toEqual([0, 2.75, 0.4]);

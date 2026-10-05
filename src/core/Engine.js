@@ -16,6 +16,7 @@ import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
+import { Layers, packGroups } from './PhysicsLayers.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
@@ -114,13 +115,30 @@ export class Engine {
     fullbright: 'KeyB',   // toggle the unlit lighting mode
     nextNight:  'KeyN',   // BaseScene: advance the night (wraps to night 1)
     perfStats:  'KeyI',   // toggle the FPS / draw-call readout
+    // TESTING ONLY — remove before release: bring the UFO now (BaseScene).
+    summonUfo:  'KeyU',
   };
 
-  /** Returns true while the key mapped to [action] is held down. */
+  /** Returns true while the key mapped to [action] is held down — unless
+   *  that press was consumed (consumeAction), until the key is let go. */
   isAction(action) {
     const code = this.keyBinds[action];
-    return code ? !!this.input.keys[code] : false;
+    if (!code || !this.input.keys[code]) return false;
+    return !this._consumed.has(code);
   }
+
+  /** Use up the current press of [action]: isAction() and input.pressed
+   *  read it as up until the key is released. For a press that has done its
+   *  job (E retrying the night) and must not also reach anything else. */
+  consumeAction(action) {
+    const code = this.keyBinds[action];
+    if (!code) return;
+    this.input.pressed[code] = false;
+    if (this.input.keys[code]) this._consumed.add(code);
+  }
+
+  /** Key codes whose current press was consumed. */
+  _consumed = new Set();
 
   // ──────────────────────────────────────────
   // Bootstrap
@@ -201,7 +219,10 @@ export class Engine {
       this.input.keys[e.code] = true;
       if (!e.repeat) this.input.pressed[e.code] = true;
     });
-    addEventListener('keyup',   (e) => { this.input.keys[e.code] = false; });
+    addEventListener('keyup',   (e) => {
+      this.input.keys[e.code] = false;
+      this._consumed.delete(e.code);
+    });
 
     // ── Debug tooling ──
     // Built before their key handlers are registered, so a debug key can
@@ -222,6 +243,11 @@ export class Engine {
       if (e.code === this.keyBinds.perfStats)  this.perfStats?.toggle();
       // Only scenes with night progression (BaseScene) have `nights`.
       const nights = this.activeScene?.nights;
+      // TESTING ONLY — remove before release.
+      if (e.code === this.keyBinds.summonUfo && this.activeScene?.ufoThreat) {
+        const coming = this.activeScene.ufoThreat.summon();
+        console.log(coming ? '[DEBUG] UFO summoned' : '[DEBUG] UFO not summoned — a visit is under way, or no shift is');
+      }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);
         else nights.advance();
@@ -552,14 +578,21 @@ export class Engine {
         .setTranslation(...position)
         .lockRotations(),
     );
+
+    // Player collision groups: member of PLAYER layer, interacts with DEFAULT
+    // only (not SHELF — the player walks through shelf boards, items rest on them).
+    const playerGroups = packGroups([Layers.PLAYER], [Layers.DEFAULT]);
+
     const standCol  = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     // The crouch capsule shares the body; exactly one of the two is enabled
     // at a time and the controller swaps them (see FirstPersonController).
     const crouchCol = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     crouchCol.setEnabled(false);
@@ -584,6 +617,9 @@ export class Engine {
       crouchEyeOffset: body.crouchEyeOffset,
       crouchSpeed: 2.5,
       crouchMode: 'toggle',   // flip to 'hold' for hold-to-crouch — nothing else changes
+      // Collision groups for the character controller filter — only colliders
+      // in the DEFAULT layer block the player (not SHELF boards).
+      filterGroups: playerGroups,
     });
     ctrl.camera = this.camera;
 
