@@ -962,6 +962,50 @@ export class BaseScene extends Scene {
     for (const mesh of inside) {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(optOut) : optOut(mesh.material);
     }
+    this._switchSealedRoomFog();
+  }
+
+  /** A sealed room's mood fog is for being inside it. Seen through a
+   *  doorway from anywhere else it took the storm's brown — the server room
+   *  glowed rust down the corridor. So each sealed room's fogged surfaces
+   *  get a switch in their fog shader (roomFog, 0 or 1), on only while the
+   *  player is in that room (_applyRoomFog). A uniform, not material.fog:
+   *  flipping that would recompile the room's shaders on every doorway. */
+  _switchSealedRoomFog() {
+    this._roomFog = new Map();
+    const sealed = Object.values(this.rooms)
+      .filter(room => room !== this.rooms.Airlock && this._fogDensityFor(room) !== OUTDOOR_FOG_DENSITY);
+    for (const room of sealed) {
+      const ref = { value: 0 };
+      this._roomFog.set(room, ref);
+      const mine = new Set();
+      room.root.object3d.traverse(o => { if (o.isMesh) mine.add(o); });
+      const elsewhere = new Set();
+      this._sceneRoot.object3d.traverse(o => {
+        if (!o.isMesh || mine.has(o)) return;
+        for (const m of [].concat(o.material)) if (m) elsewhere.add(m);
+      });
+      const copies = new Map();
+      const switched = (m) => {
+        if (!m || !m.fog) return m;
+        let target = m;
+        if (elsewhere.has(m)) {
+          target = copies.get(m);
+          if (!target) { target = this._own(m.clone()); copies.set(m, target); }
+        }
+        target.onBeforeCompile = (shader) => {
+          shader.uniforms.roomFog = ref;
+          shader.fragmentShader = 'uniform float roomFog;\n'
+            + shader.fragmentShader.replace('#include <fog_fragment>', ROOM_FOG_FRAGMENT);
+        };
+        target.customProgramCacheKey = () => 'roomFog';
+        target.needsUpdate = true;
+        return target;
+      };
+      for (const mesh of mine) {
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(switched) : switched(mesh.material);
+      }
+    }
   }
 
   // ──────────────────────────────────────────
@@ -1315,6 +1359,8 @@ export class BaseScene extends Scene {
    *  view (the main office, the corridors, and outside). */
   _applyRoomFog(room) {
     this._currentRoom = room;
+    // A sealed room's mood fog shows only from inside it.
+    for (const [sealed, ref] of this._roomFog ?? []) ref.value = sealed === room ? 1 : 0;
     const fog = this.engine.scene.fog;
     if (!fog) return;
     fog.density = this._fogDensityFor(room);
@@ -1370,6 +1416,18 @@ export class BaseScene extends Scene {
 }
 
 const _box = new THREE.Box3();
+
+/** three's fog, scaled by a sealed room's switch (BaseScene._switchSealedRoomFog). */
+const ROOM_FOG_FRAGMENT = /* glsl */`
+#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+  #else
+    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+  #endif
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor * roomFog );
+#endif
+`;
 const _valleyEye = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */

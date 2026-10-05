@@ -1481,3 +1481,44 @@ describe('BaseScene storm fog stays outside', () => {
     }
   });
 });
+
+describe('BaseScene sealed rooms fog only from inside', () => {
+  let engine, scene;
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  const fogged = (room) => {
+    const out = [];
+    room.root.object3d.traverse(o => {
+      if (!o.isMesh) return;
+      for (const m of [].concat(o.material)) if (m?.fog) out.push(m);
+    });
+    return out;
+  };
+
+  it('each sealed room\'s fog is switched by whether the player is in it', () => {
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    const server = scene.rooms.ServerRoom, quarters = scene.rooms.LivingQuarters;
+    sys.onRoomChange(scene.rooms.MainOffice, null);
+    expect(scene._roomFog.get(server).value).toBe(0);
+    expect(scene._roomFog.get(quarters).value).toBe(0);
+    sys.onRoomChange(server, scene.rooms.MainOffice);
+    expect(scene._roomFog.get(server).value).toBe(1);
+    expect(scene._roomFog.get(quarters).value).toBe(0);
+    sys.onRoomChange(null, server);
+    expect(scene._roomFog.get(server).value).toBe(0);
+  });
+
+  it('their fogged materials carry the switch into the fog shader', () => {
+    const material = fogged(scene.rooms.ServerRoom)[0];
+    expect(material).toBeTruthy();
+    const shader = { uniforms: {}, fragmentShader: 'void main() {\n#include <fog_fragment>\n}' };
+    material.onBeforeCompile(shader);
+    expect(shader.uniforms.roomFog).toBe(scene._roomFog.get(scene.rooms.ServerRoom));
+    expect(shader.fragmentShader).toMatch(/roomFog/);
+    expect(shader.fragmentShader).not.toMatch(/#include <fog_fragment>/);
+  });
+});
