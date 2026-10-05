@@ -222,6 +222,7 @@ export class BaseScene extends Scene {
     this._buildOutside();
     this._addWindDust();
     this._spawnPlayer();
+    this._keepFogOutside();
     this._addPower();
     this._addGameplaySystems();
     this._addUfo();
@@ -922,6 +923,47 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
 
+  /** The office, the airlock and the corridors take no fog. They share the
+   *  outdoor fog density — the office window has to show the valley, and the
+   *  storm swallowing it — but the scene's fog is one fog, and at a storm's
+   *  density it filled the rooms themselves with brown haze (a wall 10 m off
+   *  a third dust). Their own surfaces opt out instead; everything seen
+   *  through the glass keeps it. On a clear night that fog is ~0.05 % at
+   *  10 m, so indoors nothing changes. The sealed rooms keep theirs: it is
+   *  their mood. A material shared with anything outside the opted-out
+   *  parts is copied for them first, so nothing else loses its fog. Built
+   *  before the power grid collects the lamps' materials, so the grid holds
+   *  the copies. */
+  _keepFogOutside() {
+    const parts = [this.rooms.MainOffice, this.rooms.Airlock, ...Object.values(this.corridors)].filter(Boolean);
+    const inside = new Set();
+    for (const part of parts) part.root.object3d.traverse(o => { if (o.isMesh) inside.add(o); });
+    const elsewhere = new Set();
+    this._sceneRoot.object3d.traverse(o => {
+      if (!o.isMesh || inside.has(o)) return;
+      for (const m of [].concat(o.material)) if (m) elsewhere.add(m);
+    });
+    const copies = new Map();
+    const optOut = (m) => {
+      if (!m || !m.fog) return m;
+      if (elsewhere.has(m)) {
+        let copy = copies.get(m);
+        if (!copy) {
+          copy = this._own(m.clone());
+          copy.fog = false;
+          copies.set(m, copy);
+        }
+        return copy;
+      }
+      m.fog = false;
+      m.needsUpdate = true;
+      return m;
+    };
+    for (const mesh of inside) {
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(optOut) : optOut(mesh.material);
+    }
+  }
+
   // ──────────────────────────────────────────
   // Sandstorms (some nights, from night 2)
   // ──────────────────────────────────────────
@@ -956,12 +998,15 @@ export class BaseScene extends Scene {
       hooks: {
         listenerPosition: out => engine.camera.getWorldPosition(out),
         isOutside:        p => this._isOutside(p),
-        // Wherever the outdoor fog applies — outside, corridors, the office
-        // and the airlock (its hatch is on the yard, and from it the office
-        // window shows through the inner door). Only the sealed mood rooms
-        // keep the storm out; a window seen clear from the airlock used to
-        // pop to storm on the step into the office.
-        valleyInView:     () => this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY,
+        // Outside, the office (its window) and the airlock (its hatch is on
+        // the yard, and from it the office window shows through the inner
+        // door — a window seen clear from there used to pop to storm on the
+        // step into the office). Not the corridors: no window, and the storm
+        // fog there only tinted the sealed rooms seen through their doorways.
+        // Not the sealed mood rooms.
+        valleyInView:     () => (this._currentRoom
+          ? this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY
+          : this._isOutside(engine.camera.getWorldPosition(_valleyEye))),
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
@@ -1325,6 +1370,7 @@ export class BaseScene extends Scene {
 }
 
 const _box = new THREE.Box3();
+const _valleyEye = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {

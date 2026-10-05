@@ -1240,7 +1240,16 @@ describe('BaseScene sandstorms', () => {
     expect(valleyInView()).toBe(true);
     sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.Airlock);
     expect(valleyInView()).toBe(false);
+    // Out of every room: outside sees it; a corridor (no window) doesn't —
+    // there the storm fog only tinted the rooms seen through its doorways.
+    const camera = engine.camera ?? (engine.camera = new THREE.PerspectiveCamera());
+    const corridor = Object.values(scene.corridors).find(c => c !== scene.rooms.Airlock);
     sys.onRoomChange(null, scene.rooms.ServerRoom);
+    camera.position.set(corridor.position[0], 1.2, corridor.position[2]);
+    camera.updateMatrixWorld(true);
+    expect(valleyInView()).toBe(false);
+    camera.position.set(0, 1.2, scene.fence.rect.maxZ - 2);
+    camera.updateMatrixWorld(true);
     expect(valleyInView()).toBe(true);
   });
 
@@ -1419,5 +1428,56 @@ describe('BaseScene suit breathing', () => {
     expect(visor.silenced()).toBe(false);
     scene.gameController.state = 'gameOver';
     expect(visor.silenced()).toBe(true);
+  });
+});
+
+describe('BaseScene storm fog stays outside', () => {
+  let engine, scene;
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  /** Every mesh under `root`, with its materials. */
+  const meshesOf = (root) => {
+    const out = [];
+    root.traverse(o => { if (o.isMesh || o.isInstancedMesh) out.push(o); });
+    return out;
+  };
+  const materials = (mesh) => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+
+  it('the office, the airlock and the corridors take no fog: the storm stays outside the glass', () => {
+    const parts = [scene.rooms.MainOffice, scene.rooms.Airlock, ...Object.values(scene.corridors)];
+    for (const part of parts) {
+      for (const mesh of meshesOf(part.root.object3d)) {
+        for (const m of materials(mesh)) {
+          if ('fog' in m) expect(m.fog, `${part.name} / ${mesh.name}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('the sealed rooms keep their own mood fog', () => {
+    for (const room of [scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
+      const fogged = meshesOf(room.root.object3d).some(mesh => materials(mesh).some(m => m.fog === true));
+      expect(fogged, room.name).toBe(true);
+    }
+  });
+
+  it('nothing outside loses its fog — no material is shared across the building\'s walls', () => {
+    const inside = new Set();
+    for (const part of [scene.rooms.MainOffice, scene.rooms.Airlock, ...Object.values(scene.corridors)]) {
+      for (const mesh of meshesOf(part.root.object3d)) for (const m of materials(mesh)) inside.add(m);
+    }
+    const outside = scene._sceneRoot.find('Outside').object3d;
+    for (const mesh of meshesOf(outside)) {
+      for (const m of materials(mesh)) expect(inside.has(m), mesh.name).toBe(false);
+    }
+    for (const room of [scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
+      for (const mesh of meshesOf(room.root.object3d)) {
+        for (const m of materials(mesh)) expect(inside.has(m), `${room.name} / ${mesh.name}`).toBe(false);
+      }
+    }
   });
 });
