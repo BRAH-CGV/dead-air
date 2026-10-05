@@ -26,7 +26,6 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
-import { DustClouds, DustCloudsMotion } from '../gameobjects/DustClouds.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1373,35 +1372,6 @@ describe('BaseScene dust eyes keep out of things', () => {
     expect(box.maxZ).toBeCloseTo(shell.max.z);
     expect(box.door.x).toBeCloseTo(hatch.x);
     expect(box.door.z).toBeCloseTo(hatch.z);
-  });
-});
-
-describe('BaseScene dust clouds', () => {
-  let engine, scene;
-  beforeEach(() => {
-    engine = makeSceneEngine();
-    scene = new BaseScene(engine);
-    scene.build();
-  });
-
-  it('builds the clouds on the scene root, driven by the storm, lit by the dawn', () => {
-    expect(scene.dustClouds).toBeInstanceOf(DustClouds);
-    expect(scene.dustClouds.parent).toBe(scene._sceneRoot);
-    const motion = scene.dustClouds.getComponent(DustCloudsMotion);
-    expect(scene.sandstorm.clouds).toBe(motion);
-    expect(motion.daylightSource).toBe(scene.daylight);
-    expect(scene.dustClouds.fog).toBe(engine.scene.fog);
-  });
-
-  it('cuts every room and corridor out of them', () => {
-    const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
-    expect(scene.dustClouds.mesh.material.uniforms.uCutoutCount.value).toBe(parts.length);
-  });
-
-  it('frees them on dispose', () => {
-    const dispose = vi.spyOn(scene.dustClouds, 'dispose');
-    scene.dispose();
-    expect(dispose).toHaveBeenCalled();
   });
 });
 

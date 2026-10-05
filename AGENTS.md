@@ -66,10 +66,10 @@ src/
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
+│   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
-│   ├── DustClouds.js    # Low billowing dust clouds outside — faint and rare when calm, thick in a storm
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
@@ -247,7 +247,7 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
 
 - **Sound.** `sfx:sandstorm`, looped seamlessly at load (`loopable`, shared with `GeneratorSound`). `volume` 0.2 outside; through the walls it is `insideLevel` (3 %) of that — barely there. Eased, so the airlock doesn't snap it.
 - **Fog.** Thicker and dust-brown (`dustColor`, `fogTint`). From indoors (`fogDensity` 0.065) the storm swallows the view out of the office window just before the radar dish, ~23 m from the desk (a test pins it); outside (`fogDensityOutside` 0.08) it closes in tighter. Eased with the player's place. It applies wherever the outdoor fog density does (`valleyInView`): outside, corridors, the office and the airlock — the airlock counts because the office window shows through its inner door, and leaving it out made the window pop from clear to storm on the step into the office. Only the sealed mood rooms (`ROOM_FOG_DENSITY`) keep their own fog. The fog is shared with `Daylight` (colour) and the room fog (density), so the storm keeps no copy of "the clear fog": each frame it adopts whatever someone else wrote since its own last write and lays itself on top, handing back exactly the night's values when it passes.
-- **Clouds.** `DustClouds` (`src/gameobjects/DustClouds.js`): low billowing dust rolling past outside — a few on a calm night (`CLOUDS.calm`: 24, faint, half the fog's own colour), a wall of it in a storm in its own dust colour — `Sandstorm` drives its `DustCloudsMotion.setStorm` (passed as `clouds`), so one storm level runs everything. One mesh, one draw call: a quad per cloud, written once; the vertex shader scatters them over a 90 m square on the camera, blows them along `WIND_DIRECTION` with gusts (`windDrift`), gives each its own surge, meander and swell, turns each upright to the camera, and fades each one out as it drifts up to the building (`wallFade`, so none pops out at the window); the fragment shader cuts a billowing outline from a tiling noise texture made at load, discards pixels inside rooms, and fogs them by hand with the scene fog so the storm swallows the far ones. Rust at night, pale dust by day (from `Daylight.factor`, not the fog colour, which a storm turns brown). A storm scales count, size, opacity, speed and how close they come (`CLOUDS.calm` / `CLOUDS.storm`) — uniforms and the draw range, nothing rebuilt. Built from Ryan's design notes for `feat/dust-storm` (see *Merging Ryan's clouds*). The grit blows along the same `WIND_DIRECTION`.
+- **Clouds.** The wind dust (`scene.windDust`, see *Wind dust* below): `Sandstorm` is handed its `WindDustMotion` as `clouds` and calls `setStorm(level)` on it every frame, so one storm level runs the fog, the sky, the grit and the clouds. The grit blows along the clouds' own axis: `WIND_DIRECTION` is `WIND_DUST.direction`.
 - **Sky.** `MarsSky.setStorm(k)` writes `uStorm`, shared by the dome and the stars like `uDawn`: the dome sinks to a dust-brown murk, the stars go, and the moons (bodies and halos) fade to 8 %.
 - **Dust.** `DustStorm` (on the scene root, like the UFO, so the occlusion sort never files it away) is one `Points` cloud moved entirely in its vertex shader: each grain drifts along `uWind` by `uTime` at its own speed, gusting, and is wrapped into a 36 m box on the player (`uCenter`). Every room and corridor is cut out of it (`setCutouts`, as for the UFO beam — a grain inside one is dropped in the vertex shader), so it shows from indoors too and blows past the office window without drifting through a room. Shown wherever the storm fog is (`valleyInView`), eased. Undrawn (`visible = false`) while calm — it's not a light, so that recompiles nothing.
 
@@ -271,16 +271,6 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
 
 **The fence's wire mesh discards its gaps** (`alphaTest` on the lattice material in `PerimeterFence`). A transparent card still writes depth over its whole face, so before this anything drawn after it from beyond the fence — the dust eyes, the grit — was hidden by the invisible gaps.
 
-### Merging Ryan's clouds
-
-`feat/dust-storm` (Ryan: `WindDust.js`, `scene.windDust`, see its `DUST-STORM-HANDOFF.md`) isn't merged yet. This branch built its own clouds from his notes (`DustClouds`, same `setStorm` API, same calm/storm numbers except a thinner full storm), so when the two meet, keep one:
-
-- **One storm level.** `Sandstorm` is the owner: whichever cloud system stays is handed to it as `clouds`. Drop his `K` test key (`testKey` in `_addWindDust`): `K` here starts a whole storm, clouds included.
-- **One wind.** Point `WIND_DIRECTION` at `WIND_DUST.direction`.
-- **The fence fix is on both.** Both branches gave the chain-link an `alphaTest`; keep one.
-- **Watch the cloud colour** (his, if kept). His clouds read `scene.fog.color`'s brightness as daylight, and the storm turns the fog dust-brown, which is brighter than the night blue — they may pale as if dawn. Give them their colour directly during a storm, or retune `WIND_DUST.light`.
-- **Overdraw.** Thick storm fog plus full-storm clouds plus the grit: measure on lab hardware with `I`, at full storm, in the yard. With the fog carrying the density, `storm.count` and `storm.opacity` on the clouds can come down.
-
 ### Storm outages
 
 `StormOutage` (on `GameplaySystems`) takes the power out once every storm (`sandstorm.stormId`), at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
@@ -293,6 +283,21 @@ Centralized on `Engine.input`:
 - `locked` — boolean, pointer-lock active
 
 `Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). `engine.consumeAction(action)` uses up the current press: `isAction` reads it as up until the key is released. Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
+
+### Wind dust
+
+`createWindDust` (`src/gameobjects/WindDust.js`, as `scene.windDust`) is the wind made visible: low, ragged clouds of dust blowing across the ground outside and past the office window. Nothing reaches above 2.6 m, so the sky stays clear.
+
+- **One draw call.** A quad per cloud (`WIND_DUST.count`, 64 when calm) in one buffer, written at build and never again. The vertex shader places each cloud, turns it to face the camera and moves it; the CPU sets a handful of uniforms a frame (`WindDustMotion`).
+- **Around the camera, fixed in the world.** The clouds are scattered over an area that rides the camera. A cloud's place is its seed plus the wind's drift, wrapped into that area, so walking doesn't drag the dust along.
+- **Movement.** `windDrift` carries them all downwind, gusting. Each cloud also surges ahead and falls back, meanders across the wind, sinks and rises, and thins and thickens, on phases from its own seed; the noise it is cut from rolls up through it.
+- **Storm.** `WindDustMotion.setStorm(level)` takes it from calm (0) to a dust storm (1): more clouds (`storm.count`, 220), much bigger and taller (`storm.size`, up to ~8.5 m), thicker, closer to the walls and the camera (`storm.clearance`, `storm.nearFade`) so the view from the window closes in, and blowing `storm.speed` times faster. The extra clouds are in the buffer from the start; a storm changes the draw range and a few uniforms. `Sandstorm` is the only caller: it is handed the component as `clouds` (`BaseScene._addSandstorm`) and passes its own level every frame, so the clouds build and die down with the fog, the sky and the grit. `storm.ramp` is short (0.6 s) for that reason — the level arrives already eased. There is no key of its own: `K` summons the whole storm (*Debug tooling*). A storm costs far more to draw than the calm: its clouds are many times the size on screen, stacked several deep (roughly five screens' worth of see-through pixels at worst, against a fraction of one when calm), on top of the storm's fog and grit. **Not yet measured on lab hardware** — check with `I` at full storm, standing in the yard; `storm.count` and `storm.opacity` are the two numbers to lower, and the fog already carries much of the density.
+- **Tuning.** All in `WIND_DUST`: `count` and `area` are the density, `height` / `width` / `base` the size and how high the clouds reach, `opacity` and `nightColor` how much they show.
+- **Overdraw is the cost, so it is what's limited:** few clouds, low on screen; none within `nearFade` of the camera; a faded cloud is collapsed in the vertex shader; two texture reads per pixel from a 64 px noise tile.
+- **Not indoors.** Two things keep it out of the rooms and corridors (`cutouts`, their shells): the vertex shader drops any cloud whose middle is within `clearance` of one (thinning it over the `wallFade` metres before that, so a cloud blowing up to the window fades away instead of vanishing), and the fragment shader throws away any pixel inside one. The second is what lets a storm's clouds, far wider than their clearance, come right up to the walls. From the desk that leaves dust beyond the back wall, in the window.
+- **Not under `Outside`.** It moves with the camera, so the occlusion sort has nothing to place it by. It is drawn in every zone.
+- **Colour** goes from `nightColor` to `dayColor` with the dawn: `BaseScene` hands `WindDustMotion` the `Daylight` component as `daylight`, and it reads `factor`. Not the fog's brightness — a sandstorm turns the fog dust-brown, brighter than the night's blue, and the clouds paled as if the Sun were rising.
+- Unlit, no shadows, no depth write, no fog: nothing added to the lit shaders or the frozen shadow maps.
 
 ## Debug tooling
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { loopable } from '../components/GeneratorSound.js';
 import { UFO } from './UfoThreat.js';
+import { WIND_DUST } from '../gameobjects/WindDust.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
@@ -78,10 +79,9 @@ export const SANDSTORM = {
   windSpeed: 9,
 };
 
-/** The wind's axis (x, z): Ryan's WIND_DUST.direction on feat/dust-storm —
- *  the way his clouds drift and the grass sways — so the grit blows the same
- *  way. Point this at WIND_DUST.direction once the branches meet. */
-export const WIND_DIRECTION = [0.874, 0.486];
+/** The wind's axis (x, z): the way the dust clouds drift and the grass
+ *  sways, so the grit blows the same way. */
+export const WIND_DIRECTION = WIND_DUST.direction;
 
 /** Manifest keys behind each sound. */
 export const SANDSTORM_SOUNDS = {
@@ -156,8 +156,8 @@ export class Sandstorm extends Component {
    * @param {{ setStorm: (k: number) => void }} [opts.sky]  A MarsSky.
    * @param {{ setLevel: (k: number) => void, setWind: (angle: number, speed: number) => void }} [opts.dust]  A DustStorm.
    * @param {{ phase: string }} [opts.ufo]  The UfoThreat, so the two never overlap.
-   * @param {{ setStorm: (k: number) => void }} [opts.clouds]  Ryan's WindDustMotion
-   *        (feat/dust-storm), when the scene has it: one storm level drives it too.
+   * @param {{ setStorm: (k: number) => void }} [opts.clouds]  The wind dust's
+   *        WindDustMotion: one storm level drives the clouds too.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from SANDSTORM_SOUNDS when left out.
    * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
    * @param {number} [opts.nightHours=6]      Clock hours in it.

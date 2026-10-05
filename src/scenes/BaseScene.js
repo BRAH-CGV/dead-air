@@ -11,6 +11,7 @@ import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
 import { createPerimeterFence, yardRect, fenceKeepOut, FENCE } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
+import { createWindDust, WindDustMotion } from '../gameobjects/WindDust.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
 import { SkyFollow } from '../components/SkyFollow.js';
@@ -47,7 +48,6 @@ import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes } from '../gameplay/DustEyes.js';
-import { DustClouds, DustCloudsMotion } from '../gameobjects/DustClouds.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
@@ -185,6 +185,8 @@ export class BaseScene extends Scene {
   /** Which night it is. The game controller follows it.
    *  @type {NightManager|null} */
   nights = null;
+  /** Dust on the wind, outside. @type {GameObject|null} */
+  windDust = null;
   /** The player's EVA suit — the airlock hatch follows it.
    *  @type {EVASuit|null} */
   suit = null;
@@ -218,6 +220,7 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._addWindDust();
     this._spawnPlayer();
     this._addPower();
     this._addGameplaySystems();
@@ -248,7 +251,6 @@ export class BaseScene extends Scene {
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
     this.dust?.dispose();
-    this.dustClouds?.dispose();
     for (const { go } of this.dustEyes?.slots ?? []) go.dispose();
     this.breakerPanel?.close();
     for (const sound of this._sounds) {
@@ -458,6 +460,21 @@ export class BaseScene extends Scene {
     // does, blown bulbs or not.
     this.terminal.setPowered(this.power.on);
     this._offPower.push(this.power.onChange(grid => this.terminal.setPowered(grid.on)));
+  }
+
+  // ──────────────────────────────────────────
+  // Wind (dust blowing through the yard and past the window)
+  // ──────────────────────────────────────────
+  /** One draw call of low dust clouds around the camera, kept clear of
+   *  every room and corridor in its shader. Not under Outside: it moves
+   *  with the camera, so the occlusion sort — which goes by where a thing
+   *  stands — has nothing to sort it by. */
+  _addWindDust() {
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    this.windDust = createWindDust({ cutouts: parts.map(part => part.bounds()) });
+    this._sceneRoot.addChild(this.windDust);
+    this._ownResourcesOf(this.windDust);
+    this._own(this.windDust.dustTexture);
   }
 
   // ──────────────────────────────────────────
@@ -912,13 +929,11 @@ export class BaseScene extends Scene {
     this.dust.setCutouts(shells);
     this._sceneRoot.addChild(this.dust);
 
-    // Low billowing clouds rolling past outside — faint on a calm night, a
-    // wall of them in a storm. Kept out of the building like the grit.
-    this.dustClouds = new DustClouds({ fog: engine.scene.fog });
-    this.dustClouds.setBuilding(shells);
-    const clouds = this.dustClouds.getComponent(DustCloudsMotion);
-    clouds.daylightSource = this.daylight;
-    this._sceneRoot.addChild(this.dustClouds);
+    // The wind dust's low clouds (_addWindDust) are the storm's too: a few
+    // on a calm night, a wall of them once it blows. Lit by the dawn — the
+    // fog is no guide to the light, since the storm turns it brown.
+    const clouds = this.windDust.getComponent(WindDustMotion);
+    clouds.daylight = this.daylight;
 
     this.sandstorm = new Sandstorm({
       controller: this.gameController,

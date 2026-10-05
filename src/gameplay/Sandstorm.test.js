@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, it, expect, vi } from 'vitest';
 import { Sandstorm, SANDSTORM, scheduleStorm, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
+import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
 
 // ─────────────────────────────────────────────
@@ -328,5 +329,9 @@ describe('Sandstorm — one storm level for everything', () => {
     const [angle] = dust.setWind.mock.lastCall;
     expect(Math.cos(angle)).toBeCloseTo(WIND_DIRECTION[0], 3);
     expect(Math.sin(angle)).toBeCloseTo(WIND_DIRECTION[1], 3);
+  });
+
+  it('has one wind axis, the clouds\' own', () => {
+    expect(WIND_DIRECTION).toBe(WIND_DUST.direction);
   });
 });
