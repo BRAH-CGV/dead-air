@@ -16,6 +16,7 @@ import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
+import { Layers, packGroups } from './PhysicsLayers.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
@@ -133,6 +134,11 @@ export class Engine {
     perfStats:  'KeyI',   // toggle the FPS / draw-call readout
     // TESTING ONLY — remove before release: bring the UFO now (BaseScene).
     summonUfo:  'KeyU',
+    // TESTING ONLY — remove before release: start a sandstorm now (BaseScene).
+    summonStorm: 'KeyK',
+    // TESTING ONLY — remove before release: bring a dust eye now, with a
+    // storm if none is blowing (BaseScene).
+    summonEyes:  'KeyJ',
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -284,6 +290,14 @@ export class Engine {
       if (e.code === this.keyBinds.summonUfo && this.activeScene?.ufoThreat) {
         const coming = this.activeScene.ufoThreat.summon();
         console.log(coming ? '[DEBUG] UFO summoned' : '[DEBUG] UFO not summoned — a visit is under way, or no shift is');
+      }
+      if (e.code === this.keyBinds.summonStorm && this.activeScene?.sandstorm) {
+        const coming = this.activeScene.sandstorm.summon();
+        console.log(coming ? '[DEBUG] Sandstorm summoned' : '[DEBUG] Sandstorm not summoned — one is blowing, or no shift is');
+      }
+      if (e.code === this.keyBinds.summonEyes && this.activeScene?.dustEyes) {
+        const coming = this.activeScene.dustEyes.summon();
+        console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
       }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);
@@ -616,14 +630,21 @@ export class Engine {
         .setTranslation(...position)
         .lockRotations(),
     );
+
+    // Player collision groups: member of PLAYER layer, interacts with DEFAULT
+    // only (not SHELF — the player walks through shelf boards, items rest on them).
+    const playerGroups = packGroups([Layers.PLAYER], [Layers.DEFAULT]);
+
     const standCol  = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     // The crouch capsule shares the body; exactly one of the two is enabled
     // at a time and the controller swaps them (see FirstPersonController).
     const crouchCol = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     crouchCol.setEnabled(false);
@@ -648,6 +669,9 @@ export class Engine {
       crouchEyeOffset: body.crouchEyeOffset,
       crouchSpeed: 2.5,
       crouchMode: 'toggle',   // flip to 'hold' for hold-to-crouch — nothing else changes
+      // Collision groups for the character controller filter — only colliders
+      // in the DEFAULT layer block the player (not SHELF boards).
+      filterGroups: playerGroups,
     });
     ctrl.camera = this.camera;
 

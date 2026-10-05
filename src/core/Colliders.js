@@ -71,6 +71,12 @@ export function attachColliders(world, body, resolved, label = 'collider') {
     desc.setFriction(resolved.friction);
     desc.setRestitution(resolved.restitution);
     if (resolved.sensor) desc.setSensor(true);
+    // Per-part groups override the spec-level default — lets one compound
+    // shape have colliders on different layers.
+    const groups = part.collisionGroups ?? resolved.collisionGroups;
+    if (groups !== undefined) {
+      desc.setCollisionGroups(groups);
+    }
 
     // Mass and density are per-collider in Rapier and sum over the body. Split
     // a requested mass across the parts so a two-box desk doesn't weigh double.

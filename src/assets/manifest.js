@@ -248,7 +248,36 @@ const PLACED = {
     type: 'model',
     url: 'assets/models/shelf.glb',
     scale: 0.9,
-    physics: 'static',
+    physics: {
+      body: 'static',
+      // SHELF layer: player walks through, items rest on the boards.
+      // Member of SHELF only, interacts with DEFAULT (ground, props) only.
+      groups: { membership: ['SHELF'], filter: ['DEFAULT'] },
+      shape: [
+        // 5 shelf levels, evenly spaced from the top of the model down to
+        // 8/9 of the way to the bottom. Each board is 0.35 deep, 0.025 thick,
+        // 1 wide. Top board sits at the top of the bounding box (y ≈ 1.9 m).
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.9,    0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.4778, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 1.0556, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 0.6333, 0] },
+        { type: 'box', size: [0.35, 0.025, 1], position: [0, 0.2111, 0] },
+        // 4 corner supports, full height, sticking out 0.01 m beyond the
+        // shelf edges in x and z.
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [ 0.1675, 0.95,  0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [ 0.1675, 0.95, -0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [-0.1675, 0.95,  0.4925] },
+        { type: 'box', size: [0.035, 1.9, 0.035], position: [-0.1675, 0.95, -0.4925] },
+        // Player-only bounding box: a square box around the whole shelf that
+        // only the player collides with (items pass through). This prevents
+        // the player from walking through the shelf visually while allowing
+        // items to rest on the individual shelf boards above.
+        {
+          type: 'box', size: [0.36, 1.9, 1.03], position: [0, 0.95, 0],
+          groups: { membership: ['DEFAULT'], filter: ['PLAYER'] },
+        },
+      ],
+    },
   },
   'model:fire-extinguisher': {
     type: 'model',
@@ -273,7 +302,11 @@ const PLACED = {
     castShadow: false,
     receiveShadow: false,
   },
-
+  'model:crate': {
+    type: 'model',
+    url: 'assets/models/crate.glb',
+    physics: 'static',
+  },
   // ── Textures ────────────────────────────────
   'tex:floor-basecolor': {
     type: 'texture',
@@ -293,6 +326,7 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/mask-breathing.mp3',
   },
+
   // The UFO's visit (UfoThreat). Preloaded: night 1 brings it within the
   // first minute. The flight clip sets the UFO's timing — it arrives on the
   // clip's loudest moment, measured at runtime.
@@ -340,6 +374,21 @@ const PLACED = {
   'sfx:light-switch': {
     type: 'audio',
     url: 'assets/audio/light-switch.mp3',
+  },
+  // The sandstorm's wind (Sandstorm), looped seamlessly at load. ~31 s.
+  'sfx:sandstorm': {
+    type: 'audio',
+    url: 'assets/audio/sandstorm.mp3',
+  },
+  // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
+  // and the bite when one catches you.
+  'sfx:tiger-attack': {
+    type: 'audio',
+    url: 'assets/audio/tiger-attack.mp3',
+  },
+  'sfx:monster-bite': {
+    type: 'audio',
+    url: 'assets/audio/monster-bite.mp3',
   },
 };
 
@@ -400,11 +449,6 @@ const LIBRARY = {
   'model:break-panel': {
     type: 'model',
     url: 'assets/models/break-panel.glb',
-    physics: 'static',
-  },
-  'model:crate': {
-    type: 'model',
-    url: 'assets/models/crate.glb',
     physics: 'static',
   },
   'model:door-interior': {
