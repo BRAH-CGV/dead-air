@@ -9,8 +9,8 @@
 //                 └────quitToMenu─────┴────────────────┘ (from paused / ended)
 //
 // Each menu state keeps a stack of screens. Its root ('main', 'pause',
-// 'nightFailed', 'runComplete') is where back() stops; Settings, Controls,
-// Credits and the confirm dialog push over it, so Back always returns to
+// 'nightFailed', 'runComplete') is where back() stops; Settings, Credits
+// and the confirm dialog push over it, so Back always returns to
 // whichever screen opened them.
 //
 // Invariant the App builds on: the main menu always sits over a freshly
@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────
 
 /** @typedef {'loading'|'mainMenu'|'playing'|'paused'|'ended'} AppState */
-/** @typedef {'main'|'pause'|'settings'|'controls'|'credits'|'confirm'|'nightFailed'|'runComplete'} Screen */
+/** @typedef {'main'|'pause'|'settings'|'credits'|'confirm'|'nightFailed'|'runComplete'} Screen */
 
 export class AppFlow {
   /** @type {AppState} */
@@ -117,10 +117,6 @@ export class AppFlow {
 
   openSettings() {
     if (this.screen === 'main' || this.screen === 'pause') this._push('settings');
-  }
-
-  openControls() {
-    if (this.screen === 'pause' || this.screen === 'settings') this._push('controls');
   }
 
   openCredits() {

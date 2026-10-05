@@ -1,30 +1,26 @@
 // ─────────────────────────────────────────────
-// controlsList  –  what the Controls screen lists (pure)
+// controlsList  –  the fixed keys the CONTROLS tab lists (pure)
 // ─────────────────────────────────────────────
-// Read from the live keyBinds every time the screen opens, so a rebind
-// shows up at once. The terminal's keys are fixed in ComputerTerminal and
-// SignalReviewPanel, so they're listed as they are.
+// The CONTROLS tab rebinds the gameplay keys; under those rows it lists
+// what can't be rebound: Esc, mouse look, and the computer terminal, whose
+// keys are fixed in ComputerTerminal and SignalReviewPanel. Read from the
+// live keyBinds every draw, so the cursor row follows a rebind. Debug keys
+// are never listed: they go before release.
 // ─────────────────────────────────────────────
 
 import { keyName } from './keyNames.js';
 
 /**
  * @param {Record<string, string>} binds  Engine.keyBinds
- * @param {{ devTools: boolean }} opts
  * @returns {{ title: string, rows: { label: string, keys: string }[] }[]}
  */
-export function controlsList(binds, { devTools }) {
+export function controlsList(binds) {
   const k = (action) => keyName(binds[action]);
-  const groups = [
+  return [
     {
-      title: 'PLAYER',
+      title: 'GENERAL',
       rows: [
-        { label: 'Move', keys: [k('forward'), k('left'), k('back'), k('right')].join(' ') },
         { label: 'Look', keys: 'Mouse' },
-        { label: 'Jump', keys: k('jump') },
-        { label: 'Crouch', keys: k('crouch') },
-        { label: 'Interact', keys: k('interact') },
-        { label: 'Flashlight', keys: k('flashlight') },
         { label: 'Pause', keys: 'Esc' },
       ],
     },
@@ -39,19 +35,4 @@ export function controlsList(binds, { devTools }) {
       ],
     },
   ];
-  if (devTools) {
-    groups.push({
-      title: 'DEVELOPER',
-      rows: [
-        { label: 'Collider overlay', keys: '`' },
-        { label: 'Level editor', keys: 'F2' },
-        { label: 'Fly camera', keys: k('debugFly') },
-        { label: 'Fullbright', keys: k('fullbright') },
-        { label: 'Perf stats', keys: k('perfStats') },
-        { label: 'Next night', keys: k('nextNight') },
-        { label: 'Model debug + reload', keys: 'F4' },
-      ],
-    });
-  }
-  return groups;
 }

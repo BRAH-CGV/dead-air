@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-// applySettings  –  settings → camera, renderer, player, debug tools
+// applySettings  –  settings → camera, renderer, player, FPS readout
 // ─────────────────────────────────────────────
 // Idempotent: App calls it at startup, on every change, and after every
 // scene build — buildPlayer makes a new controller with hard-coded values
@@ -19,9 +19,8 @@ const SHADOW_SIZE = { low: 1024, high: 2048 };
 /**
  * @param {import('../core/Engine.js').Engine} engine
  * @param {object} s  SettingsStore values
- * @param {{ devicePixelRatio?: number }} [env]
  */
-export function applySettings(engine, s, { devicePixelRatio = globalThis.devicePixelRatio ?? 1 } = {}) {
+export function applySettings(engine, s) {
   const ctrl = engine.playerController;
   if (ctrl) {
     ctrl.sensitivity = BASE_SENSITIVITY * s.sensitivity;
@@ -46,18 +45,11 @@ export function applySettings(engine, s, { devicePixelRatio = globalThis.deviceP
   const renderer = engine.renderer;
   if (renderer) {
     renderer.toneMappingExposure = s.brightness;
-    // setPixelRatio reallocates the canvas — only when it actually changes,
-    // not on every slider tick.
-    const ratio = Math.min(devicePixelRatio, 2) * s.renderScale;
-    if (renderer.getPixelRatio?.() !== ratio) renderer.setPixelRatio?.(ratio);
     applyShadows(engine, s.shadows);
   }
 
   if (s.showFps) engine.perfStats?.show?.();
   else engine.perfStats?.hide?.();
-
-  engine.devTools = s.devTools;
-  if (!s.devTools && engine.levelEditor?.enabled) engine.levelEditor.toggle();
 }
 
 /** off / low / high. Flipping shadowMap.enabled needs every material

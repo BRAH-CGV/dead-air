@@ -8,8 +8,8 @@ const binds = () => ({
 
 const settings = (over = {}) => ({
   crouchMode: 'toggle', showFps: false, sensitivity: 1, invertY: false, smoothing: 0.2,
-  keyBinds: binds(), fov: 75, brightness: 1, renderDistance: 1000, renderScale: 1,
-  shadows: 'high', devTools: false, ...over,
+  keyBinds: binds(), fov: 75, brightness: 1, renderDistance: 1000,
+  shadows: 'high', ...over,
 });
 
 /** A scene graph stand-in: traverse() visits meshes with materials. */
@@ -67,18 +67,9 @@ describe('applySettings', () => {
     expect(engine.camera.far).toBe(450);
   });
 
-  it('pixel ratio is min(dpr, 2) × render scale', () => {
+  it('leaves the pixel ratio alone (render scale was removed)', () => {
     const engine = makeEngine();
-    applySettings(engine, settings({ renderScale: 0.5 }), { devicePixelRatio: 3 });
-    expect(engine.renderer.setPixelRatio).toHaveBeenLastCalledWith(1);
-    applySettings(engine, settings({ renderScale: 0.75 }), { devicePixelRatio: 1 });
-    expect(engine.renderer.setPixelRatio).toHaveBeenLastCalledWith(0.75);
-  });
-
-  it('does not reallocate the canvas when the pixel ratio is unchanged', () => {
-    const engine = makeEngine();
-    engine.renderer.getPixelRatio = () => 1;
-    applySettings(engine, settings({ renderScale: 1 }), { devicePixelRatio: 1 });
+    applySettings(engine, settings(), { devicePixelRatio: 1 });
     expect(engine.renderer.setPixelRatio).not.toHaveBeenCalled();
   });
 
@@ -138,12 +129,10 @@ describe('applySettings', () => {
     expect(engine.perfStats.hide).toHaveBeenCalled();
   });
 
-  it('sets the dev-tools flag, and closes the level editor when they go off', () => {
+  it('does not touch the dev-tools flag (it follows the build)', () => {
     const engine = makeEngine();
-    engine.levelEditor.enabled = true;
-    applySettings(engine, settings({ devTools: false }), { devicePixelRatio: 1 });
-    expect(engine.devTools).toBe(false);
-    expect(engine.levelEditor.toggle).toHaveBeenCalledOnce();
+    applySettings(engine, settings(), { devicePixelRatio: 1 });
+    expect(engine.devTools).toBe(true);
   });
 
   it('is idempotent', () => {

@@ -64,6 +64,19 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 
 - **Continue.** `{ night }` goes to `dead-air.progress.v1` whenever the controller enters `playing` (a night starts). It's cleared on `finished` and on New game, and offered only from night 2. It sets the night on the fresh scene the menu sits over, with no rebuild, and only after the lock is granted, so a refused lock can't leave New game starting on night 2.
 
+### After review (Ryan, Haydn) and the merge with main (UFO)
+
+- **Credits name the team by first name and surname, with no Discord handles:** Adrian Draxl, Ryan Fletcher, Bruno Faria, Haydn Cooke, Sibonelo Maduna. The names come from the git author names and GitHub profiles. Roles stay in `TEAM` but are hidden (`SHOW_ROLES = false`) until the team decides on them.
+- **Only assets in the game are credited.** An entry whose `Manifest key` row names keys, none of them in `ASSETS`, is left out (Server V2 + console, for now). Removing an asset from the manifest drops it from the credits.
+- **The tagline was clipped** because its typing width used `1ch` per character and ignored the letter-spacing. Each character now counts `1ch + letter-spacing`.
+- **One place for controls.** The pause menu's Controls screen is gone. Settings → CONTROLS holds the rebind rows, then the keys that can't be rebound (Esc, mouse look, the terminal).
+- **The DEVELOPER tab is removed and dev tools aren't a setting.** The debug keys go before release, so `engine.devTools` follows the build: on in `npm run dev`, off in the bundle.
+- **Render scale is removed.** Ryan saw 50% *lower* performance, it gained nothing, and the engine's own pixel ratio is back in charge.
+- **Returning to the main menu resets where the camera looks.** The camera outlives the scene and nothing ticks under the menu to turn it back, so `rebuild()` zeroes its rotation.
+- **UFO catch.** `fail()` fires before the white-out, so App checks in a microtask. If the white-out started, Night failed waits until "You were taken" has shown for 1.5 s, and it's skipped if the player retried in place with E.
+- **The breaker panel takes the mouse on purpose** (`engine.uiHasMouse`, set in `BaseScene._usePanel`). A lost lock or Escape doesn't pause then, a hidden tab still does, and Resume leaves the mouse with the panel.
+- **`setPaused` also clears main's consumed-press set.**
+
 ## Needs a human
 
 - **Memory counters across restarts (§6.5).** `renderer.info.memory.geometries` / `.textures` can't be reached without WebGL, which the tests don't have. The listener leaks are covered by tests (`src/ui/HUD.dispose.test.js`, plus the BaseScene and OfficeScene dispose tests). Still needed: in the browser, press I, then do Main menu → New game five times and check that the Geometries and Textures numbers come back to the same values.
@@ -72,6 +85,8 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
   - Confirm the source of the floor textures (`public/assets/textures/floor-*.png`) and the signal images (`public/assets/signals/signal-*.png`). Add them to `ATTRIBUTIONS.md` if they're not original.
   - Resolve the three TODO entries in `ATTRIBUTIONS.md` (radar terminal, desk with computer, security camera). They show as "Source being confirmed" in dev builds and are hidden in the production build.
   - Add sources for `switchboard.glb`, `bush.glb` and `break-panel.glb` (all used through the manifest), listed under "Downloaded but unattributed — TODO".
+
+- **Names.** Please confirm the team names on the credits (`TEAM` in `src/ui/menu/text.js`), and whether to show roles (`SHOW_ROLES`).
 
 ## QA results
 

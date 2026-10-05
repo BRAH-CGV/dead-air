@@ -16,8 +16,8 @@ const DEFAULT_BINDS = {
   jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF',
 };
 
-const make = (storage = memoryStorage(), devTools = false) =>
-  new SettingsStore({ storage, defaults: { keyBinds: DEFAULT_BINDS, devTools } });
+const make = (storage = memoryStorage()) =>
+  new SettingsStore({ storage, defaults: { keyBinds: DEFAULT_BINDS } });
 
 describe('SettingsStore', () => {
   it('uses the versioned key', () => {
@@ -28,13 +28,15 @@ describe('SettingsStore', () => {
     const s = make();
     expect(s.values).toMatchObject({
       crouchMode: 'toggle', showFps: false, sensitivity: 1, invertY: false, smoothing: 0.2,
-      fov: 75, brightness: 1, renderDistance: 1000, renderScale: 1, shadows: 'high', devTools: false,
+      fov: 75, brightness: 1, renderDistance: 1000, shadows: 'high',
     });
+    expect(s.values).not.toHaveProperty('renderScale');
+    expect(s.values).not.toHaveProperty('devTools');
     expect(s.values.keyBinds).toEqual(DEFAULT_BINDS);
   });
 
-  it('takes the dev-tools default it is given', () => {
-    expect(make(memoryStorage(), true).values.devTools).toBe(true);
+  it('has no developer tab: dev tools follow the build, not a setting', () => {
+    expect(TABS.map(t => t.id)).toEqual(['game', 'controls', 'video']);
   });
 
   it('falls back to defaults when storage throws', () => {
@@ -68,11 +70,10 @@ describe('SettingsStore', () => {
 
   it('rejects non-numbers, bad enum values and non-booleans', () => {
     const s = make(memoryStorage({
-      [SETTINGS_KEY]: JSON.stringify({ fov: 'wide', shadows: 'ultra', renderScale: 0.3, invertY: 'yes' }),
+      [SETTINGS_KEY]: JSON.stringify({ fov: 'wide', shadows: 'ultra', invertY: 'yes' }),
     }));
     expect(s.values.fov).toBe(75);
     expect(s.values.shadows).toBe('high');
-    expect(s.values.renderScale).toBe(1);
     expect(s.values.invertY).toBe(false);
   });
 

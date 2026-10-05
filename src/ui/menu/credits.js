@@ -10,7 +10,10 @@
 //                           "— TODO …" marks a source still being confirmed
 //   first paragraph       → the attribution sentence: title, source, author,
 //                           licence and licence URL — what CC BY asks for
-//   | **File** | … |      → internal bookkeeping, not shown
+//   | **File** | … |      → internal bookkeeping, not shown — except the
+//                           Manifest key row: an entry whose key isn't in
+//                           the manifest isn't in the game, so it's left out
+//                           (removing an asset drops it from the credits)
 //
 // Meta sections (how to add an entry, unattributed downloads, candidate
 // links) are skipped. TODO entries are never silently dropped: they show as
@@ -67,12 +70,13 @@ export function parseAttributions(markdown) {
     if (SKIP_SECTIONS.some(skip => name.startsWith(skip))) continue;
 
     let entry = null;
+    let keys = null;        // the entry's Manifest key row, if it has one
     let paragraph = null;   // null: not started; []: collecting; done once a blank line ends it
     let done = false;
     const finish = () => {
       if (!entry) return;
       const text = (paragraph ?? []).join(' ').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
-      entries.push({ ...entry, text, links: text.match(URL_RE) ?? [], parts: toParts(text) });
+      entries.push({ ...entry, manifestKeys: keys, text, links: text.match(URL_RE) ?? [], parts: toParts(text) });
     };
 
     for (const line of lines) {
@@ -92,6 +96,12 @@ export function parseAttributions(markdown) {
         };
         paragraph = null;
         done = false;
+        keys = null;
+        continue;
+      }
+      const keyRow = /^\|\s*\*\*Manifest key\*\*\s*\|(.*)\|\s*$/.exec(line.trim());
+      if (entry && keyRow) {
+        keys = [...keyRow[1].matchAll(/`([^`]+)`/g)].map(m => m[1]);
         continue;
       }
       if (!entry || done) continue;
@@ -128,18 +138,27 @@ export function creditWarnings(markdown) {
 /**
  * The credits screen's blocks, in order: title, team, third-party assets by
  * section, built with, inspired by, the course line.
- * @param {{ markdown: string, team: {handle: string, name: string, role: string}[], dev: boolean }} opts
+ * @param {object} opts
+ * @param {string} opts.markdown  ATTRIBUTIONS.md
+ * @param {{ name: string, role?: string }[]} opts.team
+ * @param {boolean} opts.dev  Dev build: unconfirmed entries show as such
+ * @param {boolean} [opts.showRoles]
+ * @param {Set<string>} [opts.assetKeys]  Manifest keys in the game. An entry
+ *        naming keys, none of them here, isn't credited (not in the game).
  * @returns {{ heading: string|null, items: object[] }[]}
  */
-export function buildCreditBlocks({ markdown, team, dev }) {
+export function buildCreditBlocks({ markdown, team, dev, showRoles = false, assetKeys = null }) {
   const blocks = [
     { heading: COPY.title, items: [] },
-    { heading: 'TEAM', items: team.map(m => ({ parts: [{ text: `${m.handle} (${m.name}): ${m.role}` }] })) },
+    { heading: 'TEAM', items: team.map(m => ({ parts: [{ text: showRoles && m.role ? `${m.name}: ${m.role}` : m.name }] })) },
   ];
+  const inGame = (entry) => !assetKeys || entry.manifestKeys === null
+    || entry.manifestKeys.some(k => assetKeys.has(k));
 
   const bySection = new Map();
   for (const entry of parseAttributions(markdown)) {
     if (entry.todo && !dev) continue;
+    if (!entry.todo && !inGame(entry)) continue;
     const item = entry.todo
       ? { title: entry.title, parts: [{ text: 'Source being confirmed' }], todo: true }
       : { title: entry.title, parts: entry.parts, note: entry.note };

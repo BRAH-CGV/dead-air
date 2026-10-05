@@ -74,7 +74,7 @@ describe('MenuView', () => {
       expect(view.panel.textContent).toContain('PAUSED');
       expect(view.panel.textContent).toContain('NIGHT 2 · 03:14 AM · SIGNALS 2/4');
       expect(items(view).map(b => b.dataset.action))
-        .toEqual(['resume', 'settings', 'controls', 'restart', 'quit']);
+        .toEqual(['resume', 'settings', 'restart', 'quit']);
     });
 
     it('shows a hint line that setHint can change', () => {
@@ -99,12 +99,9 @@ describe('MenuView', () => {
     expect(items(view).map(b => b.dataset.action)).toEqual(['retry', 'quit']);
   });
 
-  it('the controls screen lists its groups read-only, with a Back', () => {
-    view.show('controls', { groups: [{ title: 'PLAYER', rows: [{ label: 'Jump', keys: 'Space' }] }] });
-    expect(view.panel.textContent).toContain('PLAYER');
-    expect(view.panel.textContent).toContain('Jump');
-    expect(view.panel.textContent).toContain('Space');
-    expect(items(view).map(b => b.dataset.action)).toEqual(['back']);
+  it('a settings heading row draws a subheading', () => {
+    view.show('settings', { tabs: [], tab: 'controls', rows: [{ type: 'heading', label: 'COMPUTER TERMINAL' }] });
+    expect(view.panel.querySelector('.menu-settings h3').textContent).toBe('COMPUTER TERMINAL');
   });
 
   describe('keyboard', () => {

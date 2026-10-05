@@ -31,7 +31,8 @@ import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
-import { TAGLINE, TEAM, COPY } from '../ui/menu/text.js';
+import { TAGLINE, TEAM, SHOW_ROLES, COPY } from '../ui/menu/text.js';
+import { ASSETS } from '../assets/manifest.js';
 import { buildCreditBlocks, creditWarnings } from '../ui/menu/credits.js';
 import attributionsMd from '../../ATTRIBUTIONS.md?raw';
 import { version as PACKAGE_VERSION } from '../../package.json';
@@ -57,7 +58,7 @@ export class App {
    * @param {ScreenFade} [deps.fade]
    * @param {string} [deps.version]
    * @param {Storage|null} [deps.storage]  Where settings persist
-   * @param {boolean} [deps.devToolsDefault]  On in `npm run dev`, off in the build
+   * @param {boolean} [deps.devToolsDefault]  Debug keys: on in `npm run dev`, off in the build
    * @param {SettingsStore} [deps.settings]
    * @param {boolean} [deps.dev]  Dev build: unconfirmed credits show, and warn
    * @param {Document} [deps.doc]
@@ -87,15 +88,18 @@ export class App {
     // The engine's binds at boot are the defaults the CONTROLS tab resets to.
     this.settings = settings ?? new SettingsStore({
       storage,
-      defaults: {
-        keyBinds: Object.fromEntries(REBINDABLE.map(a => [a, engine.keyBinds[a]])),
-        devTools: devToolsDefault,
-      },
+      defaults: { keyBinds: Object.fromEntries(REBINDABLE.map(a => [a, engine.keyBinds[a]])) },
     });
+    // Not a setting: the debug keys go before release, so they simply follow
+    // the build — on in `npm run dev`, off in the production bundle.
+    this.devTools = devToolsDefault;
     this.dev = dev;
     // Parsed once: ATTRIBUTIONS.md is inlined at build time (?raw), so a new
     // entry there reaches the credits on the next build.
-    this._creditBlocks = buildCreditBlocks({ markdown: attributionsMd, team: TEAM, dev });
+    this._creditBlocks = buildCreditBlocks({
+      markdown: attributionsMd, team: TEAM, dev, showRoles: SHOW_ROLES,
+      assetKeys: new Set(Object.keys(ASSETS)),
+    });
     this._settingsTab = 'game';
     this._settingsMessage = '';
     /** The action waiting for a key on the CONTROLS tab, or null. */
@@ -118,6 +122,7 @@ export class App {
   async start() {
     const { engine, flow, win, doc } = this;
     engine.setPaused(true);
+    engine.devTools = this.devTools;
     if (this.dev) {
       console.warn(`[credits] Not credited yet, needs a source in ATTRIBUTIONS.md:\n  ${creditWarnings(attributionsMd).join('\n  ')}`);
     }
@@ -178,6 +183,9 @@ export class App {
     this._offController?.();
     this._offController = null;
     engine.loadScene(engine.activeScene.constructor);
+    // The camera outlives the scene, and nothing ticks under the menu to
+    // turn it back: face the way a fresh player does.
+    engine.camera?.rotation?.set(0, 0, 0);
     this.flow.markClean();
   }
 
@@ -373,7 +381,6 @@ export class App {
       case 'continue': return this._continue();
       case 'resume':   return this._resume();
       case 'settings': return flow.openSettings();
-      case 'controls': return flow.openControls();
       case 'credits':  return flow.openCredits();
       case 'back':
       case 'cancel':
@@ -468,8 +475,6 @@ export class App {
         return this.flow.confirmAction === 'restart'
           ? { message: COPY.restartConfirm(this._currentNight()), confirmLabel: 'Restart night' }
           : { message: COPY.quitConfirm, confirmLabel: 'Main menu' };
-      case 'controls':
-        return { groups: controlsList(this.engine.keyBinds, { devTools: this.engine.devTools }) };
       case 'nightFailed':
         return { ...this._failed };
       case 'settings':
@@ -484,7 +489,7 @@ export class App {
   }
 
   /** Rows for the current settings tab, from SCHEMA plus the extras each
-   *  tab carries: the rebind rows on CONTROLS, the debug keys on DEVELOPER. */
+   *  tab carries: the rebind rows and the fixed keys on CONTROLS. */
   _settingsModel() {
     const values = this.settings.values;
     const tab = this._settingsTab;
@@ -510,11 +515,11 @@ export class App {
           flash: this._flash.has(action),
         });
       }
-      rows.push({ type: 'button', action: 'controls', label: 'View all controls' });
-    }
-    if (tab === 'developer') {
-      const dev = controlsList(this.engine.keyBinds, { devTools: true }).find(g => g.title === 'DEVELOPER');
-      for (const r of dev.rows) rows.push({ type: 'info', label: r.label, text: r.keys });
+      // What can't be rebound, under the rows that can: one place for controls.
+      for (const group of controlsList(values.keyBinds)) {
+        rows.push({ type: 'heading', label: group.title });
+        for (const r of group.rows) rows.push({ type: 'info', label: r.label, text: r.keys });
+      }
     }
     this._flash = new Set();
     return { tabs: TABS, tab, rows, message: this._settingsMessage };

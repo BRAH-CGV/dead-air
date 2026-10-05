@@ -13,14 +13,19 @@ export const TAGLINE = [
   '> SURVIVE THE NIGHT.',
 ];
 
-/** Shown on the credits as `handle (Name): role`. Agreed by the team. */
+/** The team on the credits, by name: first name and surname. Roles are
+ *  kept here but not shown (SHOW_ROLES) until the team settles how fine-
+ *  grained they should be, or whether to list them at all. */
 export const TEAM = [
-  { handle: 'drax9207',               name: 'Adrian Draxl',             role: 'Scene design, level editor, architecture' },
-  { handle: 'mortalnumbnut',          name: 'Ryan Fletcher',            role: 'Skybox, terrain, environment' },
-  { handle: 'thotslayer666',          name: 'Bruno',                    role: 'Model sourcing, asset consistency' },
-  { handle: 'haydnrad',               name: 'Hayden RadCooke',          role: 'Stamina and sleep systems, debug camera' },
-  { handle: 'siboneloblessingmaduna', name: 'Sibonelo Blessing Maduna', role: 'Menus, pause, settings' },
+  { name: 'Adrian Draxl',     role: 'Scene design, level editor, architecture' },
+  { name: 'Ryan Fletcher',    role: 'Skybox, terrain, environment' },
+  { name: 'Bruno Faria',      role: 'Model sourcing, asset consistency' },
+  { name: 'Haydn Cooke',      role: 'Stamina and sleep systems, debug camera' },
+  { name: 'Sibonelo Maduna',  role: 'Menus, pause, settings' },
 ];
+
+/** Show each member's role after their name on the credits. */
+export const SHOW_ROLES = false;
 
 /** Libraries the game is built on, with their licences. */
 export const BUILT_WITH = [

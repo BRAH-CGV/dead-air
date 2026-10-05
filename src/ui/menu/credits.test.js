@@ -138,7 +138,7 @@ describe('creditWarnings', () => {
 });
 
 describe('buildCreditBlocks', () => {
-  const team = [{ handle: 'drax9207', name: 'Adrian Draxl', role: 'Architecture' }];
+  const team = [{ name: 'Adrian Draxl', role: 'Architecture' }];
   const headings = (blocks) => blocks.map(b => b.heading);
 
   it('orders the sections: title, team, assets, built with, inspired by, course', () => {
@@ -149,9 +149,52 @@ describe('buildCreditBlocks', () => {
     ]);
   });
 
-  it('shows the team as handle (Name): role', () => {
+  it('shows the team by name, without roles unless asked', () => {
     const blocks = buildCreditBlocks({ markdown: FIXTURE, team, dev: false });
-    expect(blocks[1].items[0].parts[0].text).toBe('drax9207 (Adrian Draxl): Architecture');
+    expect(blocks[1].items[0].parts[0].text).toBe('Adrian Draxl');
+    const withRoles = buildCreditBlocks({ markdown: FIXTURE, team, dev: false, showRoles: true });
+    expect(withRoles[1].items[0].parts[0].text).toBe('Adrian Draxl: Architecture');
+  });
+
+  it('leaves out entries whose manifest key is not in the game', () => {
+    const md = `## Models
+
+### Used prop
+
+"A" by B.
+
+| | |
+|---|---|
+| **Manifest key** | \`model:used\` |
+
+### Unused download
+
+"C" by D.
+
+| | |
+|---|---|
+| **Manifest key** | — (downloaded, not yet wired into the manifest) |
+
+### Dropped from the manifest
+
+"E" by F.
+
+| | |
+|---|---|
+| **Manifest key** | \`model:gone\` |
+
+### No table at all
+
+"G" by H.
+`;
+    const blocks = buildCreditBlocks({ markdown: md, team, dev: false, assetKeys: new Set(['model:used']) });
+    const models = blocks.find(b => b.heading === 'THIRD-PARTY ASSETS: MODELS');
+    expect(models.items.map(i => i.title)).toEqual(['Used prop', 'No table at all']);
+  });
+
+  it('reads the manifest keys of each entry', () => {
+    const md = '## Models\n\n### X\n\n"X" by Y.\n\n| | |\n|---|---|\n| **Manifest key** | `model:a`, `model:b` |\n';
+    expect(parseAttributions(md)[0].manifestKeys).toEqual(['model:a', 'model:b']);
   });
 
   it('carries each entry with its parts and note', () => {

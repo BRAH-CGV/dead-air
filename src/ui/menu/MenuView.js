@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // MenuView  –  draws the current menu screen into #menu
 // ─────────────────────────────────────────────
-// Every screen (main, pause, settings, controls, credits, confirm, night
+// Every screen (main, pause, settings, credits, confirm, night
 // failed, run complete) is drawn from a plain model into #menu-panel. The
 // markup shell and all the styling live in index.html, like the other
 // overlays. This class decides nothing: clicks and edits come out of
@@ -96,7 +96,7 @@ export class MenuView {
     this._hint = null;
     const draw = {
       main: this._drawMain, pause: this._drawPause, confirm: this._drawConfirm,
-      controls: this._drawControls, settings: this._drawSettings, credits: this._drawCredits,
+      settings: this._drawSettings, credits: this._drawCredits,
       nightFailed: this._drawNightFailed, runComplete: this._drawRunComplete,
     }[screen];
     this.panel.replaceChildren(...(draw ? draw.call(this, model) : []));
@@ -187,7 +187,6 @@ export class MenuView {
       h('nav', { class: 'menu-list' },
         option('resume', 'Resume'),
         option('settings', 'Settings'),
-        option('controls', 'Controls'),
         option('restart', 'Restart night', { danger: true }),
         option('quit', 'Main menu', { danger: true }),
       ),
@@ -207,27 +206,13 @@ export class MenuView {
     ];
   }
 
-  /** @param {{ groups: { title: string, rows: { label: string, keys: string }[] }[] }} m */
-  _drawControls({ groups = [] }) {
-    return [
-      h('h2', { class: 'menu-heading' }, 'CONTROLS'),
-      h('div', { class: 'menu-scroll' }, groups.map(g => h('section', { class: 'menu-group' },
-        h('h3', { class: 'menu-subheading' }, g.title),
-        g.rows.map(r => h('div', { class: 'menu-row' },
-          h('span', { class: 'menu-row-label' }, r.label),
-          h('span', { class: 'menu-row-dots', 'aria-hidden': 'true' }),
-          h('span', { class: 'menu-key' }, r.keys))),
-      ))),
-      h('nav', { class: 'menu-list' }, option('back', 'Back')),
-    ];
-  }
-
   /**
    * @param {{ tabs: {id: string, label: string}[], tab: string, rows: object[], message?: string }} m
    *   rows: { type: 'slider', key, label, min, max, step, value, format? }
    *       | { type: 'choice', key, label, value, options: {value, label}[] }
    *       | { type: 'bind', action, label, keyText, capturing?, flash? }
    *       | { type: 'info', label, text }
+   *       | { type: 'heading', label }
    *       | { type: 'button', action, label, data? }
    */
   _drawSettings({ tabs = [], tab, rows = [], message = '' }) {
@@ -274,6 +259,9 @@ export class MenuView {
         type: 'button', class: `menu-bind${r.capturing ? ' is-capturing' : ''}`,
         dataset: { action: 'rebind', bindAction: r.action, focusKey: `b:${r.action}` },
       }, r.capturing ? 'PRESS A KEY… (Esc to cancel)' : r.keyText));
+    }
+    if (r.type === 'heading') {
+      return h('h3', { class: 'menu-subheading' }, r.label);
     }
     if (r.type === 'button') {
       return h('div', { class: 'menu-row' },

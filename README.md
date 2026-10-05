@@ -137,7 +137,7 @@ Press **`` ` ``** in game to see every collider drawn over the scene. Use it —
 | **C** | Crouch |
 | **Mouse** | Look around (the mouse is captured when you pick New game or Resume) |
 | **E** / **F** | Interact / flashlight (rebindable in Settings → CONTROLS) |
-| **`** | Toggle the collider debug overlay (this and the debug keys below need Settings → DEVELOPER → Developer tools, on by default in `npm run dev`) |
+| **`** | Toggle the collider debug overlay (this and the debug keys below work in `npm run dev` only, not in the production build) |
 | **V** | Toggle the free-fly debug camera (noclip; WASD + mouse, Space/C up/down, Shift boost) |
 | **B** | Toggle fullbright (all lights off, unlit materials) |
 | **Esc** | Pause menu (resume, settings, controls, restart night, main menu); Back inside menus |

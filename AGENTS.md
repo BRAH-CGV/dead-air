@@ -62,7 +62,7 @@ src/
 │   ├── SettingsStore.js # Settings schema, validation, localStorage
 │   ├── applySettings.js # Settings → camera, renderer, player, shadows, debug gate
 │   ├── keyNames.js      # keyName(code), reserved keys, rebind() with swap
-│   └── controlsList.js  # What the Controls screen lists
+│   └── controlsList.js  # The fixed keys listed on the CONTROLS tab
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
@@ -257,11 +257,12 @@ Centralized on `Engine.input`:
 
 `main.js` boots the Engine **paused**, awaits `init()`, then hands it to `App` (`src/app/App.js`). `App` waits for `engine.revealed` (the loading screen gone) and shows the main menu.
 
-**States** (`AppFlow`): `loading → mainMenu → playing ⇄ paused`, and `playing → ended` (Night failed / Run complete). Each menu state has a screen stack, so Settings, Controls, Credits and the confirm dialog always go Back to whichever screen opened them.
+**States** (`AppFlow`): `loading → mainMenu → playing ⇄ paused`, and `playing → ended` (Night failed / Run complete). Each menu state has a screen stack, so Settings, Credits and the confirm dialog always go Back to whichever screen opened them.
 
 **Pausing** (`engine.setPaused`). The loop still renders, so settings preview live behind the menu, but nothing steps or updates. The clock, the dish, the airlock and every enemy freeze without knowing why. Input is cleared on pause and on resume, so no key sticks. The rules (`App.js` header):
 
-- **What pauses:** a lost pointer lock, Escape, a hidden tab or window blur. Only while playing, and never while the level editor is open (it drops the lock on purpose).
+- **What pauses:** a lost pointer lock, Escape, a hidden tab or window blur. Only while playing, and never while the level editor is open (it drops the lock on purpose). While a DOM panel has the mouse (`engine.uiHasMouse`, set by `BaseScene._usePanel` for the breaker panel), a lost lock or Escape isn't a pause either, and Resume leaves the mouse with the panel.
+- **A UFO catch** fails the shift and then plays the white-out. Night failed waits until "You were taken" has been up a moment, and is skipped if the player retries in place with E.
 - **What resumes:** only a click on Resume, because `requestPointerLock` needs a user gesture and Esc isn't one. The game never goes back to playing before the lock is confirmed. A refused request (Chrome refuses for about a second after Esc) shows "Click RESUME again".
 - **Esc inside a menu means Back.** On a root screen (main, pause, Night failed, Run complete) it does nothing.
 - **Programmatic unlocks** (the end screens): the flow moves first, then the lock is released, so the unlock isn't read as a pause.
@@ -278,8 +279,7 @@ Centralized on `Engine.input`:
 |---|---|
 | GAME | `crouchMode`, `showFps` |
 | CONTROLS | `sensitivity` (× the 0.002 base), `invertY`, `smoothing`, `keyBinds` |
-| VIDEO | `fov`, `brightness` (tone-mapping exposure), `renderDistance` (camera far, never below 450 m — the sky dome is 400 m), `renderScale`, `shadows` |
-| DEVELOPER | `devTools` |
+| VIDEO | `fov`, `brightness` (tone-mapping exposure), `renderDistance` (camera far, never below 450 m — the sky dome is 400 m), `shadows` |
 
 `applySettings` is idempotent: it runs at startup, on every change and after every scene build. Rebinding writes into the live `engine.keyBinds` object, refuses reserved keys (Esc, `` ` ``, F-keys, Q, Enter, and the debug keys while dev tools are on) and swaps duplicates. Prompts written as `[E] …` show the bound key through `promptKeys.withKeys`.
 
@@ -290,20 +290,23 @@ Centralized on `Engine.input`:
 - A volume slider is one `SCHEMA` entry, e.g. `volume: { tab: 'game', type: 'number', label: 'Volume', min: 0, max: 1, step: 0.05, default: 0.8, format }`, plus `engine.audioListener.setMasterVolume(s.volume)` in `applySettings`.
 - To silence sound while paused, suspend and resume the `AudioContext` where App calls `engine.setPaused(true/false)`, or watch `app.flow.onChange`.
 
-**Dev tools gate.** `engine.devTools` gates every debug key (`` ` `` F2 V B I N F4), and they are also off while paused. The setting defaults on in `npm run dev` and off in the production build, so graders never open the level editor by accident. Turning it off closes the editor. Show FPS works either way.
+**Dev tools gate.** `engine.devTools` gates every debug key (`` ` `` F2 V B I N F4 U), and they are also off while paused. It isn't a setting, because the dev tools go before release: App sets it from the build, on in `npm run dev` and off in the production bundle, so graders never open the level editor by accident. Show FPS (Settings → GAME) works either way.
+
+**Controls** live on one screen, Settings → CONTROLS: the rebind rows, then the keys that can't be rebound (Esc, mouse look, the computer terminal, from `controlsList`). Debug keys are never listed.
 
 **Credits** are parsed from `ATTRIBUTIONS.md` (imported `?raw`, so they're inlined at build time):
 
 - Each `### Heading` becomes an entry, and the first paragraph after it is the attribution shown.
 - `⚠` licence notes are kept.
 - `TODO` entries show as "Source being confirmed" in dev builds only, and dev builds also warn about them in the console.
-- The team list lives in `src/ui/menu/text.js` (`TEAM`).
+- The team list lives in `src/ui/menu/text.js` (`TEAM`), shown by name. Roles are kept there and hidden until `SHOW_ROLES` is turned on.
+- Only assets in the game are credited: an entry whose `Manifest key` row names keys, none of them in the manifest, is left out. Removing an asset from the manifest drops it from the credits.
 
 **Continue** remembers the night reached under `dead-air.progress.v1`. It's cleared on New game and at the end of the run.
 
 ## Debug tooling
 
-All edge-triggered and free while off. Every key here is gated by **dev tools** (pause → Settings → DEVELOPER; on by default in `npm run dev`, off in the production build) and does nothing while a menu is open:
+All edge-triggered and free while off. Every key here is gated by **dev tools** (on in `npm run dev`, off in the production build) and does nothing while a menu is open:
 
 | Key | Tool | What it does |
 |---|---|---|
@@ -311,7 +314,7 @@ All edge-triggered and free while off. Every key here is gated by **dev tools** 
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
 | `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
-| `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures. Also shown by Settings → GAME → Show FPS, with or without dev tools |
+| `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures. Also shown by Settings → GAME → Show FPS, in any build |
 | `F2` | `LevelEditor` | Visual object placement. Opening it drops the pointer lock without pausing the game |
 | `F4` | Engine | Model debug logging, and reload the scene |
 | `U` | `UfoThreat.summon` (BaseScene) | **Testing only — remove before release.** Start a UFO visit now instead of at the night's random time; ignored mid-visit or outside a shift |

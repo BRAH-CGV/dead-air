@@ -326,9 +326,11 @@
         background: var(--menu-text);
         animation: menu-blink 1.1s steps(1) infinite;
       }
-      .menu-tagline { color: var(--menu-ok); font-size: 13px; letter-spacing: 0.14em; min-height: 4.5em; }
+      .menu-tagline { --ls: 0.14em; color: var(--menu-ok); font-size: 13px; letter-spacing: var(--ls); min-height: 4.5em; }
       .menu-type {
-        width: calc(var(--chars) * 1ch);
+        /* Each character is 1ch plus the letter-spacing; 1ch alone clipped
+           the end of every line. */
+        width: calc(var(--chars) * (1ch + var(--ls)));
         overflow: hidden;
         white-space: nowrap;
         animation: menu-type 0.8s steps(var(--chars)) calc(0.3s + var(--i) * 0.9s) both;

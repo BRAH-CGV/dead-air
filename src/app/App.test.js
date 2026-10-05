@@ -268,12 +268,8 @@ describe('App', () => {
   describe('menus over the game', () => {
     beforeEach(async () => { await startGame(); lock.lose(); });
 
-    it('controls opens from pause and Escape goes back', async () => {
-      await click('controls');
-      expect(view.screen).toBe('controls');
-      expect(document.getElementById('menu-panel').textContent).toContain('Interact');
-      key('Escape');
-      expect(view.screen).toBe('pause');
+    it('has one place for controls: no separate Controls screen on the pause menu', () => {
+      expect(document.querySelector('[data-action="controls"]')).toBeNull();
     });
 
     it('swallows keydowns behind an open menu, but never keyups', () => {
@@ -488,22 +484,38 @@ describe('App', () => {
       expect(engine.playerController.invertY).toBe(true);
     });
 
-    it('Show FPS works with dev tools off', async () => {
+    it('Show FPS works', async () => {
       await click('settings');
-      tab('developer');
-      choose('devTools', false);
       tab('game');
       choose('showFps', true);
       expect(engine.perfStats.show).toHaveBeenCalled();
-      expect(engine.devTools).toBe(false);
     });
 
-    it('the dev tools toggle drives engine.devTools', async () => {
-      expect(engine.devTools).toBe(true);
+    it('has no DEVELOPER tab and no render scale (dev tools go before release)', async () => {
       await click('settings');
-      tab('developer');
-      choose('devTools', false);
-      expect(engine.devTools).toBe(false);
+      expect(document.querySelector('[data-action="tab"][data-tab="developer"]')).toBeNull();
+      tab('video');
+      expect(document.querySelector('[data-setting="renderScale"]')).toBeNull();
+    });
+
+    it('debug keys follow the build: on in dev, off in production', async () => {
+      expect(engine.devTools).toBe(true);
+      const e2 = makeEngine();
+      const a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+      await a2.start();
+      expect(e2.devTools).toBe(false);
+      a2.dispose();
+    });
+
+    it('the CONTROLS tab also lists the fixed terminal keys and Esc, and no debug keys', async () => {
+      await click('settings');
+      tab('controls');
+      const text = panel().textContent;
+      expect(text).toContain('Scan');
+      expect(text).toContain('Exit terminal');
+      expect(text).toContain('Pause');
+      expect(text).not.toContain('Fly camera');
+      expect(text).not.toContain('Level editor');
     });
 
     it('Reset tab puts only that tab back', async () => {
@@ -568,11 +580,10 @@ describe('App', () => {
         expect(withKeys('[E] Sleep')).toBe('[G] Sleep');
       });
 
-      it('the Controls screen shows the new bind', async () => {
-        bindRow('jump').click();
-        key('KeyJ');
-        await click('controls');
-        expect(panel().textContent).toMatch(/Jump\s*J/);
+      it('the terminal cursor rows follow the new movement binds', () => {
+        bindRow('forward').click();
+        key('KeyO');
+        expect(panel().textContent).toMatch(/Move cursor\s*O A S D/);
       });
     });
   });
@@ -583,8 +594,8 @@ describe('App', () => {
     it('open from the main menu with the team, the assets and a Back', async () => {
       await click('credits');
       expect(view.screen).toBe('credits');
-      expect(panel().textContent).toContain('drax9207 (Adrian Draxl)');
-      expect(panel().textContent).toContain('siboneloblessingmaduna (Sibonelo Blessing Maduna)');
+      expect(panel().textContent).toContain('Adrian Draxl');
+      expect(panel().textContent).toContain('Sibonelo Maduna');
       expect(panel().textContent).toContain('Satellite dish tower');
       expect(panel().textContent).toContain('three.js (MIT)');
       expect(panel().querySelector('a[target="_blank"]')).not.toBeNull();
@@ -723,6 +734,35 @@ describe('App', () => {
         await Promise.resolve();
         expect(view.screen).toBe('nightFailed');
       });
+    });
+  });
+
+  describe('review fixes', () => {
+    it('a rebuild resets where the camera looks (the menu faces the window again)', async () => {
+      engine.camera.rotation = { x: 0.4, y: 1.2, z: 0, set: vi.fn(function (x, y, z) { this.x = x; this.y = y; this.z = z; }) };
+      await startGame();
+      lock.lose();
+      await click('quit');
+      await click('confirm');
+      expect(engine.camera.rotation).toMatchObject({ x: 0, y: 0, z: 0 });
+    });
+
+    it('credits name the team by name only, with no Discord handles', async () => {
+      await click('credits');
+      const text = document.getElementById('menu-panel').textContent;
+      expect(text).toContain('Adrian Draxl');
+      expect(text).toContain('Bruno Faria');
+      expect(text).toContain('Haydn Cooke');
+      for (const handle of ['drax9207', 'mortalnumbnut', 'thotslayer666', 'haydnrad', 'siboneloblessingmaduna']) {
+        expect(text).not.toContain(handle);
+      }
+    });
+
+    it('credits leave out downloads that are not in the game (not in the manifest)', async () => {
+      await click('credits');
+      const text = document.getElementById('menu-panel').textContent;
+      expect(text).toContain('Satellite dish tower');
+      expect(text).not.toContain('Server V2 + console');
     });
   });
 });

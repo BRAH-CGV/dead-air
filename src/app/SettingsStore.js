@@ -20,13 +20,13 @@ export const TABS = [
   { id: 'game',      label: 'GAME' },
   { id: 'controls',  label: 'CONTROLS' },
   { id: 'video',     label: 'VIDEO' },
-  { id: 'developer', label: 'DEVELOPER' },
 ];
 
 const times = (v) => `${v.toFixed(2)}×`;
 
 /** Every setting, in display order within its tab. `default` may be a
- *  function of the constructor's `defaults` (key binds, dev tools). */
+ *  function of the constructor's `defaults` (the key binds). Dev tools are
+ *  not a setting: they follow the build (App). */
 export const SCHEMA = {
   crouchMode:     { tab: 'game', type: 'enum', label: 'Crouch', default: 'toggle',
                     options: [{ value: 'toggle', label: 'TOGGLE' }, { value: 'hold', label: 'HOLD' }] },
@@ -42,19 +42,15 @@ export const SCHEMA = {
   // Never below 450: the sky dome is a 400 m sphere riding the camera
   // (MarsSky DEFAULT_RADIUS) — a far plane inside it clips the sky to black.
   renderDistance: { tab: 'video', type: 'number', label: 'Render distance', min: 450, max: 1000, step: 10, default: 1000, format: (v) => `${v} m` },
-  renderScale:    { tab: 'video', type: 'enum', label: 'Render scale', default: 1,
-                    options: [{ value: 0.5, label: '50%' }, { value: 0.75, label: '75%' }, { value: 1, label: '100%' }] },
   shadows:        { tab: 'video', type: 'enum', label: 'Shadows', default: 'high',
                     options: [{ value: 'off', label: 'OFF' }, { value: 'low', label: 'LOW' }, { value: 'high', label: 'HIGH' }] },
-
-  devTools:       { tab: 'developer', type: 'bool', label: 'Developer tools', default: (d) => !!d.devTools },
 };
 
 export class SettingsStore {
   /**
    * @param {object} opts
    * @param {Storage|null} [opts.storage]  localStorage, or a fake
-   * @param {{ keyBinds: Record<string, string>, devTools?: boolean }} opts.defaults
+   * @param {{ keyBinds: Record<string, string> }} opts.defaults
    */
   constructor({ storage = null, defaults }) {
     this.storage = storage;

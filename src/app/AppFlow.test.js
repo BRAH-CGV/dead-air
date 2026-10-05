@@ -115,16 +115,8 @@ describe('AppFlow', () => {
       expect(flow.screen).toBe('main');
     });
 
-    it('controls from pause, and from settings, return to the opener', () => {
-      play();
-      flow.pause();
-      flow.openControls();
-      flow.back();
-      expect(flow.screen).toBe('pause');
-      flow.openSettings();
-      flow.openControls();
-      flow.back();
-      expect(flow.screen).toBe('settings');
+    it('has no separate controls screen (it lives on the settings CONTROLS tab)', () => {
+      expect(flow.openControls).toBeUndefined();
     });
 
     it('credits open from the main menu only', () => {
