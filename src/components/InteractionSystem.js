@@ -4,6 +4,7 @@ import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { Pickupable } from './Pickupable.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
+import { packGroups, Layers } from '../core/PhysicsLayers.js';
 
 // ─────────────────────────────────────────────
 // InteractionSystem  –  Component (attach to Player)
@@ -26,6 +27,17 @@ import { PromptLabel } from '../ui/PromptLabel.js';
 // share the #prompt element — a player is rarely at a locked door and
 // looking at a prop in the same frame, so one line is enough).
 // ─────────────────────────────────────────────
+
+/**
+ * Collision groups for the interaction ray: hits DEFAULT (walls, props, floor)
+ * and SHELF (shelf boards, drives, crates) but NOT PLAYER (the shelf's
+ * player-only envelope box, which uses PLAYER membership so the ray passes
+ * through to items on/behind the shelf).
+ */
+const RAY_GROUPS = packGroups(
+  [Layers.DEFAULT, Layers.SHELF],
+  [Layers.DEFAULT, Layers.SHELF],
+);
 
 export class InteractionSystem extends Component {
   /** @type {number} Maximum interaction distance (world units). */
@@ -111,7 +123,7 @@ export class InteractionSystem extends Component {
       this.range,
       true,                                       // solid
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,    // open doorways block nothing
-      undefined,                                  // filterGroups
+      RAY_GROUPS,                                 // filterGroups – skip PLAYER-layer colliders (shelf envelope)
       undefined,                                  // filterExcludeCollider
       this.gameObject.rigidBody,                  // filterExcludeRigidBody – skip self
       excludeBody                                 // filterPredicate – skip a carried object

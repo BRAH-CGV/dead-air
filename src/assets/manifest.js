@@ -274,9 +274,11 @@ const PLACED = {
         // only the player collides with (items pass through). This prevents
         // the player from walking through the shelf visually while allowing
         // items to rest on the individual shelf boards above.
+        // PLAYER membership so the interaction ray (which excludes PLAYER-layer
+        // colliders) passes through to reaches items on/behind the shelf.
         {
           type: 'box', size: [0.36, 1.9, 1.03], position: [0, 0.95, 0],
-          groups: { membership: ['DEFAULT'], filter: ['PLAYER'] },
+          groups: { membership: ['PLAYER'], filter: ['DEFAULT', 'PLAYER'] },
         },
       ],
     },

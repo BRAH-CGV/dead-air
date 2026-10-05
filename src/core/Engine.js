@@ -580,8 +580,11 @@ export class Engine {
     );
 
     // Player collision groups: member of PLAYER layer, interacts with DEFAULT
-    // only (not SHELF — the player walks through shelf boards, items rest on them).
-    const playerGroups = packGroups([Layers.PLAYER], [Layers.DEFAULT]);
+    // and PLAYER. DEFAULT catches walls, props and the floor; PLAYER catches
+    // the shelf's player-only envelope box (which uses PLAYER membership so the
+    // interaction ray can skip it). SHELF boards stay excluded — the player
+    // walks through them, items rest on them.
+    const playerGroups = packGroups([Layers.PLAYER], [Layers.DEFAULT, Layers.PLAYER]);
 
     const standCol  = this.world.createCollider(
       RAPIER.ColliderDesc.capsule(body.standHalf, body.radius)
