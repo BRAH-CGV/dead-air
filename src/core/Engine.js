@@ -16,6 +16,7 @@ import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
 import { createBody, attachColliders } from './Colliders.js';
+import { Layers, packGroups } from './PhysicsLayers.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
@@ -563,14 +564,21 @@ export class Engine {
         .setTranslation(...position)
         .lockRotations(),
     );
+
+    // Player collision groups: member of PLAYER layer, interacts with DEFAULT
+    // only (not SHELF — the player walks through shelf boards, items rest on them).
+    const playerGroups = packGroups([Layers.PLAYER], [Layers.DEFAULT]);
+
     const standCol  = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.standHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     // The crouch capsule shares the body; exactly one of the two is enabled
     // at a time and the controller swaps them (see FirstPersonController).
     const crouchCol = this.world.createCollider(
-      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius),
+      RAPIER.ColliderDesc.capsule(body.crouchHalf, body.radius)
+        .setCollisionGroups(playerGroups),
       rb,
     );
     crouchCol.setEnabled(false);
@@ -595,6 +603,9 @@ export class Engine {
       crouchEyeOffset: body.crouchEyeOffset,
       crouchSpeed: 2.5,
       crouchMode: 'toggle',   // flip to 'hold' for hold-to-crouch — nothing else changes
+      // Collision groups for the character controller filter — only colliders
+      // in the DEFAULT layer block the player (not SHELF boards).
+      filterGroups: playerGroups,
     });
     ctrl.camera = this.camera;
 

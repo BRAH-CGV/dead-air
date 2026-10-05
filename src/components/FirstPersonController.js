@@ -83,6 +83,9 @@ export class FirstPersonController extends Component {
     // centre, which is how the controller behaved before PlayerBody.
     this.standEyeOffset  = opts.standEyeOffset  ?? 0;
     this.crouchEyeOffset = opts.crouchEyeOffset ?? 0;
+    // Collision groups filter for the character controller — determines which
+    // collider layers block the player. Undefined means Rapier's default (all).
+    this.filterGroups = opts.filterGroups;
 
     /** Public: gameplay reads this (hide-under-desk mechanic). */
     this.crouched = false;
@@ -314,10 +317,12 @@ export class FirstPersonController extends Component {
     // atomically.
     // Sensors (unlocked doorways, trigger zones) never block movement —
     // explicit rather than trusting the controller's default.
+    // filterGroups excludes layers like SHELF from blocking the player.
     this.ctrl.computeColliderMovement(
       this.gameObject.collider,
       desired,
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      this.filterGroups,
     );
 
     const corrected = this.ctrl.computedMovement();

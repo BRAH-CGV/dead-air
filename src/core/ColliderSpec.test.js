@@ -159,3 +159,44 @@ describe('resolvePhysics', () => {
     expect(resolved).toMatchObject({ friction: 0.1, restitution: 0.9, sensor: true });
   });
 });
+
+describe('collision groups', () => {
+  it('defaults to DEFAULT_GROUPS (0xFFFFFFFF) when no groups specified', () => {
+    const resolved = resolvePhysics(mergePhysics('static'), CUBE);
+    expect(resolved.collisionGroups).toBe(0xFFFFFFFF);
+  });
+
+  it('resolves a groups object with membership and filter arrays', () => {
+    const resolved = resolvePhysics(mergePhysics({
+      body: 'static',
+      groups: { membership: ['SHELF'], filter: ['DEFAULT'] },
+    }), CUBE);
+    // membership: SHELF (bit 2) = 0x0004
+    // filter: DEFAULT (bit 0) = 0x0001
+    // packed: (0x0004 << 16) | 0x0001 = 0x00040001
+    expect(resolved.collisionGroups).toBe(0x00040001);
+  });
+
+  it('passes through a numeric groups value unchanged', () => {
+    const resolved = resolvePhysics(mergePhysics({
+      body: 'static',
+      groups: 0x12345678,
+    }), CUBE);
+    expect(resolved.collisionGroups).toBe(0x12345678);
+  });
+
+  it('supports per-part groups that override the spec-level default', () => {
+    const resolved = resolvePhysics(mergePhysics({
+      body: 'static',
+      groups: { membership: ['SHELF'], filter: ['DEFAULT'] },
+      shape: [
+        { type: 'box', size: [1, 1, 1] },  // inherits spec groups
+        { type: 'box', size: [1, 1, 1], groups: { membership: ['DEFAULT'], filter: ['PLAYER'] } },
+      ],
+    }), CUBE);
+    // First part inherits spec groups: SHELF membership, DEFAULT filter
+    expect(resolved.parts[0].collisionGroups).toBe(0x00040001);
+    // Second part has its own groups: DEFAULT membership, PLAYER filter
+    expect(resolved.parts[1].collisionGroups).toBe(0x00010002);
+  });
+});
