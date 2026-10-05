@@ -22,6 +22,7 @@ import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
+import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
 import { AmbienceMix } from '../systems/AmbienceMix.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
@@ -390,6 +391,14 @@ export class BaseScene extends Scene {
       // track in, and back out on the next press: M the spooky one, comma
       // the ambient one. Dev builds only: the production bundle has no keys.
       testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
+    }));
+
+    // The silence of the sealed airlock is filled by its pressure release:
+    // once as the doors shut, for a player who is in the chamber.
+    this.ambience.gameObject.addComponent(new AirlockSound({
+      airlock: rooms.Airlock,
+      sound:   this._sound(AIRLOCK_SOUND.key),
+      isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
     }));
   }
 
@@ -1491,6 +1500,7 @@ const ROOM_FOG_FRAGMENT = /* glsl */`
 #endif
 `;
 const _valleyEye = new THREE.Vector3();
+const _airlockEar = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {

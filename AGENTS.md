@@ -59,6 +59,7 @@ src/
 │   ├── App.js           # Glue: AppFlow ↔ Engine ↔ MenuView ↔ PointerLock ↔ SettingsStore
 │   ├── AppFlow.js       # Pure state machine: states, screen stack, transitions
 │   ├── PointerLock.js   # request() → Promise<boolean>, never throws
+│   ├── MenuMusic.js     # The track under the main menu; fades on the audio clock
 │   ├── SettingsStore.js # Settings schema, validation, localStorage
 │   ├── applySettings.js # Settings → camera, renderer, player, shadows, debug gate
 │   ├── keyNames.js      # keyName(code), reserved keys, rebind() with swap
@@ -67,6 +68,7 @@ src/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
 │   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
+│   ├── AirlockSound.js  # The pressure release as the airlock seals and cycles
 │   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
@@ -151,7 +153,7 @@ LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRo
 
 Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
 
-The airlock is an interlock — its two doors are never open together. `BaseScene` hands it the office's front door with `Airlock.bindInnerDoor(door)`, and `Airlock.state` runs `pressurised` (inner door open, hatch shut, red beacon) → `depressurising` (both shut, amber) → `depressurised` (hatch open, inner door shut, green) → `pressurising` → back. The door you are leaving shuts the moment the suit changes; the one ahead opens after `cycleTime` (2.5 s). Changing your mind mid-cycle runs back only the time already run. The cycle is ticked by a component on the airlock's own root, so nothing else has to call `Airlock.update`. The suit locker does nothing while the airlock cycles ("Airlock cycling…") and answers again once a door has opened — one suit change per cycle, so mashing E while running in from something can't flip the suit back and forth. The suit locker only works from inside the chamber, clear of both doorways by the player's radius — never from the office through the open inner door, and never where a door would shut on the player; elsewhere its label reads "Step into the airlock…".
+The airlock is an interlock — its two doors are never open together. `BaseScene` hands it the office's front door with `Airlock.bindInnerDoor(door)`, and `Airlock.state` runs `pressurised` (inner door open, hatch shut, red beacon) → `depressurising` (both shut, amber) → `depressurised` (hatch open, inner door shut, green) → `pressurising` → back. The door you are leaving shuts the moment the suit changes; the one ahead opens after `cycleTime` (3.1 s, as long as the pressure release that plays through it is audible). Changing your mind mid-cycle runs back only the time already run. The cycle is ticked by a component on the airlock's own root, so nothing else has to call `Airlock.update`. The suit locker does nothing while the airlock cycles ("Airlock cycling…") and answers again once a door has opened — one suit change per cycle, so mashing E while running in from something can't flip the suit back and forth. The suit locker only works from inside the chamber, clear of both doorways by the player's radius — never from the office through the open inner door, and never where a door would shut on the player; elsewhere its label reads "Step into the airlock…".
 
 An Interactable whose `promptLabel` changes while you look at it (the locker's Put on / Take off) is re-shown by `InteractionSystem` — update the label as a data field, since the base class field shadows a getter. `RoomTransitionSystem` does the same for a locked door whose `lockedPrompt` changes while you stand at it ("Sealed" → "Airlock cycling…").
 
@@ -173,10 +175,11 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
   - **In a corridor:** the two rooms it joins, crossfaded by how far along it you are. The fade is equal power (cos / sin), so the loudness holds level. The mix finds what a corridor joins by looking just past each end, so nobody lists which room is on which side.
   - **Outside** (the yard, the roof, the valley): the wind, alone. It is never heard in a room or a corridor.
   - **In the airlock:** whichever side's door stands open: the office through the inner door, the wind through the hatch. While it cycles with both doors shut it is silent, so a change of mind mid-cycle never lets the wind in. `_addAmbience` does this by setting the airlock zone's `track` (null while cycling) on `Airlock.onStateChange`. A zone with no track is silent, not "outside".
+  - **The pressure release** (`AirlockSound`, beside the `Ambience`) fills that silence: `sfx:pressure-release`, once as the doors seal, on the way out and back in. Only for a player in the chamber, so a cycle they aren't in (a retry takes the suit off from the spawn) isn't heard. `Airlock.cycleTime` is `AIRLOCK_SOUND.audibleSeconds`, and a scene test keeps them equal: change the clip, change both. If a door opens with it still sounding it fades out.
   - The gains ease toward the mix (`blendRate`), so a teleport or a door opening is a quick fade, not a cut.
 - **In a sandstorm** (`setStorm(level)`, called by `Sandstorm` every frame) the wind is the storm's sound. Outside it rises from its calm trim (0.5, in `AMBIENCE.volumes`) to `storm.gain` (3.3) times its file level, about what the storm recording it replaced played at. Indoors `storm.inside` (3 %) of that gets through the walls of every room and corridor, and a little more into the office behind its window (`storm.rooms.MainOffice`, 10 %): mixed in slightly, under the room's own loop, which isn't turned down. In `AmbienceMix` that is `seep` (how hard the outside presses, the storm level) times `leak` (how much a place lets in). The sealed airlock stays silent.
 - **Tension music.** One loop that follows a tension level, 0..1. A threat raises it under a name of its own: `scene.ambience.setTension(1, 'window-entity')`, and `setTension(0, 'window-entity')` when it has gone. The music follows the highest level anyone holds, and creeps in and out over `musicFadeIn` / `musicFadeOut` (4 s / 6 s). `clearTension()` drops every source. **Testing only — remove before release:** the `testKeys` in `_addAmbience` each swing a track fully in, and back out on the next press: `M` the spooky music, `,` the ambient music. Pressing the other key crossfades between them. The keys exist in dev builds only.
-- **A second music track.** `AMBIENCE.ambientMusic` (`sfx:interior-base-ambient-music`) is a calmer track kept for use at other points in the game. Nothing raises it yet except its test key; `setTension` always drives `AMBIENCE.music`. Its file is much hotter than the rest, so it carries a 0.07 trim in `AMBIENCE.volumes`. It also fades out at its end, so it dips to silence where it loops.
+- **A second music track.** `AMBIENCE.ambientMusic` (`sfx:interior-base-ambient-music`) is a calmer track: the main menu's music (`MenuMusic`, see App flow). In game nothing raises it except its test key; `setTension` always drives `AMBIENCE.music`. Its file is much hotter than the rest, so it carries a 0.07 trim in `AMBIENCE.volumes`. It also fades out at its end, so it dips to silence where it loops.
 - **Volumes are the clips' own**, each mixed to the loudest it should be. `AMBIENCE.volumes` is a per-track trim on top (a multiplier, by manifest key; left out is 1), for balancing one against the others: the office loop is at 1.2, about +1.6 dB, and the calm wind at 0.5, −6 dB. The spooky music has no trim — its file level is its ceiling.
 - **A loop at zero is stopped**, and starts from its top the next time it is wanted.
 - **Loading.** The six clips are in the manifest's `AMBIENT` group, not `PRELOAD`: `Ambience` fetches them as the scene is built (on awake, so they load behind the main menu) and each fades in once the game is playing, so 10 MB of mp3 never holds the loading screen.
@@ -343,16 +346,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 - **What it scales.** Only what costs: how many clouds a storm draws (`storm.low.count` 100 … `storm.count` 240) and how near the camera they come (`storm.low.nearFade` … `storm.nearFade`), since the nearest clouds cover the most screen. Size, thickness, colour and how close they stand to the walls stay — the same storm, thinner. A calm night is untouched. It takes effect on the next frame, mid-storm included.
 - **Not the grit or the fog.** `DustStorm`'s points and the scene fog are as they were at any quality. If the grit turns out to cost, give `setStormQuality` its draw range too; the fog is free.
-- **Wiring it, in that branch's terms.** One entry in `SCHEMA` (`src/app/SettingsStore.js`) and one line in `applySettings` (`src/app/applySettings.js`). `applySettings` already runs at startup, on every change and after every scene build, which is what this needs: a new scene starts at 1.
-
-  ```js
-  // SettingsStore.js — SCHEMA, video tab
-  stormQuality: { tab: 'video', type: 'number', label: 'Dust storm quality', min: 0, max: 1, step: 0.05, default: 1,
-                  format: (v) => `${Math.round(v * 100)}%` },
-
-  // applySettings.js — applySettings(engine, s)
-  engine.activeScene?.setStormQuality?.(s.stormQuality);
-  ```
+- **Wired to the settings.** Settings → VIDEO → Dust storm quality (`stormQuality` in `SCHEMA`, `src/app/SettingsStore.js`) is handed to it by `applySettings`, which runs at startup, on every change and after every scene build: a new scene starts at 1, so it is set again each time.
 - **Trying it now**, in a dev build's console, at full storm (`K`) with the FPS readout on (`I`): `__engine.activeScene.setStormQuality(0)`, then `(1)`.
 
 ## App flow and menus
@@ -371,6 +365,8 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 - **Keys behind the menu:** while a menu is open, a capture-phase `keydown` listener swallows every keydown (never keyup). The debug keys and the review panel's S / D can't fire behind it.
 - **Gameplay overlays:** `body[data-app]` is `menu | playing | paused | ended`, and `index.html` hides the HUD, crosshair, prompt, radar and review panel unless it's `playing`. It uses `visibility`, so each owner's own display state survives.
 
+**Menu music** (`MenuMusic`, `src/app/`). `sfx:interior-base-ambient-music` loops under the main menu and the Settings and Credits opened from it, and fades out when the game starts; the pause and end screens keep the game's own sound. It belongs to the app, not the scene: the scene is paused under the menu, so nothing there is updated, and the fades are gain ramps scheduled on the audio clock instead of per-frame. Once started it is never stopped, only faded to zero, so there is never a second copy. Chrome keeps audio suspended until a gesture, so App wakes it on the first click or key on the menu; if that first gesture is New game, the music isn't heard that time. Level and fade times are `MENU_MUSIC`.
+
 **Main-menu invariant.** The main menu always sits over a freshly built scene that has never ticked, so New game is just "unpause". Leaving a game (Main menu, Retry, Restart night, the end of the run) goes through `App.rebuild()` under a fade. It turns off the fly camera and fullbright, unsubscribes the old controller, calls `engine.loadScene(...)`, and Restart / Retry then call `nights.setNight(n)` (the same path as the N key). That is the "restart without refresh" path. Anything that hangs listeners on page elements or the window must remove them in its scene's `dispose()` (see `SignalReviewPanel.dispose`, `RadarOverlay.dispose`), or restarts stack them.
 
 **`engine.onSceneLoaded(listener)`** fires after every `loadScene`, App's or not (F4, the editor's switcher). App uses it to re-apply settings, because `buildPlayer` and `BaseScene` recreate the controller and the moon light with hard-coded values, and to follow the new `GameController` through `onStateChange(state, previous)`.
@@ -381,7 +377,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 |---|---|
 | GAME | `crouchMode`, `showFps` |
 | CONTROLS | `sensitivity` (× the 0.002 base), `invertY`, `smoothing`, `keyBinds` |
-| VIDEO | `fov`, `brightness` (tone-mapping exposure), `renderDistance` (camera far, never below 450 m — the sky dome is 400 m), `shadows` |
+| VIDEO | `fov`, `brightness` (tone-mapping exposure), `renderDistance` (camera far, never below 450 m — the sky dome is 400 m), `shadows`, `stormQuality` (0–1 → `scene.setStormQuality`: how many dust clouds a storm draws and how near they come) |
 
 `applySettings` is idempotent: it runs at startup, on every change and after every scene build. Rebinding writes into the live `engine.keyBinds` object, refuses reserved keys (Esc, `` ` ``, F-keys, Q, Enter, and the debug keys while dev tools are on) and swaps duplicates. Prompts written as `[E] …` show the bound key through `promptKeys.withKeys`.
 

@@ -375,6 +375,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/light-switch.mp3',
   },
+  // The airlock sealing and cycling (AirlockSound): a hiss of pressure,
+  // audible for about 3.1 s, which is what the airlock's cycle is set to.
+  'sfx:pressure-release': {
+    type: 'audio',
+    url: 'assets/audio/pressure-release.mp3',
+  },
   // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
   // and the bite when one catches you.
   'sfx:tiger-attack': {

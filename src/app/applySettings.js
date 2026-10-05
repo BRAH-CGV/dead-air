@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-// applySettings  –  settings → camera, renderer, player, FPS readout
+// applySettings  –  settings → camera, renderer, player, storm, FPS readout
 // ─────────────────────────────────────────────
 // Idempotent: App calls it at startup, on every change, and after every
 // scene build — buildPlayer makes a new controller with hard-coded values
@@ -47,6 +47,9 @@ export function applySettings(engine, s) {
     renderer.toneMappingExposure = s.brightness;
     applyShadows(engine, s.shadows);
   }
+
+  // A new scene starts at full quality, so this is handed over each build.
+  engine.activeScene?.setStormQuality?.(s.stormQuality);
 
   if (s.showFps) engine.perfStats?.show?.();
   else engine.perfStats?.hide?.();

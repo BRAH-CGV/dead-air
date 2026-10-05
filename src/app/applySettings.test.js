@@ -121,6 +121,22 @@ describe('applySettings', () => {
     expect(engine.keyBinds.debugFly).toBe('KeyV');
   });
 
+  it('hands the dust storm quality to the scene', () => {
+    const engine = makeEngine();
+    engine.activeScene.setStormQuality = vi.fn();
+    applySettings(engine, settings({ stormQuality: 0.4 }), { devicePixelRatio: 1 });
+    expect(engine.activeScene.setStormQuality).toHaveBeenLastCalledWith(0.4);
+    // Every scene build starts at full, so it is handed over again each time.
+    applySettings(engine, settings({ stormQuality: 0.4 }), { devicePixelRatio: 1 });
+    expect(engine.activeScene.setStormQuality).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the storm quality on a scene with no storm', () => {
+    const engine = makeEngine();
+    expect(engine.activeScene.setStormQuality).toBeUndefined();
+    expect(() => applySettings(engine, settings({ stormQuality: 0.4 }), { devicePixelRatio: 1 })).not.toThrow();
+  });
+
   it('shows or hides the FPS readout', () => {
     const engine = makeEngine();
     applySettings(engine, settings({ showFps: true }), { devicePixelRatio: 1 });

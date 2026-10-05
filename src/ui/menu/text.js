@@ -42,6 +42,8 @@ export const COURSE_LINE = 'Wits University — COMS3006A / COMS3025A Computer G
 
 export const COPY = {
   title: 'DEAD AIR',
+  /** Bottom corner of the main menu: what is playing (MenuMusic). */
+  menuMusic: 'Music: "Space Ambient" by YuraSoop',
   paused: 'PAUSED',
   resumeRetry: 'Click RESUME again to continue.',
   lockRefused: 'Click again to take control of the mouse.',

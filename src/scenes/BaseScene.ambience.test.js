@@ -7,7 +7,8 @@ import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
-import { ASSETS } from '../assets/manifest.js';
+import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -190,6 +191,32 @@ describe('BaseScene ambience', () => {
     expect(mix.weightsAt(centreOf(scene.rooms.MainOffice), {})[TRACK.MainOffice]).toBe(1);
     mix.seep = 0;
     expect(windAt(scene.rooms.MainOffice)).toBe(0);
+  });
+
+  it('gives the airlock a pressure release as it cycles', () => {
+    const voice = scene.ambience.gameObject.getComponent(AirlockSound);
+    expect(voice).not.toBeNull();
+    expect(voice.airlock).toBe(scene.rooms.Airlock);
+    // A one-shot the player must hear on the first cycle: preloaded.
+    expect(ASSETS[AIRLOCK_SOUND.key]).toMatchObject({ type: 'audio' });
+    expect(PRELOAD).toContain(AIRLOCK_SOUND.key);
+  });
+
+  it('runs the airlock cycle for as long as the pressure release is audible', () => {
+    expect(scene.rooms.Airlock.cycleTime).toBe(AIRLOCK_SOUND.audibleSeconds);
+  });
+
+  it('only sounds the release for a player in the chamber', () => {
+    const voice = scene.ambience.gameObject.getComponent(AirlockSound);
+    const camera = new THREE.Object3D();
+    scene.engine.camera = camera;
+    camera.position.copy(centreOf(scene.rooms.Airlock));
+    camera.updateMatrixWorld();
+    expect(voice.isInside()).toBe(true);
+    camera.position.copy(centreOf(scene.rooms.MainOffice));
+    camera.updateMatrixWorld();
+    expect(voice.isInside()).toBe(false);
+    delete scene.engine.camera;
   });
 
   it('plays the wind alone out in the yard, and up on the roof', () => {

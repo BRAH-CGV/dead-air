@@ -650,6 +650,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A dust eye catching the player (`DustEyes`) |
 | **Modifications** | Renamed |
 
+### Pressure release
+
+One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Air Compressor Releasing Pressure" by j_soundeffects (https://freesound.org/people/j_soundeffects/sounds/847748/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "Air (or steam) pressure release" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/457294/), Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/pressure-release.mp3` |
+| **Manifest key** | `sfx:pressure-release` |
+| **Used for** | The airlock sealing and cycling (`AirlockSound`) |
+| **Modifications** | The two recordings layered and mixed down into one clip |
+
 ### Base ambience (room tone loops)
 
 Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).
@@ -691,7 +702,7 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 |---|---|
 | **File** | `public/assets/audio/interior-base-ambient-music.mp3` |
 | **Manifest key** | `sfx:interior-base-ambient-music` |
-| **Used for** | A second, calmer music track (`AMBIENCE.ambientMusic`); on a test key for now |
+| **Used for** | The main menu's music (`MenuMusic`) |
 | **Modifications** | Renamed; played at 0.07 of its file level; at load, the tail is crossfaded into the head (`blendLoopSeam`) |
 
 

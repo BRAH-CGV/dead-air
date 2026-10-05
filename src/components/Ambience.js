@@ -315,7 +315,7 @@ export class Ambience extends Component {
         const sound = new THREE.Audio(engine.audioListener);
         sound.setBuffer(buffer);
         sound.setLoop(true);
-        sound.setLoopStart(seamOf(buffer));
+        sound.setLoopStart(loopSeam(buffer));
         sound.setVolume(0);
         this.sounds[key] = sound;
       }).catch(err => console.warn(`[Ambience] no ${key} — ${err.message}`));
@@ -323,8 +323,10 @@ export class Ambience extends Component {
   }
 }
 
-/** Blend `buffer`'s seam the first time it is seen; its loop start, always. */
-function seamOf(buffer) {
+/** Blend `buffer`'s seam the first time it is seen; its loop start, always.
+ *  Anything else that loops one of these clips (the menu music) uses it too,
+ *  so the shared buffer is only ever blended once. */
+export function loopSeam(buffer) {
   if (!_seamed.has(buffer)) {
     const channels = [];
     for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
