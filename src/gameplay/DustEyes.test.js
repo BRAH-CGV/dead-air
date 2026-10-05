@@ -30,8 +30,8 @@ describe('how often', () => {
     expect(maxEyes(3, 'fence')).toBe(4);
   });
 
-  it('0.8 seconds of staring is too long', () => {
-    expect(DUST_EYES.stareSeconds).toBe(0.8);
+  it('0.6 seconds of staring is too long', () => {
+    expect(DUST_EYES.stareSeconds).toBe(0.6);
   });
 });
 
@@ -345,7 +345,7 @@ describe('DustEyes — several at once', () => {
       expect(rig.system.slots.filter(s => s.phase !== 'off' && s.kind === 'window').length)
         .toBeLessThanOrEqual(maxEyes(3, 'window'));
     }
-    expect(DUST_EYES.windowCooldown).toBeGreaterThanOrEqual(30);
+    expect(DUST_EYES.windowCooldown).toBe(10);
     expect(spawns).toBeGreaterThanOrEqual(2);
     expect(spawns).toBeLessThanOrEqual(3);
   });

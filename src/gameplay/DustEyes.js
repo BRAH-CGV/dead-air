@@ -96,7 +96,7 @@ export const DUST_EYES = {
   /** Fade in and out. */
   fadeSeconds: 1.5,
   /** How long it must be stared at before it turns — outside… */
-  stareSeconds: 0.8,
+  stareSeconds: 0.6,
   /** …and through the window. */
   windowStareSeconds: 0.7,
   /** Degrees off the middle of the view that still counts as looking at it. */
@@ -150,7 +150,7 @@ export const DUST_EYES = {
   stepOutEyes: 2,
   guaranteeDelay: 3,
   /** Through the window: at least this long between one and the next. */
-  windowCooldown: 45,
+  windowCooldown: 10,
   /** Through the window: how bright they burn (of the yard ones'), and how
    *  fast they dim with distance — in the fog, easy to miss. */
   windowIntensity: 0.5,
