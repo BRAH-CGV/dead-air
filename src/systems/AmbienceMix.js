@@ -18,7 +18,16 @@
 // since two unrelated loops don't add up the way one loop does.
 //
 // A zone's `track` may be changed at any time, to a track the mix already
-// knows: the airlock's follows whichever of its doors last stood open.
+// knows, or to null: the airlock hears whichever side's door stands open,
+// and nothing at all while both are shut. A zone with no track is silent —
+// it is not "outside" just because no loop claims it.
+//
+// The outside can get through the walls. `seep`, 0..1, is how hard it is
+// pressing (a storm raises it); `leak` is how much of it a place lets in at
+// full press — one value for the whole building, and a zone may give its
+// own (the room with the window leaks more). Indoors the outside track is
+// heard at seep × leak, on top of the room's own loop, which is not turned
+// down for it. A zone with no track stays silent regardless: it is sealed.
 //
 // Boxes are anything with `min` / `max` of { x, y, z } — a THREE.Box3 or a
 // room's `bounds()`. Neighbouring shells touch, so a doorway is never a
@@ -39,16 +48,21 @@ function contains(box, p) {
 export class AmbienceMix {
   /** Every track this mix can ask for, in a fixed order. @type {string[]} */
   tracks = [];
+  /** How hard the outside is pressing on the walls, 0..1. */
+  seep = 0;
 
   /**
    * @param {object} opts
-   * @param {{ box: {min: object, max: object}, track: string }[]} [opts.zones]
+   * @param {{ box: {min: object, max: object}, track: string|null, leak?: number }[]} [opts.zones]
    * @param {{ box: {min: object, max: object}, axis: 'x'|'z' }[]} [opts.passages]
    * @param {string|null} [opts.outside]  Track heard everywhere else.
+   * @param {number} [opts.leak=0]  How much of the outside a room or passage
+   *        lets in at full `seep`, unless the zone says otherwise.
    */
-  constructor({ zones = [], passages = [], outside = null } = {}) {
+  constructor({ zones = [], passages = [], outside = null, leak = 0 } = {}) {
     this.zones = zones;
     this.outside = outside;
+    this.leak = leak;
 
     for (const { track } of zones) this._addTrack(track);
     this._addTrack(outside);
@@ -75,16 +89,30 @@ export class AmbienceMix {
       if (!contains(box, p)) continue;
       if (from === to) {
         if (from) out[from] = 1;
-        return out;
+        return this._seepInto(out, this.leak);
       }
       const t = (p[axis] - box.min[axis]) / (box.max[axis] - box.min[axis]);
       if (from) out[from] = Math.cos(t * Math.PI / 2);
       if (to)   out[to]   = Math.sin(t * Math.PI / 2);
-      return out;
+      return this._seepInto(out, this.leak);
     }
 
-    const track = this._trackAt(p);
-    if (track) out[track] = 1;
+    for (const zone of this.zones) {
+      if (!contains(zone.box, p)) continue;
+      if (!zone.track) return out;   // sealed: silent, storm or not
+      out[zone.track] = 1;
+      return this._seepInto(out, zone.leak ?? this.leak);
+    }
+
+    if (this.outside) out[this.outside] = 1;
+    return out;
+  }
+
+  /** Indoors, the outside is heard at least at seep × the place's leak. */
+  _seepInto(out, leak) {
+    const { outside } = this;
+    const level = this.seep * leak;
+    if (outside && level > 0) out[outside] = Math.max(out[outside], level);
     return out;
   }
 

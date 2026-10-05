@@ -624,19 +624,6 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A breaker flicked on the generator's repair panel (`BreakerPanel`) |
 | **Modifications** | Renamed |
 
-### Sandstorm
-
-"Sandstorm" (https://pixabay.com/sound-effects/sandstorm-222741/) by SoundReality is used under the Pixabay Content License — free to use,
-attribution not required, credited here anyway. Downloaded as
-`soundreality-sandstorm-222741.mp3`.
-
-| | |
-|---|---|
-| **File** | `public/assets/audio/sandstorm.mp3` |
-| **Manifest key** | `sfx:sandstorm` |
-| **Used for** | The wind of a sandstorm (`Sandstorm`) |
-| **Modifications** | Renamed; crossfaded into a loop at load |
-
 ### Tiger Attack
 
 "Tiger Attack" (https://pixabay.com/sound-effects/tiger-attack-195840/) by DFFDV is used under the Pixabay Content License — free to use,
@@ -682,7 +669,7 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 |---|---|
 | **File** | `public/assets/audio/exterior-base-ambience-wind.mp3` |
 | **Manifest key** | `sfx:exterior-base-ambience-wind` |
-| **Used for** | The wind outside the base (`Ambience`) |
+| **Used for** | The wind outside the base, blown harder in a sandstorm (`Ambience`) |
 | **Modifications** | Layered and mixed down into one 70 s loop; renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
 
 ### Tension music

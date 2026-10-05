@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
-import { loopable } from '../components/GeneratorSound.js';
 import { UFO } from './UfoThreat.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 
@@ -11,9 +10,10 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // eyes stay away until night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
 // down again. While it blows:
 //
-//   sound   the storm recording, looped — modest outside, barely a hiss
-//           through the walls. Eased like the generator, so the airlock
-//           doesn't snap it.
+//   sound   none of its own. The wind outside is the Ambience's loop; the
+//           storm tells it how hard it is blowing (Ambience.setStorm), and
+//           the Ambience blows it harder outside and lets a hiss of it
+//           through the walls.
 //   fog     thicker and dust-brown wherever the valley is in view (outside,
 //           and rooms with a window). Sealed rooms keep their own fog.
 //   sky     dimmed toward dust: the stars and moons are lost (MarsSky.setStorm).
@@ -61,11 +61,8 @@ export const SANDSTORM = {
   afterUfoDelay: [10, 30],
   /** Build-up and die-down. */
   rampSeconds: 6,
-  /** Volume outside, at full strength. */
-  volume: 0.2,
-  /** Fraction of the outside volume that gets through the walls. */
-  insideLevel: 0.03,
-  /** Rate (per second) the inside/outside level eases at. */
+  /** Rate (per second) the storm eases at between indoors and out, and
+   *  between having the valley in view and not. */
   placeRate: 4,
   /** FogExp2 density at full strength, seen from indoors: from the desk the
    *  storm swallows the view just before the radar dish, ~23 m out… */
@@ -89,11 +86,6 @@ export const SANDSTORM = {
 /** The wind's axis (x, z): the way the dust clouds drift and the grass
  *  sways, so the grit blows the same way. */
 export const WIND_DIRECTION = WIND_DUST.direction;
-
-/** Manifest keys behind each sound. */
-export const SANDSTORM_SOUNDS = {
-  wind: 'sfx:sandstorm',
-};
 
 // ── Pure helpers ──────────────────────────────────────────
 
@@ -165,21 +157,21 @@ export class Sandstorm extends Component {
    * @param {{ phase: string }} [opts.ufo]  The UfoThreat, so the two never overlap.
    * @param {{ setStorm: (k: number) => void }} [opts.clouds]  The wind dust's
    *        WindDustMotion: one storm level drives the clouds too.
-   * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from SANDSTORM_SOUNDS when left out.
+   * @param {{ setStorm: (k: number) => void }} [opts.ambience]  The scene's
+   *        Ambience: the storm's wind is its outside loop, blown harder.
    * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
    * @param {number} [opts.nightHours=6]      Clock hours in it.
    * @param {() => number} [opts.random]
    */
   constructor({
-    controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, sounds = null,
+    controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, ambience = null,
     nightDuration = 300, nightHours = 6, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, sounds, nightDuration, nightHours, random });
+    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, random });
 
     this._elapsed = 0;       // seconds of 'playing' this night
     this._storm = null;      // { start, duration } in _elapsed, or null
-    this._place = null;      // eased 1 outside … insideLevel inside
     this._view = null;       // eased 1 with the valley in view … 0, for the fog and dust
     this._out = null;        // eased 1 outside … 0 inside, for how close the fog is
     this._afterUfo = false;  // a UFO night with a storm to follow it
@@ -195,8 +187,6 @@ export class Sandstorm extends Component {
   }
 
   onStart() {
-    if (!this.sounds) this.sounds = this._buildSounds();
-    this.sounds.wind?.setLoop?.(true);
     this._off = this.controller.onNightStart?.(night => this.reset(night)) ?? null;
     this.reset(this.controller.nightNumber || 1);
   }
@@ -204,10 +194,7 @@ export class Sandstorm extends Component {
   onDestroy() {
     this._off?.();
     this._off = null;
-    for (const sound of Object.values(this.sounds ?? {})) {
-      if (sound?.isPlaying) sound.stop();
-      try { sound?.disconnect?.(); } catch (_) { /* never connected */ }
-    }
+    this.ambience?.setStorm?.(0);
   }
 
   /** A fresh night: calm, with tonight's storm (if any) scheduled. */
@@ -279,30 +266,17 @@ export class Sandstorm extends Component {
     const ear = this.hooks.listenerPosition(_ear);
     const outside = this.hooks.isOutside(ear);
     const ease = 1 - Math.exp(-SANDSTORM.placeRate * dt);
-    const place = outside ? 1 : SANDSTORM.insideLevel;
-    this._place = this._place === null ? place : this._place + (place - this._place) * ease;
     const view = this.hooks.valleyInView() ? 1 : 0;
     this._view = this._view === null ? view : this._view + (view - this._view) * ease;
     const out = outside ? 1 : 0;
     this._out = this._out === null ? out : this._out + (out - this._out) * ease;
 
-    this._applySound();
     this._applyFog();
+    this.ambience?.setStorm?.(this.level);
     this.sky?.setStorm?.(this.level);
     this.clouds?.setStorm?.(this.level);
     this.dust?.setLevel?.(this.level * this._view);
     this.dust?.tick?.(dt, ear);
-  }
-
-  _applySound() {
-    const wind = this.sounds?.wind;
-    if (!wind) return;
-    if (this.level <= 0) {
-      if (wind.isPlaying) wind.stop();
-      return;
-    }
-    if (!wind.isPlaying) wind.play();
-    wind.setVolume(SANDSTORM.volume * this.level * this._place);
   }
 
   /** Thicker, browner fog over whatever the night and the room left there. */
@@ -325,21 +299,5 @@ export class Sandstorm extends Component {
   /** The storm's wind: along the one wind axis the clouds and grass share. */
   _pickWind() {
     this.dust?.setWind?.(Math.atan2(WIND_DIRECTION[1], WIND_DIRECTION[0]), SANDSTORM.windSpeed);
-  }
-
-  /** The looping storm from the preloaded buffer. Missing buffers are left out. */
-  _buildSounds() {
-    const engine = this.gameObject?.scene?.userData?.engine;
-    const sounds = {};
-    if (!engine?.audioListener || !engine.assets) return sounds;
-    for (const [name, key] of Object.entries(SANDSTORM_SOUNDS)) {
-      if (engine.assets.has && !engine.assets.has(key)) continue;
-      const buffer = engine.assets.get(key);
-      if (!buffer) continue;
-      const audio = new THREE.Audio(engine.audioListener);
-      audio.setBuffer(loopable(buffer, engine.audioListener.context));
-      sounds[name] = audio;
-    }
-    return sounds;
   }
 }

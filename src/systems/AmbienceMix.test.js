@@ -15,8 +15,9 @@ const box = (x0, x1, z0 = -2, z1 = 2) =>
 
 const at = (x, z = 0, y = 1) => new THREE.Vector3(x, y, z);
 
-function base({ outside = null } = {}) {
+function base({ outside = null, leak } = {}) {
   return new AmbienceMix({
+    leak,
     zones: [
       { box: box(-10, -4), track: 'bed' },
       { box: box(0, 6),    track: 'centre' },
@@ -119,6 +120,77 @@ describe('AmbienceMix', () => {
     expect(mix.weightsAt(at(22))).toEqual({ centre: 0, wind: 1 });
     // The room that shares the track is untouched.
     expect(mix.weightsAt(at(3))).toEqual({ centre: 1, wind: 0 });
+  });
+
+  it('is silent in a zone with no track: a sealed chamber', () => {
+    const chamber = { box: box(20, 24), track: null };
+    const mix = new AmbienceMix({
+      zones: [{ box: box(0, 6), track: 'centre' }, chamber],
+      outside: 'wind',
+    });
+    // Not the outside either, though no room's loop claims it.
+    expect(mix.weightsAt(at(22))).toEqual({ centre: 0, wind: 0 });
+    expect(mix.weightsAt(at(40))).toEqual({ centre: 0, wind: 1 });
+  });
+
+  it('lets the outside seep into rooms and passages when asked: a storm through the walls', () => {
+    // `leak` is how much of the outside a place lets in; `seep` is how hard
+    // the outside is pressing, 0..1.
+    const mix = base({ outside: 'wind', leak: 0.03 });
+    expect(mix.seep).toBe(0);
+    expect(mix.weightsAt(at(3)).wind).toBe(0);
+
+    mix.seep = 1;
+    expect(mix.weightsAt(at(3))).toEqual({ bed: 0, centre: 1, server: 0, wind: 0.03 });
+    const passage = mix.weightsAt(at(8));
+    expect(passage.wind).toBe(0.03);
+    expect(passage.centre).toBeCloseTo(Math.SQRT1_2);
+    // Outside it is simply the outside.
+    expect(mix.weightsAt(at(40)).wind).toBe(1);
+
+    mix.seep = 0.5;
+    expect(mix.weightsAt(at(3)).wind).toBeCloseTo(0.015);
+  });
+
+  it('lets a zone leak more than the rest: the room with the window', () => {
+    const mix = new AmbienceMix({
+      zones: [{ box: box(0, 6), track: 'centre', leak: 0.1 }, { box: box(10, 16), track: 'server' }],
+      outside: 'wind',
+      leak: 0.03,
+    });
+    mix.seep = 1;
+    expect(mix.weightsAt(at(3)).wind).toBe(0.1);
+    expect(mix.weightsAt(at(13)).wind).toBe(0.03);
+    // The room's own loop is not turned down to make room for it.
+    expect(mix.weightsAt(at(3)).centre).toBe(1);
+  });
+
+  it('leaks nothing unless told how leaky the walls are', () => {
+    const mix = base({ outside: 'wind' });
+    mix.seep = 1;
+    expect(mix.weightsAt(at(3)).wind).toBe(0);
+  });
+
+  it('never lets a seep quieten a passage that already opens on the outside', () => {
+    const mix = base({ outside: 'wind', leak: 0.03 });
+    mix.seep = 1;
+    expect(mix.weightsAt(at(3, 4)).wind).toBeCloseTo(Math.SQRT1_2);
+  });
+
+  it('keeps a sealed chamber silent through a storm', () => {
+    const mix = new AmbienceMix({
+      zones: [{ box: box(0, 6), track: 'centre' }, { box: box(20, 24), track: null, leak: 0.5 }],
+      outside: 'wind',
+      leak: 0.03,
+    });
+    mix.seep = 1;
+    expect(mix.weightsAt(at(22))).toEqual({ centre: 0, wind: 0 });
+  });
+
+  it('has nothing to seep without an outside track', () => {
+    const mix = base({ leak: 0.03 });
+    mix.seep = 1;
+    expect(mix.weightsAt(at(3))).toEqual({ bed: 0, centre: 1, server: 0 });
   });
 
   it('writes into the object it is given, so a frame allocates nothing', () => {

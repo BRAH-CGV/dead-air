@@ -93,38 +93,46 @@ describe('BaseScene ambience', () => {
       }
     });
 
-    it('holds the office loop while it cycles, and switches to the wind when the hatch opens', () => {
+    it('is silent with both doors shut, then the wind when the hatch opens', () => {
       scene.suit.putOn();
       cycle(1);
       expect(scene.rooms.Airlock.state).toBe('depressurising');
-      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+      expect(heardInAirlock()).toEqual([]);
 
       cycle(full());
       expect(scene.rooms.Airlock.state).toBe('depressurised');
       expect(heardInAirlock()).toEqual([wind]);
     });
 
-    it('holds the wind on the way back in, and switches when the inner door opens', () => {
+    it('is silent again on the way back in, then the office when the inner door opens', () => {
       scene.suit.putOn();
       cycle(full());
       scene.suit.takeOff();
       cycle(1);
       expect(scene.rooms.Airlock.state).toBe('pressurising');
-      expect(heardInAirlock()).toEqual([wind]);
+      expect(heardInAirlock()).toEqual([]);
 
       cycle(full());
       expect(scene.rooms.Airlock.state).toBe('pressurised');
       expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
     });
 
-    it('never lets the wind in on a change of mind: the hatch did not open', () => {
+    it('stays silent through a change of mind, and never lets the wind in', () => {
       scene.suit.putOn();
       cycle(1);
       scene.suit.takeOff();
       expect(scene.rooms.Airlock.state).toBe('pressurising');
-      expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+      expect(heardInAirlock()).toEqual([]);
       cycle(full());
       expect(heardInAirlock()).toEqual([TRACK.MainOffice]);
+    });
+
+    it('stays silent while sealed even in a storm', () => {
+      mix.seep = 1;
+      scene.suit.putOn();
+      cycle(1);
+      expect(heardInAirlock()).toEqual([]);
+      mix.seep = 0;
     });
 
     it('leaves the office and the yard to their own sound, whichever door is open', () => {
@@ -161,6 +169,27 @@ describe('BaseScene ambience', () => {
     const p = centreOf(corridor);
     p.x = corridor.bounds().min.x + 0.5;
     expect(heardAt(p)).toEqual([TRACK.LivingQuarters, TRACK.MainOffice]);
+  });
+
+  it('has the sandstorm blow the ambience\'s wind, with no recording of its own', () => {
+    expect(scene.sandstorm.ambience).toBe(scene.ambience);
+    expect(ASSETS['sfx:sandstorm']).toBeUndefined();
+  });
+
+  it('mixes a little of a storm into the office, and less into the rest', () => {
+    const wind = AMBIENCE.outside;
+    const windAt = part => mix.weightsAt(centreOf(part), {})[wind];
+    mix.seep = 1;
+    expect(windAt(scene.rooms.MainOffice)).toBeCloseTo(AMBIENCE.storm.rooms.MainOffice);
+    expect(windAt(scene.rooms.ServerRoom)).toBeCloseTo(AMBIENCE.storm.inside);
+    expect(windAt(scene.rooms.LivingQuarters)).toBeCloseTo(AMBIENCE.storm.inside);
+    expect(windAt(scene.corridors.OfficeToServer)).toBeCloseTo(AMBIENCE.storm.inside);
+    // The airlock, open to the office, hears what the office hears.
+    expect(windAt(scene.rooms.Airlock)).toBeCloseTo(AMBIENCE.storm.rooms.MainOffice);
+    // The office's own loop stays as it was.
+    expect(mix.weightsAt(centreOf(scene.rooms.MainOffice), {})[TRACK.MainOffice]).toBe(1);
+    mix.seep = 0;
+    expect(windAt(scene.rooms.MainOffice)).toBe(0);
   });
 
   it('plays the wind alone out in the yard, and up on the roof', () => {

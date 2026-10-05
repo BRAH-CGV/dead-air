@@ -27,13 +27,16 @@ function fakeSound() {
 const box = (x0, x1) => new THREE.Box3(new THREE.Vector3(x0, 0, -2), new THREE.Vector3(x1, 3, 2));
 
 /** office [0,6] ── passage [6,10] ── server [10,16], ears at `ear`. */
-function build({ sounds, x = 3, volumes, testKeys } = {}) {
+function build({ sounds, x = 3, volumes, testKeys, outside = null } = {}) {
   const ear = new THREE.Vector3(x, 1, 0);
   const mix = new AmbienceMix({
     zones: [{ box: box(0, 6), track: 'centre' }, { box: box(10, 16), track: 'server' }],
     passages: [{ box: box(6, 10), axis: 'x' }],
+    outside,
+    leak: AMBIENCE.storm.inside,
   });
   sounds ??= { centre: fakeSound(), server: fakeSound(), [MUSIC]: fakeSound() };
+  if (outside) sounds[outside] ??= fakeSound();
   const go = new GameObject('Ambience');
   const ambience = go.addComponent(new Ambience({
     mix, music: MUSIC, sounds, volumes, testKeys,
@@ -137,6 +140,90 @@ describe('Ambience rooms', () => {
     const { ambience, sounds } = build({ sounds: { centre: fakeSound() } });
     expect(() => run(ambience, 1)).not.toThrow();
     expect(sounds.centre.isPlaying).toBe(true);
+  });
+});
+
+describe('Ambience in a storm', () => {
+  const WIND = 'wind';
+  const { storm } = AMBIENCE;
+
+  it('blows the wind harder outside', () => {
+    const { ambience, sounds } = build({ outside: WIND, x: 40 });
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(1);
+
+    ambience.setStorm(1);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(storm.gain);
+    expect(storm.gain).toBeGreaterThan(1);
+  });
+
+  it('is a hiss through the walls indoors, and only in a storm', () => {
+    const { ambience, sounds } = build({ outside: WIND });
+    run(ambience, 3);
+    expect(sounds[WIND].isPlaying).toBe(false);
+
+    ambience.setStorm(1);
+    run(ambience, 3);
+    expect(sounds[WIND].isPlaying).toBe(true);
+    expect(sounds[WIND].volume).toBeCloseTo(storm.inside * storm.gain);
+    // Barely there next to the storm outside.
+    expect(storm.inside).toBeLessThan(0.1);
+    // The room's own loop is untouched.
+    expect(sounds.centre.volume).toBeCloseTo(1);
+
+    ambience.setStorm(0);
+    run(ambience, 5);
+    expect(sounds[WIND].isPlaying).toBe(false);
+  });
+
+  it('goes from a quiet calm wind to the same storm, whatever the calm trim', () => {
+    // The wind is trimmed down when calm; the storm's level is its own.
+    const { ambience, sounds } = build({ outside: WIND, x: 40, volumes: { [WIND]: 0.5 } });
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(0.5);
+
+    ambience.setStorm(0.5);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo((0.5 + storm.gain) / 2);
+
+    ambience.setStorm(1);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(storm.gain);
+  });
+
+  it('plays the real wind quieter when calm than its file level', () => {
+    expect(AMBIENCE.volumes[AMBIENCE.outside]).toBeLessThan(1);
+    expect(AMBIENCE.volumes[AMBIENCE.outside]).toBeGreaterThan(0);
+  });
+
+  it('lets more of the storm into the office than into the other rooms, but only slightly', () => {
+    expect(storm.rooms.MainOffice).toBeGreaterThan(storm.inside);
+    expect(storm.rooms.MainOffice).toBeLessThanOrEqual(0.15);
+  });
+
+  it('follows a storm as it builds', () => {
+    const { ambience, sounds } = build({ outside: WIND, x: 40 });
+    ambience.setStorm(0.5);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(1 + (storm.gain - 1) * 0.5);
+  });
+
+  it('clamps a storm level out of range', () => {
+    const { ambience, sounds } = build({ outside: WIND, x: 40 });
+    ambience.setStorm(9);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(storm.gain);
+    ambience.setStorm(-2);
+    run(ambience, 3);
+    expect(sounds[WIND].volume).toBeCloseTo(1);
+  });
+
+  it('does nothing with no outside track', () => {
+    const { ambience, sounds } = build();
+    ambience.setStorm(1);
+    expect(() => run(ambience, 2)).not.toThrow();
+    expect(sounds.centre.volume).toBeCloseTo(1);
   });
 });
 

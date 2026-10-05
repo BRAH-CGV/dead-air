@@ -353,17 +353,21 @@ export class BaseScene extends Scene {
    *  follows the debug fly camera too.
    *
    *  The airlock has no loop of its own: it hears whichever side's door
-   *  last stood open. So the sound switches as a door opens — the wind when
-   *  the hatch does, the office when the inner door does — and holds while
-   *  both are shut, which also keeps the wind out on a change of mind
-   *  mid-cycle. */
+   *  stands open — the office through the inner door, the wind through the
+   *  hatch — and nothing at all while it cycles with both shut. So a change
+   *  of mind mid-cycle never lets the wind in. */
   _addAmbience() {
     const { engine, rooms, corridors } = this;
     const office = AMBIENCE.rooms.MainOffice;
-    const airlock = { box: rooms.Airlock.bounds(), track: office };
+    // How much of a storm each room lets in (AMBIENCE.storm): a hiss, and a
+    // little more in the office, behind its window. The airlock is open to
+    // the office or to the yard, so it leaks as the office does.
+    const leak = name => AMBIENCE.storm.rooms[name] ?? AMBIENCE.storm.inside;
+    const airlock = { box: rooms.Airlock.bounds(), track: office, leak: leak('MainOffice') };
     const follow = (state) => {
       if (state === 'pressurised') airlock.track = office;
       else if (state === 'depressurised') airlock.track = AMBIENCE.outside ?? office;
+      else airlock.track = null;
     };
     follow(rooms.Airlock.state);
     rooms.Airlock.onStateChange(follow);   // dropped by the airlock's dispose()
@@ -372,19 +376,20 @@ export class BaseScene extends Scene {
       zones: [
         ...Object.values(rooms)
           .filter(room => AMBIENCE.rooms[room.name])
-          .map(room => ({ box: room.bounds(), track: AMBIENCE.rooms[room.name] })),
+          .map(room => ({ box: room.bounds(), track: AMBIENCE.rooms[room.name], leak: leak(room.name) })),
         airlock,
       ],
       passages: Object.values(corridors).map(c => ({ box: c.bounds(), axis: c.axis })),
       outside: AMBIENCE.outside,
+      leak: AMBIENCE.storm.inside,
     });
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
       listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
       // Testing only — remove before release. Each key swings a music
       // track in, and back out on the next press: M the spooky one, comma
-      // the ambient one. (N is the next-night key.)
-      testKeys: { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic },
+      // the ambient one. Dev builds only: the production bundle has no keys.
+      testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
     }));
   }
 
@@ -1093,6 +1098,9 @@ export class BaseScene extends Scene {
       ufo:        this.ufoThreat,
       // One storm level drives the clouds too.
       clouds,
+      // …and the wind: the storm has no recording of its own. It blows the
+      // ambience's wind harder, and lets a hiss of it into the rooms.
+      ambience: this.ambience,
       hooks: {
         listenerPosition: out => engine.camera.getWorldPosition(out),
         isOutside:        p => this._isOutside(p),

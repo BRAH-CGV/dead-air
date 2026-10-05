@@ -10,8 +10,12 @@ import { Component } from '../core/Component.js';
 //           how loud, comes from an AmbienceMix read at the listener's
 //           position every frame: the room you stand in, or a blend of
 //           two down a corridor. The gains then ease toward that, so a
-//           teleport fades too — and so does the airlock, whose sound
-//           switches from the office to the wind as its hatch opens.
+//           teleport fades too — and so does the airlock, which hears the
+//           office or the wind by which of its doors is open, and nothing
+//           while both are shut.
+//
+//           In a sandstorm (setStorm) the wind blows harder, and a hiss of
+//           it gets through the walls into every room.
 //
 //   music   one loop that follows the tension, 0..1. Whatever is hunting the
 //           player raises it under a name of its own —
@@ -36,8 +40,8 @@ import { Component } from '../core/Component.js';
 /** Tuning. Seconds unless stated. */
 export const AMBIENCE = {
   /** Manifest key of the loop for each room, by room name. The airlock has
-   *  none: it hears the office or the wind, by which door last stood open
-   *  (BaseScene._addAmbience). */
+   *  none: it hears the office or the wind, by which of its doors is open,
+   *  and nothing while both are shut (BaseScene._addAmbience). */
   rooms: {
     MainOffice:     'sfx:interior-base-ambience-centre-room',
     ServerRoom:     'sfx:interior-base-ambience-server-room',
@@ -47,6 +51,9 @@ export const AMBIENCE = {
    *  Left out is 1. The office loop is lifted about 1.6 dB. */
   volumes: {
     'sfx:interior-base-ambience-centre-room': 1.2,
+    // The wind on a calm night: half its file level. A storm has a level
+    // of its own (storm.gain), so this doesn't quieten the storm.
+    'sfx:exterior-base-ambience-wind': 0.5,
     // Its file is ~23 dB hotter than the spooky track; this brings it down
     // to the same loudness.
     'sfx:interior-base-ambient-music': 0.07,
@@ -58,6 +65,12 @@ export const AMBIENCE = {
   /** A second, calmer music track. Nothing in the game raises it yet; it is
    *  on a test key (BaseScene._addAmbience). */
   ambientMusic: 'sfx:interior-base-ambient-music',
+  /** A sandstorm (setStorm). At full strength the wind outside plays at
+   *  `gain` times its file level, about what the storm recording this
+   *  replaced played at. Indoors `inside` of that gets through the walls: a
+   *  hiss. `rooms` names the rooms that let more in — the office, with its
+   *  window, where the storm is mixed in slightly under the room's loop. */
+  storm: { gain: 3.3, inside: 0.03, rooms: { MainOffice: 0.1 } },
   /** Rate (per second) the room gains ease toward the mix at. */
   blendRate: 4,
   /** Time for the music to creep from silence to full… */
@@ -149,6 +162,8 @@ export class Ambience extends Component {
     /** Tension asked for, by who asked. */
     this._tensions = new Map();
     this._tension = 0;
+    /** How hard a storm is blowing, 0..1. */
+    this._storm = 0;
     this._musicGains = {};
     for (const track of this._musics) this._musicGains[track] = 0;
     /** The volume last set on each sound, by track. */
@@ -176,6 +191,16 @@ export class Ambience extends Component {
     let highest = 0;
     for (const value of this._tensions.values()) highest = Math.max(highest, value);
     this._tension = highest;
+  }
+
+  /**
+   * A sandstorm, 0 calm … 1 full: the wind outside blows harder, and a hiss
+   * of it gets into the rooms. The Sandstorm calls this every frame with its
+   * own level, which already builds and dies down.
+   * @param {number} level
+   */
+  setStorm(level) {
+    this._storm = Math.min(Math.max(level, 0), 1);
   }
 
   /** Every source lets go: a new night, a retry. */
@@ -209,6 +234,12 @@ export class Ambience extends Component {
 
   onUpdate(dt) {
     // ── Rooms: ease each loop toward the mix where the ears are ──
+    // A storm presses the wind through the walls, and blows it harder: from
+    // its calm trim up to storm.gain, whatever the trim is.
+    const { outside } = this.mix;
+    this.mix.seep = this._storm;
+    const calm = this.volumes[outside] ?? 1;
+    const stormGain = 1 + (AMBIENCE.storm.gain / calm - 1) * this._storm;
     const targets = this.mix.weightsAt(this.listenerPosition(_ear), this._targets);
     const k = 1 - Math.exp(-AMBIENCE.blendRate * dt);
     for (const track of this.mix.tracks) {
@@ -217,7 +248,7 @@ export class Ambience extends Component {
       gain += (target - gain) * k;
       if (Math.abs(target - gain) < SETTLED) gain = target;
       this._gains[track] = gain;
-      this._drive(track, gain);
+      this._drive(track, track === outside ? gain * stormGain : gain);
     }
 
     // ── Music: a steady creep toward the tension ──
