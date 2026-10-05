@@ -175,6 +175,24 @@ describe('materials', () => {
     expect(fabricMesh.material.transparent).toBe(true);
     expect(fabricMesh.material.alphaMap ?? fabricMesh.material.map).toBeTruthy();
   });
+
+  it('the gaps are really empty: they discard, so nothing behind the fence is hidden by them', () => {
+    // Transparent alone still writes depth across the whole card, gaps and
+    // all — and anything drawn after it beyond the fence (the dust eyes, the
+    // grit) failed the depth test against an invisible panel. The alpha test
+    // throws the gaps away instead.
+    const group = new THREE.Group();
+    const fabric = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_WIDTH, 2.4), new THREE.MeshStandardMaterial());
+    fabric.name = 'pPlane1_phong6_0';
+    group.add(fabric);
+    group.updateMatrixWorld(true);
+    const assets = { get: vi.fn(() => ({ scene: group })), getCollision: vi.fn(() => null) };
+    const fence = createPerimeterFence({ lanes: [], assets });
+    const material = fence.object3d.children[0].material;
+    expect(material.alphaTest).toBeGreaterThan(0);
+    // …and below the wire's own alpha, or the wire would vanish too.
+    expect(material.alphaTest).toBeLessThan(60 / 255);
+  });
 });
 
 describe('gateOffset', () => {

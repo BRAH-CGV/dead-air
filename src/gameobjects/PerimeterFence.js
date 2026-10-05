@@ -476,6 +476,12 @@ function latticeMaterial() {
     map: texture,
     alphaMap: texture,
     transparent: true,
+    // The gaps are thrown away, not drawn at zero alpha: a transparent card
+    // still writes depth over its whole face, and anything drawn after it
+    // from beyond the fence (the dust eyes, the grit) failed the depth test
+    // against the invisible gaps. Under the wire's own alpha (60/255, read
+    // from the alpha map's green), so the wire stays.
+    alphaTest: 0.1,
     side: THREE.DoubleSide,
     roughness: 0.8,
     metalness: 0.4,

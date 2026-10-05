@@ -550,3 +550,33 @@ describe('the night turns', () => {
     expect(sky.skyUniforms.uSkyRotation.value).toBe(before.rot);
   });
 });
+
+describe('storm', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+  const domeOf  = (sky) => findMesh(sky, 'MarsSkyDome');
+  const glowOf  = (sky, name) => findMesh(sky.find(name), `${name}Glow`);
+
+  it('starts clear', () => {
+    expect(createMarsSky().skyUniforms.uStorm.value).toBe(0);
+  });
+
+  it('is one uniform shared by the dome and the stars, read by both shaders', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setStorm(0.7);
+    expect(domeOf(sky).material.uniforms.uStorm.value).toBe(0.7);
+    expect(starsOf(sky).material.uniforms.uStorm.value).toBe(0.7);
+    expect(domeOf(sky).material.fragmentShader).toMatch(/uniform float uStorm;/);
+    expect(starsOf(sky).material.fragmentShader).toMatch(/uniform float uStorm;/);
+  });
+
+  it('loses the moons in the dust, and gives them back after', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    const glow = glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value;
+    sky.setStorm(1);
+    expect(moonBody(sky, 'Phobos').material.opacity).toBeLessThan(0.2);
+    expect(glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value).toBeLessThan(glow * 0.2);
+    sky.setStorm(0);
+    expect(moonBody(sky, 'Phobos').material.opacity).toBe(1);
+    expect(glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value).toBe(glow);
+  });
+});

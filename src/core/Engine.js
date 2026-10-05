@@ -113,6 +113,11 @@ export class Engine {
     perfStats:  'KeyI',   // toggle the FPS / draw-call readout
     // TESTING ONLY — remove before release: bring the UFO now (BaseScene).
     summonUfo:  'KeyU',
+    // TESTING ONLY — remove before release: start a sandstorm now (BaseScene).
+    summonStorm: 'KeyK',
+    // TESTING ONLY — remove before release: bring a dust eye now, with a
+    // storm if none is blowing (BaseScene).
+    summonEyes:  'KeyJ',
   };
 
   /** Returns true while the key mapped to [action] is held down — unless
@@ -234,6 +239,14 @@ export class Engine {
       if (e.code === this.keyBinds.summonUfo && this.activeScene?.ufoThreat) {
         const coming = this.activeScene.ufoThreat.summon();
         console.log(coming ? '[DEBUG] UFO summoned' : '[DEBUG] UFO not summoned — a visit is under way, or no shift is');
+      }
+      if (e.code === this.keyBinds.summonStorm && this.activeScene?.sandstorm) {
+        const coming = this.activeScene.sandstorm.summon();
+        console.log(coming ? '[DEBUG] Sandstorm summoned' : '[DEBUG] Sandstorm not summoned — one is blowing, or no shift is');
+      }
+      if (e.code === this.keyBinds.summonEyes && this.activeScene?.dustEyes) {
+        const coming = this.activeScene.dustEyes.summon();
+        console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
       }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);

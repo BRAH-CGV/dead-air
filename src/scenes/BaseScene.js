@@ -43,6 +43,12 @@ import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
+import { Sandstorm } from '../gameplay/Sandstorm.js';
+import { DustStorm } from '../gameobjects/DustStorm.js';
+import { DustEye } from '../gameobjects/DustEye.js';
+import { DustEyes } from '../gameplay/DustEyes.js';
+import { DustClouds, DustCloudsMotion } from '../gameobjects/DustClouds.js';
+import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
@@ -116,6 +122,16 @@ const ROOM_FOG_DENSITY = {
  *  office is ~4% at 0.02 and ~0.05% at 0.0022: the office fog was never doing
  *  visible work, and the view out of the window is worth far more. */
 const OUTDOOR_FOG_DENSITY = 0.0022;
+
+/** Where the buggy parks (x, z), placed by hand in the level editor. */
+const BUGGY_SPOT = [-7.79, 10.01];
+
+/** The generator's centre in from the fence's corner, metres (x, z): its
+ *  half size, plus room to walk round it to the switch. */
+const GENERATOR_CORNER_INSET = [2.2, 1.9];
+
+/** Dust eyes built up front — the most out at once, front and back together (DustEyes.maxEyes). */
+const DUST_EYE_POOL = 6;
 
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */
@@ -205,6 +221,7 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addUfo();
+    this._addSandstorm();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
@@ -229,6 +246,9 @@ export class BaseScene extends Scene {
     this._offRetry?.();
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
+    this.dust?.dispose();
+    this.dustClouds?.dispose();
+    for (const { go } of this.dustEyes?.slots ?? []) go.dispose();
     this.breakerPanel?.close();
     for (const sound of this._sounds) {
       if (sound.isPlaying) sound.stop();
@@ -628,12 +648,17 @@ export class BaseScene extends Scene {
     // tall as downloaded, which beside a 2.2 m door reads as a machine that
     // could not get through it. BUGGY_SCALE brings the roof to just over the
     // lintel. Position and heading placed by hand in the level editor (F2).
-    this._addBuggy([-7.79, 10.01], THREE.MathUtils.degToRad(95.7), 1.237);
+    this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). Out
-    // the office's front door, where the player has to go to cut power.
-    // _addPower() puts its switch on it.
-    this.generator = this._addStandIn('Generator', 'generator.glb', [7, 0.8, 9], [2.0, 1.6, 1.2], 0x5a4a32);
+    // Generator stand-in until generator.glb arrives (asset list, P1). In the
+    // far corner of the fenced yard, on the side away from the buggy — a walk
+    // out into the storm to cut the power, along the wire. Read off the
+    // fence, so it follows the yard. _addPower() puts its switch on it.
+    const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
+    const [insetX, insetZ] = GENERATOR_CORNER_INSET;
+    const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
+    this.generator = this._addStandIn('Generator', 'generator.glb',
+      [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
     this.dishPad = dishPad;
   }
 
@@ -709,12 +734,15 @@ export class BaseScene extends Scene {
         onSolved: () => {
           showing = null;
           this._usePanel(false);
+          // The noise of it carries in a storm (DustEyes rolls for an eye).
           if (kind === 'off') {
             sound.switchOff();
+            this.dustEyes?.generatorNoise();
             return;
           }
           grid.resetBreakers();
           sound.switchOn();
+          this.dustEyes?.generatorNoise();
         },
       });
     };
@@ -865,6 +893,149 @@ export class BaseScene extends Scene {
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
+  }
+
+  // ──────────────────────────────────────────
+  // Sandstorms (some nights, from night 2)
+  // ──────────────────────────────────────────
+  /** Dust storms roll in at random from night 2 (Sandstorm). Built after
+   *  Daylight, so within a frame the storm lays its fog over the dawn's.
+   *  The dust cloud follows the player, so like the UFO it hangs on the
+   *  scene root, where the occlusion sort never files it away. */
+  _addSandstorm() {
+    const { engine } = this;
+    this.dust = new DustStorm();
+    // Cut out of the building, so it blows past the office window but never
+    // through a room.
+    const shells = [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
+    this.dust.setCutouts(shells);
+    this._sceneRoot.addChild(this.dust);
+
+    // Low billowing clouds rolling past outside — faint on a calm night, a
+    // wall of them in a storm. Kept out of the building like the grit.
+    this.dustClouds = new DustClouds({ fog: engine.scene.fog });
+    this.dustClouds.setBuilding(shells);
+    const clouds = this.dustClouds.getComponent(DustCloudsMotion);
+    clouds.daylightSource = this.daylight;
+    this._sceneRoot.addChild(this.dustClouds);
+
+    this.sandstorm = new Sandstorm({
+      controller: this.gameController,
+      fog:        engine.scene.fog,
+      sky:        this.sky,
+      dust:       this.dust,
+      // Never with the UFO: on its night the storm follows it.
+      ufo:        this.ufoThreat,
+      // One storm level drives the clouds too.
+      clouds,
+      hooks: {
+        listenerPosition: out => engine.camera.getWorldPosition(out),
+        isOutside:        p => this._isOutside(p),
+        // Wherever the outdoor fog applies — outside, corridors, the office
+        // and the airlock (its hatch is on the yard, and from it the office
+        // window shows through the inner door). Only the sealed mood rooms
+        // keep the storm out; a window seen clear from the airlock used to
+        // pop to storm on the step into the office.
+        valleyInView:     () => this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY,
+      },
+      nightDuration: this.nightClock.nightDuration,
+      nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.sandstorm);
+    this._addDustEyes();
+
+    // Now and then the storm chokes the generator: the lamps flicker, then it
+    // winds down — an ordinary shut-down, so the panel's switches restore it.
+    this.stormOutage = new StormOutage({
+      controller: this.gameController,
+      sandstorm:  this.sandstorm,
+      grid:       this.power,
+      cutPower:   () => this.generatorSound.switchOff(),
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.stormOutage);
+  }
+
+  /** The eyes in the storm (DustEyes). A pool built now, hidden, so their
+   *  shaders compile behind the loading screen — on the scene root, like the
+   *  dust, since they move. They are told the fence they spawn beyond and
+   *  the office window they can be seen through, as plain rectangles. */
+  _addDustEyes() {
+    const { engine } = this;
+    const pool = [];
+    for (let i = 0; i < DUST_EYE_POOL; i++) {
+      const eye = new DustEye(`DustEye${i}`);
+      this._sceneRoot.addChild(eye);
+      pool.push(eye);
+    }
+
+    const { minX, maxX, minZ, maxZ } = this.fence.rect;
+    this.dustEyes = new DustEyes({
+      controller: this.gameController,
+      sandstorm:  this.sandstorm,
+      pool,
+      fence:      { minX, maxX, minZ, maxZ },
+      window:     this._officeWindow(),
+      whiteOut:   this.whiteOut,
+      terminal:   this.terminal,
+      fog:        engine.scene.fog,
+      // Yard eyes stand out of the trees, in sight; chases go round what's solid.
+      trees:      this._sceneRoot.find('Outside')?.find('MarsVegetation')?.trees ?? [],
+      obstacles:  this._yardObstacles(),
+      hooks: {
+        eyePosition:      out => engine.camera.getWorldPosition(out),
+        viewDirection:    out => engine.camera.getWorldDirection(out),
+        isOutside:        p => this._isOutside(p),
+        hatchShut:        () => this.rooms.Airlock.hatch.locked,
+        setPlayerLocked:  locked => this._setPlayerLocked(locked),
+      },
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
+  }
+
+  /** The solid things standing in the yard, as ground-plan rectangles —
+   *  what a chasing dust eye goes round (and the airlock, which it enters
+   *  only by its hatch). Measured off the objects, so a
+   *  moved buggy moves its box. Things not loaded (tests) are left out. */
+  _yardObstacles() {
+    const outside = this._sceneRoot.find('Outside');
+    const boxes = [];
+    for (const name of ['Buggy', 'Generator']) {
+      const go = outside?.find(name);
+      if (!go) continue;
+      go.object3d.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(go.object3d);
+      if (box.isEmpty()) continue;
+      boxes.push({ minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z });
+    }
+    // The airlock juts into the yard: solid, but for its hatch — a chase
+    // after someone inside comes in that way, never through the side walls.
+    const airlock = this.rooms.Airlock;
+    if (airlock?.hatch) {
+      const shell = airlock.bounds();
+      const hatch = airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
+      boxes.push({
+        minX: shell.min.x, maxX: shell.max.x, minZ: shell.min.z, maxZ: shell.max.z,
+        door: { x: hatch.x, z: hatch.z, halfWidth: airlock.hatch.doorSize[0] / 2 },
+      });
+    }
+    return boxes;
+  }
+
+  /** The office's back window as DustEyes wants it: the opening's x span
+   *  and sill-to-top height, in the plane of the wall's inner face. Read
+   *  off the room's own opening, so moving the window moves this. */
+  _officeWindow() {
+    const office = this.rooms.MainOffice;
+    const [ox, oy] = office.position;
+    const opening = office.openings.find(o => o.side === 'back' && (o.sill ?? 0) > 0);
+    const centre = ox + (opening.offset ?? 0);
+    return {
+      x0: centre - opening.width / 2,
+      x1: centre + opening.width / 2,
+      z: office.bounds().min.z + office.wallThick,
+      sill: oy + opening.sill,
+      top: oy + opening.sill + opening.height,
+    };
   }
 
   // ──────────────────────────────────────────
@@ -1065,6 +1236,7 @@ export class BaseScene extends Scene {
    *  sealed living quarters, the outdoor density everywhere the valley is in
    *  view (the main office, the corridors, and outside). */
   _applyRoomFog(room) {
+    this._currentRoom = room;
     const fog = this.engine.scene.fog;
     if (!fog) return;
     fog.density = this._fogDensityFor(room);

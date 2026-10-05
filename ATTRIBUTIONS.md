@@ -624,6 +624,45 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A breaker flicked on the generator's repair panel (`BreakerPanel`) |
 | **Modifications** | Renamed |
 
+### Sandstorm
+
+"Sandstorm" (https://pixabay.com/sound-effects/sandstorm-222741/) by SoundReality is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`soundreality-sandstorm-222741.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/sandstorm.mp3` |
+| **Manifest key** | `sfx:sandstorm` |
+| **Used for** | The wind of a sandstorm (`Sandstorm`) |
+| **Modifications** | Renamed; crossfaded into a loop at load |
+
+### Tiger Attack
+
+"Tiger Attack" (https://pixabay.com/sound-effects/tiger-attack-195840/) by DFFDV is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`dffdv-tiger-attack-195840.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/tiger-attack.mp3` |
+| **Manifest key** | `sfx:tiger-attack` |
+| **Used for** | A dust eye chasing the player (`DustEyes`), looped and kept quiet |
+| **Modifications** | Renamed |
+
+### Monster Bite
+
+"Monster Bite" (https://pixabay.com/sound-effects/monster-bite-44538/), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-monster-bite-44538.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/monster-bite.mp3` |
+| **Manifest key** | `sfx:monster-bite` |
+| **Used for** | A dust eye catching the player (`DustEyes`) |
+| **Modifications** | Renamed |
+
 ## Downloaded but unattributed — TODO
 
 These files sit in `public/assets/models/` with no source link on record.

@@ -21,6 +21,12 @@ import { hiddenFromRegion } from '../systems/Sightlines.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
+import { Sandstorm } from '../gameplay/Sandstorm.js';
+import { DustStorm } from '../gameobjects/DustStorm.js';
+import { DustEye } from '../gameobjects/DustEye.js';
+import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
+import { StormOutage } from '../gameplay/StormOutage.js';
+import { DustClouds, DustCloudsMotion } from '../gameobjects/DustClouds.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -1189,5 +1195,235 @@ describe('BaseScene power and the UFO', () => {
     const corridor = scene.corridors.OfficeToServer.position;
     expect(isOutside(new THREE.Vector3(corridor[0], 1.2, corridor[2]))).toBe(false);
     expect(isOutside(new THREE.Vector3(7, 1.2, 9))).toBe(true);                  // by the generator
+  });
+});
+
+describe('BaseScene sandstorms', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  it('runs a Sandstorm on the gameplay systems, after Daylight, wired to the fog, sky and dust', () => {
+    const systems = scene._sceneRoot.find('GameplaySystems');
+    const storm = systems.getComponent(Sandstorm);
+    expect(storm).toBe(scene.sandstorm);
+    expect(storm.controller).toBe(scene.gameController);
+    expect(storm.fog).toBe(engine.scene.fog);
+    expect(storm.sky).toBe(scene.sky);
+    expect(storm.dust).toBeInstanceOf(DustStorm);
+    // Daylight rewrites the fog colour; the storm must lay itself on top.
+    const order = systems.components;
+    expect(order.indexOf(storm)).toBeGreaterThan(order.indexOf(scene.daylight));
+  });
+
+  it('keeps the dust on the scene root, out of the occlusion zones', () => {
+    expect(scene.dust.parent).toBe(scene._sceneRoot);
+  });
+
+  it('cuts every room and corridor out of the dust', () => {
+    const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
+    expect(scene.dust.points.material.uniforms.uCutoutCount.value).toBe(parts.length);
+  });
+
+  it('sees the valley outside and from rooms with a window, not from sealed rooms', () => {
+    const { valleyInView } = scene.sandstorm.hooks;
+    const sys = engine.player.getComponent(RoomTransitionSystem);
+    sys.onRoomChange(scene.rooms.MainOffice, null);
+    expect(valleyInView()).toBe(true);
+    // The airlock opens on the yard and looks into the office through its
+    // inner door: no clear window there that pops to storm on the way in.
+    sys.onRoomChange(scene.rooms.Airlock, scene.rooms.MainOffice);
+    expect(valleyInView()).toBe(true);
+    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.Airlock);
+    expect(valleyInView()).toBe(false);
+    sys.onRoomChange(null, scene.rooms.ServerRoom);
+    expect(valleyInView()).toBe(true);
+  });
+
+  it('frees the dust on dispose', () => {
+    const dispose = vi.spyOn(scene.dust, 'dispose');
+    scene.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene dust eyes', () => {
+  let engine, scene;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  it('runs DustEyes on the gameplay systems, after the storm it reads', () => {
+    const systems = scene._sceneRoot.find('GameplaySystems');
+    const eyes = systems.getComponent(DustEyes);
+    expect(eyes).toBe(scene.dustEyes);
+    expect(eyes.sandstorm).toBe(scene.sandstorm);
+    expect(eyes.controller).toBe(scene.gameController);
+    expect(systems.components.indexOf(eyes)).toBeGreaterThan(systems.components.indexOf(scene.sandstorm));
+  });
+
+  it('tints the silhouettes from the live fog', () => {
+    expect(scene.dustEyes.fog).toBe(engine.scene.fog);
+  });
+
+  it('keeps the storm off the UFO', () => {
+    expect(scene.sandstorm.ufo).toBe(scene.ufoThreat);
+  });
+
+  it('builds its eyes up front, hidden, on the scene root', () => {
+    expect(scene.dustEyes.slots.length).toBeGreaterThanOrEqual(2);
+    for (const { go } of scene.dustEyes.slots) {
+      expect(go).toBeInstanceOf(DustEye);
+      expect(go.parent).toBe(scene._sceneRoot);
+      expect(go.object3d.visible).toBe(false);
+    }
+  });
+
+  it('knows the fence it spawns beyond, and the window it is seen through', () => {
+    const { fence, window: win } = scene.dustEyes;
+    expect(fence).toEqual(expect.objectContaining({ minX: scene.fence.rect.minX, maxZ: scene.fence.rect.maxZ }));
+    // From the desk chair, out through the middle of the glass.
+    const office = scene.rooms.MainOffice;
+    const [ox, , oz] = office.position;
+    const seat = new THREE.Vector3(ox, 1.24, oz - 2);
+    expect(throughWindow(seat, new THREE.Vector3(ox, 1.6, oz - 25), win)).toBe(true);
+    expect(throughWindow(seat, new THREE.Vector3(ox + 40, 1.6, oz - 25), win)).toBe(false);
+  });
+
+  it('is safe from a chase only once the airlock hatch is shut', () => {
+    const { hatch } = scene.rooms.Airlock;
+    hatch.locked = false;
+    expect(scene.dustEyes.hooks.hatchShut()).toBe(false);
+    hatch.locked = true;
+    expect(scene.dustEyes.hooks.hatchShut()).toBe(true);
+  });
+
+  it('frees its eyes on dispose', () => {
+    const spies = scene.dustEyes.slots.map(({ go }) => vi.spyOn(go, 'dispose'));
+    scene.dispose();
+    for (const spy of spies) expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene generator corner', () => {
+  it('stands the generator in the far corner of the fenced yard, on the side away from the buggy', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const outside = scene._sceneRoot.find('Outside');
+    const gen = worldPos(outside.find('Generator'));
+    const buggy = worldPos(outside.find('Buggy') ?? { object3d: new THREE.Object3D() });
+    const { rect } = scene.fence;
+    // Inside the wire…
+    expect(gen.x).toBeLessThan(rect.maxX);
+    expect(gen.z).toBeLessThan(rect.maxZ);
+    // …tucked into the corner (within a few metres of both runs)…
+    expect(rect.maxX - gen.x).toBeLessThan(3);
+    expect(rect.maxZ - gen.z).toBeLessThan(3);
+    // …across the yard from the buggy.
+    expect(Math.sign(gen.x)).not.toBe(Math.sign(buggy.x || -1));
+  });
+});
+
+describe('BaseScene storm outage', () => {
+  it('runs a StormOutage on the storm and the grid, cutting the power through the generator', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const outage = scene._sceneRoot.find('GameplaySystems').getComponent(StormOutage);
+    expect(outage).toBe(scene.stormOutage);
+    expect(outage.sandstorm).toBe(scene.sandstorm);
+    expect(outage.grid).toBe(scene.power);
+    const off = vi.spyOn(scene.generatorSound, 'switchOff');
+    outage.cutPower();
+    expect(off).toHaveBeenCalled();
+    expect(scene.power.on).toBe(false);
+    expect(scene.power.tripped).toBe(false);   // the switches alone bring it back
+  });
+});
+
+describe('BaseScene dust eyes keep out of things', () => {
+  it('know the trees, and steer round the buggy and the generator', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const belt = scene._sceneRoot.find('Outside').find('MarsVegetation');
+    expect(scene.dustEyes.trees).toBe(belt.trees);
+    const gen = worldPos(scene._sceneRoot.find('Outside').find('Generator'));
+    const inBox = b => gen.x > b.minX && gen.x < b.maxX && gen.z > b.minZ && gen.z < b.maxZ;
+    expect(scene.dustEyes.obstacles.some(inBox)).toBe(true);
+  });
+
+  it('count the airlock as solid, with its hatch as the one way in', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const shell = scene.rooms.Airlock.bounds();
+    const hatch = worldPos(scene.rooms.Airlock.hatch);
+    const box = scene.dustEyes.obstacles.find(b => b.door);
+    expect(box).toBeTruthy();
+    expect(box.minX).toBeCloseTo(shell.min.x);
+    expect(box.maxZ).toBeCloseTo(shell.max.z);
+    expect(box.door.x).toBeCloseTo(hatch.x);
+    expect(box.door.z).toBeCloseTo(hatch.z);
+  });
+});
+
+describe('BaseScene dust clouds', () => {
+  let engine, scene;
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+  });
+
+  it('builds the clouds on the scene root, driven by the storm, lit by the dawn', () => {
+    expect(scene.dustClouds).toBeInstanceOf(DustClouds);
+    expect(scene.dustClouds.parent).toBe(scene._sceneRoot);
+    const motion = scene.dustClouds.getComponent(DustCloudsMotion);
+    expect(scene.sandstorm.clouds).toBe(motion);
+    expect(motion.daylightSource).toBe(scene.daylight);
+    expect(scene.dustClouds.fog).toBe(engine.scene.fog);
+  });
+
+  it('cuts every room and corridor out of them', () => {
+    const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
+    expect(scene.dustClouds.mesh.material.uniforms.uCutoutCount.value).toBe(parts.length);
+  });
+
+  it('frees them on dispose', () => {
+    const dispose = vi.spyOn(scene.dustClouds, 'dispose');
+    scene.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('BaseScene generator noise', () => {
+  it('finishing the generator panel — off or on — rolls for an eye', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const noise = vi.spyOn(scene.dustEyes, 'generatorNoise');
+    const generator = scene._sceneRoot.find('Outside').find('Generator');
+    const use = generator.getComponent(Interactable);
+    const solve = () => {
+      const puzzle = scene.breakerPanel._puzzle;
+      puzzle.switches.forEach((_, i) => puzzle.toggle(i));
+      scene.breakerPanel._callbacks.onSolved();
+    };
+    use.onInteract({});       // power on: the panel shuts it down
+    expect(noise).not.toHaveBeenCalled();   // only finishing the panel counts
+    solve();
+    expect(noise).toHaveBeenCalledTimes(1);
+    use.onInteract({});       // and back on
+    solve();
+    expect(noise).toHaveBeenCalledTimes(2);
   });
 });
