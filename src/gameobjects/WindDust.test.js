@@ -172,7 +172,19 @@ describe('createWindDust', () => {
     expect(mesh.material.depthTest).toBe(true);    // walls and hills still hide it
     expect(mesh.material.transparent).toBe(true);
     expect(mesh.material.lights).toBe(false);
+    // Its own colour at any distance: the storm's fog is matched to it
+    // (SANDSTORM.dustColor), not the other way round.
     expect(mesh.material.fog).toBe(false);
+  });
+
+  it('calm: a rare few, and faint', () => {
+    const { mesh, uniforms } = build();
+    expect(WIND_DUST.count).toBeGreaterThanOrEqual(20);
+    expect(WIND_DUST.count).toBeLessThanOrEqual(30);
+    expect(mesh.geometry.drawRange.count).toBe(WIND_DUST.count * 6);
+    expect(WIND_DUST.opacity).toBeGreaterThan(0.15);
+    expect(WIND_DUST.opacity).toBeLessThanOrEqual(0.3);
+    expect(uniforms.uOpacity.value).toBe(WIND_DUST.opacity);
   });
 
   it('fades out near the camera, so no cloud ever fills the screen', () => {
@@ -315,7 +327,7 @@ describe('WindDustMotion', () => {
     expect(uniforms.uDrift.value.length()).toBeGreaterThan(0);
   });
 
-  it('is rust at night and pale dust by day, going by the dawn it is handed', () => {
+  it('is rust at night and sunlit dust by day, going by the dawn it is handed', () => {
     const { motion, uniforms } = build();
     motion.daylight = { factor: 0 };
     motion.onLateUpdate(1 / 60);
@@ -329,6 +341,18 @@ describe('WindDustMotion', () => {
     motion.onLateUpdate(1 / 60);
     const half = new THREE.Color(WIND_DUST.nightColor).lerp(new THREE.Color(WIND_DUST.dayColor), 0.5);
     expect(uniforms.uColor.value.getHex()).toBe(half.getHex());
+  });
+
+  it('is orange-brown by day, not pale: dust in the sun, standing out of the butterscotch sky', () => {
+    // At 0xc9a27a the day clouds came out cream, the colour of the day's sky
+    // and fog behind them (0xd9b48a), and read as white wisps.
+    const day = new THREE.Color().setHex(WIND_DUST.dayColor);
+    const [r, g, b] = [WIND_DUST.dayColor >> 16, (WIND_DUST.dayColor >> 8) & 255, WIND_DUST.dayColor & 255];
+    expect(r).toBeGreaterThan(g * 1.5);
+    expect(g).toBeGreaterThan(b * 1.5);
+    // Lit, all the same: well brighter than the night's rust.
+    const night = new THREE.Color().setHex(WIND_DUST.nightColor);
+    expect(day.r + day.g + day.b).toBeGreaterThan((night.r + night.g + night.b) * 2);
   });
 
   it('stays rust through a storm: the fog a sandstorm turns brown is not daylight', () => {
@@ -441,6 +465,49 @@ describe('WindDustMotion storm', () => {
     motion.setStorm(7);
     run(motion, storm.ramp + 1);
     expect(uniforms.uStorm.value).toBe(1);
+  });
+
+  it('is a wall of dust in a storm: ten times the clouds, and thicker', () => {
+    // Fewer, and it read as scattered clouds with clear air between them.
+    expect(storm.count).toBeGreaterThanOrEqual(WIND_DUST.count * 10);
+    expect(storm.opacity).toBeGreaterThan(WIND_DUST.opacity * 2.5);
+    expect(storm.opacity).toBeLessThan(1);
+  });
+
+  it('comes right up to the window in a storm', () => {
+    // Calm, a cloud keeps well off the walls and fades in over a long way.
+    // In a storm that left the nearest dust a good 7 m out from the glass,
+    // and faint from the desk. Its clouds stand within a couple of metres of
+    // the wall (the per-pixel cutout keeps them out of the rooms)…
+    expect(storm.clearance).toBeLessThanOrEqual(1);
+    expect(storm.clearance + storm.wallFade).toBeLessThanOrEqual(2.5);
+    expect(storm.wallFade).toBeGreaterThan(0);          // still a fade, not a pop
+    expect(storm.wallFade).toBeLessThan(WIND_DUST.wallFade);
+    // …and are at full strength by the distance the desk is from the dust
+    // just outside the window, about 7 m.
+    expect(storm.nearFade[1]).toBeLessThanOrEqual(7);
+
+    const { motion, uniforms } = build();
+    expect(uniforms.uWallFade.value).toBe(WIND_DUST.wallFade);
+    motion.setStorm(1);
+    run(motion, storm.ramp + 1);
+    expect(uniforms.uWallFade.value).toBeCloseTo(storm.wallFade);
+    expect(uniforms.uClearance.value).toBeCloseTo(storm.clearance);
+    motion.setStorm(0);
+    run(motion, storm.ramp + 1);
+    expect(uniforms.uWallFade.value).toBe(WIND_DUST.wallFade);
+  });
+
+  it('towers in a storm: tall enough to take most of the view, not just the horizon', () => {
+    // At 8.5 m the tallest stood 20 degrees up from 20 m away, and the storm
+    // was a band along the ground with clear sky over it. From 12 m up they
+    // fill the top of the screen from the same distance.
+    const tallest = WIND_DUST.height[1] * storm.size[1];
+    const shortest = WIND_DUST.height[0] * storm.size[1];
+    expect(tallest).toBeGreaterThanOrEqual(12);
+    expect(shortest).toBeGreaterThan(3.2 * 2);     // twice the roof, even the least
+    // Calm they stay low: the sky is only lost to a storm.
+    expect(WIND_DUST.base[1] + WIND_DUST.height[1]).toBeLessThanOrEqual(2.6);
   });
 
   it('keeps close behind the level it is handed: Sandstorm has already eased it', () => {

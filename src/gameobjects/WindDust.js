@@ -42,12 +42,12 @@ import { makeRandom, randRange } from '../core/Random.js';
 // The area rides the camera, but the clouds don't: a cloud's place is its
 // seed plus the drift, wrapped into the area around uCenter. Walk forward
 // and the dust stays where it was; a cloud leaving the back of the area
-// comes in at the front. So a few dozen clouds read as dust everywhere.
+// comes in at the front. So a couple of dozen clouds read as dust everywhere.
 //
 // What a billboard effect costs is overdraw — big see-through quads stacked
 // on the same pixels — so that is what is kept down:
 //
-//   • a few dozen clouds, low and small on screen: most sit out toward
+//   • a couple of dozen clouds, low and small on screen: most sit out toward
 //     the horizon line, a few metres wide and no taller than 2.5 m;
 //   • none right at the camera: they fade out inside `nearFade`, which is
 //     where a quad would cover the screen (and where you would see it turn);
@@ -55,7 +55,9 @@ import { makeRandom, randRange } from '../core/Random.js';
 //   • two texture reads per pixel, from a 64 px noise tile made at build.
 //
 // It is unlit, casts and receives no shadows, writes no depth and takes no
-// fog, so it adds nothing to the lit shaders or the frozen shadow maps.
+// fog, so it adds nothing to the lit shaders or the frozen shadow maps. It
+// keeps its own colour at any distance; a sandstorm's fog is matched to that
+// colour instead (SANDSTORM.dustColor), so the clouds and the murk agree.
 //
 // ── A dust storm ──
 // `WindDustMotion.setStorm(level)` takes it from this calm, 0, to a storm,
@@ -64,7 +66,8 @@ import { makeRandom, randRange } from '../core/Random.js';
 // own level, so the clouds build and die down with the fog, the sky and the
 // grit. The extra clouds are in the same buffer from the start — a storm
 // changes how much of it is drawn, and a few uniforms. A storm does cost
-// more to draw: the clouds are several times the size on screen. The near
+// more to draw: the clouds are many times the size on screen, and tall
+// enough to take most of the view. The near
 // fade still holds.
 //
 // ── Not indoors ──
@@ -88,8 +91,9 @@ import { makeRandom, randRange } from '../core/Random.js';
 /** Tuning. Metres and seconds unless stated. */
 export const WIND_DUST = {
   seed: 20261004,
-  /** Clouds in the area. One draw call whatever the number. */
-  count: 64,
+  /** Clouds in the area on a calm night: a rare few. One draw call
+   *  whatever the number. */
+  count: 24,
   /** The patch of ground around the camera they are scattered over: x, z. */
   area: [90, 90],
   /** A cloud's width and height. Wider than tall, and low. */
@@ -129,29 +133,40 @@ export const WIND_DUST = {
   gustPeriod: 11,
   /** How fast a cloud's shape churns, in noise tiles a second. */
   churn: 0.012,
-  /** Dust colour at night and by day: rust under the moons, pale in the
-   *  sun. It goes from one to the other with the dawn (Daylight's factor,
-   *  handed to WindDustMotion as `daylight`). */
+  /** Dust colour at night and by day: dark rust under the moons, a lit
+   *  orange-brown in the sun (0xaf5b27 on screen, after tone mapping). Not
+   *  pale: the day's sky and fog are butterscotch (0xd9b48a), and clouds
+   *  near that colour read as white wisps. It goes from one to the other
+   *  with the dawn (Daylight's factor, handed to WindDustMotion as
+   *  `daylight`). */
   nightColor: 0x583427,
-  dayColor: 0xc9a27a,
-  /** The densest a cloud gets. */
-  opacity: 0.4,
+  dayColor: 0xa05a2e,
+  /** The densest a cloud gets on a calm night: faint. */
+  opacity: 0.22,
 
   /** A dust storm: what the values above become at `setStorm(1)`. */
   storm: {
-    /** Clouds drawn (calm: `count`). The density. */
-    count: 220,
+    /** Clouds drawn (calm: `count`), and how dense each gets: a wall of
+     *  dust. At 160 it read as scattered clouds with clear air between
+     *  them. This is what the storm costs to draw — quads this size, stacked
+     *  — so it is the first number to lower if the frame rate drops. */
+    count: 240,
+    opacity: 0.65,
     /** A cloud's width and height, as multiples of the calm ones. At
-     *  [2.5, 3.4] they run to 25 m wide and 8.5 m tall: well over the roof. */
-    size: [2.5, 3.4],
-    opacity: 0.75,
+     *  [2.5, 5] they run to 22 m wide and 7 to 12.5 m tall: from 20 m off the
+     *  tallest fill the top of the screen, so the storm takes the view and
+     *  not just the horizon. */
+    size: [2.5, 5],
     /** How many times faster everything blows. */
     speed: 2.2,
     /** A storm comes right up to the walls, to close the view in from the
-     *  window (the per-pixel cutout keeps it out of the rooms)… */
-    clearance: 2.5,
-    /** …and closer to the camera than the calm clouds do. */
-    nearFade: [3.5, 9],
+     *  window (the per-pixel cutout keeps it out of the rooms): its clouds
+     *  stand from half a metre off them, at full strength by two… */
+    clearance: 0.5,
+    wallFade: 1.5,
+    /** …and closer to the camera than the calm clouds do: at full strength
+     *  by 7 m, which from the desk is the dust just outside the glass. */
+    nearFade: [3, 7],
     /** Seconds to go from calm to a full storm, or back, if handed the
      *  level all at once. Short: Sandstorm has already eased the level it
      *  hands over, and drops to calm at once on a new night. */
@@ -400,7 +415,7 @@ export class WindDustMotion extends Component {
   /** Move the storm toward where it is heading, and set everything that
    *  follows it. @returns {number} the storm now */
   _advanceStorm(dt) {
-    const { storm: tuning, opacity, clearance, nearFade } = WIND_DUST;
+    const { storm: tuning, opacity, clearance, wallFade, nearFade } = WIND_DUST;
     const step = dt / tuning.ramp;
     const s = this._storm < this._stormTarget
       ? Math.min(this._stormTarget, this._storm + step)
@@ -411,6 +426,7 @@ export class WindDustMotion extends Component {
     u.uStorm.value = s;
     u.uOpacity.value = opacity + (tuning.opacity - opacity) * s;
     u.uClearance.value = clearance + (tuning.clearance - clearance) * s;
+    u.uWallFade.value = wallFade + (tuning.wallFade - wallFade) * s;
     u.uNearFade.value.set(
       nearFade[0] + (tuning.nearFade[0] - nearFade[0]) * s,
       nearFade[1] + (tuning.nearFade[1] - nearFade[1]) * s,
