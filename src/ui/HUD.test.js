@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { HUD, RadarOverlay } from './HUD.js';
 import {
   DishRig,
@@ -328,5 +328,112 @@ describe('RadarOverlay sky backdrop', () => {
     // The moons dim but stay — they are meshes in the sky, not shader stars.
     const moonFill = calls.find(c => c.op === 'fill' && c.style.startsWith(`rgba(${b.moons[0].base},`));
     expect(moonFill).toBeDefined();
+  });
+});
+
+describe('RadarOverlay UFO blob', () => {
+  /** Records every call on a 2D context, whatever the method. */
+  function anyCtx() {
+    const calls = [];
+    const state = {};
+    const ctx = new Proxy(state, {
+      get(target, key) {
+        if (key in target) return target[key];
+        return (...a) => {
+          calls.push({ op: key, a, fillStyle: target.fillStyle });
+          if (key === 'createRadialGradient') return { addColorStop: () => {}, isGradient: true };
+          return undefined;
+        };
+      },
+      set(target, key, value) { target[key] = value; return true; },
+    });
+    return { ctx, calls };
+  }
+
+  function drawWith(threat) {
+    const overlay = new RadarOverlay(null);
+    const { ctx, calls } = anyCtx();
+    overlay._ctx = ctx;
+    overlay.threat = threat;
+    overlay.update([], 0, -0.5, 0, 0, null, -1, [], null);
+    return { overlay, calls };
+  }
+
+  /** Outline points the quiet radar doesn't draw — the blob's. */
+  const blobVertices = (calls) => {
+    const quiet = new Set(drawWith(null).calls.filter(c => c.op === 'lineTo').map(c => c.a.join()));
+    return calls.filter(c => c.op === 'lineTo' && !quiet.has(c.a.join()));
+  };
+
+  it('draws nothing extra while no UFO is coming', () => {
+    const quiet = drawWith(null).calls.length;
+    const inactive = drawWith({ active: false, yaw: 0, pitch: -0.3, size: 0.5, intensity: 0.5, time: 0 }).calls.length;
+    expect(inactive).toBe(quiet);
+  });
+
+  it('draws a distorted blob where the UFO is in the sky, bigger as it closes in', () => {
+    const at = { yaw: 0.3, pitch: -0.4 };
+    const small = drawWith({ active: true, ...at, size: 0.12, intensity: 0.3, time: 1 });
+    const big   = drawWith({ active: true, ...at, size: 1,    intensity: 1,   time: 1 });
+    const p = small.overlay._skyToCanvas(at.yaw, at.pitch);
+
+    const spread = (calls) => {
+      const pts = blobVertices(calls);
+      return Math.max(...pts.map(c => Math.hypot(c.a[0] - p.x, c.a[1] - p.y)));
+    };
+    expect(blobVertices(small.calls).length).toBeGreaterThan(16);   // a many-sided outline, not a dot
+    expect(spread(big.calls)).toBeGreaterThan(spread(small.calls) * 2);
+  });
+
+  it('wobbles: the outline changes from one moment to the next', () => {
+    const at = { active: true, yaw: 0, pitch: -0.4, size: 0.5, intensity: 0.8 };
+    const a = drawWith({ ...at, time: 1 }).calls.filter(c => c.op === 'lineTo').map(c => c.a.join());
+    const b = drawWith({ ...at, time: 1.3 }).calls.filter(c => c.op === 'lineTo').map(c => c.a.join());
+    expect(a).not.toEqual(b);
+  });
+});
+
+describe('RadarOverlay UFO warning', () => {
+  const overlay = new RadarOverlay(null);
+  const maxR = 200 * 0.85;
+  const cursorFor = (yaw, pitch) => {
+    const p = overlay._skyToCanvas(yaw, pitch);
+    return { x: (p.x - 200) / maxR, y: -(p.y - 200) / maxR };
+  };
+
+  it('knows when the cursor is over the blob, and not when it is clear of it', () => {
+    overlay.threat = { active: true, yaw: 0.4, pitch: -0.5, size: 0.5, intensity: 1, time: 0 };
+    const on = cursorFor(0.4, -0.5);
+    expect(overlay.threatAt(on.x, on.y)).toBe(true);
+    const off = cursorFor(-2.5, -0.2);
+    expect(overlay.threatAt(off.x, off.y)).toBe(false);
+  });
+
+  it('a bigger blob is easier to hit', () => {
+    const near = cursorFor(0.4 + 0.25, -0.5);
+    overlay.threat = { active: true, yaw: 0.4, pitch: -0.5, size: 0.12, intensity: 1, time: 0 };
+    expect(overlay.threatAt(near.x, near.y)).toBe(false);
+    overlay.threat.size = 1;
+    expect(overlay.threatAt(near.x, near.y)).toBe(true);
+  });
+
+  it('nothing to hit when no UFO is coming', () => {
+    overlay.threat = { active: false, yaw: 0.4, pitch: -0.5, size: 1, intensity: 1, time: 0 };
+    const on = cursorFor(0.4, -0.5);
+    expect(overlay.threatAt(on.x, on.y)).toBe(false);
+    overlay.threat = null;
+    expect(overlay.threatAt(on.x, on.y)).toBe(false);
+  });
+
+  it('setWarning writes the warning line once, and only when it changes', () => {
+    // @ts-ignore — a stand-in element
+    const el = { textContent: '', classList: { toggle: vi.fn() } };
+    overlay._warning = el;
+    overlay.setWarning('EXTREME ELECTRICAL ANOMALY');
+    overlay.setWarning('EXTREME ELECTRICAL ANOMALY');
+    expect(el.textContent).toBe('EXTREME ELECTRICAL ANOMALY');
+    expect(el.classList.toggle).toHaveBeenCalledTimes(1);
+    overlay.setWarning('');
+    expect(el.classList.toggle).toHaveBeenLastCalledWith('is-shown', false);
   });
 });

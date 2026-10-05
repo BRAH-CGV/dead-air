@@ -53,34 +53,42 @@ src/
 │   ├── Fullbright.js    # Unlit debug lighting (B to toggle)
 │   ├── ShadowScheduler.js # Shadow maps redrawn only when a light/caster moves, or on invalidate()
 │   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen
+│   ├── ShadowSides.js   # sealAgainst: make a building solid to one light's shadow map
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
 │   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
 │   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
+│   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
-│   └── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
-│   └── GameController.js # playing → morning → sleep → next night
+│   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
+│   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
+│   └── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
 ├── systems/
 │   ├── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
 │   ├── OcclusionZones.js # Named object sets drawn/skipped together, with a readiness gate
-│   └── Sightlines.js    # Window half-spaces, instance splitting, hideable-part collection
+│   ├── Sightlines.js    # Window half-spaces, instance splitting, hideable-part collection
+│   └── PowerGrid.js     # Every lamp on the generator's switch; surge flicker; blown bulbs
 ├── assets/
 │   └── manifest.js      # Every asset path, by key. Single source of truth.
 ├── ui/
 │   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
-│   └── ScreenFade.js    # Fade to black and back (#fade in index.html)
+│   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
+│   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
+│   └── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 └── main.js              # Entry point: creates Engine, awaits init()
 ```
 
@@ -164,6 +172,65 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
   - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
+### Power and the UFO
+
+The generator outside is the base's one power switch. `BaseScene._addPower` puts every light and glowing fitting in the rooms, the corridors and on the dish pad on a `PowerGrid`, which remembers what each was built at and rewrites it every frame from one level.
+
+- **Three faults.**
+  - `grid.on` is the generator's switch. Off kills every lamp *and* the vital functions; the computer terminal (`terminal.setPowered`) reads it.
+  - `grid.broken` is blown bulbs: they stay dark with the power back on. `grid.lit` is the ordinary bulbs actually shining.
+  - `grid.tripped` is breakers thrown by the UFO's surge. While tripped, `setOn(true)` is refused until `resetBreakers()`. Cutting the power by hand never trips them, and a new night's `repair()` resets them along with the bulbs.
+- **Switching it normally** goes through the panel too, as an easy `BreakerPuzzle({ flick: 'on' | 'off' })`: every lead already home and every breaker the wrong way. Flick them all up to start the generator, or all down to shut it off.
+- **The breaker panel.** With the breakers tripped, the generator's Interactable opens `BreakerPanel`, a DOM minigame over a `BreakerPuzzle`:
+  - **Top:** a row of breaker switches, most of them thrown; click them all back on.
+  - **Bottom:** colour-coded leads to drag (or click, then click) onto shuffled terminals of their own colour. Anywhere within `SNAP` of a lead or a terminal counts, not just its ring. A wrong colour sparks and won't go on.
+  - **Each flick** plays `sfx:light-switch` (the panel's `onFlick`).
+  - **Solving it** resets the breakers and starts the generator.
+  - **Q or Esc** steps away and keeps the progress: there is one puzzle per blow-out.
+  - **The cost:** the player stands outside, in the yard, while doing it. That is the punishment for not cutting the power in advance.
+  - **The mouse:** `BaseScene._usePanel` releases the pointer lock while the panel is open and freezes the player.
+- **Unbreakable lamps.** These follow the switch but survive a blow-out: the dish pad's floods (`collect(pad, { breakable: false })`) and the terminal screen's faint green `ScreenGlow` in the office (`userData.unbreakable`), which shows that the computer still works in a dark office.
+- **Off the grid.** `collect()` skips any subtree whose object3d has `userData.offGrid`. The airlock beacon is on its own battery, so the interlock always works. `LEDStrip` and `SignalAlertLight` animate their own glow, so they mark their meshes `offGrid` and are added as consumers instead; the grid hands them `powerLevel` to scale by. A new self-animating light should do the same, or the grid and the component fight over one material.
+- **Never hidden.** Lights are zeroed, never hidden (see Performance). The UFO's lights follow the same rule.
+- **The generator's sound** (`GeneratorSound`, on the generator):
+  - **Switching on** plays the start-up clip, which crossfades into a looping hum.
+  - **Switching off** plays only the wind-down.
+  - **The hum** follows the grid by itself. It is already running when a night starts, and it cuts dead when the UFO trips the generator.
+  - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`, 1 %).
+  - **The clips** are cut at MPEG frame boundaries from one 3-minute recording, so only about 22 s of audio is decoded.
+
+`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 1:00 and 4:30 on the night clock (`UFO.spawnHours`, via `scheduleApproach`, which follows the clock's own length), with the radar warning `radarLead` seconds before. For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:
+
+```
+waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
+                                          └──▶ caught ──▶ gameOver (controller.fail) ──[E]──▶ retry
+```
+
+- **Approach.**
+  - For `radarLead` (20 s) it is only on the radar: a wobbling, glitching blob (`RadarOverlay.threat`, on the shared `_skyToCanvas` mapping) crawling toward the centre, which is overhead. The signal lamp goes `frantic`.
+  - Parking the radar cursor on the blob (`RadarOverlay.threatAt`) flashes the red `ANOMALY_WARNING` line ("extreme electrical anomaly detected — turn off power…") above the radar's info line.
+  - When the flight sound starts, the UFO bursts into the sky (`Ufo.appear`: its beacon flares to several times its size, plus a flash). It's ~700 m out along its path, with its searchlight already on as a thin shaft, and a beacon glow that holds its size on screen through the haze. It slows all the way in.
+  - **Where it appears** (`spawnBearing`): always in view of the office window, far off, in the open sky either side of the dish tower (`inViewFrom`–`inViewTo` off the window's bearing). The tower fills the view straight out. So you can always watch it flash in.
+  - The path is a straight line from 800 m up down to the hover point. It never drops below the hover height, so it clears the dish, and from any bearing it stays ~45 m over the valley ridge and its masts (both pinned by tests).
+  - It arrives on the flight clip's loudest moment: `loudestTime` measures it from the decoded buffer, about 22 s in. The threat's clock is pulled toward the audio clock (at most ±50 % speed), so the picture stays on the sound.
+  - Over the last `surgeSeconds` the grid's `surge` drives every lamp far past normal, flickering.
+- **Expanding.** It stops directly over the office (`UFO_HOVER_HEIGHT`, 35 m). Over `expandSeconds` its beam widens to cover the facility (`coverRadius`). Inside, the `UfoWindowFlood` spotlight comes up: it's in the office, under the window header, aimed steeply down so its cone never rises to the tops of the walls. It stands in for the beam spilling through the glass; its static shadow is only for looks.
+  - The searchlight **casts shadows**: from overhead its cone covers every roof, and only a shadow map keeps that light out of the rooms. The ShadowScheduler redraws it as it flies; `Ufo.setBeam` redraws it when the cone changes. Only the body bobs and spins, so a hovering UFO costs no redraws.
+  - **The building is sealed against it** (`sealAgainst`, `src/core/ShadowSides.js`). Every room and corridor mesh receives shadows: three defaults `receiveShadow` to off, and the server LEDs and light fittings were lit through the roof. For this one light those meshes also draw both faces into the shadow map, via `onBeforeShadow`. three's back-face default records a wall where light *leaves* it, and floors along the walls and the tops of walls under the ceiling came out lit. Anything new built into a room inherits both through the room's root, as long as it is built before `_addUfo` runs.
+  - **The visible beam is cut out of the building** (`Ufo.setCutouts`, the rooms' and corridors' bounds): the shader discards fragments inside those boxes, so the beam ends on the roofs and never shows indoors.
+  - **Mind its bias.** A shadow's depth bias is in non-linear depth, so in metres it grows with distance² / near. The shadow camera's near plane is 10 m and its bias −0.0001 (~1 cm at the roofs' 31 m). With near = 1 and bias −0.0005 it was ~0.5 m, more than the ceiling slab, and the tops of the walls lit up as if the light came through the roof. A test pins it.
+- **Lethal.** Once the beam covers the base, exposure is judged first, then the bulbs:
+  - It takes the player if they are outside, or if the grid is lit and they are exposed:
+    - **Outside** (`_isOutside`) means not within any room's or corridor's whole shell (`bounds()`: outer wall faces, floor to roof). Neighbouring shells touch, so a doorway is indoors. `Room.containsPoint` stops at the walls' centre lines, which left every doorway a lethal sliver of "outside".
+    - **Exposed** (`exposedToBeam`) means anywhere in the main office (the room the window looks into) or the airlock (only a hatch from the yard), again by whole shell. Furniture doesn't count, so there is no hiding under the desk: the rule can't drift when the props are replaced. Corridors and the other rooms are safe.
+  - If the grid is lit, the bulbs blow and the generator trips.
+  - So: cut the power in advance and the office and airlock are safe. Leave it on and get out of them (a corridor, another room), and you survive but lose the lights for the night. If the base was lit when the beam went lethal, the office and airlock stay deadly for the whole visit, blown bulbs or not: walking in from a corridor while it holds kills you. Cut the power in advance and they stay safe. The generator brings back the terminal, the dish floods and the screen glow — not the bulbs.
+  - It holds for `hoverSeconds` (5 s); stepping outside now is fatal. Then it teleports away with a flash and a whoosh.
+- **Caught.** `WhiteOut` burns the screen white (the beam still blazing), the ear ringing plays and the player is frozen. `controller.fail()` makes it a game over, and `[E]` retries.
+  - **Back to the spawn.** A retry starts the night over from the beginning: the controller tells its night-start listeners `{ retry: true }`, and `BaseScene._respawn` takes the suit off and `FirstPersonController.teleport`s the player to the spawn, facing the window. A new night after sleeping doesn't move you.
+  - **The E is used up.** The retry calls `engine.consumeAction('interact')`, so that press can't also reach whatever the player died looking at. Before this, dying at the generator meant the retry's E switched the freshly restored power straight back off.
+- **Every night start** (`controller.onNightStart`) repairs the bulbs and breakers, switches the generator on, closes a breaker panel left open, clears the white-out and schedules the next visit.
+
 ### Input system
 
 Centralized on `Engine.input`:
@@ -171,7 +238,7 @@ Centralized on `Engine.input`:
 - `mouse` — `{ dx, dy }` accumulated deltas, consumed each frame
 - `locked` — boolean, pointer-lock active
 
-`Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
+`Engine.keyBinds` maps action names to codes (`flashlight` is `F`), including the debug keys (`debugFly`, `fullbright`). `engine.consumeAction(action)` uses up the current press: `isAction` reads it as up until the key is released. Toggle-style debug actions get their own edge-triggered `keydown` listener — `input.keys` is level-triggered and can't express "on the press".
 
 ## Debug tooling
 
@@ -183,6 +250,7 @@ Three toggles, all edge-triggered and free while off:
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
 | `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
+| `U` | `UfoThreat.summon` (BaseScene) | **Testing only — remove before release.** Start a UFO visit now instead of at the night's random time; ignored mid-visit or outside a shift |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures |
 
 **DebugCamera (`engine.debugCamera`)** — detaches the camera from the player onto the scene root at its current world pose and sets `enabled = false` on every player component, so movement, look and interaction freeze mid-stride and the physics body stays put. WASD flies along the view direction (forward includes pitch — look down to descend), Space rises, C sinks, Shift boosts; the mouse steers the same YXZ rig as the player. No rigid body, collider or raycast is involved — that's what makes it noclip. Toggling back re-mounts the camera on the player with a zeroed local transform: the player never moved, so the view returns to their eyes. Two rules when extending it: never give it physics, and never write `camera.position` outside `update()`/`disable()` — the first-person controller owns that transform otherwise.
@@ -383,7 +451,11 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   undrawn while the player is outside, and outdoor things no window can see
   go undrawn while they're inside. Low scenery behind the building, which
   the roof hides from the whole yard, is drawn only from inside. New props
-  are picked up automatically.
+  are picked up automatically. An InstancedMesh whose instances are
+  rewritten every frame (the mast beacons' lamps) sets
+  `userData.liveInstances`: the sort splits instanced scenery into copies,
+  and a component still writing to the original would be writing to a mesh
+  nobody draws.
   When the office is redesigned, keep anything meant to be seen from the
   yard out of the rooms' furnishings, and don't add a window the fenced yard
   can see — see `docs/PERFORMANCE-PLAN.md` §3. In DevTools (dev builds),
