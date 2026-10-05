@@ -1006,6 +1006,10 @@ export class BaseScene extends Scene {
       // Yard eyes stand out of the trees, in sight; chases go round what's solid.
       trees:      this._sceneRoot.find('Outside')?.find('MarsVegetation')?.trees ?? [],
       obstacles:  this._yardObstacles(),
+      // The building hides them: never placed, nor stared at, behind it.
+      occluders:  [...Object.values(this.rooms), ...Object.values(this.corridors)]
+        .map(part => part.bounds())
+        .map(b => ({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z })),
       hooks: {
         eyePosition:      out => engine.camera.getWorldPosition(out),
         viewDirection:    out => engine.camera.getWorldDirection(out),

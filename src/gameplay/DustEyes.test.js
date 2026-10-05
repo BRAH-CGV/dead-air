@@ -993,3 +993,43 @@ describe('DustEyes — the window and the yard roll apart', () => {
     expect(kinds.has('fence')).toBe(false);
   });
 });
+
+describe('DustEyes — never behind the building', () => {
+  // The building along the yard's open side (minZ), as the scene's shells.
+  const building = { minX: -18, maxX: 18, minZ: -6, maxZ: FENCE.minZ + 0.1 };
+
+  it('the side runs keep their spawns well out from the building', () => {
+    const player = new THREE.Vector3(-12, 1.24, 6);
+    for (let i = 0; i < 80; i++) {
+      const p = fenceSpawnPoint(FENCE, player, Math.random, new THREE.Vector3(), { occluders: [building] });
+      expect(p.z, p.toArray().join()).toBeGreaterThanOrEqual(FENCE.minZ + DUST_EYES.sideStart - 1e-6);
+    }
+  });
+
+  it('a yard eye stays in sight through its whole sway — the building never hides it', () => {
+    const player = new THREE.Vector3(-12, 1.24, 6);
+    for (let i = 0; i < 80; i++) {
+      const p = fenceSpawnPoint(FENCE, player, Math.random, new THREE.Vector3(), { occluders: [building] });
+      const side = new THREE.Vector3(-(p.z - player.z), 0, p.x - player.x).normalize();
+      for (const k of [-1, 0, 1]) {
+        const at = p.clone().addScaledVector(side, k * DUST_EYES.swayAmplitude);
+        expect(sightBlocked(player, at, [], [building]), at.toArray().join()).toBe(false);
+      }
+    }
+  });
+
+  it('one hidden behind the building cannot be stared at', () => {
+    const rig = makeRig({ random: () => 0.999, hatchShut: true });
+    rig.system.occluders = [building];
+    rig.system.summon('fence');
+    run(rig.system, 0.1);
+    const eye = rig.system.active[0];
+    // Put it behind the building's west end, the player at the yard's west side.
+    eye.anchor.set(-26, 2, -5);   // squarely behind the west end
+    rig.pos.set(-15, 1.24, 6);
+    run(rig.system, 0.05);
+    rig.hooks.viewDirection = out => out.copy(eye.position).sub(rig.pos).normalize();
+    run(rig.system, DUST_EYES.stareSeconds * 3);
+    expect(eye.mode).toBe('passive');
+  });
+});

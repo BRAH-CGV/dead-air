@@ -1361,6 +1361,16 @@ describe('BaseScene dust eyes keep out of things', () => {
     expect(scene.dustEyes.obstacles.some(inBox)).toBe(true);
   });
 
+  it('know the building as something that hides them from the player', () => {
+    const engine = makeSceneEngine();
+    const scene = new BaseScene(engine);
+    scene.build();
+    const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
+    expect(scene.dustEyes.occluders).toHaveLength(parts.length);
+    const office = scene.rooms.MainOffice.bounds();
+    expect(scene.dustEyes.occluders.some(b => b.minX === office.min.x && b.maxZ === office.max.z)).toBe(true);
+  });
+
   it('count the airlock as solid, with its hatch as the one way in', () => {
     const engine = makeSceneEngine();
     const scene = new BaseScene(engine);

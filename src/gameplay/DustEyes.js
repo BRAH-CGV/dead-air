@@ -136,6 +136,10 @@ export const DUST_EYES = {
   obstacleMargin: 0.8,
   /** Tries at a clear spot beyond the fence before settling for the wire. */
   spawnTries: 24,
+  /** On the fence's two side runs, spawns keep this far out from the
+   *  building's front (the yard's minZ), so none stands beside the
+   *  building, where its corner can hide it. */
+  sideStart: 5,
   /** A new yard eye looks for a spot at least this far from the others,
    *  so they spread out round the fence — or as far as it can get. */
   spreadDistance: 10,
@@ -239,9 +243,22 @@ const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
  * @param {THREE.Vector3} out
  * @param {{ trees?: Array<{x:number, z:number, reach:number}> }} [opts]
  */
-export function fenceSpawnPoint(rect, player, random, out, { trees = [], obstacles = [], facing = null, inView = false, others = [] } = {}) {
-  const clear = () => !sightBlocked(player, out, trees, obstacles)
-    && Math.hypot(out.x - player.x, out.z - player.z) < DUST_EYES.sightRange;
+export function fenceSpawnPoint(rect, player, random, out, {
+  trees = [], obstacles = [], occluders = [], facing = null, inView = false, others = [],
+} = {}) {
+  // In sight: within range, and nothing — tree, buggy, generator, the
+  // building — between it and the player, at either end of its sway as well
+  // as at its middle (it drifts across the line of sight).
+  const solid = occluders.length ? obstacles.concat(occluders) : obstacles;
+  const clear = () => {
+    if (Math.hypot(out.x - player.x, out.z - player.z) >= DUST_EYES.sightRange) return false;
+    _side.set(-(out.z - player.z), 0, out.x - player.x).normalize();
+    for (const k of [0, -1, 1]) {
+      _swayed.copy(out).addScaledVector(_side, k * DUST_EYES.swayAmplitude);
+      if (sightBlocked(player, _swayed, trees, solid)) return false;
+    }
+    return true;
+  };
   // Spread out: how far this spot is from the nearest eye already there.
   const spread = () => {
     let d = Infinity;
@@ -276,6 +293,9 @@ export function fenceSpawnPoint(rect, player, random, out, { trees = [], obstacl
 }
 
 const _best = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _swayed = new THREE.Vector3();
+const NO_TREES = [];
 
 /** Is `p` within the cone (cos of its half-angle) round `facing`, on the ground plan? */
 function inCone(player, facing, p, cosHalf) {
@@ -295,8 +315,10 @@ function fenceAlong(rect, player, facing, turn, beyond, random, out) {
   const c = Math.cos(turn), s = Math.sin(turn);
   const dx = fx * c - fz * s, dz = fx * s + fz * c;
   let best = Infinity, nx = 0, nz = 0;
+  // Side runs only out from the building (sideStart); the far run all along.
   const hit = (t, x, z, ox, oz) => {
-    if (t > 1e-6 && t < best && x >= rect.minX - 1e-6 && x <= rect.maxX + 1e-6 && z >= rect.minZ - 1e-6 && z <= rect.maxZ + 1e-6) {
+    const minZ = ox !== 0 ? rect.minZ + DUST_EYES.sideStart : rect.minZ;
+    if (t > 1e-6 && t < best && x >= rect.minX - 1e-6 && x <= rect.maxX + 1e-6 && z >= minZ - 1e-6 && z <= rect.maxZ + 1e-6) {
       best = t; nx = ox; nz = oz;
     }
   };
@@ -313,8 +335,8 @@ function fencePoint(rect, player, random, beyond, out) {
   const along = (random() * 2 - 1) * DUST_EYES.alongFence;
   const y = lerp(...DUST_EYES.height, random());
   const sides = [
-    { x: rect.minX - beyond, z: clamp(player.z + along, rect.minZ, rect.maxZ) },
-    { x: rect.maxX + beyond, z: clamp(player.z + along, rect.minZ, rect.maxZ) },
+    { x: rect.minX - beyond, z: clamp(player.z + along, rect.minZ + DUST_EYES.sideStart, rect.maxZ) },
+    { x: rect.maxX + beyond, z: clamp(player.z + along, rect.minZ + DUST_EYES.sideStart, rect.maxZ) },
     { x: clamp(player.x + along, rect.minX, rect.maxX), z: rect.maxZ + beyond },
   ];
   const dist = s => Math.hypot(s.x - player.x, s.z - player.z);
@@ -531,15 +553,17 @@ export class DustEyes extends Component {
    * @param {THREE.Fog|THREE.FogExp2} [opts.fog]  The silhouettes take its colour, darker.
    * @param {Array<{x:number, z:number, reach:number}>} [opts.trees]  Yard eyes keep out of (and clear of) these.
    * @param {Array<{minX:number, maxX:number, minZ:number, maxZ:number}>} [opts.obstacles]  Solid things it goes round.
+   * @param {Array<{minX:number, maxX:number, minZ:number, maxZ:number}>} [opts.occluders]  The building's shells:
+   *        a yard eye is never placed, nor stared at, behind them.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from DUST_EYES_SOUNDS when left out.
    * @param {() => number} [opts.random]
    */
   constructor({
     controller, sandstorm, pool, fence, window, hooks, whiteOut = null, terminal = null,
-    fog = null, sounds = null, trees = [], obstacles = [], random = Math.random,
+    fog = null, sounds = null, trees = [], obstacles = [], occluders = [], random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, sandstorm, fence, window, hooks, whiteOut, terminal, fog, sounds, trees, obstacles, random });
+    Object.assign(this, { controller, sandstorm, fence, window, hooks, whiteOut, terminal, fog, sounds, trees, obstacles, occluders, random });
     this.slots = pool.map(go => new Slot(go));
     for (const slot of this.slots) this._hide(slot);
     this._night = 1;
@@ -989,7 +1013,8 @@ export class DustEyes extends Component {
       // Spread out from the yard eyes already there.
       const others = this.slots.filter(s => s !== slot && s.phase !== 'off' && s.kind === 'fence').map(s => s.anchor);
       fenceSpawnPoint(this.fence, eye, this.random, slot.anchor, {
-        trees: this.trees, obstacles: this.obstacles, facing: this.hooks.viewDirection(_facing), inView, others,
+        trees: this.trees, obstacles: this.obstacles, occluders: this.occluders,
+        facing: this.hooks.viewDirection(_facing), inView, others,
       });
     }
     else windowSpawnPoint(this.window, this.random, slot.anchor);
@@ -1077,7 +1102,11 @@ export class DustEyes extends Component {
 
   /** Could the player see it from where they are? */
   _seen(slot, eye, outside) {
-    if (slot.kind === 'fence') return outside && eye.distanceTo(slot.position) <= DUST_EYES.sightRange;
+    // A yard eye: from outside, in range, and not behind the building.
+    if (slot.kind === 'fence') {
+      return outside && eye.distanceTo(slot.position) <= DUST_EYES.sightRange
+        && !sightBlocked(eye, slot.position, NO_TREES, this.occluders);
+    }
     return !outside && throughWindow(eye, slot.position, this.window);
   }
 
