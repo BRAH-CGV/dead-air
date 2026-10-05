@@ -157,6 +157,30 @@ export class FirstPersonController extends Component {
     this.vertVel = 0;
   }
     
+  /**
+   * Put the player somewhere else at once — a respawn. The kinematic body
+   * and its next step go there (Rapier would otherwise carry it back on the
+   * next fixed update), interpolation is cut so the view jumps rather than
+   * gliding across the base, momentum is dropped, and the view faces
+   * `yaw`/`pitch` with no smoothing swing.
+   * @param {number[]} position  World [x, y, z] of the capsule centre.
+   * @param {{ yaw?: number, pitch?: number }} [facing]
+   */
+  teleport([x, y, z], { yaw = 0, pitch = 0 } = {}) {
+    const go = this.gameObject;
+    const at = { x, y, z };
+    go?.rigidBody?.setTranslation(at, true);
+    go?.rigidBody?.setNextKinematicTranslation?.(at);
+    go?.object3d?.position.set(x, y, z);
+    const prev = go?.rigidBody && go.scene?.userData?.engine?._prevPos;
+    prev?.set(go.rigidBody.handle, { x, y, z });
+
+    this._clearMovementIntent();
+    this.yaw = this._smoothYaw = yaw;
+    this.pitch = this._smoothPitch = pitch;
+    this.camera?.rotation.set(pitch, yaw, 0);
+  }
+
   _clampMouseDelta(delta) {
     if (!Number.isFinite(delta)) return 0;
     return Math.max(-this.maxMouseDelta, Math.min(this.maxMouseDelta, delta));

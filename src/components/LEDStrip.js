@@ -21,6 +21,9 @@ export class LEDStrip extends Component {
   constructor(leds, { period = 0.6, onIntensity = 2.5, offIntensity = 0.4 } = {}) {
     super();
     this.leds = [...leds];
+    // The strip writes these materials itself; the PowerGrid reaches them
+    // through powerLevel, not by collecting them.
+    for (const led of this.leds) if (led.userData) led.userData.offGrid = true;
     this.period = period;
     this.onIntensity = onIntensity;
     this.offIntensity = offIntensity;
@@ -28,11 +31,15 @@ export class LEDStrip extends Component {
     this._phase = this.leds.map((_, i) => (i / this.leds.length) * period);
   }
 
+  /** Brightness scale from the PowerGrid — 0 with the generator off, past 1
+   *  in a surge. The grid sets it; the strip still owns its own blinking. */
+  powerLevel = 1;
+
   onUpdate(dt) {
     for (let i = 0; i < this.leds.length; i++) {
       this._phase[i] = (this._phase[i] + dt) % this.period;
       const on = this._phase[i] < this.period / 2;
-      this.leds[i].material.emissiveIntensity = on ? this.onIntensity : this.offIntensity;
+      this.leds[i].material.emissiveIntensity = (on ? this.onIntensity : this.offIntensity) * this.powerLevel;
     }
   }
 }

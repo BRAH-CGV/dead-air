@@ -36,4 +36,15 @@ describe('LEDStrip', () => {
     // phase starts at 0, +1.5 wraps to 0.5 — right at the on/off boundary, so off.
     expect(leds[0].material.emissiveIntensity).toBe(0.2);
   });
+
+  it('scales its glow by the power level, and goes dark with the power off', () => {
+    const leds = [fakeLed()];
+    const strip = new LEDStrip(leds, { period: 1, onIntensity: 2, offIntensity: 0.2 });
+    strip.powerLevel = 0.5;
+    strip.onUpdate(0.1);
+    expect(leds[0].material.emissiveIntensity).toBe(1);
+    strip.powerLevel = 0;
+    strip.onUpdate(0.1);
+    expect(leds[0].material.emissiveIntensity).toBe(0);
+  });
 });

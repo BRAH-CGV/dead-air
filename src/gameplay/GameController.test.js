@@ -320,4 +320,56 @@ describe('GameController', () => {
     gc.startNight(1);   // must not throw
     expect(() => gc.onUpdate(0.016)).not.toThrow();
   });
+
+  // ── Threat hooks ──
+
+  it('tells night-start listeners each night it starts, until unsubscribed', () => {
+    const fn = vi.fn();
+    const off = gc.onNightStart(fn);
+    gc.startNight(2);
+    expect(fn).toHaveBeenCalledWith(2, { retry: false });
+    off();
+    gc.startNight(3);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('fail() ends a playing shift as a game over with its own prompt', () => {
+    gc.startNight(1);
+    gc.fail('You were taken. [E] to retry');
+    expect(gc.state).toBe('gameOver');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken. [E] to retry');
+    gc.retryNight();
+    expect(gc.state).toBe('playing');
+  });
+
+  it('fail() does nothing outside a playing shift', () => {
+    gc.startNight(1);
+    gc._morning();
+    gc.fail('nope');
+    expect(gc.state).toBe('morning');
+  });
+
+  it('tells night-start listeners whether the night is a retry', () => {
+    const fn = vi.fn();
+    gc.onNightStart(fn);
+    gc.startNight(1);
+    expect(fn).toHaveBeenLastCalledWith(1, { retry: false });
+    gc.fail('taken');
+    gc.retryNight();
+    expect(fn).toHaveBeenLastCalledWith(1, { retry: true });
+  });
+
+  it('the E that retries is used up — nothing else acts on that press', () => {
+    const engine = {
+      keyBinds: { interact: 'KeyE' },
+      input: { pressed: { KeyE: true } },
+      consumeAction: vi.fn(),
+    };
+    gc.gameObject = { scene: { userData: { engine } } };
+    gc.startNight(1);
+    gc.fail('taken');
+    gc.onUpdate(0.016);
+    expect(gc.state).toBe('playing');
+    expect(engine.consumeAction).toHaveBeenCalledWith('interact');
+  });
 });

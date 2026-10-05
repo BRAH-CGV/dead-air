@@ -84,6 +84,17 @@ export class MainOffice extends Room {
     const desk = new THREE.PointLight(0x66ccff, 4.0, 6, 1.6);
     desk.position.set(0, 1.1, -2.1);
     deskGO.object3d.add(desk);
+
+    // The terminal screen's own faint green spill. It is a vital function,
+    // not a bulb: with the generator running it glows even after the UFO has
+    // blown every lamp in the base — the one sign in a dark office that the
+    // computer still works (PowerGrid reads `unbreakable`).
+    const screenGO = this._addGroup('ScreenGlow');
+    screenGO.object3d.userData.unbreakable = true;
+    const screen = new THREE.PointLight(0x4dff7a, 0.8, 3, 2);
+    screen.position.set(0, 1.0, -2.2);
+    screenGO.object3d.add(screen);
+    this.screenGlow = screen;
   }
 
   buildProps() {
