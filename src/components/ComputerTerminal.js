@@ -29,6 +29,12 @@ import { cursorToSky } from '../gameobjects/DishRig.js';
 // signal's 12° acceptance.
 const CURSOR_RATE = DISH_SLEW_RATE / (Math.PI / 2);
 
+/** Shown while the radar cursor sits on the UFO's blob. */
+export const ANOMALY_WARNING = '⚠ EXTREME ELECTRICAL ANOMALY DETECTED — turn off power to avoid further damage';
+
+/** The desk's prompt while the generator is off. */
+const NO_POWER_LABEL = 'No power — restore it at the generator outside';
+
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
   /** 'idle' | 'radar' | 'scanning' | 'review' */
@@ -71,10 +77,29 @@ export class ComputerTerminal extends Component {
   // Public API — also callable from tests
   // ──────────────────────────────────────────────────────────
 
+  /** Whether the generator is feeding the terminal — it's a vital function,
+   *  so it comes back with the power even when the lights stay broken.
+   *  Change it through setPowered(). */
+  powered = true;
+
+  /** The Interactable on the desk, so its prompt can say there's no power.
+   *  Set by createComputerInteractable(). @type {Interactable|null} */
+  _interactable = null;
+
   /** Enter the terminal (called when the player interacts with the computer). */
   enter() {
-    if (this.state !== 'idle') return;
+    if (this.state !== 'idle' || !this.powered) return;
     this._enterRadar();
+  }
+
+  /** The power came or went. Losing it shuts the screen and drops any scan
+   *  in progress. @param {boolean} powered */
+  setPowered(powered) {
+    this.powered = powered;
+    if (this._interactable) this._interactable.promptLabel = powered ? this.promptLabel : NO_POWER_LABEL;
+    if (powered) return;
+    this.exit();
+    this._cleanupState();
   }
 
   /** Exit the terminal back to IDLE (Q key). */
@@ -181,6 +206,7 @@ export class ComputerTerminal extends Component {
     this.state = 'idle';
     this._hoveredSignal = null;
     this._setInputLocked(false);
+    this.radar?.setWarning?.('');
     this.radar?.hide();
     this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
@@ -359,6 +385,10 @@ export class ComputerTerminal extends Component {
       this.satellite.neighbours ?? [],
       this.satellite.rig ?? null,
     );
+
+    // Parking the cursor on the UFO's blob reads it out.
+    const onThreat = this.radar.threatAt?.(this._cursorX, this._cursorY) ?? false;
+    this.radar.setWarning?.(onThreat ? ANOMALY_WARNING : '');
   }
 }
 
@@ -366,9 +396,10 @@ export class ComputerTerminal extends Component {
  *  Call this from OfficeScene to wire the computer model. */
 export function createComputerInteractable(terminal) {
   const interact = new class extends Interactable {
-    promptLabel = terminal.promptLabel;
+    promptLabel = terminal.powered ? terminal.promptLabel : NO_POWER_LABEL;
     interactRange = terminal.interactRange;
     onInteract() { terminal.enter(); }
   }();
+  terminal._interactable = interact;
   return interact;
 }

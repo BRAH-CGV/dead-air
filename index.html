@@ -162,6 +162,24 @@
         border-radius: 50%;
         box-shadow: 0 0 30px rgba(0, 200, 180, 0.15);
       }
+      #radar-warning {
+        min-height: 1.4em;
+        max-width: 640px;
+        text-align: center;
+        color: #ff4d5e;
+        font-weight: bold;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        visibility: hidden;
+      }
+      #radar-warning.is-shown {
+        visibility: visible;
+        animation: radar-warning-flash 0.6s steps(2, jump-none) infinite;
+      }
+      @keyframes radar-warning-flash {
+        from { opacity: 1; }
+        to   { opacity: 0.25; }
+      }
       #radar-info {
         min-height: 1.4em;
         text-align: center;
@@ -436,6 +454,93 @@
         z-index: 200;
       }
       #fade.is-dark { opacity: 1; }
+
+      /* ── Generator breaker panel (BreakerPanel.js) ──────── */
+      #breaker-panel {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(6, 8, 12, 0.78);
+        z-index: 97;
+        font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #b8c8d8;
+        user-select: none;
+      }
+      #breaker-panel.is-open { display: flex; }
+      .breaker-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+        padding: 22px 28px;
+        background: #1c2026;
+        border: 2px solid #3a414a;
+        border-radius: 6px;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.6), inset 0 0 0 4px #15181d;
+      }
+      .breaker-title {
+        color: #ffb347;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-weight: bold;
+      }
+      .breaker-switches { display: flex; gap: 14px; }
+      .breaker-switch {
+        width: 34px;
+        height: 64px;
+        padding: 0;
+        position: relative;
+        background: #0e1013;
+        border: 2px solid #4a525c;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .breaker-lever {
+        position: absolute;
+        left: 4px;
+        right: 4px;
+        height: 26px;
+        bottom: 4px;
+        background: #8a3a3a;
+        border-radius: 3px;
+        transition: bottom 0.08s, background 0.08s;
+      }
+      .breaker-switch.is-on .breaker-lever { bottom: 30px; background: #4fbf74; }
+      .breaker-wires { background: #121418; border-radius: 4px; touch-action: none; }
+      .breaker-lead { cursor: grab; }
+      .breaker-lead.is-held { stroke: #fff; stroke-width: 3; }
+      .breaker-terminal { cursor: pointer; }
+      .breaker-terminal.is-spark { stroke: #fff !important; filter: drop-shadow(0 0 6px #fff); }
+      .breaker-drag, .breaker-links { pointer-events: none; }
+      .breaker-status { color: #e8a050; letter-spacing: 0.08em; text-transform: uppercase; }
+      .breaker-status.is-solved { color: #6ecf9a; }
+      .breaker-hint { font-size: 11px; color: #667; letter-spacing: 0.06em; }
+
+      /* ── White-out when the UFO takes you (WhiteOut.js) ──── */
+      #whiteout {
+        position: fixed;
+        inset: 0;
+        background: #fffdf8;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 2.5s ease-in;
+        z-index: 102;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #whiteout.is-white { opacity: 1; }
+      .whiteout-message {
+        font-family: 'Courier New', monospace;
+        font-size: 20px;
+        letter-spacing: 0.08em;
+        color: #3a3632;
+        opacity: 0;
+        transition: opacity 1.5s ease;
+      }
+      .whiteout-message.is-shown { opacity: 1; }
     </style>
   </head>
   <body>
@@ -454,6 +559,7 @@
     <!-- Radar overlay (shown while using the computer) -->
     <div id="radar-overlay">
       <canvas id="radar-canvas"></canvas>
+      <div id="radar-warning"></div>
       <div id="radar-info"></div>
       <div id="radar-hint">Select a signal blip, then aim with WASD</div>
     </div>
@@ -474,6 +580,11 @@
     </div>
 
     <div id="fade"></div>
+
+    <!-- Generator breaker panel (built per puzzle by BreakerPanel.js) -->
+    <div id="breaker-panel"></div>
+
+    <div id="whiteout"><div class="whiteout-message"></div></div>
 
     <div id="loading">
       <div id="loading-track"><div id="loading-bar"></div></div>

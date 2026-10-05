@@ -96,6 +96,12 @@ describe('Engine pause', () => {
     expect(engine.input.keys.KeyW).toBeUndefined();
   });
 
+  it('forgets consumed presses too (their keyup may never arrive)', () => {
+    engine._consumed.add('KeyE');
+    engine.setPaused(true);
+    expect(engine._consumed.size).toBe(0);
+  });
+
   it('keeps the same input objects (components hold references to them)', () => {
     const { keys, mouse } = engine.input;
     engine.setPaused(true);

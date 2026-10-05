@@ -386,6 +386,7 @@ describe('App', () => {
         lock._set(false);
       });
       engine.activeScene.gameController.fire('gameOver');
+      await flush();
       expect(view.screen).toBe('nightFailed');
       expect(engine.paused).toBe(true);
       expect(exitSpy).toHaveBeenCalled();
@@ -396,6 +397,7 @@ describe('App', () => {
     it('Retry from Night failed rebuilds the same night', async () => {
       engine.activeScene.nights.setNight(3);
       engine.activeScene.gameController.fire('gameOver');
+      await flush();
       await click('retry');
       expect(engine.loadScene).toHaveBeenCalledOnce();
       expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(3);
@@ -418,6 +420,7 @@ describe('App', () => {
       await click('confirm');
       expect(old.listenerCount).toBe(0);
       engine.activeScene.gameController.fire('gameOver');
+      await flush();
       expect(view.screen).toBe('nightFailed');
     });
   });
@@ -660,6 +663,66 @@ describe('App', () => {
       reachNight(3);
       engine.activeScene.gameController.fire('finished');
       expect(storage.map.has(PROGRESS_KEY) ? storage.map.get(PROGRESS_KEY) : null).toBe(null);
+    });
+  });
+
+  describe('UFO work from main', () => {
+    beforeEach(startGame);
+
+    it('a DOM panel taking the mouse (the breaker panel) does not pause', () => {
+      engine.uiHasMouse = true;
+      lock.lose();
+      key('Escape');
+      expect(app.flow.state).toBe('playing');
+    });
+
+    it('a hidden tab still pauses with a panel open, and Resume leaves the mouse with the panel', async () => {
+      engine.uiHasMouse = true;
+      window.dispatchEvent(new Event('blur'));
+      expect(app.flow.state).toBe('paused');
+      lock.request.mockClear();
+      await click('resume');
+      expect(lock.request).not.toHaveBeenCalled();
+      expect(app.flow.state).toBe('playing');
+      expect(engine.paused).toBe(false);
+    });
+
+    describe('caught by the UFO', () => {
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
+
+      /** UfoThreat._catch: fail() first, then the white-out starts. */
+      function caught() {
+        const scene = engine.activeScene;
+        scene.whiteOut = { active: false, fadeMs: 2500, messageDelayMs: 3000 };
+        scene.gameController.fire('gameOver');
+        scene.whiteOut.active = true;
+      }
+
+      it('lets the white-out and its line play before Night failed', async () => {
+        caught();
+        await Promise.resolve();
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+        vi.advanceTimersByTime(5000);
+        expect(view.screen).toBe('nightFailed');
+        expect(engine.paused).toBe(true);
+      });
+
+      it('skips Night failed if the player retried in place with E meanwhile', async () => {
+        caught();
+        await Promise.resolve();
+        engine.activeScene.gameController.fire('playing');
+        vi.advanceTimersByTime(6000);
+        expect(app.flow.state).toBe('playing');
+      });
+
+      it('a plain missed quota still shows Night failed at once', async () => {
+        engine.activeScene.whiteOut = { active: false };
+        engine.activeScene.gameController.fire('gameOver');
+        await Promise.resolve();
+        expect(view.screen).toBe('nightFailed');
+      });
     });
   });
 });

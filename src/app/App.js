@@ -129,7 +129,7 @@ export class App {
     this._listen(win, 'keydown', this._onKeyDown);
     this._listen(win, 'blur', () => this.pause());
     this._listen(doc, 'visibilitychange', () => { if (doc.hidden) this.pause(); });
-    this._offs.push(this.pointerLock.onChange((locked) => { if (!locked) this.pause(); }));
+    this._offs.push(this.pointerLock.onChange((locked) => { if (!locked) this._pauseForInput(); }));
 
     this._offs.push(this.settings.onChange((values, keys) => this._onSettingsChanged(values, keys)));
     this._offs.push(engine.onSceneLoaded((scene) => this._onSceneLoaded(scene)));
@@ -158,6 +158,13 @@ export class App {
     this.engine.setPaused(true);
   }
 
+  /** A lost lock or Escape: a pause, unless a DOM panel (the breaker
+   *  panel) took the mouse on purpose — Escape is how it closes. A hidden
+   *  tab or blur still pauses through pause(). */
+  _pauseForInput() {
+    if (!this.engine.uiHasMouse) this.pause();
+  }
+
   /** Throw the current scene away and build a fresh one. Every path back to
    *  a clean night goes through here: Main menu, Retry, Restart night. */
   rebuild() {
@@ -166,6 +173,8 @@ export class App {
     // the fly camera reparents the game camera, fullbright swaps materials.
     if (engine.debugCamera?.active) engine.debugCamera.disable();
     if (engine.fullbright?.active) engine.fullbright.disable();
+    clearTimeout(this._failTimer);
+    engine.uiHasMouse = false;
     this._offController?.();
     this._offController = null;
     engine.loadScene(engine.activeScene.constructor);
@@ -209,6 +218,12 @@ export class App {
   }
 
   async _resume() {
+    // A panel still has the mouse: back to it, without taking the lock.
+    if (this.engine.uiHasMouse) {
+      this.flow.resume();
+      this.engine.setPaused(false);
+      return;
+    }
     const lock = this.pointerLock.request();
     await this._run(async () => {
       if (await this._lockHeld(lock)) {
@@ -254,13 +269,23 @@ export class App {
       return;
     }
     if (state === 'gameOver') {
-      const progress = this.engine.activeScene?.signalManager?.getProgress?.();
-      this._failed = {
-        night: this._currentNight(),
-        saved: progress?.saved ?? 0,
-        required: progress?.required ?? 0,
-      };
-      this.flow.nightFailed();
+      // A UFO catch fails the shift and then burns the screen white with
+      // "You were taken" — let that play (it has its own [E] retry) before
+      // the menu covers it. A missed quota has no white-out: shown at once.
+      // _catch() starts the white-out right after fail(), in the same call:
+      // a microtask sees whether it did.
+      clearTimeout(this._failTimer);
+      const scene = this.engine.activeScene;
+      const stillFailed = () => scene === this.engine.activeScene && scene?.gameController?.state === 'gameOver';
+      queueMicrotask(() => {
+        if (!stillFailed()) return;
+        const whiteOut = scene.whiteOut;
+        if (!whiteOut?.active) return this._showNightFailed();
+        this._failTimer = setTimeout(() => {
+          if (stillFailed()) this._showNightFailed();
+        }, (whiteOut.messageDelayMs ?? 3000) + 1500);
+      });
+      return;
     } else if (state === 'finished') {
       // Lands mid sleep-fade, while the screen is black: the screen is up by
       // the time the fade clears.
@@ -269,6 +294,18 @@ export class App {
     } else {
       return;
     }
+    this.engine.setPaused(true);
+    this.pointerLock.exit();
+  }
+
+  _showNightFailed() {
+    const progress = this.engine.activeScene?.signalManager?.getProgress?.();
+    this._failed = {
+      night: this._currentNight(),
+      saved: progress?.saved ?? 0,
+      required: progress?.required ?? 0,
+    };
+    this.flow.nightFailed();
     this.engine.setPaused(true);
     this.pointerLock.exit();
   }
@@ -325,7 +362,7 @@ export class App {
   /** Bubble phase, while playing: Escape when the lock never took (the
    *  browser handles Esc itself when it did — pointerlockchange covers it). */
   _onKeyDown = (e) => {
-    if (e.code === 'Escape') this.pause();
+    if (e.code === 'Escape') this._pauseForInput();
   };
 
   _onIntent(action, data) {

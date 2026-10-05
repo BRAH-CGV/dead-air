@@ -19,9 +19,20 @@ import { Component } from '../core/Component.js';
 // controller is wired it only alerts during 'playing' — a lingering morning
 // signal must not keep it blinking.
 //
+// It runs off the PowerGrid (`powerLevel`, set by the grid): dark with the
+// power off or the bulb blown. While the UFO closes in, `frantic` makes it
+// flash in short, uneven, over-bright bursts whatever the signals are doing.
+// Its bulb is `offGrid` so the grid's collect() leaves the material to it.
+//
 // Placeholder until a proper warning-lamp model is sourced. It owns its
 // geometry and material; dispose() frees them.
 // ─────────────────────────────────────────────
+
+/** Frantic flashing: seconds each burst or gap holds, and how much brighter
+ *  than a normal alert the bursts are. */
+const FRANTIC_MIN = 0.03;
+const FRANTIC_MAX = 0.11;
+const FRANTIC_GAIN = 2;
 
 /** Drives the bulb each frame. */
 class SignalAlertLightBlink extends Component {
@@ -47,6 +58,15 @@ export class SignalAlertLight extends GameObject {
   offIntensity;
 
   _phase = 0;
+
+  /** Set while the UFO closes in: the lamp flashes wildly, signal or not. */
+  frantic = false;
+  /** From the PowerGrid: 0 with the power off or the bulb blown, past 1 in
+   *  a surge. The grid sets it; the lamp owns its own blinking. */
+  powerLevel = 1;
+
+  _franticOn = false;
+  _franticHold = 0;
 
   /**
    * @param {string} [name]
@@ -82,6 +102,14 @@ export class SignalAlertLight extends GameObject {
   }
 
   _tick(dt) {
+    if (this.powerLevel <= 0) {
+      this.bulb.material.emissiveIntensity = 0;
+      return;
+    }
+    if (this.frantic) {
+      this._tickFrantic(dt);
+      return;
+    }
     if (!this.isAlerting()) {
       this.bulb.material.emissiveIntensity = this.offIntensity;
       this._phase = 0;   // the next window starts on, not mid-off
@@ -89,7 +117,20 @@ export class SignalAlertLight extends GameObject {
     }
     this._phase = (this._phase + dt) % this.period;
     const on = this._phase < this.period / 2;
-    this.bulb.material.emissiveIntensity = on ? this.onIntensity : this.offIntensity;
+    this.bulb.material.emissiveIntensity = (on ? this.onIntensity : this.offIntensity) * Math.max(this.powerLevel, 1);
+  }
+
+  /** The UFO's field in the line: short, uneven bursts, brighter than any
+   *  signal ever drives it. Held states of FRANTIC_MIN..MAX seconds. */
+  _tickFrantic(dt) {
+    this._franticHold -= dt;
+    if (this._franticHold <= 0) {
+      this._franticOn = !this._franticOn;
+      this._franticHold = FRANTIC_MIN + Math.random() * (FRANTIC_MAX - FRANTIC_MIN);
+    }
+    this.bulb.material.emissiveIntensity = this._franticOn
+      ? this.onIntensity * FRANTIC_GAIN * Math.max(this.powerLevel, 1)
+      : this.offIntensity;
   }
 
   _build() {
@@ -103,6 +144,7 @@ export class SignalAlertLight extends GameObject {
       }),
     );
     this.bulb.name = 'AlertBulb';
+    this.bulb.userData.offGrid = true;   // drives its own glow from powerLevel
     this.object3d.add(this.bulb);
   }
 }

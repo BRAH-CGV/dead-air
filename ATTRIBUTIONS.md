@@ -491,6 +491,18 @@ Which of these was downloaded as `retro_futuristic_computer.glb` (now
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
+### UFO
+
+"Bob Lazar Ufo" (https://skfb.ly/6URJp) by Batuhan13 is licensed under
+Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/ufo.glb` |
+| **Manifest key** | `model:ufo` |
+| **Used for** | The UFO threat — the saucer that comes once a night (`Ufo`) |
+| **Modifications** | Renamed from `bob_lazar_ufo.glb`; scaled ×5 in the manifest |
+
 ## Sounds
 
 ### Gas mask breathing
@@ -507,6 +519,110 @@ credited here anyway. Downloaded as
 | **Manifest key** | `sfx:mask-breathing` |
 | **Used for** | Breathing inside the EVA suit helmet (`SuitVisor`) |
 | **Modifications** | Renamed; at load, encoder silence is trimmed and the ends crossfaded so it loops cleanly (`seamlessLoop`) |
+
+### EPP UFO Flight
+
+"EPP UFO Flight" (https://pixabay.com/sound-effects/film-special-effects-epp-ufo-flight-65106/) by sevenepp (Freesound), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-epp-ufo-flight-65106.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/ufo-flight.mp3` |
+| **Manifest key** | `sfx:ufo-flight` |
+| **Used for** | The UFO's approach (`UfoThreat`); it arrives on the clip's loudest moment |
+| **Modifications** | Renamed |
+
+### Flickeringlight
+
+"Flickeringlight" (https://pixabay.com/sound-effects/film-special-effects-flickeringlight-90411/) by scotchio (Freesound), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-flickeringlight-90411.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/flickering-light.mp3` |
+| **Manifest key** | `sfx:flickering-light` |
+| **Used for** | The base's lamps surging as the UFO closes in |
+| **Modifications** | Renamed; looped |
+
+### Lightbulb Break sfx
+
+"Lightbulb Break sfx" (https://pixabay.com/sound-effects/film-special-effects-lightbulb-break-sfx-320646/) by Kave_msri is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`kave_msri-lightbulb-break-sfx-320646.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/lightbulb-break.mp3` |
+| **Manifest key** | `sfx:lightbulb-break` |
+| **Used for** | The bulbs blowing when the UFO arrives with the power on |
+| **Modifications** | Renamed |
+
+### Power Down
+
+"Power Down" (https://pixabay.com/sound-effects/film-special-effects-power-down-7103/) by noirenex (Freesound), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-power-down-7103.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/power-down.mp3` |
+| **Manifest key** | `sfx:power-down` |
+| **Used for** | The UFO's surge tripping the generator |
+| **Modifications** | Renamed |
+
+### Teleport Whoosh
+
+"Teleport Whoosh" (https://pixabay.com/sound-effects/teleport-whoosh-453276/) by humordome is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`humordome-teleport-whoosh-453276.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/teleport-whoosh.mp3` |
+| **Manifest key** | `sfx:teleport-whoosh` |
+| **Used for** | The UFO teleporting away |
+| **Modifications** | Renamed |
+
+### Ear Ringing Sound Effect
+
+"Ear Ringing Sound Effect" (https://pixabay.com/sound-effects/film-special-effects-ear-ringing-sound-effect-26746/) by ArrowheadProductions (Freesound), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-ear-ringing-sound-effect-26746.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/ear-ringing.mp3` |
+| **Manifest key** | `sfx:ear-ringing` |
+| **Used for** | The white-out when the UFO takes you |
+| **Modifications** | Renamed; looped |
+
+### Small Diesel Generator
+
+"Small Diesel Generator" (https://pixabay.com/sound-effects/technology-small-diesel-generator-61728/) by jameswrowles (Freesound), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-small-diesel-generator-61728.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/generator-start.mp3`, `generator-running.mp3`, `generator-stop.mp3` |
+| **Manifest key** | `sfx:generator-start`, `sfx:generator-running`, `sfx:generator-stop` |
+| **Used for** | The generator outside (`GeneratorSound`): start-up, running hum, wind-down |
+| **Modifications** | Cut, at MPEG frame boundaries with no re-encode, into three clips: 0–5 s (start-up), 40–50 s (running, crossfaded into a loop at load) and 171.5 s to the end (wind-down) |
+
+### Light Switch On
+
+"Light Switch On" (https://pixabay.com/sound-effects/household-light-switch-on-382714/) by DRAGON-STUDIO is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`dragon-studio-light-switch-on-382714.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/light-switch.mp3` |
+| **Manifest key** | `sfx:light-switch` |
+| **Used for** | A breaker flicked on the generator's repair panel (`BreakerPanel`) |
+| **Modifications** | Renamed |
 
 ## Downloaded but unattributed — TODO
 
@@ -532,6 +648,5 @@ entry when its file lands in `public/assets/`.
 - **Sleep demon** — https://skfb.ly/pzR9J, https://skfb.ly/pGvqH,
   https://skfb.ly/oESrR, https://skfb.ly/oWApE (noted: high poly)
 - **Wisps** — links TBD
-- **UFO** — https://skfb.ly/6URJp
 - **Camera entity** — https://skfb.ly/pwTAH (noted: high poly)
 - **Environment (alien foliage, terraformed Mars)** — links TBD

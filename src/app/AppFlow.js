@@ -80,9 +80,10 @@ export class AppFlow {
     this._play();
   }
 
-  /** The shift ended short of the quota. */
+  /** The shift ended short of the quota, or a threat got the player. A
+   *  catch shows its own white-out first, so a pause may slip in before. */
   nightFailed() {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' && this.state !== 'paused') return;
     this._go('ended', ['nightFailed']);
   }
 
