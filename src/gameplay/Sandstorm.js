@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { loopable } from '../components/GeneratorSound.js';
 import { UFO } from './UfoThreat.js';
+import { WIND_DUST } from '../gameobjects/WindDust.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
@@ -71,17 +72,23 @@ export const SANDSTORM = {
   fogDensity: 0.065,
   /** …and with the player out in it — closed in tighter still, ~20 m. */
   fogDensityOutside: 0.08,
-  /** The dust's colour, and how far the fog is pulled toward it. */
-  dustColor: 0x5a3f2c,
+  /** The dust's colour, and how far the fog is pulled toward it. Chosen for
+   *  what the fog comes out as at full storm, 0x4c2818: a dark rust-brown
+   *  within a shade of the wind dust's clouds as the screen shows them (they
+   *  are tone-mapped, which deepens WIND_DUST.nightColor to 0x4f2418; fog is
+   *  laid on after tone mapping, so it is given the result). It is low in
+   *  blue to cancel the clear night's blue that fogTint leaves in: with it
+   *  the valley went mauve (0x4a251f). More green than this and it goes
+   *  yellow (0x4b2d19). Tests pin both. */
+  dustColor: 0x51280c,
   fogTint: 0.85,
   /** Wind speed in m/s, for the streaming dust. */
   windSpeed: 9,
 };
 
-/** The wind's axis (x, z): Ryan's WIND_DUST.direction on feat/dust-storm —
- *  the way his clouds drift and the grass sways — so the grit blows the same
- *  way. Point this at WIND_DUST.direction once the branches meet. */
-export const WIND_DIRECTION = [0.874, 0.486];
+/** The wind's axis (x, z): the way the dust clouds drift and the grass
+ *  sways, so the grit blows the same way. */
+export const WIND_DIRECTION = WIND_DUST.direction;
 
 /** Manifest keys behind each sound. */
 export const SANDSTORM_SOUNDS = {
@@ -156,8 +163,8 @@ export class Sandstorm extends Component {
    * @param {{ setStorm: (k: number) => void }} [opts.sky]  A MarsSky.
    * @param {{ setLevel: (k: number) => void, setWind: (angle: number, speed: number) => void }} [opts.dust]  A DustStorm.
    * @param {{ phase: string }} [opts.ufo]  The UfoThreat, so the two never overlap.
-   * @param {{ setStorm: (k: number) => void }} [opts.clouds]  Ryan's WindDustMotion
-   *        (feat/dust-storm), when the scene has it: one storm level drives it too.
+   * @param {{ setStorm: (k: number) => void }} [opts.clouds]  The wind dust's
+   *        WindDustMotion: one storm level drives the clouds too.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from SANDSTORM_SOUNDS when left out.
    * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
    * @param {number} [opts.nightHours=6]      Clock hours in it.

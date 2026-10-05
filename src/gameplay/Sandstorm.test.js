@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, it, expect, vi } from 'vitest';
 import { Sandstorm, SANDSTORM, scheduleStorm, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
+import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
 
 // ─────────────────────────────────────────────
@@ -253,6 +254,54 @@ describe('Sandstorm', () => {
   });
 });
 
+describe('Sandstorm — the fog is the clouds\' colour', () => {
+  // What the screen shows for a colour drawn by a tone-mapped shader: three's
+  // ACESFilmicToneMapping at exposure 1 (tonemapping_pars_fragment), which
+  // is what the renderer runs. The clouds go through it. The fog does not —
+  // three lays fog on after tone mapping — so the same hex in both comes out
+  // as two colours, and the fog has to be given the clouds' colour as shown.
+  const shown = (hex) => {
+    const fit = v => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+    const c = new THREE.Color(hex);
+    let [r, g, b] = [c.r, c.g, c.b].map(v => v / 0.6);
+    [r, g, b] = [0.59719 * r + 0.35458 * g + 0.04823 * b, 0.07600 * r + 0.90834 * g + 0.01566 * b, 0.02840 * r + 0.13383 * g + 0.83777 * b];
+    [r, g, b] = [fit(r), fit(g), fit(b)];
+    [r, g, b] = [1.60475 * r - 0.53108 * g - 0.07367 * b, -0.10208 * r + 1.10813 * g - 0.00605 * b, -0.00327 * r - 0.07276 * g + 1.07602 * b];
+    return new THREE.Color().setRGB(...[r, g, b].map(v => Math.min(Math.max(v, 0), 1)));
+  };
+  /** A colour's 0–255 screen channels. */
+  const channels = (color) => {
+    const hex = color.getHex();
+    return [hex >> 16, (hex >> 8) & 255, hex & 255];
+  };
+
+  it('at full strength the fog is the dust clouds\' own colour, as the screen shows them', () => {
+    const { storm, fog } = makeRig({ night: 1 });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBeCloseTo(1);
+
+    const clouds = channels(shown(WIND_DUST.nightColor));
+    const murk = channels(fog.color);
+    // To within a shade: fogTint leaves a little of the night in it.
+    for (let i = 0; i < 3; i++) expect(Math.abs(murk[i] - clouds[i]), 'rgb'[i]).toBeLessThanOrEqual(10);
+  });
+
+  it('is rust-brown: neither mauve nor yellow', () => {
+    // Found by eye, from both sides. fogTint leaves some of the clear night's
+    // blue fog in the storm's, and rust with blue in it filled the valley
+    // with pink: the dust colour is set low in blue to cancel it. Pulled far
+    // enough toward brown to be safe from that, it went yellow instead.
+    const { storm, fog } = makeRig({ night: 1 });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    const [r, g, b] = channels(fog.color);
+    expect(r).toBeGreaterThan(g);
+    expect(b).toBeLessThan(g * 0.7);    // mauve at 0x4a251f
+    expect(g).toBeLessThan(r * 0.57);   // yellow at 0x4b2d19
+  });
+});
+
 describe('Sandstorm — held, and the UFO', () => {
   it('is held at full while something needs it (a chase), however long that is', () => {
     const { storm } = makeRig({ night: 1 });
@@ -328,5 +377,9 @@ describe('Sandstorm — one storm level for everything', () => {
     const [angle] = dust.setWind.mock.lastCall;
     expect(Math.cos(angle)).toBeCloseTo(WIND_DIRECTION[0], 3);
     expect(Math.sin(angle)).toBeCloseTo(WIND_DIRECTION[1], 3);
+  });
+
+  it('has one wind axis, the clouds\' own', () => {
+    expect(WIND_DIRECTION).toBe(WIND_DUST.direction);
   });
 });
