@@ -375,6 +375,21 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/light-switch.mp3',
   },
+  // The sandstorm's wind (Sandstorm), looped seamlessly at load. ~31 s.
+  'sfx:sandstorm': {
+    type: 'audio',
+    url: 'assets/audio/sandstorm.mp3',
+  },
+  // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
+  // and the bite when one catches you.
+  'sfx:tiger-attack': {
+    type: 'audio',
+    url: 'assets/audio/tiger-attack.mp3',
+  },
+  'sfx:monster-bite': {
+    type: 'audio',
+    url: 'assets/audio/monster-bite.mp3',
+  },
 };
 
 /**

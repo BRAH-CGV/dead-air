@@ -124,6 +124,11 @@ const TREE_SPECIES = [
 
 export { TREE_SPECIES };
 
+/** How far the widest canopy in the belt (a pine, ~4.7 m across) reaches
+ *  from its trunk, in metres. `vegetation.trees` gives every tree this reach,
+ *  so anything keeping out of them errs wide. */
+export const TREE_REACH = 2.35;
+
 const UP = new THREE.Vector3(0, 1, 0);
 
 /**
@@ -193,6 +198,9 @@ export function createMarsVegetation(opts = {}) {
   vegetation.lanes = lanes;
   vegetation.clearings = clearings;
   vegetation.groves = groves;
+  /** Every tree planted: trunk x/z and canopy reach — for whatever has to
+   *  keep out of the trees, or see past them (DustEyes). */
+  vegetation.trees = trees.map(({ position: { x, z } }) => ({ x, z, reach: TREE_REACH }));
   return vegetation;
 }
 

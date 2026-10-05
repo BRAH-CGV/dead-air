@@ -247,3 +247,24 @@ describe('PowerGrid — tripped breakers', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PowerGrid — brown-out', () => {
+  it('a brown-out makes the lamps gutter and dim, never flare', () => {
+    const dice = [0.5, 0.05, 0.5, 0.95];
+    let n = 0;
+    const grid = new PowerGrid({ random: () => dice[n++ % dice.length] });
+    const light = lamp(2);
+    grid.addLight(light);
+    grid.brownout = 1;
+    const seen = [];
+    for (let i = 0; i < 120; i++) {
+      grid.update(1 / 60);
+      seen.push(light.intensity);
+    }
+    expect(Math.max(...seen)).toBeLessThanOrEqual(2);   // never past normal
+    expect(Math.min(...seen)).toBeLessThan(2 * 0.3);    // guttering out
+    grid.brownout = 0;
+    grid.update(1 / 60);
+    expect(light.intensity).toBe(2);
+  });
+});

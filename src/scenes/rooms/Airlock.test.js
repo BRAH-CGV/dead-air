@@ -163,19 +163,22 @@ describe('Airlock', () => {
         }
       };
 
-      use.onInteract({}); wait(airlock.cycleTime + 0.5);   // out
-      use.onInteract({}); wait(airlock.cycleTime / 2);     // back in, changed mind…
-      use.onInteract({}); wait(airlock.cycleTime + 0.5);   // …out again
-      use.onInteract({}); wait(airlock.cycleTime + 0.5);   // in
+      // The suit changed directly — the locker itself waits out a cycle, but
+      // the suit can still change mid-cycle (a retry, the scene), and the
+      // interlock must hold through that too.
+      suit.toggle(); wait(airlock.cycleTime + 0.5);   // out
+      suit.toggle(); wait(airlock.cycleTime / 2);     // back in, changed mind…
+      suit.toggle(); wait(airlock.cycleTime + 0.5);   // …out again
+      suit.toggle(); wait(airlock.cycleTime + 0.5);   // in
 
       expect(bothOpen).toEqual([]);
       expect(inner.locked).toBe(false);
     });
 
     it('reversing mid-cycle runs back only as far as the cycle had got', () => {
-      use.onInteract({});                    // depressurising…
+      suit.toggle();                         // depressurising…
       run(airlock, 1);
-      use.onInteract({});                    // …suit off again after 1 s
+      suit.toggle();                         // …suit off again after 1 s (not via the locker: it waits)
       expect(airlock.state).toBe('pressurising');
 
       run(airlock, 0.9);
@@ -316,6 +319,8 @@ describe('Airlock', () => {
     it('in front of the locker: it offers the suit and hands it over', () => {
       const { suit, use } = tryLockerFrom(AT_LOCKER);
       expect(suit.worn).toBe(true);
+      expect(use.promptLabel).toMatch(/cycling/i);
+      airlock.update(airlock.cycleTime + 0.1);
       expect(use.promptLabel).toBe('[E] Take off EVA suit');
     });
 
@@ -330,6 +335,31 @@ describe('Airlock', () => {
       expect(inner.locked).toBe(false);
       expect(use.promptLabel).not.toMatch(/\[E\]/);
       expect(use.promptLabel).toMatch(/step into the airlock/i);
+    });
+
+    it('mashing E does nothing while the airlock cycles — the locker works again once a door has opened', () => {
+      const { suit, use } = tryLockerFrom(AT_LOCKER);
+      expect(suit.worn).toBe(true);
+      expect(airlock.cycling).toBe(true);
+      // Pressed again at once (a player running from something): nothing.
+      use.onInteract({});
+      use.onInteract({});
+      expect(suit.worn).toBe(true);
+      expect(use.promptLabel).not.toMatch(/\[E\]/);
+      expect(use.promptLabel).toMatch(/cycling/i);
+      // Cycled through: the hatch is open, and the locker answers again.
+      airlock.update(airlock.cycleTime + 0.1);
+      expect(airlock.state).toBe('depressurised');
+      expect(use.promptLabel).toBe('[E] Take off EVA suit');
+      use.onInteract({});
+      expect(suit.worn).toBe(false);
+      // …and the same on the way back in.
+      use.onInteract({});
+      expect(suit.worn).toBe(false);
+      airlock.update(airlock.cycleTime + 0.1);
+      expect(airlock.state).toBe('pressurised');
+      use.onInteract({});
+      expect(suit.worn).toBe(true);
     });
 
     it('the label comes back once the player steps in', () => {

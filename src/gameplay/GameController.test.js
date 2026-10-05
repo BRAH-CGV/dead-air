@@ -342,6 +342,23 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');
   });
 
+  it('fail() can hold the retry back: no prompt and no [E] until it is shown', () => {
+    const engine = attachEngine();
+    gc.startNight(1);
+    gc.fail('You have been eaten. Press [E] to try again', { retryAfter: 2 });
+    expect(gc.state).toBe('gameOver');
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
+    engine.input.pressed.KeyE = true;   // mashed straight away
+    gc.onUpdate(0.5);
+    expect(gc.state).toBe('gameOver');
+    engine.input.pressed.KeyE = false;
+    gc.onUpdate(1.6);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
+    engine.input.pressed.KeyE = true;
+    gc.onUpdate(0.016);
+    expect(gc.state).toBe('playing');
+  });
+
   it('fail() does nothing outside a playing shift', () => {
     gc.startNight(1);
     gc._morning();
