@@ -104,6 +104,12 @@ import { GameObject } from '../core/GameObject.js';
 // dome sinks toward a dust-brown murk, darker overhead, and the stars are
 // lost in it. The moons fade too, body and halo, back to exactly what they
 // were when the storm passes.
+//
+// At its foot the dome also takes the scene's fog (material.fog: three
+// hands it the same fogColor as the ground). The land sinks into the
+// storm's fog, and without this it ended in a hard line against a darker
+// sky; with it the horizon is lost. It reaches half-way up (STORM_HAZE_TOP);
+// the top of the sky stays dark.
 // ─────────────────────────────────────────────
 
 /** Sphere radius for the dome, in metres. Comfortably inside the camera's
@@ -158,6 +164,11 @@ const DEFAULT_DAY = {
 /** How the sky turns through the night — see "The night turns" above. */
 /** The murk a sandstorm turns the sky to. */
 const STORM_COLOR = 0x2e2119;
+/** How high up the dome a storm's fog reaches, as the sine of the elevation:
+ *  all fog at the horizon, half by about 20 degrees, none from about 45 —
+ *  over the trees and the hills, which at half that still stood against a
+ *  dark sky from the ground. */
+const STORM_HAZE_TOP = 0.7;
 /** How much of a moon is left at the height of a storm. */
 const STORM_MOON_LEFT = 0.08;
 
@@ -238,6 +249,8 @@ export function createMarsSky(opts = {}) {
   const uStorm = { value: 0 };
 
   const domeUniforms = {
+    // fogColor, fogDensity…: three fills these from scene.fog (material.fog).
+    ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     uHorizonColor:    { value: new THREE.Color(horizonColor) },
     uZenithColor:     { value: new THREE.Color(zenithColor) },
     uHorizonExponent: { value: horizonExponent },
@@ -252,6 +265,7 @@ export function createMarsSky(opts = {}) {
     uSunriseColor:    { value: new THREE.Color(sunriseColor) },
     uStorm,
     uStormColor:      { value: new THREE.Color(STORM_COLOR) },
+    uStormHaze:       { value: STORM_HAZE_TOP },
     // Both written by setHour, below.
     uSunDir:          { value: new THREE.Vector3() },
     uSkyRotation:     { value: new THREE.Matrix3() },
@@ -265,6 +279,8 @@ export function createMarsSky(opts = {}) {
       fragmentShader: DOME_FRAGMENT_SHADER,
       side: THREE.BackSide,
       depthWrite: false,
+      // For the scene's fog colour, in a storm (see the header).
+      fog: true,
       // Gates the DITHERING define the shader's chunks sit behind.
       dithering: true,
     }),
@@ -570,6 +586,10 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   uniform vec3  uSunDir;
   uniform float uStorm;
   uniform vec3  uStormColor;
+  uniform float uStormHaze;   // how high a storm's fog reaches up the dome
+  #ifdef USE_FOG
+    uniform vec3 fogColor;    // the scene's fog, as three hands it to the ground
+  #endif
 
   // The night's turn, from the sky's own frame into the world.
   uniform mat3  uSkyRotation;
@@ -661,6 +681,16 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+
+    // In a storm the foot of the sky is the scene's fog, the colour the land
+    // has sunk into, so the horizon is lost in it. Laid on where three lays
+    // its own fog, after tone mapping: before it, the same colour would come
+    // out as another. Thinning upward, gone by uStormHaze.
+    #ifdef USE_FOG
+      float haze = 1.0 - smoothstep(0.0, uStormHaze, dir.y);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, uStorm * haze);
+    #endif
+
     #include <dithering_fragment>
   }
 `;

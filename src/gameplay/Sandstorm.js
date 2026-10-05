@@ -72,8 +72,15 @@ export const SANDSTORM = {
   fogDensity: 0.065,
   /** …and with the player out in it — closed in tighter still, ~20 m. */
   fogDensityOutside: 0.08,
-  /** The dust's colour, and how far the fog is pulled toward it. */
-  dustColor: 0x5a3f2c,
+  /** The dust's colour, and how far the fog is pulled toward it. Chosen for
+   *  what the fog comes out as at full storm, 0x4c2818: a dark rust-brown
+   *  within a shade of the wind dust's clouds as the screen shows them (they
+   *  are tone-mapped, which deepens WIND_DUST.nightColor to 0x4f2418; fog is
+   *  laid on after tone mapping, so it is given the result). It is low in
+   *  blue to cancel the clear night's blue that fogTint leaves in: with it
+   *  the valley went mauve (0x4a251f). More green than this and it goes
+   *  yellow (0x4b2d19). Tests pin both. */
+  dustColor: 0x51280c,
   fogTint: 0.85,
   /** Wind speed in m/s, for the streaming dust. */
   windSpeed: 9,
