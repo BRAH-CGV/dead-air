@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { packGroups } from '../core/PhysicsLayers.js';
 
 // ─────────────────────────────────────────────
 // Drive  –  Physical hard drive (pickup-able small cube)
@@ -33,6 +34,14 @@ const DEFAULT_COLOR = 0x3a3a3a;
 /** Emissive colour when a signal has been saved — green indicator. */
 const SAVED_EMISSIVE = 0x22cc44;
 const SAVED_EMISSIVE_INTENSITY = 1.5;
+
+/**
+ * Collision groups for the drive: member of SHELF (not DEFAULT), so it passes
+ * through the shelf's player-only envelope box while still resting on the
+ * SHELF-layer boards. Filters DEFAULT + SHELF to stay solid against the
+ * environment and shelf surfaces.
+ */
+const DRIVE_GROUPS = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
 
 export class Drive extends GameObject {
   /** @type {THREE.Mesh} */
@@ -89,7 +98,8 @@ export class Drive extends GameObject {
       RAPIER.ColliderDesc.cuboid(...halfSize)
         .setFriction(0.6)
         .setRestitution(0.1)
-        .setDensity(800),
+        .setDensity(800)
+        .setCollisionGroups(DRIVE_GROUPS),
       this.rigidBody,
     );
     this.colliders = [this.collider];
@@ -151,7 +161,8 @@ export class Drive extends GameObject {
     const halfSize = [this._size[0] / 2, this._size[1] / 2, this._size[2] / 2];
     this.collider = this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(...halfSize)
-        .setFriction(0.6).setRestitution(0.1).setDensity(800),
+        .setFriction(0.6).setRestitution(0.1).setDensity(800)
+        .setCollisionGroups(DRIVE_GROUPS),
       this.rigidBody,
     );
     this.colliders = [this.collider];
@@ -192,7 +203,8 @@ export class Drive extends GameObject {
     const halfSize = [this._size[0] / 2, this._size[1] / 2, this._size[2] / 2];
     this.collider = this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(...halfSize)
-        .setFriction(0.6).setRestitution(0.1).setDensity(800),
+        .setFriction(0.6).setRestitution(0.1).setDensity(800)
+        .setCollisionGroups(DRIVE_GROUPS),
       this.rigidBody,
     );
     this.colliders = [this.collider];

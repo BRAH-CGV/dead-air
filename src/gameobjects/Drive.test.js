@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { Drive } from './Drive.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { packGroups } from '../core/PhysicsLayers.js';
 
 // ── Fake Rapier setup for Drive physics tests ──
 
@@ -80,11 +81,13 @@ function makeFakeRAPIER() {
       cuboid: (x, y, z) => {
         const d = {
           half: { x, y, z },
+          _collisionGroups: undefined,
           setFriction() { return d; },
           setRestitution() { return d; },
           setDensity() { return d; },
           setTranslation() { return d; },
           setRotation() { return d; },
+          setCollisionGroups(g) { d._collisionGroups = g; return d; },
         };
         return d;
       },
@@ -223,6 +226,36 @@ describe('Drive', () => {
       const pickupable = drive.getComponent(Pickupable);
       expect(pickupable).not.toBeNull();
       expect(pickupable.held).toBe(false);
+    });
+
+    it('_init sets collision groups for shelf placement (SHELF membership, DEFAULT+SHELF filter)', () => {
+      const drive = new Drive('PhysDrive');
+      drive._init(scene, world);
+
+      // SHELF membership (bit 2) = 0x0004, DEFAULT|SHELF filter (bits 0,2) = 0x0005
+      // packed: (0x0004 << 16) | 0x0005 = 0x00040005
+      const expected = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
+      expect(expected).toBe(0x00040005);
+      expect(drive.collider._desc._collisionGroups).toBe(expected);
+    });
+
+    it('makeKinematic preserves collision groups', () => {
+      const drive = new Drive('PhysDrive');
+      drive._init(scene, world);
+      drive.makeKinematic();
+
+      const expected = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
+      expect(drive.collider._desc._collisionGroups).toBe(expected);
+    });
+
+    it('makeDynamic preserves collision groups', () => {
+      const drive = new Drive('PhysDrive');
+      drive._init(scene, world);
+      drive.makeKinematic();
+      drive.makeDynamic();
+
+      const expected = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
+      expect(drive.collider._desc._collisionGroups).toBe(expected);
     });
 
     it('enablePhysics enables gravity, lowers damping and restores angular damping', () => {
