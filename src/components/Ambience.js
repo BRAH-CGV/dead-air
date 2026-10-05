@@ -33,8 +33,9 @@ import { Component } from '../core/Component.js';
 // A loop at zero is stopped, not left running silent, and starts again from
 // its top the next time it is wanted.
 //
-// The clips are fetched when the scene starts, not preloaded (see the
-// manifest), and each fades in as it arrives.
+// The clips are fetched as the scene is built, not preloaded (see the
+// manifest): they load behind the main menu, and each fades in once the
+// game is playing and it has arrived.
 // ─────────────────────────────────────────────
 
 /** Tuning. Seconds unless stated. */
@@ -209,14 +210,20 @@ export class Ambience extends Component {
     this._tension = 0;
   }
 
+  /** The clips are fetched on awake, while the scene is built — it sits
+   *  paused behind the main menu, and onStart only runs on the first frame
+   *  of play. Fetched there, every game began with seconds of no ambience. */
+  onAwake() {
+    if (this.sounds) return;
+    this.sounds = {};
+    this._loadSounds();
+  }
+
   onStart() {
     if (this.testKeys && typeof addEventListener === 'function') {
       this._onKey = e => this.onKeyDown(e);
       addEventListener('keydown', this._onKey);
     }
-    if (this.sounds) return;
-    this.sounds = {};
-    this._loadSounds();
   }
 
   /** A test key: its track at full tension on one press, let go on the

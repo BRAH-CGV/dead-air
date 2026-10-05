@@ -388,6 +388,47 @@ describe('Ambience test keys', () => {
   });
 });
 
+describe('Ambience loading', () => {
+  function unloaded() {
+    const mix = new AmbienceMix({ zones: [{ box: box(0, 6), track: 'centre' }], outside: 'wind' });
+    const load = vi.fn(() => new Promise(() => {}));   // never arrives
+    const go = new GameObject('Ambience');
+    go.scene = { userData: { engine: { audioListener: {}, assets: { load } } } };
+    const ambience = go.addComponent(new Ambience({ mix, music: MUSIC, listenerPosition: out => out.set(3, 1, 0) }));
+    return { ambience, load };
+  }
+
+  it('starts fetching its clips on awake: behind the main menu, before the game ever ticks', () => {
+    // The scene is built paused under the menu, and onStart only runs on the
+    // first frame of play. Loading there left the first seconds of every
+    // game without ambience.
+    const { ambience, load } = unloaded();
+    ambience.onAwake();
+    expect(load.mock.calls.map(c => c[0]).sort()).toEqual(['centre', MUSIC, 'wind'].sort());
+  });
+
+  it('fetches them once, not again on the first frame', () => {
+    const { ambience, load } = unloaded();
+    ambience.onAwake();
+    ambience.onStart();
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it('runs silent, without error, until they arrive', () => {
+    const { ambience } = unloaded();
+    ambience.onAwake();
+    ambience.onStart();
+    expect(() => run(ambience, 1)).not.toThrow();
+  });
+
+  it('leaves sounds it was handed alone', () => {
+    const { ambience, sounds } = build();
+    const before = { ...sounds };
+    ambience.onAwake();
+    expect(ambience.sounds).toEqual(before);
+  });
+});
+
 describe('Ambience teardown', () => {
   it('stops and unhooks every sound', () => {
     const { ambience, sounds } = build();
