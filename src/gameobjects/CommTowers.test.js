@@ -217,4 +217,12 @@ describe('the beacons', () => {
     const phases = createCommTowers().sites.map(s => s.phase);
     expect(new Set(phases).size).toBe(phases.length);
   });
+
+  it('marks the lamps as rewritten every frame, so the occlusion sort leaves the mesh whole', () => {
+    // Split into per-zone copies, the copies kept their first colour and the
+    // lamps stayed red between flashes.
+    const { lamps, steel } = partsOf(createCommTowers());
+    expect(lamps.userData.liveInstances).toBe(true);
+    for (const mesh of steel) expect(mesh.userData.liveInstances).toBeUndefined();
+  });
 });

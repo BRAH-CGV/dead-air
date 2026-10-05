@@ -176,22 +176,31 @@ describe('materials', () => {
     expect(fabricMesh.material.alphaMap ?? fabricMesh.material.map).toBeTruthy();
   });
 
-  it('the gaps are really empty: they discard, so nothing behind the fence is hidden by them', () => {
-    // Transparent alone still writes depth across the whole card, gaps and
-    // all — and anything drawn after it beyond the fence (the dust eyes, the
-    // grit) failed the depth test against an invisible panel. The alpha test
-    // throws the gaps away instead.
+  it('leaves its gaps out of the depth buffer, so what is behind the fence still draws', () => {
+    // A blended material writes depth for every pixel of the panel, gaps
+    // included. Anything see-through drawn after it and behind it — the wind
+    // dust — was then cut out in the shape of the whole fence. alphaTest
+    // throws the gap pixels away before they can write depth.
     const group = new THREE.Group();
-    const fabric = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_WIDTH, 2.4), new THREE.MeshStandardMaterial());
+    const fabric = new THREE.Mesh(
+      new THREE.PlaneGeometry(PANEL_WIDTH, 2.4),
+      new THREE.MeshStandardMaterial(),
+    );
     fabric.name = 'pPlane1_phong6_0';
     group.add(fabric);
     group.updateMatrixWorld(true);
+
     const assets = { get: vi.fn(() => ({ scene: group })), getCollision: vi.fn(() => null) };
-    const fence = createPerimeterFence({ lanes: [], assets });
-    const material = fence.object3d.children[0].material;
+    const { material } = createPerimeterFence({ lanes: [], assets }).object3d.children[0];
+
     expect(material.alphaTest).toBeGreaterThan(0);
-    // …and below the wire's own alpha, or the wire would vanish too.
-    expect(material.alphaTest).toBeLessThan(60 / 255);
+    // …but the wire itself is kept. Its alpha is the lattice texel's alpha
+    // (map) times its green (alphaMap), both read off the texture.
+    const { data } = material.map.image;
+    let wire = 0;
+    for (let i = 0; i < data.length; i += 4) wire = Math.max(wire, (data[i + 3] / 255) * (data[i + 1] / 255));
+    expect(wire).toBeGreaterThan(0);
+    expect(material.alphaTest).toBeLessThan(wire);
   });
 });
 
