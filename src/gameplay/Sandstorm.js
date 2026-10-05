@@ -6,8 +6,8 @@ import { UFO } from './UfoThreat.js';
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
 // ─────────────────────────────────────────────
-// From night 2 on, a night may (SANDSTORM.chance) bring one storm, at a
-// random hour. It builds up over `rampSeconds`, blows for a while and dies
+// Every night brings one storm, at a random hour (night 1 too — the dust
+// eyes stay away until night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
 // down again. While it blows:
 //
 //   sound   the storm recording, looped — modest outside, barely a hiss
@@ -48,9 +48,7 @@ import { UFO } from './UfoThreat.js';
 /** Tuning. Seconds unless stated. */
 export const SANDSTORM = {
   /** The first night storms can come on. */
-  fromNight: 2,
-  /** Chance a night (from fromNight on) brings a storm. */
-  chance: 0.6,
+  fromNight: 1,
   /** When it starts, in night-clock hours after midnight: a random time
    *  between these… */
   startHours: [0.5, 4.2],
@@ -93,20 +91,19 @@ export const SANDSTORM_SOUNDS = {
 // ── Pure helpers ──────────────────────────────────────────
 
 /**
- * Tonight's storm, if any: when it starts and how long it blows, in real
- * seconds from the start of the shift. null on a calm night.
+ * Tonight's storm: when it starts and how long it blows, in real seconds
+ * from the start of the shift. Every night has one.
  * @param {object} opts
  * @param {number} opts.night
  * @param {number} opts.nightDuration  Real seconds in the shift.
  * @param {number} [opts.nightHours=6] Clock hours in it.
  * @param {() => number} [opts.random]
- * @returns {{ start: number, duration: number }|null}  null on a calm
- *          night, and on a UFO night (the storm follows the UFO there).
+ * @returns {{ start: number, duration: number }|null}  null only on a UFO
+ *          night (the storm follows the UFO there instead).
  */
 export function scheduleStorm({ night, nightDuration, nightHours = 6, random = Math.random }) {
   if (night < SANDSTORM.fromNight) return null;
   if (UFO.nights.includes(night)) return null;   // it comes after the UFO instead
-  if (random() >= SANDSTORM.chance) return null;
   const hour = nightDuration / nightHours;
   const [s0, s1] = SANDSTORM.startHours;
   const [d0, d1] = SANDSTORM.durationHours;

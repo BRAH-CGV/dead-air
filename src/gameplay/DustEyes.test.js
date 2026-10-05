@@ -30,8 +30,8 @@ describe('how often', () => {
     expect(maxEyes(3, 'fence')).toBe(4);
   });
 
-  it('1.3 seconds of staring is too long', () => {
-    expect(DUST_EYES.stareSeconds).toBe(1.3);
+  it('0.8 seconds of staring is too long', () => {
+    expect(DUST_EYES.stareSeconds).toBe(0.8);
   });
 });
 
@@ -861,5 +861,34 @@ describe('DustEyes — the generator draws them', () => {
     const busy = makeRig({ random: () => 0 });
     busy.system.generatorNoise();
     expect(busy.system.generatorNoise()).toBe(false);   // one is already coming
+  });
+});
+
+describe('DustEyes — agitated ones stay', () => {
+  /** An agitated yard eye: seen through the window, come round to the yard. */
+  function agitated() {
+    const rig = makeRig({ outside: false, player: [0, 1.24, -2], random: () => 0.999, hatchShut: true });
+    rig.system.summon('window');
+    run(rig.system, 0.1);
+    const eye = rig.system.active[0];
+    rig.hooks.viewDirection = out => out.copy(eye.position).sub(rig.pos).normalize();
+    run(rig.system, DUST_EYES.windowStareSeconds + DUST_EYES.retreatSeconds + 0.3);
+    rig.hooks.viewDirection = out => out.set(0, -1, 0);
+    return { rig, eye };
+  }
+
+  it('an agitated yard eye does not drift off — it waits out the storm', () => {
+    const { rig, eye } = agitated();
+    expect(eye.agitated).toBe(true);
+    run(rig.system, DUST_EYES.lifeSeconds[1] * 2);
+    expect(eye.phase).not.toBe('off');
+    expect(eye.kind).toBe('fence');
+  });
+
+  it('…and goes when the storm does', () => {
+    const { rig, eye } = agitated();
+    rig.sandstorm.level = 0.2;
+    run(rig.system, DUST_EYES.fadeSeconds + 0.2);
+    expect(eye.phase).toBe('off');
   });
 });

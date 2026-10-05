@@ -20,7 +20,8 @@ import { synthGrowl } from './Growl.js';
 //            only while the player is indoors, 1 (night 2) or 2 at most, and
 //            windowCooldown between them. One that is stared at shows its
 //            snarl, backs off into the fog — and comes round to the yard,
-//            agitated: darker orange, and far quicker to turn.
+//            agitated: darker orange, far quicker to turn, and there until
+//            the storm ends.
 //
 // Neither kind leaves when the player goes in or out; they drift off in
 // their own time.
@@ -95,7 +96,7 @@ export const DUST_EYES = {
   /** Fade in and out. */
   fadeSeconds: 1.5,
   /** How long it must be stared at before it turns — outside… */
-  stareSeconds: 1.3,
+  stareSeconds: 0.8,
   /** …and through the window. */
   windowStareSeconds: 0.7,
   /** Degrees off the middle of the view that still counts as looking at it. */
@@ -703,7 +704,8 @@ export class DustEyes extends Component {
       slot.fade = Math.min(1, slot.fade + dt / DUST_EYES.fadeSeconds);
       if (slot.fade >= 1) slot.phase = 'passive';
     }
-    slot.life -= dt;
+    // An agitated one doesn't drift off: it waits out the storm.
+    if (!slot.agitated) slot.life -= dt;
     if (slot.life <= 0 || level < DUST_EYES.leaveLevel) {
       slot.phase = 'out';
       return;

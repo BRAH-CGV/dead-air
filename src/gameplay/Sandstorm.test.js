@@ -11,17 +11,12 @@ const NIGHT = 300;   // real seconds in a shift
 const HOUR = NIGHT / 6;
 
 describe('scheduleStorm', () => {
-  it('never comes on night 1', () => {
-    for (const r of [0, 0.3, 0.99]) {
-      expect(scheduleStorm({ night: 1, nightDuration: NIGHT, random: () => r })).toBeNull();
+  it('comes every night — night 1 included — whatever the dice say', () => {
+    for (const night of [1, 2, 4]) {
+      for (const r of [0, 0.5, 0.999]) {
+        expect(scheduleStorm({ night, nightDuration: NIGHT, random: () => r }), `night ${night}`).not.toBeNull();
+      }
     }
-  });
-
-  it('comes on some nights from night 2 on, and not others', () => {
-    const yes = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0 });
-    const no = scheduleStorm({ night: 4, nightDuration: NIGHT, random: () => 0.999 });
-    expect(yes).not.toBeNull();
-    expect(no).toBeNull();
   });
 
   it('starts inside the night and is over before 6 AM', () => {
@@ -85,11 +80,11 @@ const run = (storm, seconds, step = 0.1) => {
 };
 
 describe('Sandstorm', () => {
-  it('stays calm on night 1, even with time', () => {
-    const { storm, sounds } = makeRig({ night: 1 });
-    run(storm, NIGHT);
-    expect(storm.level).toBe(0);
-    expect(sounds.wind.isPlaying).toBe(false);
+  it('blows on night 1 too, at its time', () => {
+    const { storm } = makeRig({ night: 1, random: () => 0.999 });
+    const s = scheduleStorm({ night: 1, nightDuration: NIGHT, random: () => 0.999 });
+    run(storm, s.start + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);
   });
 
   it('summon() brings one at once, on any night', () => {
