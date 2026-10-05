@@ -239,6 +239,211 @@
         background: rgba(207, 110, 110, 0.15);
       }
 
+      /* ── Menus (MenuView.js draws into #menu-panel) ─────────
+         Voices-of-the-Void plain: text rows, hairlines, monospace, no
+         gradients, no rounded pills, no blur. Every animation is CSS-only
+         and switched off under prefers-reduced-motion. */
+      #menu {
+        --menu-bg:      rgba(13, 13, 20, 0.88);
+        --menu-dim:     rgba(0, 0, 0, 0.55);
+        --menu-text:    #b8b8c8;
+        --menu-bright:  #d8e8f0;
+        --menu-muted:   #8898a8;
+        --menu-line:    rgba(184, 184, 200, 0.18);
+        --menu-ok:      #6ecf9a;
+        --menu-danger:  #cf6e6e;
+        --menu-warn:    #e8a050;
+        --menu-accent:  #00dcc8;
+        --menu-font:    ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        z-index: 150;
+        pointer-events: auto;   /* covers the canvas: only menu buttons request the lock */
+        background: var(--menu-dim);
+        color: var(--menu-text);
+        font: 14px/1.5 var(--menu-font);
+      }
+      #menu.is-open { display: flex; }
+      /* The main menu sits over the living base at night: a lighter dim. */
+      #menu[data-screen="main"] { background: rgba(0, 0, 0, 0.28); }
+      /* Faint scanlines over everything: one static texture, no JS. */
+      #menu::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          to bottom, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 3px);
+      }
+      #menu-status {
+        position: absolute;
+        top: 16px;
+        right: 20px;
+        text-align: right;
+        font-size: 12px;
+        line-height: 1.6;
+        letter-spacing: 0.12em;
+        color: var(--menu-muted);
+      }
+      #menu-panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        box-sizing: border-box;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        margin-left: max(16px, 8vw);
+        padding: 28px 32px;
+        border: 1px solid var(--menu-line);
+        background: var(--menu-bg);
+      }
+      #menu[data-screen="main"] #menu-panel { border-color: transparent; background: rgba(13, 13, 20, 0.6); }
+      #menu[data-screen="settings"] #menu-panel,
+      #menu[data-screen="credits"] #menu-panel,
+      #menu[data-screen="runComplete"] #menu-panel { width: min(760px, calc(100vw - 32px)); }
+      @media (max-width: 640px) {
+        #menu-panel { margin: 0 16px; padding: 20px 16px; }
+      }
+
+      .menu-title {
+        margin: 0;
+        font-size: clamp(36px, 7vw, 76px);
+        font-weight: 700;
+        line-height: 1.1;
+        letter-spacing: 0.32em;
+        color: var(--menu-bright);
+        animation: menu-flicker 7s infinite;
+      }
+      .menu-cursor {
+        display: inline-block;
+        width: 0.5em;
+        height: 0.8em;
+        margin-left: 0.05em;
+        background: var(--menu-text);
+        animation: menu-blink 1.1s steps(1) infinite;
+      }
+      .menu-tagline { --ls: 0.14em; color: var(--menu-ok); font-size: 13px; letter-spacing: var(--ls); min-height: 4.5em; }
+      .menu-type {
+        /* Each character is 1ch plus the letter-spacing; 1ch alone clipped
+           the end of every line. */
+        width: calc(var(--chars) * (1ch + var(--ls)));
+        overflow: hidden;
+        white-space: nowrap;
+        animation: menu-type 0.8s steps(var(--chars)) calc(0.3s + var(--i) * 0.9s) both;
+      }
+      .menu-heading {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--menu-bright);
+      }
+      .menu-heading.is-danger { color: var(--menu-danger); }
+      .menu-heading.is-ok     { color: var(--menu-ok); letter-spacing: 0.08em; text-transform: none; }
+      .menu-subheading {
+        margin: 14px 0 4px;
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 0.2em;
+        color: var(--menu-muted);
+      }
+      .menu-status-line { color: var(--menu-accent); font-size: 13px; letter-spacing: 0.1em; }
+      .menu-text { margin: 0; }
+      .menu-hint { min-height: 1.5em; font-size: 12px; color: var(--menu-warn); }
+      .menu-footer { font-size: 12px; color: var(--menu-muted); }
+
+      .menu-list { display: flex; flex-direction: column; }
+      .menu-list-inline { flex-direction: row; flex-wrap: wrap; gap: 4px 16px; }
+      .menu-list-inline .menu-item { width: auto; }
+      .menu-item, .menu-tab, .menu-choice, .menu-bind {
+        appearance: none;
+        margin: 0;
+        border: 1px solid transparent;
+        border-radius: 0;
+        background: none;
+        color: var(--menu-text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .menu-item {
+        position: relative;
+        width: 100%;
+        padding: 5px 10px 5px 24px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .menu-item::before {
+        content: '>';
+        position: absolute;
+        left: 8px;
+        opacity: 0;
+      }
+      .menu-item:hover, .menu-item:focus,
+      .menu-tab:hover, .menu-tab:focus,
+      .menu-choice:hover, .menu-choice:focus,
+      .menu-bind:hover, .menu-bind:focus {
+        outline: none;
+        color: var(--menu-bright);
+        background: rgba(184, 184, 200, 0.07);
+      }
+      .menu-slider input:focus { outline: 1px solid var(--menu-accent); outline-offset: 2px; }
+      .menu-item:hover::before, .menu-item:focus::before { opacity: 1; }
+      .menu-item.is-danger:hover, .menu-item.is-danger:focus { color: var(--menu-danger); }
+      .menu-item:disabled, .menu-choice:disabled { color: var(--menu-muted); cursor: default; background: none; }
+      .menu-item:disabled::before { opacity: 0; }
+
+      .menu-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; }
+      .menu-tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--menu-line); }
+      .menu-tab { padding: 6px 12px; letter-spacing: 0.14em; border-bottom: 1px solid transparent; margin-bottom: -1px; }
+      .menu-tab[aria-selected="true"] { color: var(--menu-accent); border-bottom-color: var(--menu-accent); }
+      .menu-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 4px; }
+      .menu-row-label { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+      .menu-row-dots { flex: 1 1 auto; min-width: 12px; align-self: center; border-bottom: 1px dotted var(--menu-line); }
+      .menu-row.is-flash { animation: menu-flash 0.9s 2; }
+      .menu-key { color: var(--menu-bright); border: 1px solid var(--menu-line); padding: 0 6px; white-space: nowrap; }
+      .menu-slider { display: inline-flex; align-items: center; gap: 10px; }
+      .menu-slider input { width: min(180px, 30vw); accent-color: var(--menu-accent); }
+      .menu-value { min-width: 6ch; text-align: right; color: var(--menu-accent); }
+      .menu-choices { display: inline-flex; flex-wrap: wrap; }
+      .menu-choice { padding: 1px 8px; letter-spacing: 0.08em; }
+      .menu-choice[aria-pressed="true"] { color: var(--menu-accent); border-color: var(--menu-line); }
+      .menu-bind { min-width: 10ch; padding: 1px 10px; border-color: var(--menu-line); color: var(--menu-bright); }
+      .menu-bind.is-capturing { color: var(--menu-warn); border-color: var(--menu-warn); }
+
+      .menu-credits .menu-group { margin-bottom: 8px; }
+      .menu-credit { margin: 6px 0 10px; }
+      .menu-credit-title { color: var(--menu-bright); }
+      .menu-credit-text, .menu-credit-note { font-size: 12px; color: var(--menu-muted); overflow-wrap: anywhere; }
+      .menu-credit-note { color: var(--menu-warn); }
+      .menu-credit.is-todo .menu-credit-text { color: var(--menu-warn); }
+      .menu-credits a { color: var(--menu-accent); }
+      .menu-roll-window { height: min(52vh, 440px); overflow: hidden; }
+      /* Starts one window-height down, ends scrolled off the top. */
+      .menu-roll { padding-top: min(52vh, 440px); animation: menu-roll 90s linear 1s both; }
+
+      @keyframes menu-blink   { 50% { opacity: 0; } }
+      @keyframes menu-flicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: 0.82; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
+      @keyframes menu-type    { from { width: 0; } }
+      @keyframes menu-flash   { 50% { background: rgba(232, 160, 80, 0.16); } }
+      @keyframes menu-roll    { to { transform: translateY(-100%); } }
+      @media (prefers-reduced-motion: reduce) {
+        .menu-title, .menu-cursor, .menu-type, .menu-row.is-flash { animation: none; }
+        .menu-roll { animation: none; padding-top: 0; }
+        .menu-roll-window { overflow-y: auto; }
+      }
+
+      /* Gameplay overlays show only while playing. visibility, not display,
+         so each owner's own display state survives the menu. */
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review) {
+        visibility: hidden !important;
+      }
+
       /* ── Screen fade (ScreenFade.js sets the duration) ──── */
       #fade {
         position: fixed;
@@ -247,7 +452,8 @@
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.7s ease;
-        z-index: 101;
+        /* Above the menu too: a fade covers the screen swap behind it. */
+        z-index: 200;
       }
       #fade.is-dark { opacity: 1; }
 
@@ -370,6 +576,12 @@
         <span id="signal-save-btn">[S] Save Signal</span>
         <span id="signal-delete-btn">[D] Delete Signal</span>
       </div>
+    </div>
+
+    <!-- Menus: main, pause, settings, controls, credits, end screens -->
+    <div id="menu" role="dialog" aria-label="Menu">
+      <div id="menu-status" aria-hidden="true"></div>
+      <div id="menu-panel"></div>
     </div>
 
     <div id="fade"></div>

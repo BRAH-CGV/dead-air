@@ -58,6 +58,8 @@ export class GameController extends Component {
   _retryLock = 0;
   _heldPrompt = null;
 
+  /** @type {Set<(state: string, previous: string) => void>} */
+  _stateListeners = new Set();
   /** @type {Set<(night: number) => void>} */
   _nightStartListeners = new Set();
 
@@ -71,7 +73,7 @@ export class GameController extends Component {
    *         game over — listeners put the player back at the start. */
   startNight(nightNumber, { retry = false } = {}) {
     this.nightNumber = nightNumber;
-    this.state = 'playing';
+    this._setState('playing');
 
     this.nightClock?.reset();
     this.signalManager?.startNight(nightNumber);
@@ -121,6 +123,15 @@ export class GameController extends Component {
       this._offNights?.();
       this._offNights = null;
     };
+  }
+
+  /** Subscribe to state changes: `listener(state, previous)`. The app layer
+   *  uses it to put up the Night failed and Run complete screens.
+   *  @param {(state: string, previous: string) => void} listener
+   *  @returns {() => void} unsubscribe */
+  onStateChange(listener) {
+    this._stateListeners.add(listener);
+    return () => this._stateListeners.delete(listener);
   }
 
   /** Called when a signal is saved by the terminal. */
@@ -238,11 +249,21 @@ export class GameController extends Component {
     }
   }
 
-  _endShift(state, prompt) {
+  /** The one place `state` changes, so every change is announced. Iterates
+   *  a copy: a listener may unsubscribe (or rebuild the scene) mid-call. */
+  _setState(state) {
+    const previous = this.state;
+    if (state === previous) return;
     this.state = state;
+    for (const listener of [...this._stateListeners]) listener(state, previous);
+  }
+
+  _endShift(state, prompt) {
     this.nightClock?.pause();
     this.hud?.setPrompt(prompt);
     this.hud?.setScanProgress(-1);
+    // Last: a listener sees the shift fully ended (clock stopped, prompt up).
+    this._setState(state);
   }
 
   _morning()  { this._endShift('morning',  PROMPT.morning); }

@@ -284,8 +284,10 @@ export class BaseScene extends Scene {
     // outside the scene graph — nothing tears them down for us, so a scene
     // swap would leave last night's numbers floating over the next level.
     this.hud?.hide();
-    this.radarOverlay?.hide();
-    this.reviewPanel?.hide();
+    // dispose(), not just hide(): both hang listeners on page elements and
+    // the window that outlive the scene.
+    this.radarOverlay?.dispose();
+    this.reviewPanel?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -814,6 +816,8 @@ export class BaseScene extends Scene {
    *  out — a click or a key press, so the browser allows it. */
   _usePanel(open) {
     this._setPlayerLocked(open);
+    // Tells the app layer the lock is being let go on purpose (no pause).
+    this.engine.uiHasMouse = open;
     const canvas = this.engine.renderer?.domElement;
     if (open) {
       this.engine.crosshair?.hide();

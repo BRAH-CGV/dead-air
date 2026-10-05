@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PromptLabel } from './PromptLabel.js';
+import { setInteractKey } from './promptKeys.js';
 
 describe('PromptLabel', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
@@ -36,5 +37,19 @@ describe('PromptLabel', () => {
     const prompt = new PromptLabel(null);
     expect(() => { prompt.show('x'); prompt.hide(); }).not.toThrow();
     expect(prompt.visible).toBe(false);
+  });
+
+  it('names the bound interact key through an injected keyLabel', () => {
+    const prompt = new PromptLabel(undefined, { keyLabel: (t) => t.replace('[E]', '[F]') });
+    prompt.show('[E] Use Computer');
+    expect(prompt.text).toBe('[F] Use Computer');
+  });
+
+  it('defaults to the shared interact key', () => {
+    setInteractKey('G');
+    const prompt = new PromptLabel();
+    prompt.show('[E] Sleep');
+    expect(prompt.text).toBe('[G] Sleep');
+    setInteractKey('E');
   });
 });

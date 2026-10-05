@@ -320,6 +320,59 @@ describe('GameController', () => {
     gc.startNight(1);   // must not throw
     expect(() => gc.onUpdate(0.016)).not.toThrow();
   });
+  describe('state change events', () => {
+    it('notifies listeners with (state, previous) when a night starts', () => {
+      const listener = vi.fn();
+      gc.onStateChange(listener);
+      gc.startNight(1);
+      expect(listener).toHaveBeenCalledWith('playing', 'idle');
+    });
+
+    it('notifies on gameOver when the shift ends short of the quota', () => {
+      const listener = vi.fn();
+      gc.startNight(1);
+      gc.onStateChange(listener);
+      gc.onUpdate(400);   // past 6 AM, nothing saved
+      expect(gc.state).toBe('gameOver');
+      expect(listener).toHaveBeenCalledWith('gameOver', 'playing');
+    });
+
+    it('notifies on morning and on finished', () => {
+      const nights = new NightManager({ maxNight: 1 });
+      gc.bindNights(nights);
+      const states = [];
+      gc.onStateChange((state, previous) => states.push(`${previous}->${state}`));
+      meetQuota();
+      gc.onUpdate(400);
+      gc.sleep();
+      expect(states).toEqual(['playing->morning', 'morning->finished']);
+    });
+
+    it('does not notify when the state does not change', () => {
+      gc.startNight(1);
+      const listener = vi.fn();
+      gc.onStateChange(listener);
+      gc.startNight(1);   // playing -> playing
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('returns an unsubscribe function', () => {
+      const listener = vi.fn();
+      const off = gc.onStateChange(listener);
+      off();
+      gc.startNight(1);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('lets a listener unsubscribe while being notified', () => {
+      const second = vi.fn();
+      let off;
+      off = gc.onStateChange(() => off());
+      gc.onStateChange(second);
+      gc.startNight(1);
+      expect(second).toHaveBeenCalledOnce();
+    });
+  });
 
   // ── Threat hooks ──
 

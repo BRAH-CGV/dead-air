@@ -388,6 +388,14 @@ describe('BaseScene', () => {
     expect(engine.scene.fog.density).toBeCloseTo(outdoor);
   });
 
+  it('disposes the radar and review overlays on dispose, so restarts do not stack listeners', () => {
+    const radar = vi.spyOn(scene.radarOverlay, 'dispose');
+    const review = vi.spyOn(scene.reviewPanel, 'dispose');
+    scene.dispose();
+    expect(radar).toHaveBeenCalledOnce();
+    expect(review).toHaveBeenCalledOnce();
+  });
+
   it('hands the fog back on dispose so it does not follow us into the next scene', () => {
     scene.dispose();
     // What makeSceneEngine handed the scene, untouched.
