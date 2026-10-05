@@ -132,7 +132,7 @@ const GENERATOR_CORNER_INSET = [2.2, 1.9];
 
 /** Dust eyes built up front — the most out at once, front and back together
  *  (DustEyes.maxEyes), plus room for ones fading away as new ones replace them. */
-const DUST_EYE_POOL = 8;
+const DUST_EYE_POOL = 10;
 
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */

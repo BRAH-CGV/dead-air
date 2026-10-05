@@ -87,8 +87,12 @@ import { synthGrowl } from './Growl.js';
 
 /** Tuning. Seconds and metres unless stated. */
 export const DUST_EYES = {
-  /** How often a spawn is rolled for, while the storm is up. */
+  /** How often a yard spawn is rolled for, while the storm is up… */
   checkSeconds: 5,
+  /** …and a window one — on its own clock, half a beat out of step, so the
+   *  two never come in the same moment. */
+  windowCheckSeconds: 5,
+  windowCheckOffset: 2.5,
   /** The storm must be at least this strong for one to come… */
   spawnLevel: 0.8,
   /** …and they leave once it drops under this. */
@@ -202,17 +206,22 @@ const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2
 
 // ── Pure helpers ──────────────────────────────────────────
 
-/** Chance a roll brings one, on `night`. */
-export function spawnChance(night) {
+/** Each place's own chance a roll brings one: night 2, and night 3 on. */
+export const SPAWN_CHANCE = {
+  fence:  { 2: 0.08, 3: 0.2 },
+  window: { 2: 0.08, 3: 0.2 },
+};
+
+/** Chance a roll brings one to `kind` ('fence' the yard, 'window'), on `night`. */
+export function spawnChance(night, kind = 'fence') {
   if (night < 2) return 0;
-  return night === 2 ? 0.08 : 0.2;
+  return SPAWN_CHANCE[kind][Math.min(night, 3)];
 }
 
 /** Most at once, on `night`, in the yard ('fence') or through the window ('window'). */
 export function maxEyes(night, kind) {
   if (night < 2) return 0;
-  if (kind === 'window') return night === 2 ? 1 : 2;
-  return night === 2 ? 3 : 4;
+  return kind === 'window' ? 3 : 5;
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -535,6 +544,7 @@ export class DustEyes extends Component {
     for (const slot of this.slots) this._hide(slot);
     this._night = 1;
     this._check = 0;
+    this._windowCheck = DUST_EYES.windowCheckOffset;
     this._forced = false;
     this._caught = false;
     this._locked = false;
@@ -546,6 +556,8 @@ export class DustEyes extends Component {
     this._aggroClock = 0;       // seconds towards the next stay-out roll
     this._midwayFor = null;     // the storm whose midway check has run
     this._born = 0;             // counts spawns, for the oldest-first rule
+    /** Per-place chance overrides: { fence?, window? }. */
+    this.chances = null;
     this._attack = 0;           // the chase sound's level, 0 … 1
     this._silhouette = new THREE.Color();
   }
@@ -574,6 +586,7 @@ export class DustEyes extends Component {
   reset(night) {
     this._night = night;
     this._check = 0;
+    this._windowCheck = DUST_EYES.windowCheckOffset;
     this._forced = false;
     this._caught = false;
     this._wasOutside = null;
@@ -625,16 +638,19 @@ export class DustEyes extends Component {
     const eye = this.hooks.eyePosition(_eye);
     const outside = this.hooks.isOutside(eye);
     this._windowWait = Math.max(0, this._windowWait - dt);
+    const rolling = level >= DUST_EYES.spawnLevel && !this._chasing();
+    // The yard, in or out — on its own clock and its own chance.
     this._check += dt;
     if (this._check >= DUST_EYES.checkSeconds) {
       this._check = 0;
-      if (level >= DUST_EYES.spawnLevel && !this._chasing()) {
-        // The window — rarely: only with the player indoors to see it, and
-        // only once the cooldown has run.
-        if (!outside && this._windowWait === 0 && this.random() < spawnChance(this._night)) this._spawn('window');
-        // The yard, in or out.
-        if (this.random() < spawnChance(this._night)) this._spawn('fence');
-      }
+      if (rolling && this.random() < this._chance('fence')) this._spawn('fence');
+    }
+    // The window — only with the player indoors to see it, once the
+    // cooldown has run — on a clock of its own, out of step with the yard's.
+    this._windowCheck += dt;
+    if (this._windowCheck >= DUST_EYES.windowCheckSeconds) {
+      this._windowCheck = 0;
+      if (rolling && !outside && this._windowWait === 0 && this.random() < this._chance('window')) this._spawn('window');
     }
     if (this._forced && level >= DUST_EYES.spawnLevel) {
       const kind = this._forced;
@@ -781,6 +797,11 @@ export class DustEyes extends Component {
     }
     this._turn(slot, DUST_EYES.passiveGrowlSeconds);
     return true;
+  }
+
+  /** A place's chance tonight — `chances` overrides it (tests, tuning). */
+  _chance(kind) {
+    return this.chances?.[kind] ?? spawnChance(this._night, kind);
   }
 
   /** The J key's spawn, now: 'both' brings one to the yard and one to the window. */

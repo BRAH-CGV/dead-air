@@ -15,19 +15,22 @@ const WINDOW = { x0: -4, x1: 4, z: -5, sill: 0.5, top: 2.8 }; // back wall, look
 
 describe('how often', () => {
   it('never before night 2', () => {
-    expect(spawnChance(1)).toBe(0);
+    expect(spawnChance(1, 'fence')).toBe(0);
+    expect(spawnChance(1, 'window')).toBe(0);
     expect(maxEyes(1, 'fence')).toBe(0);
     expect(maxEyes(1, 'window')).toBe(0);
   });
 
-  it('8 % a roll on night 2, 20 % from night 3', () => {
-    expect(spawnChance(2)).toBe(0.08);
-    expect(spawnChance(3)).toBe(0.2);
-    // Through the window, one or two; in the yard, three or four.
-    expect(maxEyes(2, 'window')).toBe(1);
-    expect(maxEyes(3, 'window')).toBe(2);
-    expect(maxEyes(2, 'fence')).toBe(3);
-    expect(maxEyes(3, 'fence')).toBe(4);
+  it('8 % a roll on night 2, 20 % from night 3 — each place its own roll', () => {
+    for (const kind of ['fence', 'window']) {
+      expect(spawnChance(2, kind)).toBe(0.08);
+      expect(spawnChance(3, kind)).toBe(0.2);
+    }
+    // Up to three through the window, five in the yard, from night 2.
+    for (const night of [2, 3]) {
+      expect(maxEyes(night, 'window')).toBe(3);
+      expect(maxEyes(night, 'fence')).toBe(5);
+    }
   });
 
   it('0.6 seconds of staring is too long', () => {
@@ -98,7 +101,7 @@ function makeRig({ night = 2, outside = true, random = () => 0, player = [0, 1.2
     setPlayerLocked: vi.fn(),
   };
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
-  const pool = Array.from({ length: 8 }, () => new DustEye());
+  const pool = Array.from({ length: 10 }, () => new DustEye());
   const sounds = { attack: makeSound(), bite: makeSound(), growl: makeSound() };
   const fog = new THREE.FogExp2(0x5a3f2c, 0.07);
   const system = new DustEyes({
@@ -927,10 +930,10 @@ describe('DustEyes — making room', () => {
     rig.system.summon('fence');
     run(rig.system, 1);
     const oldest = rig.system.active[0];
-    rig.system.summon('fence');
-    run(rig.system, 1);
-    rig.system.summon('fence');
-    run(rig.system, 1);
+    for (let i = 1; i < maxEyes(2, 'fence'); i++) {
+      rig.system.summon('fence');
+      run(rig.system, 1);
+    }
     expect(live(rig, 'fence')).toHaveLength(maxEyes(2, 'fence'));
     // One more by a roll (not the debug key): over the cap, so the oldest goes.
     rig.system.random = () => 0;
@@ -941,7 +944,7 @@ describe('DustEyes — making room', () => {
 
   it('never sends away an agitated one — it waits out the storm', () => {
     const rig = makeRig({ night: 2, random: () => 0.999, hatchShut: true });
-    for (let i = 0; i < 3; i++) rig.system.summon('fence');
+    for (let i = 0; i < maxEyes(2, 'fence'); i++) rig.system.summon('fence');
     run(rig.system, 1);
     for (const s of rig.system.active) { s.agitated = true; s.go.setAgitated(true); }
     rig.system.random = () => 0;
@@ -951,12 +954,42 @@ describe('DustEyes — making room', () => {
 
   it('never sends away one that has turned on the player', () => {
     const rig = makeRig({ night: 2, random: () => 0.999, hatchShut: true });
-    for (let i = 0; i < 3; i++) rig.system.summon('fence');
+    for (let i = 0; i < maxEyes(2, 'fence'); i++) rig.system.summon('fence');
     run(rig.system, 1);
     for (const s of rig.system.active) rig.system._turn(s, 100);   // all growling, a long while
     rig.system.random = () => 0;
     rig.system._spawn('fence');
     expect(live(rig, 'fence').every(s => s.phase === 'growling')).toBe(true);
-    expect(live(rig, 'fence')).toHaveLength(3);
+    expect(live(rig, 'fence')).toHaveLength(maxEyes(2, 'fence'));
+  });
+});
+
+describe('DustEyes — the window and the yard roll apart', () => {
+  it('each on its own clock: never both in the same moment', () => {
+    expect(DUST_EYES.windowCheckSeconds).toBeGreaterThan(0);
+    const rig = makeRig({ night: 3, outside: false, player: [0, 1.24, -2], hatchShut: true });   // every roll comes up
+    const when = { fence: [], window: [] };
+    const seen = new Set();
+    let t = 0;
+    for (; t < 12; t += 0.05) {
+      rig.system.onUpdate(0.05);
+      for (const s of rig.system.slots) {
+        if (s.phase === 'in' && !seen.has(s)) { seen.add(s); when[s.kind].push(t); }
+      }
+    }
+    expect(when.fence.length).toBeGreaterThan(0);
+    expect(when.window.length).toBeGreaterThan(0);
+    for (const a of when.window) for (const b of when.fence) expect(Math.abs(a - b)).toBeGreaterThan(1);
+  });
+
+  it('a failed roll at one place says nothing about the other', () => {
+    // Window rolls come up, yard rolls don't: windows only.
+    const rig = makeRig({ night: 3, outside: false, player: [0, 1.24, -2], hatchShut: true });
+    rig.system.random = () => 0.1;   // under 0.2 — every roll comes up…
+    rig.system.chances = { fence: 0, window: 1 };
+    run(rig.system, 12);
+    const kinds = new Set(rig.system.active.map(s => s.kind));
+    expect(kinds.has('window')).toBe(true);
+    expect(kinds.has('fence')).toBe(false);
   });
 });
