@@ -403,8 +403,9 @@ export class BaseScene extends Scene {
     // Interactable checks the slot's insertedDrive for signals.
     const serverSlot = this.rooms.ServerRoom?.driveSlot;
 
-    // Wire the quota box in the airlock
+    // Wire the quota box in the airlock and placeholder drive boxes in the office.
     const quotaBox = this.rooms.Airlock.quotaBox;
+    const driveBoxes = this.rooms.MainOffice.driveBoxes ?? [];
     if (quotaBox) {
       quotaBox.requiredCount = this.signalManager.required;
       this.gameController.quotaBox = quotaBox;
@@ -417,27 +418,15 @@ export class BaseScene extends Scene {
     const supply = this.rooms.MainOffice.driveSupply;
     const office = this.rooms.MainOffice;
     if (supply) {
-      // Register all drives with the drive manager
+      // Register every supply drive with the manager and every snap receiver
+      // up front, so drives already in the scene can snap into slots and
+      // boxes the same way dispensed ones do.
       for (const drive of supply.drives) {
         this.driveManager.addDrive(drive);
-      }
-
-      // Hook into the supply's interactable to register dispensed drives with slots
-      const supplyInteractable = this.rooms.MainOffice.driveSupplyBox?.getComponent(Interactable);
-      if (supplyInteractable) {
-        const originalOnInteract = supplyInteractable.onInteract;
-        supplyInteractable.onInteract = (...args) => {
-          // Snapshot the pool before dispensing so we can identify the
-          // just-dispensed drive (even when wild drives are also not in the pool).
-          const poolBefore = [...supply._pool];
-          originalOnInteract?.call(supplyInteractable, ...args);
-          const dispensedDrive = poolBefore.find(d => !supply._pool.includes(d));
-          if (dispensedDrive) {
-            if (driveSlot) driveSlot.addDrive(dispensedDrive);
-            if (serverSlot) serverSlot.addDrive(dispensedDrive);
-            if (quotaBox) quotaBox.addDrive(dispensedDrive);
-          }
-        };
+        if (driveSlot) driveSlot.addDrive(drive);
+        if (serverSlot) serverSlot.addDrive(drive);
+        if (quotaBox) quotaBox.addDrive(drive);
+        for (const box of driveBoxes) box.addDrive?.(drive);
       }
 
       // Hook into slot eject callbacks to ensure drives stay in the room

@@ -4,6 +4,7 @@ import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
+import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { DriveSupply, createSupplyInteractable } from '../../gameplay/DriveSupply.js';
 
@@ -48,6 +49,9 @@ export class MainOffice extends Room {
 
   /** Physical drives managed by the supply. @type {Drive[]} */
   drives = [];
+
+  /** Placeholder pickupable drive boxes. @type {DriveBox[]} */
+  driveBoxes = [];
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -170,9 +174,10 @@ export class MainOffice extends Room {
     // By the airlock door, where a fire would be fought from.
     this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
 
-    // Drive reader on the desk and a supply box for drives.
+    // Drive reader on the desk, supply drives and placeholder snap boxes.
     this._buildDriveStation();
     this._buildDriveSupply();
+    this._buildDriveBoxExamples();
   }
 
   /** Where food comes from: a wall-mounted machine that dispenses rations
@@ -243,6 +248,22 @@ export class MainOffice extends Room {
       snapDistance: 0.25,
       snapOffset: { y: readerSize[1] / 2 + driveHeight / 2 },
     }));
+  }
+
+  /** Pickupable placeholder boxes that demonstrate generic drive sockets.
+   *  Drives snap into the floating socket only after being released. */
+  _buildDriveBoxExamples() {
+    const examples = [
+      { name: 'DriveBoxExample_A', position: [-1.05, 0.16, -1.35], color: 0x405064 },
+      { name: 'DriveBoxExample_B', position: [-1.45, 0.16, -1.35], color: 0x584064 },
+    ];
+
+    for (const opts of examples) {
+      const box = this._own(new DriveBox(opts.name, { color: opts.color }));
+      box.object3d.position.set(...opts.position);
+      this.driveBoxes.push(box);
+      this.root.addChild(box);
+    }
   }
 
   /** A placeholder box of drives near the desk. Each [E] press dispenses

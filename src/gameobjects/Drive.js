@@ -49,6 +49,9 @@ export class Drive extends GameObject {
   /** @type {THREE.MeshStandardMaterial} */
   _material;
 
+  /** Marker used by generic snap receivers to accept only drives. */
+  isDrive = true;
+
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
 

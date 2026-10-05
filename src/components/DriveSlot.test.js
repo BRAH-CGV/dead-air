@@ -300,6 +300,20 @@ describe('DriveSlot', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
+  it('does not steal a drive attached to another snap owner', () => {
+    const slot = makeSlotWithContext({ snapDistance: 0.5 });
+    slot.gameObject.object3d.position.set(0, 0, 0);
+
+    const drive = makeMockDrive('Drive_1', [0.1, 0, 0]);
+    drive._snapOwner = { name: 'OtherBox' };
+    slot.addDrive(drive);
+
+    slot.onUpdate(0.016);
+
+    expect(slot.hasDrive).toBe(false);
+    expect(drive.makeKinematic).not.toHaveBeenCalled();
+  });
+
   it('does nothing without any drives registered', () => {
     const slot = makeSlotWithContext({ snapDistance: 0.5 });
     slot.gameObject.object3d.position.set(0, 0, 0);
