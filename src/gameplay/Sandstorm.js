@@ -63,7 +63,7 @@ export const SANDSTORM = {
   /** Volume outside, at full strength. */
   volume: 0.2,
   /** Fraction of the outside volume that gets through the walls. */
-  insideLevel: 0.06,
+  insideLevel: 0.03,
   /** Rate (per second) the inside/outside level eases at. */
   placeRate: 4,
   /** FogExp2 density at full strength, seen from indoors: from the desk the

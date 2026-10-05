@@ -125,6 +125,7 @@ describe('Sandstorm', () => {
     const inside = makeRig({ outside: false });
     for (const r of [out, inside]) { r.storm.summon(); run(r.storm, SANDSTORM.rampSeconds + 2); }
     expect(out.sounds.wind.volume).toBeCloseTo(SANDSTORM.volume);
+    expect(SANDSTORM.insideLevel).toBe(0.03);
     expect(SANDSTORM.volume).toBeLessThanOrEqual(0.5);
     expect(inside.sounds.wind.volume).toBeGreaterThan(0);
     expect(inside.sounds.wind.volume).toBeLessThan(out.sounds.wind.volume * 0.1);
