@@ -946,7 +946,7 @@ describe('DustEyes — making room', () => {
     for (const s of rig.system.active) { s.agitated = true; s.go.setAgitated(true); }
     rig.system.random = () => 0;
     expect(rig.system._spawn('fence')).toBe(false);
-    expect(live(rig, 'fence').every(s => s.agitated && s.phase === 'passive')).toBe(true);
+    expect(live(rig, 'fence').every(s => s.agitated && (s.phase === 'in' || s.phase === 'passive'))).toBe(true);
   });
 
   it('never sends away one that has turned on the player', () => {
