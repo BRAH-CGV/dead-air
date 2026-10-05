@@ -130,8 +130,9 @@ const BUGGY_SPOT = [-7.79, 10.01];
  *  half size, plus room to walk round it to the switch. */
 const GENERATOR_CORNER_INSET = [2.2, 1.9];
 
-/** Dust eyes built up front — the most out at once, front and back together (DustEyes.maxEyes). */
-const DUST_EYE_POOL = 6;
+/** Dust eyes built up front — the most out at once, front and back together
+ *  (DustEyes.maxEyes), plus room for ones fading away as new ones replace them. */
+const DUST_EYE_POOL = 8;
 
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */

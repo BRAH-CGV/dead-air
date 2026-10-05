@@ -23,8 +23,10 @@ import { synthGrowl } from './Growl.js';
 //            agitated: darker orange, far quicker to turn, and there until
 //            the storm ends.
 //
-// Neither kind leaves when the player goes in or out; they drift off in
-// their own time.
+// Neither kind leaves when the player goes in or out, nor with time: they
+// stay until the storm ends — except that when a new one would put its kind
+// over the cap, the oldest ordinary watching one fades away to make room.
+// Agitated ones never make room: they wait out the storm.
 //
 // Halfway through every storm (midwayAt) comes a check that always brings
 // some: one to the yard (two from night 3), and one to the window unless one
@@ -91,9 +93,7 @@ export const DUST_EYES = {
   spawnLevel: 0.8,
   /** …and they leave once it drops under this. */
   leaveLevel: 0.5,
-  /** How long a passive one lingers. */
-  lifeSeconds: [18, 32],
-  /** Fade in and out. */
+    /** Fade in and out. */
   fadeSeconds: 1.5,
   /** How long it must be stared at before it turns — outside… */
   stareSeconds: 0.6,
@@ -480,7 +480,8 @@ class Slot {
     this.phase = 'off';
     this.kind = 'fence';
     this.fade = 0;
-    this.life = 0;
+    /** Spawn order: the oldest is the first to make room. */
+    this.born = 0;
     this.gaze = 0;
     this.t = 0;
     /** Where it hangs; it sways either side of this along `side`. */
@@ -543,6 +544,7 @@ export class DustEyes extends Component {
     this._graceLeft = null;     // seconds of grace left since the hatch opened, or null while it is shut
     this._aggroClock = 0;       // seconds towards the next stay-out roll
     this._midwayFor = null;     // the storm whose midway check has run
+    this._born = 0;             // counts spawns, for the oldest-first rule
     this._attack = 0;           // the chase sound's level, 0 … 1
     this._silhouette = new THREE.Color();
   }
@@ -724,9 +726,9 @@ export class DustEyes extends Component {
       slot.fade = Math.min(1, slot.fade + dt / DUST_EYES.fadeSeconds);
       if (slot.fade >= 1) slot.phase = 'passive';
     }
-    // An agitated one doesn't drift off: it waits out the storm.
-    if (!slot.agitated) slot.life -= dt;
-    if (slot.life <= 0 || level < DUST_EYES.leaveLevel) {
+    // Watching eyes stay: they leave with the storm (or to make room for a
+    // new one — see _spawn).
+    if (level < DUST_EYES.leaveLevel) {
       slot.phase = 'out';
       return;
     }
@@ -931,11 +933,22 @@ export class DustEyes extends Component {
    *        and ignores the window's cooldown.
    */
   _spawn(kind, { debug = false, force = false } = {}) {
-    const live = this.slots.filter(s => s.phase !== 'off' && s.kind === kind).length;
     const cap = force ? Infinity : Math.max(maxEyes(this._night, kind), debug ? 1 : 0);
     const slot = this.slots.find(s => s.phase === 'off');
-    if (!slot || live >= cap) return false;
+    if (!slot) return false;
     if (kind === 'window' && this._windowWait > 0 && !debug && !force) return false;
+    // At the cap, the oldest ordinary watching eye of this kind makes room —
+    // never one that has turned, nor an agitated one (they wait out the
+    // storm). None to spare: no new one.
+    const live = this.slots.filter(s => s.kind === kind && s.phase !== 'off' && s.phase !== 'out');
+    if (live.length >= cap) {
+      let oldest = null;
+      for (const s of live) {
+        if ((s.phase === 'in' || s.phase === 'passive') && !s.agitated && (!oldest || s.born < oldest.born)) oldest = s;
+      }
+      if (!oldest) return false;
+      oldest.phase = 'out';
+    }
 
     if (kind === 'window') this._windowWait = DUST_EYES.windowCooldown;
     // In front of the player — always for the J key, mostly otherwise.
@@ -968,7 +981,7 @@ export class DustEyes extends Component {
     slot.fade = 0;
     slot.gaze = 0;
     slot.t = 0;
-    slot.life = lerp(...DUST_EYES.lifeSeconds, this.random());
+    slot.born = ++this._born;
     slot.go.setMode('passive');
     slot.go.object3d.visible = true;
   }

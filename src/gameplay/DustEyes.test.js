@@ -98,7 +98,7 @@ function makeRig({ night = 2, outside = true, random = () => 0, player = [0, 1.2
     setPlayerLocked: vi.fn(),
   };
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
-  const pool = Array.from({ length: 6 }, () => new DustEye());
+  const pool = Array.from({ length: 8 }, () => new DustEye());
   const sounds = { attack: makeSound(), bite: makeSound(), growl: makeSound() };
   const fog = new THREE.FogExp2(0x5a3f2c, 0.07);
   const system = new DustEyes({
@@ -240,13 +240,14 @@ describe('DustEyes', () => {
     expect(eye.mode).toBe('passive');
   });
 
-  it('passive eyes drift off after a while, and with the storm', () => {
-    const rig = makeRig({ random: () => 0.999 });   // no further random spawns
+  it('watching eyes stay — they leave only with the storm', () => {
+    const rig = makeRig({ random: () => 0.999, hatchShut: true });   // no further random spawns
     rig.system.summon('fence');
     run(rig.system, 0.1);
-    run(rig.system, DUST_EYES.lifeSeconds[1] + DUST_EYES.fadeSeconds + 0.5);
-    expect(rig.system.active).toHaveLength(0);
+    run(rig.system, 120);
+    expect(rig.system.active).toHaveLength(1);
 
+    for (const s of rig.system.slots) rig.system._hide(s);
     rig.system.summon('fence');
     run(rig.system, 0.1);
     rig.sandstorm.level = 0.2;
@@ -321,8 +322,8 @@ describe('DustEyes — several at once', () => {
     const rig = makeRig({ night: 3, hatchShut: true });   // random 0: every roll comes up
     // Four rolls, inside the first one's life, so none has drifted off yet.
     run(rig.system, DUST_EYES.checkSeconds * 4 + 0.5);
-    const kinds = rig.system.active.map(s => s.kind);
-    expect(kinds.filter(k => k === 'fence')).toHaveLength(maxEyes(3, 'fence'));
+    const watching = rig.system.active.filter(s => s.kind === 'fence' && s.phase !== 'out');
+    expect(watching).toHaveLength(maxEyes(3, 'fence'));
   });
 
   it('in the yard, whether the player is in or out — waiting for them', () => {
@@ -880,7 +881,7 @@ describe('DustEyes — agitated ones stay', () => {
   it('an agitated yard eye does not drift off — it waits out the storm', () => {
     const { rig, eye } = agitated();
     expect(eye.agitated).toBe(true);
-    run(rig.system, DUST_EYES.lifeSeconds[1] * 2);
+    run(rig.system, 120);
     expect(eye.phase).not.toBe('off');
     expect(eye.kind).toBe('fence');
   });
@@ -915,5 +916,47 @@ describe('DustEyes — yard eyes spread out', () => {
         expect(Math.hypot(eyes[a].x - eyes[b].x, eyes[a].z - eyes[b].z)).toBeGreaterThan(DUST_EYES.spreadDistance * 0.6);
       }
     }
+  });
+});
+
+describe('DustEyes — making room', () => {
+  const live = (rig, kind) => rig.system.slots.filter(s => s.kind === kind && s.phase !== 'off' && s.phase !== 'out');
+
+  it('at the cap, a new one sends the oldest watching one away — the count holds', () => {
+    const rig = makeRig({ night: 2, random: () => 0.999, hatchShut: true });
+    rig.system.summon('fence');
+    run(rig.system, 1);
+    const oldest = rig.system.active[0];
+    rig.system.summon('fence');
+    run(rig.system, 1);
+    rig.system.summon('fence');
+    run(rig.system, 1);
+    expect(live(rig, 'fence')).toHaveLength(maxEyes(2, 'fence'));
+    // One more by a roll (not the debug key): over the cap, so the oldest goes.
+    rig.system.random = () => 0;
+    run(rig.system, DUST_EYES.checkSeconds);
+    expect(oldest.phase === 'out' || oldest.phase === 'off').toBe(true);
+    expect(live(rig, 'fence')).toHaveLength(maxEyes(2, 'fence'));
+  });
+
+  it('never sends away an agitated one — it waits out the storm', () => {
+    const rig = makeRig({ night: 2, random: () => 0.999, hatchShut: true });
+    for (let i = 0; i < 3; i++) rig.system.summon('fence');
+    run(rig.system, 1);
+    for (const s of rig.system.active) { s.agitated = true; s.go.setAgitated(true); }
+    rig.system.random = () => 0;
+    expect(rig.system._spawn('fence')).toBe(false);
+    expect(live(rig, 'fence').every(s => s.agitated && s.phase === 'passive')).toBe(true);
+  });
+
+  it('never sends away one that has turned on the player', () => {
+    const rig = makeRig({ night: 2, random: () => 0.999, hatchShut: true });
+    for (let i = 0; i < 3; i++) rig.system.summon('fence');
+    run(rig.system, 1);
+    for (const s of rig.system.active) rig.system._turn(s, 100);   // all growling, a long while
+    rig.system.random = () => 0;
+    rig.system._spawn('fence');
+    expect(live(rig, 'fence').every(s => s.phase === 'growling')).toBe(true);
+    expect(live(rig, 'fence')).toHaveLength(3);
   });
 });
