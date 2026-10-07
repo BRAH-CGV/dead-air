@@ -19,7 +19,7 @@ import { Component } from '../core/Component.js';
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
 // External references (set by the scene during wiring):
-//   nightClock, signalManager, satellite, terminal, hud, quotaBox
+//   nightClock, signalManager, satellite, terminal, hud, quotaDock
 // and the night counter through bindNights(nights).
 // ─────────────────────────────────────────────
 
@@ -51,13 +51,9 @@ export class GameController extends Component {
   /** Which night it is — set through bindNights().
    *  @type {import('../systems/NightManager.js').NightManager|null} */
   nights = null;
-  /** The quota box — counts drives deposited for the night.
-   *  @type {import('./QuotaBox.js').QuotaBox|null} */
-  quotaBox = null;
-
-  /** Called at the start of each night (for drive reset, etc.).
-   *  @type {(() => void)|null} */
-  onNightStart = null;
+  /** The drive box dock — counts saved drives seated in the docked box.
+   *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
+  quotaDock = null;
 
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
@@ -80,20 +76,18 @@ export class GameController extends Component {
     this.nightClock?.reset();
     this.signalManager?.startNight(nightNumber);
 
-    // Sync quota box required count with the signal manager's night requirement.
-    // signalManager.required is computed by startNight(), so we sync AFTER it runs.
-    if (this.quotaBox && this.signalManager) {
-      this.quotaBox.requiredCount = this.signalManager.required;
+    // Sync the dock's required count with the signal manager's night
+    // requirement. signalManager.required is computed by startNight(),
+    // so we sync AFTER it runs.
+    if (this.quotaDock && this.signalManager) {
+      this.quotaDock.requiredCount = this.signalManager.required;
     }
-
-    // Notify the scene (if it registered a callback) so it can reset drives, etc.
-    this.onNightStart?.();
 
     this.hud?.show();
     this.hud?.setNight(nightNumber);
     this.hud?.setSignals(
-      this.quotaBox?.collectedCount ?? 0,
-      this.quotaBox?.requiredCount ?? this.signalManager?.required ?? 0,
+      this.quotaDock?.collectedCount ?? 0,
+      this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
     );
     this.hud?.setTime(this.nightClock?.timeString ?? '12:00 AM');
     this.hud?.setScanProgress(-1);
@@ -103,7 +97,8 @@ export class GameController extends Component {
   }
 
   /** Hear about every night that starts — a new night, a skip or a retry.
-   *  Threats reschedule here; a retry also respawns the player.
+   *  The scene resets drives and captures its snapshot here; threats
+   *  reschedule here; a retry also respawns the player.
    *  @param {(night: number, info: { retry: boolean }) => void} fn
    *  @returns {() => void} unsubscribe */
   onNightStart(fn) {
@@ -136,11 +131,11 @@ export class GameController extends Component {
   }
 
   /** Called when a signal is saved by the terminal. Scanning no longer
-   *  affects the quota directly — the QuotaBox counts deposited drives.
-   *  Kept for backward compatibility (HUD refresh). */
+   *  affects the quota directly — the drive box dock counts saved drives
+   *  seated in the docked box. Kept for backward compatibility (HUD refresh). */
   onSignalSaved() {
     this._updateHUD();
-    if (this.state === 'playing' && this.quotaBox?.isQuotaMet()) {
+    if (this.state === 'playing' && this.quotaDock?.isQuotaMet()) {
       this.hud?.setPrompt(PROMPT.quotaMet);
     }
   }
@@ -202,10 +197,10 @@ export class GameController extends Component {
     // Update HUD every frame
     this._updateHUD();
 
-    // Check shift end — quota is counted by the QuotaBox (drives deposited),
-    // not by signals scanned.
+    // Check shift end — quota is counted by the drive box dock (saved
+    // drives seated in the docked box), not by signals scanned.
     if (this.nightClock?.finished) {
-      if (this.quotaBox?.isQuotaMet()) this._morning();
+      if (this.quotaDock?.isQuotaMet()) this._morning();
       else this._gameOver();
     }
   }
@@ -230,10 +225,11 @@ export class GameController extends Component {
     if (!this.hud) return;
     this.hud.setTime(this.nightClock?.timeString ?? '12:00 AM');
 
-    // Quota progress comes from the QuotaBox (deposited drives), falling
-    // back to the signal manager's required count for the denominator.
-    const collected = this.quotaBox?.collectedCount ?? 0;
-    const required  = this.quotaBox?.requiredCount ?? this.signalManager?.required ?? 0;
+    // Quota progress comes from the drive box dock (saved drives in the
+    // docked box), falling back to the signal manager's required count
+    // for the denominator.
+    const collected = this.quotaDock?.collectedCount ?? 0;
+    const required  = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
     this.hud.setSignals(collected, required);
 
     // Scan bar — driven by satellite state (works even when terminal is closed)

@@ -578,8 +578,8 @@ describe('BaseScene gameplay loop', () => {
 
   it('wires the drive manager to the office drive reader', () => {
     expect(scene.driveManager).toBeDefined();
-    // Drives come from the supply box (10 drives = 2× max required)
-    expect(scene.driveManager.totalDrives).toBe(10);
+    // Every drive in the room registers: 4 shelf boxes × 8 seated drives.
+    expect(scene.driveManager.totalDrives).toBe(32);
     const reader = scene.rooms.MainOffice.driveReader;
     expect(reader).not.toBeNull();
   });
@@ -595,15 +595,16 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
   });
 
-  /** Save the night's whole quota and run the clock out: it is morning. */
+  /** Dock a shelf box with enough saved drives to meet the quota, then run
+   *  the clock out: it is morning. */
   function workTheShift() {
-    const { signalManager, gameController, rooms } = scene;
-    // Simulate drives being deposited in the quota box
-    const quotaBox = rooms.Airlock.quotaBox;
-    if (quotaBox) {
-      for (let i = 0; i < quotaBox.requiredCount; i++) {
-        quotaBox._collected++;
-      }
+    const { gameController, rooms } = scene;
+    const dock = rooms.Airlock.quotaDock;
+    const box = rooms.MainOffice.driveBoxes[0];
+    dock.socket.attach(box, 0);
+    const seated = box.receiver.attachedItems.filter(Boolean);
+    for (let i = 0; i < dock.requiredCount; i++) {
+      seated[i].setSaved(true);
     }
     gameController.onSignalSaved();
     gameController.onUpdate(999);
@@ -626,6 +627,58 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.state).toBe('playing');
     expect(setNight).toHaveBeenLastCalledWith(2);
     expect(scene.nightClock.timeString).toBe('12:00 AM');
+  });
+
+  it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
+    const { gameController, rooms } = scene;
+    const dock = rooms.Airlock.quotaDock;
+    const [docked, other] = rooms.MainOffice.driveBoxes;
+
+    // Meet the quota with one docked box; another box's drive is saved
+    // too, but that box never enters the dock.
+    dock.socket.attach(docked, 0);
+    const dockedDrives = docked.receiver.attachedItems.filter(Boolean);
+    for (let i = 0; i < dock.requiredCount; i++) dockedDrives[i].setSaved(true);
+    const otherDrive = other.receiver.attachedItems[0];
+    otherDrive.setSaved(true);
+    gameController.onSignalSaved();
+    gameController.onUpdate(999);
+    expect(gameController.state).toBe('morning');
+
+    scene.rooms.LivingQuarters.bed.onInteract({});
+    expect(scene.gameController.nightNumber).toBe(2);
+
+    // The docked box: released, parked resting on the floor, drives blank.
+    expect(docked._snapOwner).toBeNull();
+    expect(dock.depositedBox).toBeNull();
+    expect(docked.object3d.position.x).toBeCloseTo(1.1);
+    expect(docked.object3d.position.y).toBeCloseTo(0.06);
+    expect(docked.object3d.position.z).toBeCloseTo(4.72);
+    for (const drive of dockedDrives) expect(drive.saved, drive.name).toBe(false);
+
+    // A saved drive outside the docked box keeps its signal.
+    expect(otherDrive.saved).toBe(true);
+  });
+
+  it('a retry reverts drives and boxes to the night-start snapshot', () => {
+    const { gameController, rooms } = scene;
+    const box = rooms.MainOffice.driveBoxes[0];
+    const drive = box.receiver.attachedItems[0];
+    const startPos = worldPos(drive).clone();
+
+    // Mid-night: pull the drive out, carry it away and save it.
+    box.receiver.detach(drive);
+    drive.object3d.position.set(-4, 0.02, 3);
+    drive.setSaved(true);
+
+    gameController.fail('taken');
+    gameController.retryNight();
+
+    expect(drive.saved).toBe(false);
+    expect(drive._snapOwner).toBe(box.receiver);
+    expect(worldPos(drive).x).toBeCloseTo(startPos.x);
+    expect(worldPos(drive).y).toBeCloseTo(startPos.y);
+    expect(worldPos(drive).z).toBeCloseTo(startPos.z);
   });
 
   it('hangs the night clock on the office wall', () => {

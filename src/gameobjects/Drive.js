@@ -12,10 +12,10 @@ import { packGroups } from '../core/PhysicsLayers.js';
 // light on a proper model).
 //
 // The drive is a dynamic physics body created in _init() (the engine
-// lifecycle hook). Before _init it is a plain visual; after _init it has a
-// rigid body, collider, and a Pickupable component so the player's
-// PickupSystem can carry it. Gravity is on from the start: the drive rests
-// on the floor (or desk) until picked up, and falls when dropped.
+// lifecycle hook). Before _init it is a plain visual with a Pickupable
+// marker; after _init it has a rigid body and collider. Gravity is on from
+// the start: the drive rests on the floor (or desk) until picked up, and
+// falls when dropped.
 //
 //   const drive = new Drive('Drive_1');
 //   drive.object3d.position.set(1.2, 0.02, -2.0);
@@ -63,6 +63,11 @@ export class Drive extends GameObject {
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
 
+  /** Set when makeKinematic() is called before _init builds a body — a
+   *  socket receiver attaching the drive during scene build. _init honours
+   *  it by finishing on a kinematic body seated at the attached pose. */
+  _socketedAtInit = false;
+
   /**
    * @param {string} [name]
    * @param {object} [opts]
@@ -72,6 +77,10 @@ export class Drive extends GameObject {
     super(name);
     this._size = size;
     this._build();
+    // The Pickupable is pure data, so it exists before _init: a snap
+    // receiver can attach the drive at build time and still swap its
+    // prompt and install the detach-on-pickup hook.
+    this.addComponent(new Pickupable());
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -119,8 +128,13 @@ export class Drive extends GameObject {
     engine._bodyToGO.set(this.rigidBody.handle, this);
     engine.rigidBodyMap.set(this.rigidBody.handle, this);
 
-    // Mark as pickup-able.
-    this.addComponent(new Pickupable());
+    // A drive socketed at build time asked for kinematic before it had a
+    // body. The dynamic body now sits at the seated world pose, so rebuild
+    // it as kinematic (KINEMATIC_GROUPS) in place.
+    if (this._socketedAtInit) {
+      this._socketedAtInit = false;
+      this.makeKinematic();
+    }
   }
 
   // ── Physics helpers (used by PickupSystem / drive reader) ──
@@ -146,7 +160,13 @@ export class Drive extends GameObject {
 
   /** Switch to a kinematic body — locked in place (e.g. inserted in reader). */
   makeKinematic() {
-    if (!this.rigidBody || !this.world) return;
+    // Before _init there is no body to convert — defer instead of dropping
+    // the request: _init builds the dynamic body and then runs this for
+    // real, so a drive attached at build time lands kinematic in place.
+    if (!this.rigidBody || !this.world) {
+      this._socketedAtInit = true;
+      return;
+    }
     const RAPIER = this.scene?.userData?.engine?.RAPIER;
     if (!RAPIER) return;
     const t = this.rigidBody.translation();
@@ -186,7 +206,11 @@ export class Drive extends GameObject {
 
   /** Switch back to a dynamic body (e.g. after ejecting from reader). */
   makeDynamic() {
-    if (!this.rigidBody || !this.world) return;
+    // A bodyless makeDynamic undoes a pending makeKinematic deferral.
+    if (!this.rigidBody || !this.world) {
+      this._socketedAtInit = false;
+      return;
+    }
     const RAPIER = this.scene?.userData?.engine?.RAPIER;
     if (!RAPIER) return;
     const t = this.rigidBody.translation();

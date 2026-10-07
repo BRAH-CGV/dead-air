@@ -6,7 +6,23 @@ import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { DriveSupply, createSupplyInteractable } from '../../gameplay/DriveSupply.js';
+
+// ── Drive boxes on the shelf ──
+// The shelf collider (manifest) has five boards; these are their top
+// surfaces — board centre y + half the 0.025 thickness — in the same
+// world space the ShelfCube's resting height uses.
+const SHELF_LEVEL_TOPS = [0.2236, 0.6458, 1.0681, 1.4903, 1.9125];
+const SHELF_XZ = [5.68, -2.0];   // where the Shelf prop stands
+const DRIVE_BOX_GAP = 0.03;      // clearance between a box pair on a board
+
+// One entry per box: which board it rests on, which side of the board
+// centre it sits on, its colour, and how many drives it starts with.
+const DRIVE_BOX_LAYOUT = [
+  { name: 'DriveBox_A', level: 0, slot: -1, color: 0x405064, fill: 8 },
+  { name: 'DriveBox_B', level: 0, slot: +1, color: 0x584064, fill: 8 },
+  { name: 'DriveBox_C', level: 1, slot: -1, color: 0x3e5a50, fill: 8 },
+  { name: 'DriveBox_D', level: 1, slot: +1, color: 0x5a4a3e, fill: 8 },
+];
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -41,16 +57,11 @@ export class MainOffice extends Room {
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
 
-  /** Drive supply box (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
-  driveSupplyBox = null;
-
-  /** The DriveSupply component on the supply box. @type {DriveSupply|null} */
-  driveSupply = null;
-
-  /** Physical drives managed by the supply. @type {Drive[]} */
+  /** Physical drives in the room: the drives pre-seated in the drive
+   *  boxes. @type {Drive[]} */
   drives = [];
 
-  /** Placeholder pickupable drive boxes. @type {DriveBox[]} */
+  /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
 
   /**
@@ -174,10 +185,10 @@ export class MainOffice extends Room {
     // By the airlock door, where a fire would be fought from.
     this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
 
-    // Drive reader on the desk, supply drives and placeholder snap boxes.
+    // Drive reader on the desk and the shelf's drive boxes, each
+    // pre-filled with seated drives.
     this._buildDriveStation();
-    this._buildDriveSupply();
-    this._buildDriveBoxExamples();
+    this._buildDriveBoxes();
   }
 
   /** Where food comes from: a wall-mounted machine that dispenses rations
@@ -250,57 +261,34 @@ export class MainOffice extends Room {
     }));
   }
 
-  /** Pickupable placeholder boxes that demonstrate generic drive sockets.
-   *  Drives snap into the free sockets only after being released. */
-  _buildDriveBoxExamples() {
-    const examples = [
-      { name: 'DriveBoxExample_A', position: [-1.05, 0.16, -1.35], color: 0x405064 },
-      { name: 'DriveBoxExample_B', position: [-1.45, 0.16, -1.35], color: 0x584064 },
-    ];
-
-    for (const opts of examples) {
-      const box = this._own(new DriveBox(opts.name, { color: opts.color }));
-      box.object3d.position.set(...opts.position);
+  /** Pickupable drive boxes stocked on the office shelf. Each rests on a
+   *  board with its sockets pre-filled; a taken drive can go to a reader or
+   *  another box, and a released drive snaps into any free socket nearby. */
+  _buildDriveBoxes() {
+    for (const spec of DRIVE_BOX_LAYOUT) {
+      const box = this._own(new DriveBox(spec.name, { color: spec.color }));
+      // Rest on the board: top surface + half box height. Along the board
+      // the boxes spread from the shelf centre, spaced off the box's own
+      // depth so a resized box keeps its clearance.
+      box.object3d.position.set(
+        SHELF_XZ[0],
+        SHELF_LEVEL_TOPS[spec.level] + box.size[1] / 2,
+        SHELF_XZ[1] + spec.slot * (box.size[2] / 2 + DRIVE_BOX_GAP),
+      );
       this.driveBoxes.push(box);
       this.root.addChild(box);
+
+      // Seat its starting drives. Attaching at build time swaps the prompt
+      // and installs the detach-on-pickup hook; the drive's deferred
+      // kinematic lands the body kinematic in the socket once _init runs.
+      for (let i = 0; i < (spec.fill ?? 0); i++) {
+        const drive = new Drive(`${spec.name}_Drive_${i + 1}`);
+        this.root.addChild(drive);
+        box.receiver.attach(drive, i);
+        this.drives.push(drive);
+      }
     }
   }
-
-  /** A placeholder box of drives near the desk. Each [E] press dispenses
-   *  one drive. Creates 2× the maximum required drives for the night. */
-  _buildDriveSupply() {
-    const supplySize = [0.3, 0.2, 0.3];
-    const supplyPos  = [-0.630, 0.100, -1.910];
-    const supplyMat  = this._own(new THREE.MeshStandardMaterial({
-      color: 0x3a4a3a, roughness: 0.6, metalness: 0.3,
-      emissive: 0x002200, emissiveIntensity: 0.2,
-    }));
-    this.driveSupplyBox = this._addStaticBox('DriveSupplyBox', supplyPos, supplySize, supplyMat);
-
-    // Add the DriveSupply component
-    this.driveSupply = new DriveSupply({ dispenseOffset: [0.3, 0.1, 0.5] });
-    this.driveSupplyBox.addComponent(this.driveSupply);
-
-    // Add the Interactable for dispensing
-    this.driveSupplyBox.addComponent(createSupplyInteractable(this.driveSupply));
-
-    // Create drives and add them to the supply pool.
-    // The scene will set the required count later; for now create enough for
-    // the highest night (10 drives = 2×5 max required).
-    // Drives are added to the room root so they're in the scene graph when
-    // the engine calls _init — they get physics bodies automatically.
-    const driveCount = 10;
-    for (let i = 0; i < driveCount; i++) {
-      const drive = new Drive(`Drive_${i + 1}`);
-      // Position at the supply box so they sit in/around it
-      drive.object3d.position.set(supplyPos[0], supplyPos[1] + 0.05, supplyPos[2]);
-      this.driveSupply.addDrive(drive);
-      this.drives.push(drive);
-      // Add to the room so the engine lifecycle inits their physics
-      this.root.addChild(drive);
-    }
-  }
-
 
   /** Right of the window, between its frame (x 4.43) and the side wall
    *  (x 5.9), flush on the back wall's inner face. */

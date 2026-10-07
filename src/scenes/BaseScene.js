@@ -30,6 +30,7 @@ import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
 import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
+import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -229,6 +230,7 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this._offNightStart?.();
+    this._offNightReset?.();
     this._offSuitHud?.();
     this._offRetry?.();
     this._offPower?.forEach(off => off());
@@ -403,54 +405,52 @@ export class BaseScene extends Scene {
     // Interactable checks the slot's insertedDrive for signals.
     const serverSlot = this.rooms.ServerRoom?.driveSlot;
 
-    // Wire the quota box in the airlock and placeholder drive boxes in the office.
-    const quotaBox = this.rooms.Airlock.quotaBox;
+    // Wire the drive box dock in the airlock and the drive boxes on the
+    // office shelf.
+    const quotaDock = this.rooms.Airlock.quotaDock;
     const driveBoxes = this.rooms.MainOffice.driveBoxes ?? [];
-    if (quotaBox) {
-      quotaBox.requiredCount = this.signalManager.required;
-      this.gameController.quotaBox = quotaBox;
+    if (quotaDock) {
+      quotaDock.requiredCount = this.signalManager.required;
+      this.gameController.quotaDock = quotaDock;
     }
 
-    // Wire the drive supply: drives are already in the room (added by
-    // MainOffice._buildDriveSupply) so they have physics from the engine
-    // lifecycle. When dispensed, they're positioned near the box and
-    // registered with slots.
-    const supply = this.rooms.MainOffice.driveSupply;
+    // Drives are already in the room (added by MainOffice._buildDriveBoxes)
+    // so they have physics from the engine lifecycle. Register every drive
+    // with the manager and every snap receiver up front, so any drive can
+    // snap into any slot or box the same way.
     const office = this.rooms.MainOffice;
-    if (supply) {
-      // Register every supply drive with the manager and every snap receiver
-      // up front, so drives already in the scene can snap into slots and
-      // boxes the same way dispensed ones do.
-      for (const drive of supply.drives) {
-        this.driveManager.addDrive(drive);
-        if (driveSlot) driveSlot.addDrive(drive);
-        if (serverSlot) serverSlot.addDrive(drive);
-        if (quotaBox) quotaBox.addDrive(drive);
-        for (const box of driveBoxes) box.addDrive?.(drive);
-      }
+    for (const drive of office.drives) {
+      this.driveManager.addDrive(drive);
+      if (driveSlot) driveSlot.addDrive(drive);
+      if (serverSlot) serverSlot.addDrive(drive);
+      for (const box of driveBoxes) box.addDrive?.(drive);
+    }
 
-      // Hook into slot eject callbacks to ensure drives stay in the room
-      const addDriveToRoom = (drive) => {
-        if (drive.object3d.parent !== office.root.object3d) {
-          office.root.addChild(drive);
-        }
+    // Hook into slot eject callbacks to ensure drives stay in the room
+    const addDriveToRoom = (drive) => {
+      if (drive.object3d.parent !== office.root.object3d) {
+        office.root.addChild(drive);
+      }
+    };
+    if (driveSlot) {
+      const origOnRemoved = driveSlot.onDriveRemoved;
+      driveSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        addDriveToRoom(drive);
       };
-      if (driveSlot) {
-        const origOnRemoved = driveSlot.onDriveRemoved;
-        driveSlot.onDriveRemoved = (drive) => {
-          origOnRemoved?.(drive);
-          addDriveToRoom(drive);
-        };
-      }
-      // QuotaBox no longer uses eject callbacks — it detects pickup via
-      // the held flag in its own onUpdate.
-      if (serverSlot) {
-        const origOnRemoved = serverSlot.onDriveRemoved;
-        serverSlot.onDriveRemoved = (drive) => {
-          origOnRemoved?.(drive);
-          addDriveToRoom(drive);
-        };
-      }
+    }
+    if (serverSlot) {
+      const origOnRemoved = serverSlot.onDriveRemoved;
+      serverSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+
+    // The dock's socket only accepts whole drive boxes — introduce it to
+    // every shelf box so a carried box released near the pedestal snaps on.
+    if (quotaDock?.socket) {
+      for (const box of driveBoxes) quotaDock.socket.addCandidate(box);
     }
 
     // ── Pickup system (generic carry mechanic) ──
@@ -461,6 +461,14 @@ export class BaseScene extends Scene {
     this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
     this.pickupSystem.terminal = this.terminal;
 
+    // The night baseline for every drive and box: a retry reverts to it.
+    this.driveSnapshot = new DriveSnapshot({
+      drives: office.drives,
+      boxes: driveBoxes,
+      driveManager: this.driveManager,
+      pickupSystem: this.pickupSystem,
+    });
+
     // The review panel is now display-only — Q auto-saves via the terminal.
     // No onSave/onDelete callbacks needed.
 
@@ -470,7 +478,14 @@ export class BaseScene extends Scene {
     // while the HUD still read "Night 1". autoStart is off for the same
     // reason: it hardcodes night 1.
     this.gameController.autoStart = false;
-    this.gameController.onNightStart = () => this._resetDrivesForNight();
+    // A retry reverts to the night-start snapshot; a real night change
+    // resets the dock and captures a fresh baseline. Registered before the
+    // respawn listener below, so physics is settled before the player
+    // teleports.
+    this._offNightReset = this.gameController.onNightStart((_night, { retry }) => {
+      if (retry) this.driveSnapshot.restore();
+      else { this._resetForNewNight(); this.driveSnapshot.capture(); }
+    });
     this._offNightStart = this.gameController.bindNights(this.nights);
 
     // The day. Added after the controller so, within a frame, it reads the
@@ -513,65 +528,34 @@ export class BaseScene extends Scene {
     this._offPower.push(this.power.onChange(grid => this.terminal.setPowered(grid.on)));
   }
 
-  /** Reset drives and quota for a new night.
-   *
-   *  Three categories of drive:
-   *    deposited  were in the QuotaBox (out box) — signal cleared, moved back
-   *               to the supply box, returned to the pool for re-dispensing.
-   *    wild       were dispensed but not deposited — keep their signal, stay
-   *               where they are in the room, NOT returned to the pool (the
-   *               player can still pick them up and deposit them).
-   *    pooled     were never dispensed — stay in the pool untouched.
-   *
-   *  Drives in the reader or server slot are ejected but keep their signal
-   *  (they are not in the out box). */
-  _resetDrivesForNight() {
+  /** Between-nights reset. Machine-slot drives are ejected but keep their
+   *  signals; the docked drive box loses everything — every drive seated
+   *  in it is wiped, even over quota — and the empty box is released and
+   *  parked on the office floor. Drives outside that box keep their
+   *  signals and positions. */
+  _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
     const serverSlot = this.rooms.ServerRoom?.driveSlot;
-    const quotaBox = this.rooms.Airlock.quotaBox;
-    const supply = this.rooms.MainOffice.driveSupply;
-    const office = this.rooms.MainOffice;
 
-    // 1. Snapshot which drives were deposited (before reset clears them)
-    const depositedDrives = quotaBox ? [...quotaBox._deposited] : [];
-
-    // 2. Eject drives from reader and server slot (they keep their signal)
+    // Eject drives from reader and server slot (they keep their signal)
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
     if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
 
-    // 3. Reset the QuotaBox (ejects deposited drives, zeroes count)
-    quotaBox?.reset();
+    // Empty the dock: wipe the docked box's drives and release it.
+    const box = this.rooms.Airlock.quotaDock?.empty();
+    if (!box) return;
 
-    // 4. Move deposited drives back to the supply box and clear their signals
-    const supplyBoxPos = this.rooms.MainOffice.driveSupplyBox?.object3d?.position;
-    for (const drive of depositedDrives) {
-      drive.setEjected?.();
-      if (supplyBoxPos) {
-        drive.object3d.position.set(supplyBoxPos.x, supplyBoxPos.y + 0.05, supplyBoxPos.z);
-      }
-      drive.enablePhysics?.();
-      // Ensure in room
-      if (drive.object3d.parent !== office.root.object3d) {
-        office.root.addChild(drive);
-      }
-    }
-
-    // 5. Return deposited drives to the supply pool (undispensed drives stay)
-    if (supply) {
-      for (const drive of depositedDrives) {
-        if (!supply._pool.includes(drive)) {
-          supply._pool.push(drive);
-        }
-      }
-    }
-
-    // 6. Re-register all drives with all slots (addDrive is idempotent)
-    if (supply) {
-      for (const drive of supply.drives) {
-        if (driveSlot) driveSlot.addDrive(drive);
-        if (serverSlot) serverSlot.addDrive(drive);
-        if (quotaBox) quotaBox.addDrive(drive);
-      }
+    // Park it on the office floor. The office root sits at the origin, so
+    // room-local equals world; centre y is half the box height.
+    const release = new THREE.Vector3(1.1, 0.06, 4.72);
+    box.object3d.position.copy(release);
+    box.object3d.updateMatrixWorld(true);
+    const body = box.rigidBody;
+    if (body) {
+      const world = box.object3d.getWorldPosition(new THREE.Vector3());
+      body.setTranslation({ x: world.x, y: world.y, z: world.z }, true);
+      body.setLinvel?.({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel?.({ x: 0, y: 0, z: 0 }, true);
     }
   }
 

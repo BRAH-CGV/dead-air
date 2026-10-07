@@ -172,8 +172,8 @@ export class ComputerTerminal extends Component {
 
   /** Save the currently reviewed signal (auto-called on review dismiss).
    *  Marks the signal as resolved and the drive as saved (green). The quota
-   *  is NOT incremented here — it is counted by the QuotaBox when the
-   *  player deposits the drive. */
+   *  is NOT incremented here — it is counted by the drive box dock when
+   *  the player docks the drive box. */
   saveSignal() {
     if (this.state !== 'review') return;
     const mgr = this.signalManager;

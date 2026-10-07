@@ -53,6 +53,43 @@ describe('DriveBox', () => {
     expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
   });
 
+  it('marks itself as a drive box for snap receivers', () => {
+    const box = new DriveBox('ExampleDriveBox');
+    expect(box.isDriveBox).toBe(true);
+  });
+
+  it('makeKinematic swaps to a kinematic body at the same pose', () => {
+    const box = new DriveBox('ExampleDriveBox');
+    const { scene, world, engine } = makeSceneContext();
+    box._init(scene, world);
+    box.rigidBody.setTranslation({ x: 3, y: 1.2, z: -2 }, true);
+    const oldHandle = box.rigidBody.handle;
+
+    box.makeKinematic();
+
+    expect(box.rigidBody.bodyType()).toBe('kinematic');
+    expect(box.rigidBody.handle).not.toBe(oldHandle);
+    expect(box.rigidBody.translation()).toEqual({ x: 3, y: 1.2, z: -2 });
+    // The engine maps follow the rebuild: old entry gone, new one registered.
+    expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
+    expect(engine._bodyToGO.get(box.rigidBody.handle)).toBe(box);
+    expect(engine.rigidBodyMap.has(oldHandle)).toBe(false);
+  });
+
+  it('makeDynamic swaps back to a dynamic body', () => {
+    const box = new DriveBox('ExampleDriveBox');
+    const { scene, world, engine } = makeSceneContext();
+    box._init(scene, world);
+    box.makeKinematic();
+
+    box.makeDynamic();
+
+    expect(box.rigidBody.bodyType()).toBe('dynamic');
+    expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
+    // The rebuilt collider matches the visual, same as the initial body.
+    expect(box.collider.halfExtents()).toEqual({ x: 0.16, y: 0.06, z: 0.14 });
+  });
+
   it('snaps a drive to a floating socket and changes its prompt', () => {
     const box = new DriveBox('ExampleDriveBox', { snapDistance: 0.5 });
     const drive = makeDrive([0, 0.1, 0]);

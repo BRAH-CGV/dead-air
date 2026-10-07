@@ -29,7 +29,6 @@ import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { DriveSupply } from '../../gameplay/DriveSupply.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
@@ -356,28 +355,49 @@ describe('MainOffice', () => {
     expect(slot.snapDistance).toBeGreaterThan(0);
   });
 
-  it('has a drive supply box with a DriveSupply component and Interactable', () => {
-    const supplyBox = room.root.find('DriveSupplyBox');
-    expect(supplyBox).not.toBeNull();
-    expect(supplyBox.rigidBody.isFixed()).toBe(true);
+  it('stocks one drive registry: the pre-seated box drives', () => {
+    // 4 shelf boxes × 8 sockets each.
+    expect(room.drives.length).toBe(32);
 
-    const supply = supplyBox.getComponent(DriveSupply);
-    expect(supply).not.toBeNull();
-    expect(room.driveSupply).toBe(supply);
-
-    // The interactable lets the player take drives
-    const interact = supplyBox.getComponent(Interactable);
-    expect(interact).not.toBeNull();
-    expect(interact.promptLabel).toMatch(/\[E\].*drive/i);
+    // The seated drives are in the registry too — the scene's wiring
+    // registers every drive with every snap receiver from it.
+    const seated = room.driveBoxes.flatMap(box => box.receiver.attachedItems);
+    expect(seated).toHaveLength(32);
+    for (const drive of seated) {
+      expect(drive, drive.name).toBeInstanceOf(Drive);
+      expect(room.drives, drive.name).toContain(drive);
+    }
   });
 
-  it('creates drives in the supply pool, not in the scene', () => {
-    expect(room.drives.length).toBeGreaterThan(0);
-    expect(room.driveSupply.remaining).toBe(room.drives.length);
+  it('stocks the shelf: four pre-filled drive boxes on the two lowest boards', () => {
+    expect(room.driveBoxes).toHaveLength(4);
 
-    // Drives are Drive instances but not yet children of the room
-    for (const drive of room.drives) {
-      expect(drive).toBeInstanceOf(Drive);
+    // Each rests on its board (top + half box height); each pair sits
+    // either side of the board centre along z, clear of the board edges.
+    const onBoard = (box, top) => {
+      const pos = box.object3d.position;
+      expect(pos.x, box.name).toBeCloseTo(5.68);
+      expect(pos.y, box.name).toBeCloseTo(top + 0.06);
+      return pos.z;
+    };
+    const [a, b, c, d] = room.driveBoxes;
+    expect(onBoard(a, 0.2236)).toBeCloseTo(-2.17);
+    expect(onBoard(b, 0.2236)).toBeCloseTo(-1.83);
+    expect(onBoard(c, 0.6458)).toBeCloseTo(-2.17);
+    expect(onBoard(d, 0.6458)).toBeCloseTo(-1.83);
+
+    // Every socket full: seated drives belong to their box, show the take
+    // prompt and carry the detach-on-pickup hook even before _init.
+    for (const box of room.driveBoxes) {
+      const seated = box.receiver.attachedItems;
+      expect(seated, box.name).toHaveLength(8);
+      for (const drive of seated) {
+        expect(drive._snapOwner, box.name).toBe(box.receiver);
+        const pickupable = drive.getComponent(Pickupable);
+        expect(pickupable.promptLabel).toBe('[E] Take drive');
+        expect(pickupable.onBeforePickUp).toBeTypeOf('function');
+        expect(drive.parent).toBe(room.root);
+      }
     }
   });
 

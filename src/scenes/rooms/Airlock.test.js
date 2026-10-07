@@ -8,7 +8,8 @@ import { Interactable } from '../../components/Interactable.js';
 import { EVASuit } from '../../components/EVASuit.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Door } from '../../gameobjects/Door.js';
-import { QuotaBox } from '../../gameplay/QuotaBox.js';
+import { SnapSocket } from '../../components/SnapSocket.js';
+import { DriveBoxDock } from '../../gameplay/DriveBoxDock.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -395,18 +396,28 @@ describe('Airlock', () => {
     expect(beacon.color.r).toBeGreaterThan(beacon.color.g);
   });
 
-  it('has a quota box inside the chamber with a QuotaBox component', () => {
-    const quotaBoxGO = airlock.root.find('QuotaBox');
-    expect(quotaBoxGO).not.toBeNull();
-    expect(quotaBoxGO.rigidBody.isFixed()).toBe(true);
+  it('has a drive box dock in the chamber: pedestal, box-only socket, quota counter', () => {
+    const dockGO = airlock.root.find('QuotaDock');
+    expect(dockGO).not.toBeNull();
+    expect(dockGO.rigidBody.isFixed()).toBe(true);
+    // A tooltip, not an interact action
+    expect(dockGO.getComponent(Interactable)?.promptLabel).toBe('Drive box dock');
 
-    const quotaBox = quotaBoxGO.getComponent(QuotaBox);
-    expect(quotaBox).not.toBeNull();
-    expect(airlock.quotaBox).toBe(quotaBox);
+    const socket = airlock.quotaSocket;
+    expect(socket).not.toBeNull();
+    expect(socket).toBe(dockGO.getComponent(SnapSocket));
+    // Whole drive boxes only — loose drives are rejected
+    expect(socket.canAccept({ isDriveBox: true })).toBe(true);
+    expect(socket.canAccept({ isDriveBox: false })).toBe(false);
+    expect(socket.canAccept({ isDrive: true })).toBe(false);
 
-    // The quota box starts with zero required (scene sets it later)
-    expect(quotaBox.requiredCount).toBe(0);
-    expect(quotaBox.collectedCount).toBe(0);
+    const dock = airlock.quotaDock;
+    expect(dock).not.toBeNull();
+    expect(dock).toBe(dockGO.getComponent(DriveBoxDock));
+    expect(dock.socket).toBe(socket);
+    // Zero required until the scene syncs it each night
+    expect(dock.requiredCount).toBe(0);
+    expect(dock.collectedCount).toBe(0);
   });
 
   it('dispose lets go of the suit and the inner door, and removes its bodies', () => {

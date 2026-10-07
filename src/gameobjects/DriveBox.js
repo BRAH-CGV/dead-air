@@ -25,9 +25,13 @@ const SLOT_ROTATION = new THREE.Quaternion()
  * Placeholder pickupable physics tray whose lid carries a grid of drive
  * sockets — two rows of four by default, drives standing on end and seated
  * slightly inside. The sockets use the generic SnapSocket system; this class
- * only supplies the visual, dynamic body and drive-specific policy.
+ * only supplies the visual, dynamic body and drive-specific policy. The box
+ * itself seats kinematically in the airlock's dock (DriveBoxDock).
  */
 export class DriveBox extends GameObject {
+  /** Marker used by generic snap receivers to accept only drive boxes. */
+  isDriveBox = true;
+
   constructor(name = 'DriveBox', opts = {}) {
     super(name);
     this.size = opts.size ?? DEFAULT_SIZE;
@@ -109,35 +113,82 @@ export class DriveBox extends GameObject {
   _init(scene, world) {
     super._init(scene, world);
 
-    const engine = scene.userData.engine;
-    const RAPIER = engine?.RAPIER;
+    const RAPIER = scene.userData.engine?.RAPIER;
     if (!RAPIER) return;
 
     const worldPos = new THREE.Vector3();
     this.object3d.getWorldPosition(worldPos);
 
-    this.rigidBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(worldPos.x, worldPos.y, worldPos.z)
-        .setLinearDamping(0.8)
-        .setAngularDamping(1.2)
-        .setGravityScale(1)
-        .setCcdEnabled(true),
-    );
+    this._swapBody(RAPIER, world, RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(worldPos.x, worldPos.y, worldPos.z)
+      .setLinearDamping(0.8)
+      .setAngularDamping(1.2)
+      .setGravityScale(1)
+      .setCcdEnabled(true));
+  }
 
-    const half = this.size.map(v => v / 2);
-    this.collider = world.createCollider(
-      RAPIER.ColliderDesc.cuboid(...half)
-        .setFriction(0.7)
-        .setRestitution(0.05)
-        .setDensity(this.mass / (this.size[0] * this.size[1] * this.size[2]))
-        .setCollisionGroups(DEFAULT_GROUPS),
-      this.rigidBody,
-    );
+  /** The box's collider: a cuboid matching the visual, dense for its size. */
+  _colliderDesc(RAPIER) {
+    return RAPIER.ColliderDesc.cuboid(...this.size.map(v => v / 2))
+      .setFriction(0.7)
+      .setRestitution(0.05)
+      .setDensity(this.mass / (this.size[0] * this.size[1] * this.size[2]))
+      .setCollisionGroups(DEFAULT_GROUPS);
+  }
+
+  /** (Re)create the rigid body and collider from `bodyDesc`, replacing any
+   *  existing pair and keeping the engine maps in step — the same rebuild
+   *  pattern Drive uses to switch body types. */
+  _swapBody(RAPIER, world, bodyDesc) {
+    const engine = this.scene?.userData?.engine;
+    if (this.rigidBody) {
+      for (const c of this.colliders) {
+        try { world.removeCollider(c, true); } catch (_) { /* already gone */ }
+      }
+      const oldHandle = this.rigidBody.handle;
+      try { world.removeRigidBody(this.rigidBody); } catch (_) { /* already gone */ }
+      if (engine) {
+        engine._bodyToGO.delete(oldHandle);
+        engine.rigidBodyMap.delete(oldHandle);
+      }
+    }
+
+    this.rigidBody = world.createRigidBody(bodyDesc);
+    this.collider = world.createCollider(this._colliderDesc(RAPIER), this.rigidBody);
     this.colliders = [this.collider];
 
-    engine._bodyToGO.set(this.rigidBody.handle, this);
-    engine.rigidBodyMap.set(this.rigidBody.handle, this);
+    if (engine) {
+      engine._bodyToGO.set(this.rigidBody.handle, this);
+      engine.rigidBodyMap.set(this.rigidBody.handle, this);
+    }
+  }
+
+  /** Switch to a kinematic body — locked in place (e.g. seated in the
+   *  airlock's dock). Same collision groups: a docked box overlaps nothing
+   *  solid, and kinematic-vs-kinematic with its seated drives is inert. */
+  makeKinematic() {
+    if (!this.rigidBody || !this.world) return;
+    const RAPIER = this.scene?.userData?.engine?.RAPIER;
+    if (!RAPIER) return;
+    const t = this.rigidBody.translation();
+    const r = this.rigidBody.rotation();
+    this._swapBody(RAPIER, this.world, RAPIER.RigidBodyDesc.kinematicPositionBased()
+      .setTranslation(t.x, t.y, t.z)
+      .setRotation(r));
+  }
+
+  /** Switch back to a dynamic body (e.g. released from the dock). */
+  makeDynamic() {
+    if (!this.rigidBody || !this.world) return;
+    const RAPIER = this.scene?.userData?.engine?.RAPIER;
+    if (!RAPIER) return;
+    const t = this.rigidBody.translation();
+    this._swapBody(RAPIER, this.world, RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(t.x, t.y, t.z)
+      .setLinearDamping(0.8)
+      .setAngularDamping(1.2)
+      .setGravityScale(1)
+      .setCcdEnabled(true));
   }
 
   dispose() {

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GameController } from './GameController.js';
 import { NightClock } from './NightClock.js';
 import { SignalManager } from './SignalManager.js';
-import { QuotaBox } from './QuotaBox.js';
 import { NightManager } from '../systems/NightManager.js';
 
 function makeHUD() {
@@ -20,7 +19,7 @@ function makeSatellite() {
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('GameController', () => {
-  let gc, clock, mgr, hud, sat, quotaBox;
+  let gc, clock, mgr, hud, sat, quotaDock;
 
   beforeEach(() => {
     gc   = new GameController();
@@ -28,22 +27,26 @@ describe('GameController', () => {
     mgr  = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
     hud  = makeHUD();
     sat  = makeSatellite();
-    quotaBox = new QuotaBox({ requiredCount: 3 });
+    // A plain dock stub — the controller only reads collectedCount /
+    // requiredCount and calls isQuotaMet().
+    quotaDock = {
+      requiredCount: 3,
+      collectedCount: 0,
+      isQuotaMet() { return this.collectedCount >= this.requiredCount; },
+    };
 
     gc.nightClock    = clock;
     gc.signalManager = mgr;
     gc.hud           = hud;
     gc.satellite     = sat;
-    gc.quotaBox      = quotaBox;
+    gc.quotaDock      = quotaDock;
     gc.autoStart     = false;  // manual control for tests
   });
 
   /** Save the current night's whole quota through the controller. */
   function meetQuota() {
-    // Simulate drives being inserted into the quota box
-    for (let i = 0; i < quotaBox.requiredCount; i++) {
-      quotaBox._collected++;
-    }
+    // Simulate saved drives seated in the docked box
+    quotaDock.collectedCount = quotaDock.requiredCount;
     gc.onSignalSaved();
   }
 
@@ -67,15 +70,15 @@ describe('GameController', () => {
     expect(mgr.signals).toHaveLength(5);
     expect(hud.show).toHaveBeenCalled();
     expect(hud.setNight).toHaveBeenCalledWith(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 3);  // quotaBox: 0/3
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 3);  // quotaDock: 0/3
   });
 
   it('startNight scales required count with night number', () => {
-    quotaBox.requiredCount = 3;
+    quotaDock.requiredCount = 3;
     gc.startNight(1);
     expect(hud.setSignals).toHaveBeenCalledWith(0, 3);
 
-    quotaBox.requiredCount = 4;
+    quotaDock.requiredCount = 4;
     gc.startNight(2);
     expect(hud.setSignals).toHaveBeenCalledWith(0, 4);
   });
@@ -114,7 +117,7 @@ describe('GameController', () => {
 
   it('does not announce the quota before it is met', () => {
     gc.startNight(1);
-    quotaBox._collected = 2;  // 2 out of 3
+    quotaDock.collectedCount = 2;  // 2 out of 3
 
     gc.onSignalSaved();
     expect(gc.state).toBe('playing');
@@ -140,7 +143,7 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');
     expect(gc.nightNumber).toBe(2);  // same night
     expect(clock.elapsed).toBe(0);
-    expect(quotaBox.collectedCount).toBe(0);
+    expect(quotaDock.collectedCount).toBe(0);
   });
 
   it('retryNight does nothing if not in gameOver', () => {
@@ -214,13 +217,13 @@ describe('GameController', () => {
     });
 
     it('sleep in the morning advances the night and starts it at 12:00 AM', () => {
-      quotaBox.requiredCount = 4;  // night 2 requires 4
+      quotaDock.requiredCount = 4;  // night 2 requires 4
       meetQuota();
       gc.onUpdate(999);
       expect(gc.state).toBe('morning');
 
-      // Reset quota box for the new night (in production, BaseScene does this)
-      quotaBox._collected = 0;
+      // Reset the dock for the new night (in production, BaseScene does this)
+      quotaDock.collectedCount = 0;
 
       expect(gc.sleep()).toBe(true);
       expect(nights.currentNight).toBe(2);

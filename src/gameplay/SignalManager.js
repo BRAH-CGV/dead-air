@@ -55,7 +55,7 @@ export class SignalManager {
   signals = [];
 
   /** Minimum signals needed to pass the night (informational — the actual
-   *  quota is now tracked by the QuotaBox via physical drives). */
+   *  quota is now tracked by the drive box dock via physical drives). */
   required = 0;
 
   /** @type {number} */
@@ -143,7 +143,7 @@ export class SignalManager {
   }
 
   /** Save a scanned signal — marks it as saved (no counter; quota is
-   *  tracked by the QuotaBox via physical drives). */
+   *  tracked by the drive box dock via physical drives). */
   saveSignal(id) {
     const sig = this._find(id);
     if (!sig || sig.saved || sig.deleted) return;
@@ -158,7 +158,7 @@ export class SignalManager {
   }
 
   /** Snapshot of current progress (informational — quota is driven by
-   *  the QuotaBox, not by signal counts). */
+   *  the drive box dock, not by signal counts). */
   getProgress() {
     return {
       required: this.required,

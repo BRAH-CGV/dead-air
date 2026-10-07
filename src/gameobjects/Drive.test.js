@@ -261,6 +261,40 @@ describe('Drive', () => {
       expect(drive.collider._desc._collisionGroups).toBe(expected);
     });
 
+    // ── Build-time socketing ──
+
+    it('defers a bodyless makeKinematic: _init finishes kinematic at the seated pose', () => {
+      const drive = new Drive('SocketedDrive');
+      drive.object3d.position.set(0.3, 0.9, -1.7);
+      // A snap receiver attaching the drive during scene build, before _init.
+      drive.makeKinematic();
+
+      drive._init(scene, world);
+
+      expect(drive.rigidBody._type).toBe('kinematic');
+      expect(drive.collider._desc._collisionGroups).toBe(packGroups(['SHELF'], ['SHELF']));
+      expect(drive.rigidBody._translation).toEqual({ x: 0.3, y: 0.9, z: -1.7 });
+    });
+
+    it('a bodyless makeDynamic cancels the deferred kinematic', () => {
+      const drive = new Drive('FreedDrive');
+      drive.makeKinematic();
+      drive.makeDynamic();
+
+      drive._init(scene, world);
+
+      expect(drive.rigidBody._type).toBe('dynamic');
+      expect(drive.collider._desc._collisionGroups)
+        .toBe(packGroups(['SHELF'], ['DEFAULT', 'SHELF']));
+    });
+
+    it('has a Pickupable as soon as it is constructed (build-time attach)', () => {
+      const drive = new Drive('EarlyDrive');
+
+      const pickupable = drive.getComponent(Pickupable);
+      expect(pickupable).not.toBeNull();
+    });
+
     it('enablePhysics enables gravity, lowers damping and restores angular damping', () => {
       const drive = new Drive('PhysDrive');
       drive._init(scene, world);
