@@ -11,6 +11,7 @@
 //   grid.setOn(false);                  // the generator's switch
 //   grid.breakLights();                 // the UFO's surge: bulbs gone for the night
 //   grid.surge = 0.8;                   // overdrive + flicker as it closes in
+//   grid.brownout = 1;                  // a failing supply: gutter + dim (StormOutage)
 //   grid.update(dt);                    // once a frame
 //
 // Two separate things can be wrong with the power:
@@ -52,6 +53,9 @@ export class PowerGrid {
   tripped = false;
   /** 0..1 — how hard the UFO's field is pushing current through the lamps. */
   surge = 0;
+  /** 0..1 — the supply failing (a sandstorm in the generator): the lamps
+   *  gutter and dim, never flare. Ignored under a surge. */
+  brownout = 0;
   /** The level last written to the breakable lamps. */
   level = 1;
 
@@ -181,9 +185,20 @@ export class PowerGrid {
   }
 
   /** 1 at rest; under a surge, held flicker states — mostly flaring well
-   *  past normal, sometimes guttering out — rerolled every few frames. */
+   *  past normal, sometimes guttering out — rerolled every few frames. In a
+   *  brown-out, the same flicker but only ever dimmer: weak, or out. */
   _surgeLevel(dt) {
     const surge = this.surge;
+    if (surge <= 0 && this.brownout > 0) {
+      const b = this.brownout;
+      this._flickerTimer -= dt;
+      if (this._flickerTimer <= 0) {
+        this._flickerTimer = FLICKER_MIN + this.random() * (FLICKER_MAX - FLICKER_MIN);
+        const roll = this.random();
+        this._flicker = roll < 0.45 * b ? DROPOUT_LEVEL : 1 - b * 0.5 * (1 - roll);
+      }
+      return this._flicker;
+    }
     if (surge <= 0) {
       this._flickerTimer = 0;
       this._flicker = 1;

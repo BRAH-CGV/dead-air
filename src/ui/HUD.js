@@ -14,12 +14,19 @@
 // ─────────────────────────────────────────────
 
 import { createSkyBackdrop } from '../gameobjects/SkyBackdrop.js';
+import { withKeys } from './promptKeys.js';
 
 // ── HUD ────────────────────────────────────────────────────
 
 export class HUD {
-  constructor(root = typeof document !== 'undefined' ? document.getElementById('hud') : null) {
+  /**
+   * @param {HTMLElement|null} [root]
+   * @param {{ keyLabel?: (text: string) => string }} [opts]  Rewrites '[E]'
+   *        in prompts to the bound interact key; the shared one by default.
+   */
+  constructor(root = typeof document !== 'undefined' ? document.getElementById('hud') : null, { keyLabel = withKeys } = {}) {
     this.root = root;
+    this.keyLabel = keyLabel;
     this._clock     = root?.querySelector('#hud-clock')     ?? null;
     this._signals   = root?.querySelector('#hud-signals')   ?? null;
     this._night     = root?.querySelector('#hud-night')     ?? null;
@@ -55,7 +62,7 @@ export class HUD {
   }
 
   setPrompt(text) {
-    if (this._prompt) this._prompt.textContent = text || '';
+    if (this._prompt) this._prompt.textContent = text ? this.keyLabel(text) : '';
   }
 
   /** Show the EVA suit indicator while the suit is on; hidden otherwise. */
@@ -112,6 +119,18 @@ export class RadarOverlay {
 
   show() { if (this.root) this.root.style.display = 'flex'; }
   hide() { if (this.root) this.root.style.display = 'none'; }
+
+  /** Stop listening for resizes and drop the sky. The window listener
+   *  would otherwise keep this overlay — and the scene's sky through the
+   *  backdrop — alive after every rebuild. */
+  dispose() {
+    this.hide();
+    if (this._resizeHandler && typeof window !== 'undefined') {
+      window.removeEventListener('resize', this._resizeHandler);
+    }
+    this._resizeHandler = null;
+    this._backdrop = null;
+  }
 
   setInfo(text) {
     if (this._info) this._info.textContent = text || '';
@@ -608,6 +627,29 @@ export class SignalReviewPanel {
   constructor(root = typeof document !== 'undefined' ? document.getElementById('signal-review') : null) {
     this.root = root;
     this._image    = root?.querySelector('#signal-review-image')  ?? null;
+    this._saveBtn  = root?.querySelector('#signal-save-btn')      ?? null;
+    this._deleteBtn = root?.querySelector('#signal-delete-btn')    ?? null;
+    this._saveCb    = null;
+    this._deleteCb  = null;
+    this._keyHandler = null;
+
+    // Wire click handlers. The buttons outlive the scene (index.html), so
+    // the handlers are kept to be removed again in dispose().
+    this._onSaveClick   = () => this._saveCb?.();
+    this._onDeleteClick = () => this._deleteCb?.();
+    this._saveBtn?.addEventListener('click', this._onSaveClick);
+    this._deleteBtn?.addEventListener('click', this._onDeleteClick);
+  }
+
+  /** Let go of the page's buttons. Without this every scene rebuild adds
+   *  another pair of click listeners, and one click saves into every dead
+   *  scene as well as the live one. */
+  dispose() {
+    this.hide();
+    this._saveBtn?.removeEventListener('click', this._onSaveClick);
+    this._deleteBtn?.removeEventListener('click', this._onDeleteClick);
+    this._saveCb = null;
+    this._deleteCb = null;
   }
 
   /** Show the panel with the signal's payload image. */
@@ -615,12 +657,36 @@ export class SignalReviewPanel {
     if (!this.root) return;
     if (this._image) this._image.src = payloadUrl;
     this.root.style.display = 'flex';
+    this._installKeyHandler();
   }
 
-  /** Hide the panel. */
+  /** Hide the panel and clear handlers. */
   hide() {
     if (!this.root) return;
     this.root.style.display = 'none';
     if (this._image) this._image.src = '';
+    this._removeKeyHandler();
+  }
+
+  /** Register callback for save action (KeyS or click). */
+  onSave(callback) { this._saveCb = callback; }
+
+  /** Register callback for delete action (KeyD or click). */
+  onDelete(callback) { this._deleteCb = callback; }
+
+  _installKeyHandler() {
+    this._removeKeyHandler();
+    this._keyHandler = (e) => {
+      if (e.code === 'KeyS') { e.preventDefault(); this._saveCb?.(); }
+      if (e.code === 'KeyD') { e.preventDefault(); this._deleteCb?.(); }
+    };
+    addEventListener('keydown', this._keyHandler);
+  }
+
+  _removeKeyHandler() {
+    if (this._keyHandler) {
+      removeEventListener('keydown', this._keyHandler);
+      this._keyHandler = null;
+    }
   }
 }

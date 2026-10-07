@@ -9,7 +9,8 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')
 // on a busy machine, as BaseScene.test.js found.
 vi.setConfig({ testTimeout: 30_000 });
 
-import { createMarsVegetation, VEGETATION, TREE_SPECIES } from './MarsVegetation.js';
+import { createMarsVegetation, VEGETATION, TREE_SPECIES, TREE_REACH } from './MarsVegetation.js';
+import { DUST_EYES } from '../gameplay/DustEyes.js';
 import { makeYard, yardDistance, BASE_FOOTPRINT } from './BaseYard.js';
 import { terrainHeightAt } from './MarsTerrain.js';
 
@@ -370,5 +371,23 @@ describe('treesClearOf — keeping trees off something the scene built', () => {
     const plain = createMarsVegetation({});
     const cleared = createMarsVegetation({ treesClearOf: [{ minX: -100, maxX: 100, minZ: -100, maxZ: 100 }] });
     expect(grassOf(cleared).count).toBe(grassOf(plain).count);
+  });
+});
+
+describe('the trees, for anything that needs to keep out of them', () => {
+  it('lists every tree it planted — trunk and canopy reach — none in a kept-clear box', () => {
+    const box = { minX: -40, maxX: 40, minZ: 10, maxZ: 25 };
+    const veg = createMarsVegetation({ treesClearOf: [box] });
+    expect(veg.trees.length).toBeGreaterThan(20);
+    for (const t of veg.trees) {
+      expect(t.reach).toBe(TREE_REACH);
+      expect(t.x >= box.minX && t.x <= box.maxX && t.z >= box.minZ && t.z <= box.maxZ).toBe(false);
+    }
+  });
+});
+
+describe('the grass and the dust eyes', () => {
+  it('the eyes hang above the tallest grass, never down in it', () => {
+    expect(DUST_EYES.height[0]).toBeGreaterThan(VEGETATION.bladeHeight[1] + 0.3);
   });
 });

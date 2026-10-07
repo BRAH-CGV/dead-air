@@ -36,13 +36,13 @@ function fakeSound(buffer = fakeBuffer()) {
   return sound;
 }
 
-function buildPlayer({ sound = fakeSound(), fadeSeconds = 0.5 } = {}) {
+function buildPlayer({ sound = fakeSound(), fadeSeconds = 0.5, silenced } = {}) {
   const camera = new THREE.PerspectiveCamera(75, 16 / 9);
   const engine = { camera };
   const go = new GameObject('Player');
   go.scene = { userData: { engine } };
   const suit = go.addComponent(new EVASuit());
-  const visor = go.addComponent(new SuitVisor({ suit, sound, fadeSeconds }));
+  const visor = go.addComponent(new SuitVisor({ suit, sound, fadeSeconds, silenced }));
   visor.onAwake();
   visor.onStart();
   return { camera, suit, visor, sound };
@@ -128,6 +128,22 @@ describe('SuitVisor', () => {
     run(visor, sound, 1);
     expect(sound.stop).toHaveBeenCalled();
     expect(sound.isPlaying).toBe(false);
+  });
+
+  it('falls silent at once when silenced (a death screen), and breathes again after', () => {
+    let dead = false;
+    const { suit, visor, sound } = buildPlayer({ silenced: () => dead });
+    suit.putOn();
+    run(visor, sound, 1);
+    expect(sound.isPlaying).toBe(true);
+    dead = true;
+    visor.onUpdate(1 / 60);
+    expect(sound.isPlaying).toBe(false);
+    run(visor, sound, 2);
+    expect(sound.isPlaying).toBe(false);   // stays quiet through it
+    dead = false;
+    run(visor, sound, 0.1);
+    expect(sound.isPlaying).toBe(true);    // the suit is still on: back to breathing
   });
 
   it('fades the breathing with the glass, so it never cuts in or out', () => {

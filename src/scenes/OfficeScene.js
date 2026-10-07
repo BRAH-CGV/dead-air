@@ -94,8 +94,10 @@ export class OfficeScene extends Scene {
     }
     // Hide gameplay UI on teardown so a scene reload doesn't show stale HUD.
     this.hud?.hide();
-    this.radarOverlay?.hide();
-    this.reviewPanel?.hide();
+    // dispose(), not just hide(): both hang listeners on page elements and
+    // the window that outlive the scene.
+    this.radarOverlay?.dispose();
+    this.reviewPanel?.dispose();
   }
 
   // ──────────────────────────────────────────

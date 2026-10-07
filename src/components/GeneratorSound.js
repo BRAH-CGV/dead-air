@@ -187,7 +187,7 @@ export class GeneratorSound extends Component {
 }
 
 /** A click-free looping copy of `buffer` — a copy, since the cached one is shared. */
-function loopable(buffer, context) {
+export function loopable(buffer, context) {
   const channels = [];
   for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
   const looped = seamlessLoop(channels, buffer.sampleRate, { fadeSeconds: 0.25 });

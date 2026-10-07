@@ -97,6 +97,19 @@ import { GameObject } from '../core/GameObject.js';
 // is blue around the Sun at sunrise — the reverse of Earth. The Sun rises
 // inside the office window (sunAzimuth, same convention as the moons), so the
 // dawn is seen from the desk.
+//
+// ── Storm ──
+// `sky.setStorm(k)` (0 clear → 1 full storm) is Sandstorm's knob. It writes
+// `skyUniforms.uStorm`, shared by the dome and the stars like uDawn: the
+// dome sinks toward a dust-brown murk, darker overhead, and the stars are
+// lost in it. The moons fade too, body and halo, back to exactly what they
+// were when the storm passes.
+//
+// At its foot the dome also takes the scene's fog (material.fog: three
+// hands it the same fogColor as the ground). The land sinks into the
+// storm's fog, and without this it ended in a hard line against a darker
+// sky; with it the horizon is lost. It reaches half-way up (STORM_HAZE_TOP);
+// the top of the sky stays dark.
 // ─────────────────────────────────────────────
 
 /** Sphere radius for the dome, in metres. Comfortably inside the camera's
@@ -149,6 +162,16 @@ const DEFAULT_DAY = {
 };
 
 /** How the sky turns through the night — see "The night turns" above. */
+/** The murk a sandstorm turns the sky to. */
+const STORM_COLOR = 0x2e2119;
+/** How high up the dome a storm's fog reaches, as the sine of the elevation:
+ *  all fog at the horizon, half by about 20 degrees, none from about 45 —
+ *  over the trees and the hills, which at half that still stood against a
+ *  dark sky from the ground. */
+const STORM_HAZE_TOP = 0.7;
+/** How much of a moon is left at the height of a storm. */
+const STORM_MOON_LEFT = 0.08;
+
 const DEFAULT_TURN = {
   // Northern mid-latitudes. The pole stands this high, so the sky wheels at
   // a slant and both moons stay up all night.
@@ -223,8 +246,11 @@ export function createMarsSky(opts = {}) {
   // uDawn is shared the same way, for Daylight.
   const uTime = { value: 0 };
   const uDawn = { value: 0 };
+  const uStorm = { value: 0 };
 
   const domeUniforms = {
+    // fogColor, fogDensity…: three fills these from scene.fog (material.fog).
+    ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     uHorizonColor:    { value: new THREE.Color(horizonColor) },
     uZenithColor:     { value: new THREE.Color(zenithColor) },
     uHorizonExponent: { value: horizonExponent },
@@ -237,6 +263,9 @@ export function createMarsSky(opts = {}) {
     uDayHorizonColor: { value: new THREE.Color(dayHorizonColor) },
     uDayZenithColor:  { value: new THREE.Color(dayZenithColor) },
     uSunriseColor:    { value: new THREE.Color(sunriseColor) },
+    uStorm,
+    uStormColor:      { value: new THREE.Color(STORM_COLOR) },
+    uStormHaze:       { value: STORM_HAZE_TOP },
     // Both written by setHour, below.
     uSunDir:          { value: new THREE.Vector3() },
     uSkyRotation:     { value: new THREE.Matrix3() },
@@ -250,6 +279,8 @@ export function createMarsSky(opts = {}) {
       fragmentShader: DOME_FRAGMENT_SHADER,
       side: THREE.BackSide,
       depthWrite: false,
+      // For the scene's fog colour, in a storm (see the header).
+      fog: true,
       // Gates the DITHERING define the shader's chunks sit behind.
       dithering: true,
     }),
@@ -261,7 +292,7 @@ export function createMarsSky(opts = {}) {
 
   const stars = createStarField({
     count: starCount, radius, size: starSize,
-    brightness: starBrightness, color: starColor, uTime, uDawn,
+    brightness: starBrightness, color: starColor, uTime, uDawn, uStorm,
     // Stars hug the plane more tightly than the glow does, so the band reads
     // as a dense stream of stars sitting inside a softer haze.
     band: { ...band, fraction: milkyWay.starFraction, spread: milkyWay.width * 0.7 },
@@ -278,6 +309,22 @@ export function createMarsSky(opts = {}) {
   }
 
   sky.skyUniforms = { ...domeUniforms, ...stars.material.uniforms };
+
+  // What the storm dims, at full strength. The bodies go transparent from
+  // the start, so fading them never changes the program they compile to.
+  const moonParts = turning.slice(1).flatMap(moon => moon.children).map(mesh => {
+    if (mesh.material.isMeshBasicMaterial) mesh.material.transparent = true;
+    return { material: mesh.material, glow: mesh.material.uniforms?.uGlowIntensity.value };
+  });
+  /** Bury the sky in dust, 0 (clear) … 1 (full storm). Allocates nothing. */
+  sky.setStorm = (k) => {
+    uStorm.value = k;
+    const left = 1 - (1 - STORM_MOON_LEFT) * k;
+    for (const part of moonParts) {
+      if (part.glow !== undefined) part.material.uniforms.uGlowIntensity.value = part.glow * left;
+      else part.material.opacity = left;
+    }
+  };
 
   // ── The turn ──
   const pole = celestialPole(sunAzimuth, latitude);
@@ -327,7 +374,7 @@ export function createMarsSky(opts = {}) {
  * Real points have no lattice to disagree with, so density is a plain number
  * and dispersion is uniform by construction.
  */
-function createStarField({ count, radius, size, brightness, color, uTime, uDawn, band }) {
+function createStarField({ count, radius, size, brightness, color, uTime, uDawn, uStorm, band }) {
   const positions  = new Float32Array(count * 3);
   const phases     = new Float32Array(count);
   const magnitudes = new Float32Array(count);
@@ -374,6 +421,7 @@ function createStarField({ count, radius, size, brightness, color, uTime, uDawn,
     uniforms: {
       uTime,
       uDawn,
+      uStorm,
       uStarSize:       { value: size },
       uStarBrightness: { value: brightness },
       uStarColor:      { value: new THREE.Color(color) },
@@ -536,6 +584,12 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
   uniform vec3  uDayZenithColor;
   uniform vec3  uSunriseColor;
   uniform vec3  uSunDir;
+  uniform float uStorm;
+  uniform vec3  uStormColor;
+  uniform float uStormHaze;   // how high a storm's fog reaches up the dome
+  #ifdef USE_FOG
+    uniform vec3 fogColor;    // the scene's fog, as three hands it to the ground
+  #endif
 
   // The night's turn, from the sky's own frame into the world.
   uniform mat3  uSkyRotation;
@@ -618,10 +672,25 @@ const DOME_FRAGMENT_SHADER = /* glsl */`
     float lowSky  = 1.0 - smoothstep(0.0, 0.4, dir.y);
     color += uSunriseColor * nearSun * lowSky * uDawn * (1.5 - uDawn);
 
+    // A sandstorm: dust-brown murk, thicker overhead where you look up
+    // through the whole storm, lit up a little by whatever sky is behind it.
+    vec3 murk = uStormColor * (1.0 - 0.35 * height) + color * 0.15;
+    color = mix(color, murk, uStorm * (0.85 + 0.15 * height));
+
     gl_FragColor = vec4(color, 1.0);
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+
+    // In a storm the foot of the sky is the scene's fog, the colour the land
+    // has sunk into, so the horizon is lost in it. Laid on where three lays
+    // its own fog, after tone mapping: before it, the same colour would come
+    // out as another. Thinning upward, gone by uStormHaze.
+    #ifdef USE_FOG
+      float haze = 1.0 - smoothstep(0.0, uStormHaze, dir.y);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, uStorm * haze);
+    #endif
+
     #include <dithering_fragment>
   }
 `;
@@ -661,6 +730,7 @@ const STAR_FRAGMENT_SHADER = /* glsl */`
   uniform vec3  uStarColor;
   uniform float uStarBrightness;
   uniform float uDawn;
+  uniform float uStorm;
 
   varying float vBrightness;
 
@@ -671,8 +741,8 @@ const STAR_FRAGMENT_SHADER = /* glsl */`
     float falloff = 1.0 - smoothstep(0.0, 1.0, d);
     if (falloff <= 0.0) discard;
 
-    // Daylight drowns the stars.
-    float alpha = falloff * falloff * vBrightness * uStarBrightness * (1.0 - uDawn);
+    // Daylight drowns the stars; so does a sandstorm.
+    float alpha = falloff * falloff * vBrightness * uStarBrightness * (1.0 - uDawn) * (1.0 - uStorm);
     gl_FragColor = vec4(uStarColor * alpha, alpha);
 
     #include <tonemapping_fragment>

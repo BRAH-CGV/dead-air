@@ -41,6 +41,10 @@ import { DriveBoxDock } from '../../gameplay/DriveBoxDock.js';
 // as the cycle had got. `onStateChange` reports every state. The room's root carries the ticking
 // component, so the scene drives the cycle like any other GameObject.
 //
+// The locker does nothing while the airlock cycles: it answers again only
+// once a door has opened. A player running in from something mashes E at it,
+// and every press used to flip the suit back, reversing the cycle each time.
+//
 // The locker only works from inside the chamber, clear of both doorways:
 // not through the open inner door from the office, and never where a door
 // would shut on the player.
@@ -122,8 +126,10 @@ export class Airlock extends Corridor {
 
     /** @type {'pressurised'|'depressurising'|'depressurised'|'pressurising'} */
     this.state = 'pressurised';
-    /** Seconds to cycle from one door to the other. */
-    this.cycleTime = 2.5;
+    /** Seconds to cycle from one door to the other: as long as the pressure
+     *  release that plays through it is audible (AirlockSound's
+     *  `audibleSeconds` — a test in the scene keeps the two the same). */
+    this.cycleTime = 3.1;
 
     /** Gate on the door ahead: `readyFor('outside' | 'inside')` must say yes
      *  before a finished cycle opens it, so the far side is never opened
@@ -310,6 +316,8 @@ export class Airlock extends Corridor {
 
   _useLocker() {
     if (!this.suit || !this._wearerInChamber()) return;
+    // One change per cycle: wait for the door ahead to open.
+    if (this.cycling) return;
     this.suit.toggle();
   }
 
@@ -328,6 +336,7 @@ export class Airlock extends Corridor {
     let label = PROMPT.putOn;
     if (this.suit) {
       label = !this._wearerInChamber() ? PROMPT.stepIn
+        : this.cycling ? SHUT.cycling
         : this.suit.worn ? PROMPT.takeOff : PROMPT.putOn;
     }
     this._lockerUse.promptLabel = label;

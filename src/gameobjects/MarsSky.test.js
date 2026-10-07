@@ -29,15 +29,18 @@ describe('createMarsSky structure', () => {
     expect(createMarsSky().isGroup).toBe(true);
   });
 
-  it('builds the dome with an unlit, non-fogged backside shader', () => {
+  it('builds the dome with an unlit backside shader that the scene\'s fog does not wash out', () => {
     const dome = findMesh(createMarsSky(), 'MarsSkyDome');
 
     expect(dome.geometry.parameters.radius).toBe(400);
     expect(dome.material).toBeInstanceOf(THREE.ShaderMaterial);
     expect(dome.material.side).toBe(THREE.BackSide);
-    // Fullbright only swaps lit materials, and FogExp2 would otherwise wash
-    // a 400 m dome into a flat blob.
-    expect(dome.material.fog).toBe(false);
+    // Fullbright only swaps lit materials, and FogExp2 by distance would
+    // wash a 400 m dome into a flat blob. So the dome never takes three's
+    // fog chunks. (Its `fog` flag is on only so three hands it the fog's
+    // colour, which it uses at the horizon in a storm — see 'storm' below.)
+    expect(dome.material.fragmentShader).not.toMatch(/#include <fog_fragment>/);
+    expect(dome.material.fragmentShader).not.toMatch(/fogDensity|vFogDepth/);
     // Gates the DITHERING define; without it the dark gradient quantises into
     // visible bands, and the shader's dithering chunks compile to nothing.
     expect(dome.material.dithering).toBe(true);
@@ -548,5 +551,62 @@ describe('the night turns', () => {
     expect(sky.directions.phobos).toBe(before.phobos);
     expect(sky.directions.deimos).toBe(before.deimos);
     expect(sky.skyUniforms.uSkyRotation.value).toBe(before.rot);
+  });
+});
+
+describe('storm', () => {
+  const starsOf = (sky) => findMesh(sky, 'MarsSkyStars');
+  const domeOf  = (sky) => findMesh(sky, 'MarsSkyDome');
+  const glowOf  = (sky, name) => findMesh(sky.find(name), `${name}Glow`);
+
+  it('starts clear', () => {
+    expect(createMarsSky().skyUniforms.uStorm.value).toBe(0);
+  });
+
+  it('is one uniform shared by the dome and the stars, read by both shaders', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    sky.setStorm(0.7);
+    expect(domeOf(sky).material.uniforms.uStorm.value).toBe(0.7);
+    expect(starsOf(sky).material.uniforms.uStorm.value).toBe(0.7);
+    expect(domeOf(sky).material.fragmentShader).toMatch(/uniform float uStorm;/);
+    expect(starsOf(sky).material.fragmentShader).toMatch(/uniform float uStorm;/);
+  });
+
+  it('takes the scene\'s fog at its foot in a storm, so the land runs into the sky without a line', () => {
+    // The ground and hills sink into the storm's fog; the dome is its own
+    // shader and took none, so the fogged land ended in a hard edge against
+    // a darker sky. With `fog` on, three hands the dome the very fogColor it
+    // gives the ground, and the shader lays it on at the horizon.
+    const dome = domeOf(createMarsSky({ starCount: 10 }));
+    const { fragmentShader, uniforms } = dome.material;
+    expect(dome.material.fog).toBe(true);
+    expect(uniforms.fogColor.value.isColor).toBe(true);
+    expect(uniforms.fogDensity).toBeDefined();    // three writes it with the colour
+    expect(fragmentShader).toMatch(/uniform vec3 fogColor;/);
+    // Only as far as there is a storm, and laid on where three lays its own
+    // fog: after tone mapping, or the same colour would come out as another.
+    expect(fragmentShader).toMatch(/mix\(gl_FragColor\.rgb, fogColor, uStorm \* /);
+    expect(fragmentShader.indexOf('fogColor, uStorm')).toBeGreaterThan(fragmentShader.indexOf('#include <colorspace_fragment>'));
+  });
+
+  it('carries the fog well up the sky, over the trees and hills, but never to the top of it', () => {
+    // uStormHaze is how high it reaches, as the sine of the elevation. At
+    // 0.35 it was gone by 20 degrees: from the ground the trees and the hills
+    // still stood against a dark sky. It has to clear them (30 degrees and
+    // more), and stop short of the zenith, which stays dark.
+    const { uniforms } = domeOf(createMarsSky({ starCount: 10 })).material;
+    expect(uniforms.uStormHaze.value).toBeGreaterThanOrEqual(0.5);
+    expect(uniforms.uStormHaze.value).toBeLessThan(1);
+  });
+
+  it('loses the moons in the dust, and gives them back after', () => {
+    const sky = createMarsSky({ starCount: 10 });
+    const glow = glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value;
+    sky.setStorm(1);
+    expect(moonBody(sky, 'Phobos').material.opacity).toBeLessThan(0.2);
+    expect(glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value).toBeLessThan(glow * 0.2);
+    sky.setStorm(0);
+    expect(moonBody(sky, 'Phobos').material.opacity).toBe(1);
+    expect(glowOf(sky, 'Phobos').material.uniforms.uGlowIntensity.value).toBe(glow);
   });
 });

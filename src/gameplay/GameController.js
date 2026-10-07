@@ -57,7 +57,12 @@ export class GameController extends Component {
 
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
+  /** Seconds before a failed night's prompt shows and [E] retries. */
+  _retryLock = 0;
+  _heldPrompt = null;
 
+  /** @type {Set<(state: string, previous: string) => void>} */
+  _stateListeners = new Set();
   /** @type {Set<(night: number) => void>} */
   _nightStartListeners = new Set();
 
@@ -71,7 +76,7 @@ export class GameController extends Component {
    *         game over — listeners put the player back at the start. */
   startNight(nightNumber, { retry = false } = {}) {
     this.nightNumber = nightNumber;
-    this.state = 'playing';
+    this._setState('playing');
 
     this.nightClock?.reset();
     this.signalManager?.startNight(nightNumber);
@@ -108,10 +113,14 @@ export class GameController extends Component {
 
   /** Something killed the player: end the shift as a game over, with its
    *  own prompt. Only a shift in progress can be failed.
-   *  @param {string} [prompt] */
-  fail(prompt = PROMPT.failed) {
+   *  @param {string} [prompt]
+   *  @param {{ retryAfter?: number }} [opts]  Seconds before the prompt shows
+   *         and [E] retries — a death screen that has to play out first. */
+  fail(prompt = PROMPT.failed, { retryAfter = 0 } = {}) {
     if (this.state !== 'playing') return;
-    this._endShift('gameOver', prompt);
+    this._endShift('gameOver', retryAfter > 0 ? '' : prompt);
+    this._retryLock = retryAfter;
+    this._heldPrompt = retryAfter > 0 ? prompt : null;
   }
 
   /** Follow a NightManager: start the night it is on now, and every night
@@ -128,6 +137,15 @@ export class GameController extends Component {
       this._offNights?.();
       this._offNights = null;
     };
+  }
+
+  /** Subscribe to state changes: `listener(state, previous)`. The app layer
+   *  uses it to put up the Night failed and Run complete screens.
+   *  @param {(state: string, previous: string) => void} listener
+   *  @returns {() => void} unsubscribe */
+  onStateChange(listener) {
+    this._stateListeners.add(listener);
+    return () => this._stateListeners.delete(listener);
   }
 
   /** Called when a signal is saved by the terminal. Scanning no longer
@@ -174,6 +192,16 @@ export class GameController extends Component {
     // Auto-start on first tick
     if (this.state === 'idle' && this.autoStart) {
       this.startNight(1);
+      return;
+    }
+
+    // A death screen still playing: no prompt and no retry until it has.
+    if (this.state === 'gameOver' && this._retryLock > 0) {
+      this._retryLock -= dt;
+      if (this._retryLock > 0) return;
+      if (this._heldPrompt !== null) this.hud?.setPrompt(this._heldPrompt);
+      this._heldPrompt = null;
+      this.scene?.userData?.engine?.consumeAction?.('interact');   // a press held through it doesn't count
       return;
     }
 
@@ -240,11 +268,21 @@ export class GameController extends Component {
     }
   }
 
-  _endShift(state, prompt) {
+  /** The one place `state` changes, so every change is announced. Iterates
+   *  a copy: a listener may unsubscribe (or rebuild the scene) mid-call. */
+  _setState(state) {
+    const previous = this.state;
+    if (state === previous) return;
     this.state = state;
+    for (const listener of [...this._stateListeners]) listener(state, previous);
+  }
+
+  _endShift(state, prompt) {
     this.nightClock?.pause();
     this.hud?.setPrompt(prompt);
     this.hud?.setScanProgress(-1);
+    // Last: a listener sees the shift fully ended (clock stopped, prompt up).
+    this._setState(state);
   }
 
   _morning()  { this._endShift('morning',  PROMPT.morning); }
