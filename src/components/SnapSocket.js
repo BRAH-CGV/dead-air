@@ -88,11 +88,16 @@ export class SnapSocket extends Component {
     this._updateAttachedTransforms();
     this._detachHeldItems();
 
-    const emptySlot = this._firstEmptySlot();
-    if (emptySlot === -1) return;
-
-    const match = this._findCandidateForSlot(emptySlot);
-    if (match) this.attach(match, emptySlot);
+    // One attach per frame, but any empty slot may take it — on a grid of
+    // sockets a drive released at the far end must not wait for the first.
+    for (let i = 0; i < this.slots.length; i++) {
+      if (this.attachments[i]) continue;
+      const match = this._findCandidateForSlot(i);
+      if (match) {
+        this.attach(match, i);
+        break;
+      }
+    }
   }
 
   attach(item, slotIndex = this._firstEmptySlot()) {

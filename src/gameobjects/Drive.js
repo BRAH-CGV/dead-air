@@ -43,6 +43,14 @@ const SAVED_EMISSIVE_INTENSITY = 1.5;
  */
 const DRIVE_GROUPS = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
 
+/**
+ * Collision groups while socketed (kinematic): SHELF membership keeps the
+ * interaction ray finding the drive, but the filter drops DEFAULT so a drive
+ * seated inside a host (the drive boxes) cannot shove its dynamic collider
+ * around — a kinematic body overlapping a dynamic one pushes it out.
+ */
+const KINEMATIC_GROUPS = packGroups(['SHELF'], ['SHELF']);
+
 export class Drive extends GameObject {
   /** @type {THREE.Mesh} */
   _mesh;
@@ -165,7 +173,7 @@ export class Drive extends GameObject {
     this.collider = this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(...halfSize)
         .setFriction(0.6).setRestitution(0.1).setDensity(800)
-        .setCollisionGroups(DRIVE_GROUPS),
+        .setCollisionGroups(KINEMATIC_GROUPS),
       this.rigidBody,
     );
     this.colliders = [this.collider];

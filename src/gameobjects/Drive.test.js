@@ -239,12 +239,15 @@ describe('Drive', () => {
       expect(drive.collider._desc._collisionGroups).toBe(expected);
     });
 
-    it('makeKinematic preserves collision groups', () => {
+    it('makeKinematic switches to socketed groups (SHELF member, SHELF filter)', () => {
       const drive = new Drive('PhysDrive');
       drive._init(scene, world);
       drive.makeKinematic();
 
-      const expected = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
+      // SHELF membership (bit 2) = 0x0004, SHELF filter = 0x0004
+      // packed: (0x0004 << 16) | 0x0004 = 0x00040004
+      const expected = packGroups(['SHELF'], ['SHELF']);
+      expect(expected).toBe(0x00040004);
       expect(drive.collider._desc._collisionGroups).toBe(expected);
     });
 

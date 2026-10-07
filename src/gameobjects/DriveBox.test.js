@@ -46,7 +46,10 @@ describe('DriveBox', () => {
 
     expect(box.rigidBody).toBeTruthy();
     expect(box.collider).toBeTruthy();
+    // Low magazine: half the old height, z ≈ 0.8×x.
+    expect(box.collider.halfExtents()).toEqual({ x: 0.16, y: 0.06, z: 0.14 });
     expect(box.getComponent(Pickupable)?.promptLabel).toBe('[E] Pick up drive box');
+    expect(box.snapDistance).toBe(0.1);
     expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
   });
 
@@ -86,8 +89,78 @@ describe('DriveBox', () => {
 
     const calls = drive.rigidBody.setTranslation.mock.calls;
     const [pos] = calls[calls.length - 1];
-    expect(pos.x).toBeCloseTo(2);
-    expect(pos.y).toBeGreaterThan(0.15);
-    expect(pos.z).toBeCloseTo(-1);
+    const slot = box.receiver.slots[0].offset;
+    expect(pos.x).toBeCloseTo(2 + slot.x);
+    expect(pos.y).toBeCloseTo(slot.y);
+    expect(pos.z).toBeCloseTo(-1 + slot.z);
+  });
+
+  it('carries two rows of four drive sockets on its lid', () => {
+    const box = new DriveBox('ExampleDriveBox');
+    const slots = box.receiver.slots;
+
+    expect(box.slotRows).toBe(2);
+    expect(box.slotColumns).toBe(4);
+    expect(slots).toHaveLength(8);
+    expect(new Set(slots.map(s => s.offset.x)).size).toBe(4);
+    expect(new Set(slots.map(s => s.offset.y)).size).toBe(1);
+    expect(new Set(slots.map(s => s.offset.z)).size).toBe(2);
+    // Standing drives have a [0.02, 0.12, 0.08] footprint: columns within a
+    // row sit at 4× that footprint (0.08 pitch) along x, rows keep a gutter
+    // apart along z, and sockets seat 0.02 below the lid (0.06 − 0.02).
+    expect(slots[0].offset.x).toBeCloseTo(-0.12);
+    expect(slots[0].offset.y).toBeCloseTo(0.04);
+    expect(slots[0].offset.z).toBeCloseTo(-0.06);
+  });
+
+  it('snaps drives in standing: 90° about X, then 90° about Y', () => {
+    const box = new DriveBox('ExampleDriveBox', { snapDistance: 0.5 });
+    const drive = makeDrive([0, 0.3, 0]);
+    box.addDrive(drive);
+    box.receiver.onUpdate(0.016);
+
+    const calls = drive.rigidBody.setRotation.mock.calls;
+    const [q] = calls[calls.length - 1];
+    const quat = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+    // The long axis points down the lid's Y; the thin edge faces +X.
+    const long = new THREE.Vector3(0, 0, 1).applyQuaternion(quat);
+    const thin = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);
+    expect(long.x).toBeCloseTo(0);
+    expect(long.y).toBeCloseTo(-1);
+    expect(long.z).toBeCloseTo(0);
+    expect(thin.x).toBeCloseTo(1);
+    expect(thin.y).toBeCloseTo(0);
+    expect(thin.z).toBeCloseTo(0);
+  });
+
+  it('holds eight drives at once, one per socket', () => {
+    const box = new DriveBox('ExampleDriveBox', { snapDistance: 0.02 });
+    const drives = box.receiver.slots.map(slot => {
+      const drive = makeDrive([slot.offset.x, slot.offset.y, slot.offset.z]);
+      box.addDrive(drive);
+      return drive;
+    });
+
+    for (let i = 0; i < drives.length; i++) box.receiver.onUpdate(0.016);
+
+    expect(box.receiver.attachedItems).toEqual(drives);
+  });
+
+  it('takes one drive out of a full box and leaves the rest attached', () => {
+    const box = new DriveBox('ExampleDriveBox', { snapDistance: 0.02 });
+    const drives = box.receiver.slots.map(slot => {
+      const drive = makeDrive([slot.offset.x, slot.offset.y, slot.offset.z]);
+      box.addDrive(drive);
+      return drive;
+    });
+    for (let i = 0; i < drives.length; i++) box.receiver.onUpdate(0.016);
+
+    drives[3]._pickupable.onBeforePickUp();
+
+    const attached = box.receiver.attachedItems;
+    expect(attached[3]).toBeNull();
+    expect(attached.filter(Boolean)).toHaveLength(7);
+    expect(drives[3].makeDynamic).toHaveBeenCalledTimes(1);
+    expect(drives[3]._pickupable.promptLabel).toBe('[E] Pick up');
   });
 });

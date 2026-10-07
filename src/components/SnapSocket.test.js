@@ -50,6 +50,41 @@ describe('SnapSocket', () => {
     expect(item._snapOwner).toBe(socket);
   });
 
+  it('snaps into a later slot when an earlier empty slot is out of reach', () => {
+    const socket = makeSocket({
+      snapDistance: 0.05,
+      slots: [{ offset: { x: -0.12 } }, { offset: { x: 0.12 } }],
+    });
+    const item = makeItem('Drive', [0.12, 0, 0]);
+    socket.addCandidate(item);
+
+    socket.onUpdate(0.016);
+
+    expect(socket.firstAttached).toBe(item);
+    expect(item._snapSlotIndex).toBe(1);
+  });
+
+  it('applies a slot rotation to the snapped item', () => {
+    const rotation = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    const socket = makeSocket({
+      snapDistance: 0.5,
+      slots: [{ offset: { y: 0.1 }, rotation }],
+    });
+    const item = makeItem('Drive', [0, 0.1, 0]);
+    socket.addCandidate(item);
+
+    socket.onUpdate(0.016);
+
+    const calls = item.rigidBody.setRotation.mock.calls;
+    const [q] = calls[calls.length - 1];
+    const forward = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+    expect(forward.x).toBeCloseTo(1);
+    expect(forward.y).toBeCloseTo(0);
+    expect(forward.z).toBeCloseTo(0);
+  });
+
   it('ignores held items', () => {
     const socket = makeSocket({ snapDistance: 0.5 });
     const item = makeItem('Drive', [0.1, 0, 0], true);

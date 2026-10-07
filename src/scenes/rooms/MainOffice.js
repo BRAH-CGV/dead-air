@@ -251,7 +251,7 @@ export class MainOffice extends Room {
   }
 
   /** Pickupable placeholder boxes that demonstrate generic drive sockets.
-   *  Drives snap into the floating socket only after being released. */
+   *  Drives snap into the free sockets only after being released. */
   _buildDriveBoxExamples() {
     const examples = [
       { name: 'DriveBoxExample_A', position: [-1.05, 0.16, -1.35], color: 0x405064 },
