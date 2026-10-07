@@ -661,6 +661,17 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 | **Used for** | The airlock sealing and cycling (`AirlockSound`) |
 | **Modifications** | The two recordings layered and mixed down into one clip |
 
+### Sand on the window
+
+TODO — source, author and licence. Added as `window-sand.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/window-sand.mp3` |
+| **Manifest key** | `sfx:window-sand` |
+| **Used for** | A storm's sand hitting the office window (`WindowSand`) |
+| **Modifications** | Crossfaded into a seamless loop at load |
+
 ### Satellite dish
 
 "Satellite dish1.wav" (https://freesound.org/people/juskiddink/sounds/68077/) by juskiddink on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).

@@ -391,6 +391,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/movement-ending.mp3',
   },
+  // A storm's sand on the office window (WindowSand), looped: louder the
+  // nearer the glass you stand.
+  'sfx:window-sand': {
+    type: 'audio',
+    url: 'assets/audio/window-sand.mp3',
+  },
   // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
   // and the bite when one catches you.
   'sfx:tiger-attack': {
