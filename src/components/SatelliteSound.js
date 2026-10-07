@@ -31,7 +31,7 @@ export const SATELLITE_SOUND = {
   ending: 'sfx:movement-ending',
   /** Of each clip's own level. */
   loopVolume: 0.4,
-  endingVolume: 0.4,
+  endingVolume: 1,
   /** The loop's fade in and out. */
   fade: 0.03,
   /** Angular speed (rad/s, either axis) above which a movement has begun,
