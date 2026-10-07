@@ -28,7 +28,7 @@ describe('SettingsStore', () => {
     const s = make();
     expect(s.values).toMatchObject({
       crouchMode: 'toggle', showFps: false, sensitivity: 1, invertY: false, smoothing: 0.2,
-      fov: 75, brightness: 1, renderDistance: 1000, shadows: 'high',
+      fov: 75, brightness: 1, renderDistance: 1000, shadows: 'high', stormQuality: 1,
     });
     expect(s.values).not.toHaveProperty('renderScale');
     expect(s.values).not.toHaveProperty('devTools');
@@ -57,6 +57,18 @@ describe('SettingsStore', () => {
     const s = make(memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ fov: 90, shadows: 'low' }) }));
     expect(s.values.fov).toBe(90);
     expect(s.values.shadows).toBe('low');
+  });
+
+  it('has a dust storm quality on the VIDEO tab: 0 to 1, full by default, shown as a percentage', () => {
+    const entry = SCHEMA.stormQuality;
+    expect(entry).toMatchObject({ tab: 'video', type: 'number', min: 0, max: 1, default: 1 });
+    expect(entry.format(1)).toBe('100%');
+    expect(entry.format(0.35)).toBe('35%');
+
+    const s = make(memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ stormQuality: 7 }) }));
+    expect(s.values.stormQuality).toBe(1);
+    s.set('stormQuality', -1);
+    expect(s.values.stormQuality).toBe(0);
   });
 
   it('clamps numbers to their ranges on load and on set', () => {

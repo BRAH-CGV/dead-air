@@ -116,8 +116,10 @@ export class Airlock extends Corridor {
 
     /** @type {'pressurised'|'depressurising'|'depressurised'|'pressurising'} */
     this.state = 'pressurised';
-    /** Seconds to cycle from one door to the other. */
-    this.cycleTime = 2.5;
+    /** Seconds to cycle from one door to the other: as long as the pressure
+     *  release that plays through it is audible (AirlockSound's
+     *  `audibleSeconds` — a test in the scene keeps the two the same). */
+    this.cycleTime = 3.1;
 
     /** Gate on the door ahead: `readyFor('outside' | 'inside')` must say yes
      *  before a finished cycle opens it, so the far side is never opened

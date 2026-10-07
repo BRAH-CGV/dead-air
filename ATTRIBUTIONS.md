@@ -624,19 +624,6 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A breaker flicked on the generator's repair panel (`BreakerPanel`) |
 | **Modifications** | Renamed |
 
-### Sandstorm
-
-"Sandstorm" (https://pixabay.com/sound-effects/sandstorm-222741/) by SoundReality is used under the Pixabay Content License — free to use,
-attribution not required, credited here anyway. Downloaded as
-`soundreality-sandstorm-222741.mp3`.
-
-| | |
-|---|---|
-| **File** | `public/assets/audio/sandstorm.mp3` |
-| **Manifest key** | `sfx:sandstorm` |
-| **Used for** | The wind of a sandstorm (`Sandstorm`) |
-| **Modifications** | Renamed; crossfaded into a loop at load |
-
 ### Tiger Attack
 
 "Tiger Attack" (https://pixabay.com/sound-effects/tiger-attack-195840/) by DFFDV is used under the Pixabay Content License — free to use,
@@ -662,6 +649,62 @@ attribution not required, credited here anyway. Downloaded as
 | **Manifest key** | `sfx:monster-bite` |
 | **Used for** | A dust eye catching the player (`DustEyes`) |
 | **Modifications** | Renamed |
+
+### Pressure release
+
+One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Air Compressor Releasing Pressure" by j_soundeffects (https://freesound.org/people/j_soundeffects/sounds/847748/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "Air (or steam) pressure release" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/457294/), Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/pressure-release.mp3` |
+| **Manifest key** | `sfx:pressure-release` |
+| **Used for** | The airlock sealing and cycling (`AirlockSound`) |
+| **Modifications** | The two recordings layered and mixed down into one clip |
+
+### Base ambience (room tone loops)
+
+Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-ambience-centre-room.mp3`, `interior-base-ambience-server-room.mp3`, `interior-base-ambience-bed-room.mp3` |
+| **Manifest key** | `sfx:interior-base-ambience-centre-room`, `sfx:interior-base-ambience-server-room`, `sfx:interior-base-ambience-bed-room` |
+| **Used for** | Room tone (`Ambience`): the main office, the server room, the living quarters |
+| **Modifications** | Layered and mixed down into three loops; each cut to its first 60 s at an MPEG frame boundary (no re-encode) to keep decoded memory down; at load, each loop's tail is crossfaded into its head so it repeats cleanly (`blendLoopSeam`) |
+
+### Exterior wind
+
+One wind loop, mixed by us from four Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "Perpignan outdoor wind - 2024 12 08" by Sadiquecat (https://freesound.org/people/Sadiquecat/sounds/773670/), "Ambient Rumble" by Robo9418 (https://freesound.org/people/Robo9418/sounds/840409/), "Wind Over Holehead Hill" by Sandy-Ogilvie (https://freesound.org/people/Sandy-Ogilvie/sounds/847257/) and "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/exterior-base-ambience-wind.mp3` |
+| **Manifest key** | `sfx:exterior-base-ambience-wind` |
+| **Used for** | The wind outside the base, blown harder in a sandstorm (`Ambience`) |
+| **Modifications** | Layered and mixed down into one 70 s loop; renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
+
+### Tension music
+
+"Lost in a bad place (horror ambience loop)" (https://opengameart.org/content/lost-in-a-bad-place-horror-ambience-loop) by congusbongus on OpenGameArt is used under CC0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-spooky-music.mp3` |
+| **Manifest key** | `sfx:interior-base-spooky-music` |
+| **Used for** | Music that creeps in under a scare (`Ambience.setTension`) |
+| **Modifications** | Renamed; at load, the tail is crossfaded into the head so it loops cleanly (`blendLoopSeam`) |
+
+### Ambient music
+
+"Space Ambient" (https://pixabay.com/music/ambient-space-ambient-354085/) by YuraSoop is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `yurasoop-space-ambient-354085.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/interior-base-ambient-music.mp3` |
+| **Manifest key** | `sfx:interior-base-ambient-music` |
+| **Used for** | The main menu's music (`MenuMusic`) |
+| **Modifications** | Renamed; played at 0.07 of its file level; at load, the tail is crossfaded into the head (`blendLoopSeam`) |
+
 
 ## Downloaded but unattributed — TODO
 

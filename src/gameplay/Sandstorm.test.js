@@ -44,16 +44,6 @@ describe('stormLevel', () => {
   });
 });
 
-function makeSound() {
-  return {
-    isPlaying: false,
-    volume: 0,
-    play: vi.fn(function () { this.isPlaying = true; }),
-    stop: vi.fn(function () { this.isPlaying = false; }),
-    setVolume: vi.fn(function (v) { this.volume = v; }),
-    setLoop: vi.fn(),
-  };
-}
 
 function makeRig({ night = 2, outside = true, valley = true, random = () => 0, ufo = null, clouds = null } = {}) {
   const listeners = [];
@@ -65,15 +55,15 @@ function makeRig({ night = 2, outside = true, valley = true, random = () => 0, u
   const fog = new THREE.FogExp2(0x1f2a38, 0.0022);
   const sky = { setStorm: vi.fn() };
   const dust = { setLevel: vi.fn(), setWind: vi.fn(), tick: vi.fn() };
-  const sounds = { wind: makeSound() };
+  const ambience = { setStorm: vi.fn() };
   const hooks = {
     listenerPosition: out => out.set(0, 1.2, 0),
     isOutside: vi.fn(() => outside),
     valleyInView: vi.fn(() => valley),
   };
-  const storm = new Sandstorm({ controller, fog, sky, dust, sounds, hooks, ufo, clouds, nightDuration: NIGHT, random });
+  const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, nightDuration: NIGHT, random });
   storm.onStart();
-  return { storm, controller, fog, sky, dust, sounds, hooks, startNight: n => listeners.forEach(fn => fn(n)) };
+  return { storm, controller, fog, sky, dust, ambience, hooks, startNight: n => listeners.forEach(fn => fn(n)) };
 }
 
 const run = (storm, seconds, step = 0.1) => {
@@ -89,11 +79,11 @@ describe('Sandstorm', () => {
   });
 
   it('summon() brings one at once, on any night', () => {
-    const { storm, sounds, sky } = makeRig({ night: 1 });
+    const { storm, ambience, sky } = makeRig({ night: 1 });
     expect(storm.summon()).toBe(true);
     run(storm, SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(1);
-    expect(sounds.wind.isPlaying).toBe(true);
+    expect(ambience.setStorm).toHaveBeenLastCalledWith(1);
     expect(sky.setStorm).toHaveBeenLastCalledWith(1);
   });
 
@@ -105,11 +95,11 @@ describe('Sandstorm', () => {
   });
 
   it('blows over by itself and falls silent', () => {
-    const { storm, sounds } = makeRig({ night: 1 });
+    const { storm, ambience } = makeRig({ night: 1 });
     storm.summon();
     run(storm, SANDSTORM.durationHours[1] * HOUR + 1);
     expect(storm.level).toBe(0);
-    expect(sounds.wind.isPlaying).toBe(false);
+    expect(ambience.setStorm).toHaveBeenLastCalledWith(0);
   });
 
   it('comes at its scheduled time on a storm night', () => {
@@ -121,26 +111,34 @@ describe('Sandstorm', () => {
     expect(storm.level).toBeGreaterThan(0.9);
   });
 
-  it('is barely audible indoors, and not overbearing outside', () => {
-    const out = makeRig({ outside: true });
-    const inside = makeRig({ outside: false });
-    for (const r of [out, inside]) { r.storm.summon(); run(r.storm, SANDSTORM.rampSeconds + 2); }
-    expect(out.sounds.wind.volume).toBeCloseTo(SANDSTORM.volume);
-    expect(SANDSTORM.insideLevel).toBe(0.03);
-    expect(SANDSTORM.volume).toBeLessThanOrEqual(0.5);
-    expect(inside.sounds.wind.volume).toBeGreaterThan(0);
-    expect(inside.sounds.wind.volume).toBeLessThan(out.sounds.wind.volume * 0.1);
+  it('has no sound of its own: the wind is the ambience\'s, told how hard it blows', () => {
+    // The storm used to loop a recording of its own. The wind outside is the
+    // Ambience's loop now; a storm only makes it blow harder (Ambience.setStorm).
+    const { storm, ambience } = makeRig({ night: 1 });
+    storm.onUpdate(0.1);
+    expect(ambience.setStorm).toHaveBeenLastCalledWith(0);
+
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds / 2);
+    const building = ambience.setStorm.mock.lastCall[0];
+    expect(building).toBeGreaterThan(0);
+    expect(building).toBeLessThan(1);
+    expect(building).toBe(storm.level);
+
+    expect(storm.sounds).toBeUndefined();
+    expect(SANDSTORM.volume).toBeUndefined();
+    expect(SANDSTORM.insideLevel).toBeUndefined();
   });
 
-  it('eases the volume through the airlock rather than snapping', () => {
-    const { storm, sounds, hooks } = makeRig({ outside: true });
+  it('blows without an ambience to tell', () => {
+    const storm = new Sandstorm({
+      controller: { state: 'playing', nightNumber: 1, onNightStart: () => () => {} },
+      hooks: { listenerPosition: out => out.set(0, 1.2, 0), isOutside: () => true, valleyInView: () => true },
+      nightDuration: NIGHT, random: () => 0,
+    });
+    storm.onStart();
     storm.summon();
-    run(storm, SANDSTORM.rampSeconds + 2);
-    const outside = sounds.wind.volume;
-    hooks.isOutside.mockReturnValue(false);
-    storm.onUpdate(0.05);
-    expect(sounds.wind.volume).toBeLessThan(outside);
-    expect(sounds.wind.volume).toBeGreaterThan(outside * 0.5);
+    expect(() => run(storm, 1)).not.toThrow();
   });
 
   it('from the desk, the storm swallows the view just before the dish (~23 m out)', () => {
@@ -233,13 +231,13 @@ describe('Sandstorm', () => {
   });
 
   it('dies down when the shift ends, and a new night starts calm', () => {
-    const { storm, controller, sounds, startNight } = makeRig({ night: 1 });
+    const { storm, controller, ambience, startNight } = makeRig({ night: 1 });
     storm.summon();
     run(storm, SANDSTORM.rampSeconds + 2);
     controller.state = 'morning';
     run(storm, SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(0);
-    expect(sounds.wind.isPlaying).toBe(false);
+    expect(ambience.setStorm).toHaveBeenLastCalledWith(0);
 
     controller.state = 'playing';
     startNight(1);

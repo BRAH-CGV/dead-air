@@ -21,6 +21,9 @@ import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
+import { Ambience, AMBIENCE } from '../components/Ambience.js';
+import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { AmbienceMix } from '../systems/AmbienceMix.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
@@ -190,6 +193,10 @@ export class BaseScene extends Scene {
   /** The player's EVA suit — the airlock hatch follows it.
    *  @type {EVASuit|null} */
   suit = null;
+  /** Room tone and tension music. A threat raises the music with
+   *  `ambience.setTension(level, name)`.
+   *  @type {Ambience|null} */
+  ambience = null;
 
   /** The generator's grid: every lamp in the base, and the vital functions.
    *  @type {PowerGrid|null} */
@@ -215,6 +222,7 @@ export class BaseScene extends Scene {
 
     this._buildRooms();
     this._buildCorridors();
+    this._addAmbience();
     this._setupNights();
     this._addSky();
     this._addGround();
@@ -336,6 +344,62 @@ export class BaseScene extends Scene {
       OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
+  }
+
+  // ──────────────────────────────────────────
+  // Ambience (a loop per room, blended down the corridors)
+  // ──────────────────────────────────────────
+  /** Each room's shell plays that room's loop; each corridor crossfades the
+   *  two rooms it joins. Read at the camera, where the ears are, so it
+   *  follows the debug fly camera too.
+   *
+   *  The airlock has no loop of its own: it hears whichever side's door
+   *  stands open — the office through the inner door, the wind through the
+   *  hatch — and nothing at all while it cycles with both shut. So a change
+   *  of mind mid-cycle never lets the wind in. */
+  _addAmbience() {
+    const { engine, rooms, corridors } = this;
+    const office = AMBIENCE.rooms.MainOffice;
+    // How much of a storm each room lets in (AMBIENCE.storm): a hiss, and a
+    // little more in the office, behind its window. The airlock is open to
+    // the office or to the yard, so it leaks as the office does.
+    const leak = name => AMBIENCE.storm.rooms[name] ?? AMBIENCE.storm.inside;
+    const airlock = { box: rooms.Airlock.bounds(), track: office, leak: leak('MainOffice') };
+    const follow = (state) => {
+      if (state === 'pressurised') airlock.track = office;
+      else if (state === 'depressurised') airlock.track = AMBIENCE.outside ?? office;
+      else airlock.track = null;
+    };
+    follow(rooms.Airlock.state);
+    rooms.Airlock.onStateChange(follow);   // dropped by the airlock's dispose()
+
+    const mix = new AmbienceMix({
+      zones: [
+        ...Object.values(rooms)
+          .filter(room => AMBIENCE.rooms[room.name])
+          .map(room => ({ box: room.bounds(), track: AMBIENCE.rooms[room.name], leak: leak(room.name) })),
+        airlock,
+      ],
+      passages: Object.values(corridors).map(c => ({ box: c.bounds(), axis: c.axis })),
+      outside: AMBIENCE.outside,
+      leak: AMBIENCE.storm.inside,
+    });
+    this.ambience = this._group('Ambience').addComponent(new Ambience({
+      mix,
+      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      // Testing only — remove before release. Each key swings a music
+      // track in, and back out on the next press: M the spooky one, comma
+      // the ambient one. Dev builds only: the production bundle has no keys.
+      testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
+    }));
+
+    // The silence of the sealed airlock is filled by its pressure release:
+    // once as the doors shut, for a player who is in the chamber.
+    this.ambience.gameObject.addComponent(new AirlockSound({
+      airlock: rooms.Airlock,
+      sound:   this._sound(AIRLOCK_SOUND.key),
+      isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
+    }));
   }
 
   // ──────────────────────────────────────────
@@ -1043,6 +1107,9 @@ export class BaseScene extends Scene {
       ufo:        this.ufoThreat,
       // One storm level drives the clouds too.
       clouds,
+      // …and the wind: the storm has no recording of its own. It blows the
+      // ambience's wind harder, and lets a hiss of it into the rooms.
+      ambience: this.ambience,
       hooks: {
         listenerPosition: out => engine.camera.getWorldPosition(out),
         isOutside:        p => this._isOutside(p),
@@ -1433,6 +1500,7 @@ const ROOM_FOG_FRAGMENT = /* glsl */`
 #endif
 `;
 const _valleyEye = new THREE.Vector3();
+const _airlockEar = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {

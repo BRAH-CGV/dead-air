@@ -31,6 +31,7 @@ import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { MenuMusic } from './MenuMusic.js';
 import { TAGLINE, TEAM, SHOW_ROLES, COPY } from '../ui/menu/text.js';
 import { ASSETS } from '../assets/manifest.js';
 import { buildCreditBlocks, creditWarnings } from '../ui/menu/credits.js';
@@ -63,6 +64,8 @@ export class App {
    * @param {boolean} [deps.dev]  Dev build: unconfirmed credits show, and warn
    * @param {Document} [deps.doc]
    * @param {Window} [deps.win]
+   * @param {{ load: () => void, setPlaying: (on: boolean) => void, dispose: () => void }} [deps.music]
+   *        The main menu's music.
    */
   constructor(engine, {
     pointerLock = new PointerLock(engine.renderer?.domElement),
@@ -75,8 +78,10 @@ export class App {
     dev = !!import.meta.env?.DEV,
     doc = document,
     win = window,
+    music = new MenuMusic({ engine }),
   } = {}) {
     this.engine = engine;
+    this.music = music;
     this.flow = new AppFlow();
     this.pointerLock = pointerLock;
     this.view = view;
@@ -130,6 +135,16 @@ export class App {
     this._offs.push(flow.onChange(() => this._render()));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
+    // Music under the main menu (and the screens opened from it), faded out
+    // for the game. It can only sound once the audio is awake, and the
+    // menu's buttons aren't the canvas whose click wakes it — so the first
+    // click or key anywhere does. Listed before the listener below, which
+    // swallows keys while a menu is open.
+    this.music.load();
+    this._offs.push(flow.onChange(() => this.music.setPlaying(flow.state === 'mainMenu')));
+    this._listen(win, 'pointerdown', () => this._wakeAudio(), { capture: true });
+    this._listen(win, 'keydown', () => this._wakeAudio(), { capture: true });
+
     this._listen(win, 'keydown', this._onKeyDownCapture, { capture: true });
     this._listen(win, 'keydown', this._onKeyDown);
     this._listen(win, 'blur', () => this.pause());
@@ -150,6 +165,7 @@ export class App {
     this._offs.length = 0;
     this._offController?.();
     this._offController = null;
+    this.music.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -611,7 +627,8 @@ export class App {
     });
   }
 
-  /** Chrome keeps audio suspended until a user gesture; New game is one. */
+  /** Chrome keeps audio suspended until a user gesture: New game is one, and
+   *  so is the first click or key on the menu. */
   _wakeAudio() {
     const context = this.engine.audioListener?.context;
     if (context?.state === 'suspended') context.resume?.();

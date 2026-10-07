@@ -44,6 +44,10 @@ export const SCHEMA = {
   renderDistance: { tab: 'video', type: 'number', label: 'Render distance', min: 450, max: 1000, step: 10, default: 1000, format: (v) => `${v} m` },
   shadows:        { tab: 'video', type: 'enum', label: 'Shadows', default: 'high',
                     options: [{ value: 'off', label: 'OFF' }, { value: 'low', label: 'LOW' }, { value: 'high', label: 'HIGH' }] },
+  // How many dust clouds a storm draws, and how near they come: the storm's
+  // whole cost on a weak GPU (BaseScene.setStormQuality). 0 is the thinnest.
+  stormQuality:   { tab: 'video', type: 'number', label: 'Dust storm quality', min: 0, max: 1, step: 0.05, default: 1,
+                    format: (v) => `${Math.round(v * 100)}%` },
 };
 
 export class SettingsStore {

@@ -375,10 +375,11 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/light-switch.mp3',
   },
-  // The sandstorm's wind (Sandstorm), looped seamlessly at load. ~31 s.
-  'sfx:sandstorm': {
+  // The airlock sealing and cycling (AirlockSound): a hiss of pressure,
+  // audible for about 3.1 s, which is what the airlock's cycle is set to.
+  'sfx:pressure-release': {
     type: 'audio',
-    url: 'assets/audio/sandstorm.mp3',
+    url: 'assets/audio/pressure-release.mp3',
   },
   // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
   // and the bite when one catches you.
@@ -481,12 +482,48 @@ const LIBRARY = {
 };
 
 /**
+ * Heard every game, but fetched after the scene is up instead of behind the
+ * loading screen: ~10 MB of mp3 that nothing has to wait for. `Ambience`
+ * loads these and fades each in as it arrives.
+ * @type {Record<string, AudioEntry>}
+ */
+const AMBIENT = {
+  'sfx:interior-base-ambience-centre-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-centre-room.mp3',
+  },
+  'sfx:interior-base-ambience-server-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-server-room.mp3',
+  },
+  'sfx:interior-base-ambience-bed-room': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambience-bed-room.mp3',
+  },
+  // Everywhere that isn't the base: the yard, the roof, the valley.
+  'sfx:exterior-base-ambience-wind': {
+    type: 'audio',
+    url: 'assets/audio/exterior-base-ambience-wind.mp3',
+  },
+  // Not rooms: the music that creeps in under a scare (Ambience.setTension),
+  // and a second, calmer track.
+  'sfx:interior-base-ambient-music': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-ambient-music.mp3',
+  },
+  'sfx:interior-base-spooky-music': {
+    type: 'audio',
+    url: 'assets/audio/interior-base-spooky-music.mp3',
+  },
+};
+
+/**
  * Every asset the game knows how to load, placed or not. `assets.load(key)`
  * and `validateManifest()` both walk this, so a library model is a first-class
  * manifest entry — it just isn't fetched until something asks for it.
  * @type {Record<string, ModelEntry | TextureEntry | AudioEntry>}
  */
-export const ASSETS = { ...PLACED, ...LIBRARY };
+export const ASSETS = { ...PLACED, ...LIBRARY, ...AMBIENT };
 
 /**
  * Assets fetched before the first frame is drawn. Everything else can be

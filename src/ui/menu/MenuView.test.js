@@ -51,6 +51,17 @@ describe('MenuView', () => {
       expect(text.toLowerCase()).not.toContain('quit');
     });
 
+    it('credits the menu music, small, in a corner of its own', () => {
+      view.show('main', model);
+      const credit = view.panel.querySelector('.menu-music-credit');
+      expect(credit).not.toBeNull();
+      expect(credit.textContent).toContain('Space Ambient');
+      expect(credit.textContent).toContain('YuraSoop');
+      // Only where the music is introduced: not on the pause screen.
+      view.show('pause', { status: 'NIGHT 1' });
+      expect(view.panel.querySelector('.menu-music-credit')).toBeNull();
+    });
+
     it('offers Continue with the saved night', () => {
       view.show('main', { ...model, continueNight: 2 });
       expect(byAction(view, 'continue').textContent).toMatch(/night 2/i);

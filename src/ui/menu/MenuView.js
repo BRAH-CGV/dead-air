@@ -175,6 +175,7 @@ export class MenuView {
       ),
       this._hint,
       h('div', { class: 'menu-footer' }, version ? `v${version}` : ''),
+      h('div', { class: 'menu-music-credit' }, COPY.menuMusic),
     ];
   }
 

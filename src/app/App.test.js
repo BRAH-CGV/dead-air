@@ -459,6 +459,16 @@ describe('App', () => {
       expect(panel().textContent).toContain('90\u00b0');
     });
 
+    it('has a dust storm quality slider that reaches the scene as it is dragged', async () => {
+      engine.activeScene.setStormQuality = vi.fn();
+      await click('settings');
+      tab('video');
+      expect(document.querySelector('input[data-setting="stormQuality"]')).not.toBeNull();
+      slide('stormQuality', 0.35);
+      expect(engine.activeScene.setStormQuality).toHaveBeenLastCalledWith(0.35);
+      expect(panel().textContent).toContain('35%');
+    });
+
     it('persists, and a new App starts from the saved values', async () => {
       await click('settings');
       tab('controls');
@@ -764,5 +774,73 @@ describe('App', () => {
       expect(text).toContain('Satellite dish tower');
       expect(text).not.toContain('Server V2 + console');
     });
+  });
+});
+
+describe('App menu music', () => {
+  let engine, lock, app, music;
+
+  beforeEach(async () => {
+    engine = makeEngine();
+    lock = makeLock();
+    music = { load: vi.fn(), setPlaying: vi.fn(), dispose: vi.fn() };
+    app = new App(engine, {
+      pointerLock: lock, view: makeDom(), fade: makeFade(), version: '9.9.9',
+      storage: memoryStorage(), devToolsDefault: true, dev: false, music,
+    });
+    await app.start();
+  });
+
+  afterEach(() => app.dispose());
+
+  it('fetches the music at boot and plays it on the main menu', () => {
+    expect(music.load).toHaveBeenCalledOnce();
+    expect(app.flow.state).toBe('mainMenu');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(true);
+  });
+
+  it('keeps it through Settings and Credits, which are still the main menu', async () => {
+    await click('settings');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(true);
+  });
+
+  it('fades it out for the game', async () => {
+    await click('newGame');
+    expect(app.flow.state).toBe('playing');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(false);
+  });
+
+  it('leaves the pause menu to the game\'s own sound', async () => {
+    await click('newGame');
+    app.pause();
+    expect(app.flow.state).toBe('paused');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(false);
+  });
+
+  it('brings it back on the way out to the main menu', async () => {
+    await click('newGame');
+    app.pause();
+    await click('quit');
+    await click('confirm').catch(() => {});
+    await flush();
+    expect(app.flow.state).toBe('mainMenu');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(true);
+  });
+
+  it('wakes the audio on the first click or key on the menu, so the music can start', () => {
+    // Chrome keeps audio suspended until a gesture, and the menu's buttons
+    // are not the canvas, whose click is what woke it before.
+    expect(engine.audioListener.context.resume).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(engine.audioListener.context.resume).toHaveBeenCalledTimes(1);
+
+    engine.audioListener.context.resume.mockClear();
+    key('ArrowDown');
+    expect(engine.audioListener.context.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets go of the music when disposed', () => {
+    app.dispose();
+    expect(music.dispose).toHaveBeenCalledOnce();
   });
 });
