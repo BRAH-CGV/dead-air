@@ -381,6 +381,16 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/pressure-release.mp3',
   },
+  // The dish slewing (SatelliteSound): its drive, looped for as long as it
+  // moves, and the click of it settling after each movement.
+  'sfx:dish-main-loop-distant': {
+    type: 'audio',
+    url: 'assets/audio/dish-main-loop-distant.mp3',
+  },
+  'sfx:movement-ending': {
+    type: 'audio',
+    url: 'assets/audio/movement-ending.mp3',
+  },
   // The dust eyes (DustEyes): the roar looped through a chase, kept quiet,
   // and the bite when one catches you.
   'sfx:tiger-attack': {

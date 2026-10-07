@@ -8,6 +8,7 @@ import { GameObject } from '../core/GameObject.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
 import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { SatelliteSound } from '../components/SatelliteSound.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
@@ -217,6 +218,16 @@ describe('BaseScene ambience', () => {
     camera.updateMatrixWorld();
     expect(voice.isInside()).toBe(false);
     delete scene.engine.camera;
+  });
+
+  it('gives the dish the sound of its drive', () => {
+    const voice = scene.satellite.getComponent(SatelliteSound);
+    expect(voice).not.toBeNull();
+    // It reads the dish it rides on.
+    voice.onStart();
+    expect(voice.satellite).toBe(scene.satellite);
+    expect(typeof scene.satellite.velYaw).toBe('number');
+    expect(typeof scene.satellite.velPitch).toBe('number');
   });
 
   it('plays the wind alone out in the yard, and up on the roof', () => {

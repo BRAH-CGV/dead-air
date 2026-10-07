@@ -47,6 +47,7 @@ import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
+import { SatelliteSound } from '../components/SatelliteSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -723,6 +724,8 @@ export class BaseScene extends Scene {
       name: 'Satellite', position: [0, 0, -25], scale: 0.137, type: Satellite,
     });
     this._adopt(this._outside, this.satellite);
+    // Its drive while it slews, and the click as it settles.
+    this.satellite.addComponent(new SatelliteSound());
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
 

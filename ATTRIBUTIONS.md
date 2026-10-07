@@ -661,6 +661,17 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 | **Used for** | The airlock sealing and cycling (`AirlockSound`) |
 | **Modifications** | The two recordings layered and mixed down into one clip |
 
+### Satellite dish
+
+"Satellite dish1.wav" (https://freesound.org/people/juskiddink/sounds/68077/) by juskiddink on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/dish-main-loop-distant.mp3`, `movement-ending.mp3` |
+| **Manifest key** | `sfx:dish-main-loop-distant`, `sfx:movement-ending` |
+| **Used for** | The dish slewing (`SatelliteSound`): its drive while it moves, and the click as it settles |
+| **Modifications** | Cut into two clips: a loop of the drive and the ending; the loop is crossfaded into a seamless loop at load |
+
 ### Base ambience (room tone loops)
 
 Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).
