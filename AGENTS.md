@@ -80,6 +80,7 @@ src/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
@@ -161,7 +162,7 @@ An Interactable whose `promptLabel` changes while you look at it (the locker's P
 
 Every prop has a job:
 
-- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
+- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. The window is glazed: `Room` fills every window opening (a `sill` above the floor) with a solid, undrawn pane (`BackWindow`), so nothing gets out over the sill. What is seen of the glass is `WindowGlass` (`rooms.MainOffice.windowGlass`): a faint film of dust and smears, so the pane reads as glass without reflections. It is unlit and baked — one texture read per pixel — and shows by the lights it is handed (`addLight`: the ceiling light, the scene's ambient light, the UFO's window flood), read live at each draw, so a power cut darkens it. `WINDOW_GLASS.opacity` is the one number for more or less dirt. It never writes depth; the desk's transparent materials do, so they stay in front of it. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
 - **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.

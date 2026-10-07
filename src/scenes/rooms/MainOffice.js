@@ -3,6 +3,7 @@ import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
+import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -26,6 +27,13 @@ import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
 // ─────────────────────────────────────────────
+
+/** The bars across the window: mullions at ±x, the crossbar's height, and
+ *  the mullions' width. The frame is built from them and the glass is cut
+ *  into panes by them. */
+const WINDOW_MULLION_X = 1.42;
+const WINDOW_CROSSBAR_Y = 1.65;
+const WINDOW_BAR = 0.08;
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -68,6 +76,7 @@ export class MainOffice extends Room {
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
     ceilingGO.object3d.add(ceiling);
+    this.ceilingLight = ceiling;
 
     const fixture = new THREE.Mesh(
       this._own(new THREE.CylinderGeometry(0.35, 0.45, 0.08, 24)),
@@ -99,6 +108,7 @@ export class MainOffice extends Room {
 
   buildProps() {
     this._buildWindowFrame();
+    this._buildWindowGlass();
     this._buildWallClock();
     this._buildSignalLight();
 
@@ -212,9 +222,9 @@ export class MainOffice extends Room {
     this.root.addChild(this.signalLight);
   }
 
-  /** Frame around the back-wall opening. Left clear of glass: imported desk
-   *  materials use transparency, and a glass plane sorts badly against them
-   *  from inside the room. */
+  /** Frame around the back-wall opening. The solid part of the window is
+   *  the collider Room puts in every window opening (`BackWindow`); what is
+   *  seen of the glass is _buildWindowGlass. */
   _buildWindowFrame() {
     const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.65 }));
     const parts = [
@@ -222,10 +232,42 @@ export class MainOffice extends Room {
       ['WindowFrame_Bottom',        [0, 0.4, -4.84],     [8.75, 0.12, 0.18]],
       ['WindowFrame_Left',          [-4.37, 1.65, -4.84], [0.12, 2.6, 0.18]],
       ['WindowFrame_Right',         [4.37, 1.65, -4.84],  [0.12, 2.6, 0.18]],
-      ['WindowFrame_Mullion_Left',  [-1.42, 1.65, -4.83], [0.08, 2.35, 0.12]],
-      ['WindowFrame_Mullion_Right', [1.42, 1.65, -4.83],  [0.08, 2.35, 0.12]],
-      ['WindowFrame_Crossbar',      [0, 1.65, -4.82],     [8.5, 0.06, 0.12]],
+      ['WindowFrame_Mullion_Left',  [-WINDOW_MULLION_X, 1.65, -4.83], [WINDOW_BAR, 2.35, 0.12]],
+      ['WindowFrame_Mullion_Right', [WINDOW_MULLION_X, 1.65, -4.83],  [WINDOW_BAR, 2.35, 0.12]],
+      ['WindowFrame_Crossbar',      [0, WINDOW_CROSSBAR_Y, -4.82],    [8.5, 0.06, 0.12]],
     ];
     for (const [name, position, size] of parts) this._addStaticBox(name, position, size, frame);
+  }
+
+  /** The glass itself, as much as is drawn of it: a thin film of dust and
+   *  smears on a pane in the middle of the wall's thickness — behind the
+   *  mullions from inside, set back in the reveal from outside. Cut into
+   *  panes where the frame's bars cross it, so the dust lies along them. It
+   *  shows by the ceiling light, read live: 1 / (π d) of it reaches the
+   *  glass, as the light falls off (its decay is 1). BaseScene adds the
+   *  night outside and the UFO's beam.
+   *
+   *  The glass never writes depth and the desk in front of it does (its
+   *  manifest entry), so the desk's transparent materials stay in front
+   *  whichever of the two is drawn first — the sorting that kept glass out
+   *  of this window before. */
+  _buildWindowGlass() {
+    const { width, height, offset = 0, sill } = this.openings.find(o => o.side === 'back');
+    const centre = [offset, sill + height / 2, this._wallPlane('back')];
+    const fromLeft = x => x - offset + width / 2;
+
+    this.windowGlass = this._own(new WindowGlass({
+      width, height,
+      dividers: {
+        x: [fromLeft(-WINDOW_MULLION_X), fromLeft(WINDOW_MULLION_X)],
+        y: [WINDOW_CROSSBAR_Y - sill],
+        width: WINDOW_BAR,
+      },
+    }));
+    this.windowGlass.object3d.position.set(...centre);
+    this.root.addChild(this.windowGlass);
+
+    const reach = this.ceilingLight.position.distanceTo(this.windowGlass.object3d.position);
+    this.windowGlass.addLight(this.ceilingLight, 1 / (Math.PI * reach));
   }
 }
