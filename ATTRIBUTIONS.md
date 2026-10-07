@@ -663,14 +663,14 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 
 ### Sand on the window
 
-TODO — source, author and licence. Added as `window-sand.mp3`.
+"sand pour on glass FF675.aif" (https://freesound.org/people/martinimeniscus/sounds/199361/) by martinimeniscus on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
 
 | | |
 |---|---|
 | **File** | `public/assets/audio/window-sand.mp3` |
 | **Manifest key** | `sfx:window-sand` |
 | **Used for** | A storm's sand hitting the office window (`WindowSand`) |
-| **Modifications** | Crossfaded into a seamless loop at load |
+| **Modifications** | Cut to a short clip; crossfaded into a seamless loop at load |
 
 ### Satellite dish
 
