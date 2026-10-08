@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../../core/GameObject.js';
 import { Door } from '../../gameobjects/Door.js';
+import { LINING, floorQuad, ceilingQuad, wallQuad, liningGeometry, liningMaterials } from './RoomLining.js';
 
 // ─────────────────────────────────────────────
 // Room  –  Self-contained walled enclosure
@@ -18,6 +19,10 @@ import { Door } from '../../gameobjects/Door.js';
 // Rooms are axis-aligned — no rotation. Rapier bodies have no parent, so
 // each body carries the room offset itself; a rotated room would need the
 // same treatment for orientation.
+//
+// The shell is plain boxes in one colour. Where the base's textures are
+// loaded, the inside of it is lined with them (`Lining`, see RoomLining.js):
+// floor, ceiling and the inner face of every wall.
 //
 // Subclasses override `buildDoors()`, `buildLighting()` and `buildProps()`.
 // ─────────────────────────────────────────────
@@ -76,6 +81,9 @@ export class Room {
     this.doors = [];
 
     this._openingBySide = new Map();
+    /** Every piece of wall the shell built, for the lining to face.
+     *  @type {{side:string, a0:number, a1:number, y0:number, y1:number}[]} */
+    this._wallPieces = [];
   }
 
   /** Prefix of the root group's name — `Room:<name>`. Subclasses that aren't
@@ -144,6 +152,38 @@ export class Room {
     // step — the character controller has no autostep.
     this._addStaticBox('Floor',   [0, -t / 2, 0],          [width + t, t, depth + t]);
     this._addStaticBox('Ceiling', [0, height + t / 2, 0],  [width + t, t, depth + t]);
+    this._buildLining([width + t, depth + t]);
+  }
+
+  /** Line the inside of the shell with the base's textures: one sheet over
+   *  the floor slab, one under the ceiling slab, and one mesh of all the
+   *  walls' inner faces. `[sizeX, sizeZ]` is the slabs' footprint. Does
+   *  nothing where the textures aren't loaded; the plain boxes stand in. */
+  _buildLining([sizeX, sizeZ]) {
+    const materials = liningMaterials(this.engine.assets, this.material);
+    if (!materials) return;
+    for (const material of Object.values(materials)) this._own(material);
+
+    const { gap } = LINING, origin = this.position;
+    const rect = { x0: -sizeX / 2, x1: sizeX / 2, z0: -sizeZ / 2, z1: sizeZ / 2 };
+    const walls = this._wallPieces.map(({ side, a0, a1, y0, y1 }) => {
+      const inner = this._wallPlane(side) - SIDES[side].sign * (this.wallThick / 2 + gap);
+      return wallQuad(side, a0, a1, y0, y1, inner, origin);
+    });
+    const sheets = [
+      ['Lining_Walls',   walls,                                           materials.wall],
+      ['Lining_Floor',   [floorQuad(rect, gap, origin)],                  materials.floor],
+      ['Lining_Ceiling', [ceilingQuad(rect, this.height - gap, origin)],  materials.ceiling],
+    ];
+
+    // The boxes behind already cast the shadows; the lining only takes them.
+    const go = this._addGroup('Lining');
+    for (const [name, quads, material] of sheets) {
+      const mesh = new THREE.Mesh(this._own(liningGeometry(quads)), material);
+      mesh.name = name;
+      mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    }
   }
 
   /** One wall, or its segments around an opening. Back/front walls span the
@@ -202,6 +242,7 @@ export class Room {
    *  segments (an opening flush with a wall end) are skipped. */
   _addWallBox(side, name, a0, a1, y0, y1) {
     if (a1 - a0 < EPS || y1 - y0 < EPS) return null;
+    this._wallPieces.push({ side, a0, a1, y0, y1 });
     const { position, size } = this._wallBox(side, a0, a1, y0, y1);
     return this._addStaticBox(name, position, size);
   }

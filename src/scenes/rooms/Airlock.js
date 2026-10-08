@@ -116,6 +116,8 @@ export class Airlock extends Corridor {
     /** Hatch status light — red sealed, amber cycling, green open. @type {THREE.PointLight|null} */
     this.beacon = null;
 
+    /** The table the dock stands on (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
+    this.dockTable = null;
     /** The dock pedestal (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
     this.quotaDockGO = null;
     /** The socket seating a whole drive box on the pedestal.
@@ -192,18 +194,27 @@ export class Airlock extends Corridor {
 
     this.root.addComponent(new AirlockCycle(this));
 
-    // Drive-box dock inside the chamber, against the right wall: the
-    // night's quota is the saved drives seated in the box docked there.
+    // Drive-box dock inside the chamber, on a table against the right wall:
+    // the night's quota is the saved drives seated in the box docked there.
     this._buildQuotaDock();
   }
 
-  /** A pedestal that receives whole drive boxes. Same chamber spot as the
-   *  old loose-drive quota box; SnapSocket seats a carried box on top and
-   *  DriveBoxDock counts the saved drives inside it. */
+  /** A pedestal that receives whole drive boxes. SnapSocket seats a carried
+   *  box on top and DriveBoxDock counts the saved drives inside it.
+   *
+   *  Interior layout mock-up: the pedestal stands on a table along the
+   *  right wall (`DockTable`, a plain box for now), so the box is docked at
+   *  hand height. The table stops short of both doorways and leaves 1.2 m
+   *  to walk between it and the suit locker. */
   _buildQuotaDock() {
-    const dockSize = [0.42, 0.12, 0.36];
     const inX = this.corridorWidth / 2 - this.wallThick / 2;
-    const dockPos = [inX - dockSize[0] / 2 - 0.05, dockSize[1] / 2, 0];
+
+    const tableSize = [0.5, 0.75, 1.95];
+    const tableMat = this._own(new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.6, metalness: 0.4 }));
+    this.dockTable = this._addStaticBox('DockTable', [inX - tableSize[0] / 2, tableSize[1] / 2, 0], tableSize, tableMat);
+
+    const dockSize = [0.42, 0.12, 0.36];
+    const dockPos = [inX - dockSize[0] / 2 - 0.05, tableSize[1] + dockSize[1] / 2, 0];
     const dockMat = new THREE.MeshStandardMaterial({
       color: 0x4a3a3a, roughness: 0.6, metalness: 0.3,
       emissive: 0x220000, emissiveIntensity: 0.2,

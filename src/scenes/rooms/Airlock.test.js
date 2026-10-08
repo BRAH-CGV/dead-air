@@ -426,6 +426,31 @@ describe('Airlock', () => {
     expect(beacon.color.r).toBeGreaterThan(beacon.color.g);
   });
 
+  it('stands the dock on a table along the right wall, clear of both doorways and the way through', () => {
+    const table = airlock.root.find('DockTable');
+    expect(table.rigidBody.isFixed()).toBe(true);
+    const [w, h, d] = table._originalSize;
+    expect([w, d]).toEqual([0.5, 1.95]);
+    const t = table.object3d.position;
+    expect(t.x + w / 2).toBeCloseTo(1.1);                    // against the right wall's inner face
+    expect(t.y - h / 2).toBeCloseTo(0);                      // on the floor
+    expect(Math.abs(t.z) + d / 2).toBeLessThan(1.4);         // inside the chamber, short of the hatch wall
+
+    // The dock rests on the table top, inside its edges.
+    const dock = airlock.root.find('QuotaDock');
+    const [dw, dh, dd] = dock._originalSize;
+    const p = dock.object3d.position;
+    expect(p.y - dh / 2).toBeCloseTo(h);
+    expect(p.x - dw / 2).toBeGreaterThan(t.x - w / 2 - 1e-6);
+    expect(p.x + dw / 2).toBeLessThan(t.x + w / 2 + 1e-6);
+    expect(Math.abs(p.z) + dd / 2).toBeLessThan(d / 2);
+    expect(h + dh).toBeLessThan(1.1);                        // a docked box is still below eye height (1.24 m)
+
+    // Room to walk between the table and the suit locker (its face is
+    // 0.46 m off the left wall): more than the player's 0.6 m width.
+    expect((t.x - w / 2) - (-1.1 + 0.46)).toBeGreaterThan(1);
+  });
+
   it('has a drive box dock in the chamber: pedestal, box-only socket, quota counter', () => {
     const dockGO = airlock.root.find('QuotaDock');
     expect(dockGO).not.toBeNull();

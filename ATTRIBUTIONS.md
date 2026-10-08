@@ -491,6 +491,19 @@ Which of these was downloaded as `retro_futuristic_computer.glb` (now
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
+### Mars globe and stand
+
+"Stylized Globes Collection – Earth, Mars & More" (https://sketchfab.com/3d-models/stylized-globes-collection-earth-mars-more-1dd5c95bb8794f99b785f032d910ca2e)
+by My Name Is This (profileFromHere) is licensed under Creative Commons
+Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/mars-globe.glb`, `public/assets/models/mars-stand.glb` |
+| **Manifest key** | `model:mars-globe`, `model:mars-stand` |
+| **Used for** | The globe on the office desk; [E] spins it on its stand (`GlobeSpin`) |
+| **Modifications** | The Mars globe and its stand taken from the collection and exported as two files sharing one origin; scaled ×0.02 in the manifest |
+
 ### UFO
 
 "Bob Lazar Ufo" (https://skfb.ly/6URJp) by Batuhan13 is licensed under

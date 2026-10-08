@@ -30,6 +30,9 @@ import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
+import { DigitalClock } from '../../gameobjects/DigitalClock.js';
+import { GlobeSpin } from '../../components/GlobeSpin.js';
+import { deskWingOutline } from './DeskWing.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { PRELOAD } from '../../assets/manifest.js';
@@ -95,10 +98,8 @@ function childNames(room) {
  *  mesh, so there's nothing to measure. */
 const MODEL_SIZE = {
   ComputerDesk: [1.6, 0.8],
-  DeskChair: [0.44, 0.51],
   TrashBin: [0.31, 0.33],
   Shelf: [0.36, 1.03],
-  FireExtinguisher: [0.2, 0.25],
 };
 
 /** Floor footprint {x0, x1, z0, z1} of a room child, room-local. A
@@ -135,7 +136,7 @@ function doorwayApproaches(room) {
 }
 
 /** Everything standing on the floor that isn't part of the shell. */
-const FURNITURE = ['ComputerDesk', 'DeskChair', 'VendingMachine', 'TrashBin', 'Shelf', 'FireExtinguisher'];
+const FURNITURE = ['ComputerDesk', 'DeskWing_Left', 'DeskWing_Right', 'GrowBeds', 'VendingMachine', 'TrashBin', 'Shelf'];
 
 describe('MainOffice', () => {
   let engine, room;
@@ -165,17 +166,25 @@ describe('MainOffice', () => {
     }
   });
 
-  it('is dressed for the job: a chair at the desk, a bin, a shelf, an extinguisher and a poster', () => {
+  it('is dressed for the job: a bin, a shelf and a poster', () => {
     const expected = {
-      DeskChair: 'model:metal-chair',
       TrashBin: 'model:trash-bin',
       Shelf: 'model:shelf',
-      FireExtinguisher: 'model:fire-extinguisher',
       Poster: 'model:poster',
     };
     for (const [name, key] of Object.entries(expected)) {
       expect(room.root.find(name)?.physicsAssetKey, name).toBe(key);
     }
+    // One poster only: none over the grow beds.
+    expect(engine.spawnModel.mock.calls.filter(([key]) => key === 'model:poster').length).toBe(1);
+    expect(room.root.find('Poster_Left')).toBeNull();
+  });
+
+  it('has no chair at the station and no extinguisher by the door (interior layout mock-up)', () => {
+    for (const name of ['DeskChair', 'FireExtinguisher']) expect(room.root.find(name), name).toBeNull();
+    const keys = engine.spawnModel.mock.calls.map(([key]) => key);
+    expect(keys).not.toContain('model:metal-chair');
+    expect(keys).not.toContain('model:fire-extinguisher');
   });
 
   it('spawns only models the scene preloads', () => {
@@ -183,37 +192,183 @@ describe('MainOffice', () => {
     expect(PRELOAD).toEqual(expect.arrayContaining(keys));
   });
 
-  it('pulls the chair out beside the desk, leaving the kneehole open to crouch into', () => {
+  it('extends the desk top with an angled wing on each side, leaving the kneehole open to crouch into', () => {
     // The desk collider's kneehole runs between its side walls, x −0.545 …
     // 0.545, and opens toward +z from the desk front at z −2.15. The player
     // has to be able to walk straight up to it.
     const kneehole = { x0: -0.545, x1: 0.545, z0: -2.15, z1: -1.15 };
-    const chair = room.root.find('DeskChair');
-    expect(overlaps(footprint(chair), kneehole)).toBe(false);
-    // Still at the desk, not across the room.
-    expect(chair.object3d.position.distanceTo(new THREE.Vector3(0, 0, -2.55))).toBeLessThan(1.5);
+    for (const [name, side] of [['DeskWing_Left', -1], ['DeskWing_Right', 1]]) {
+      const wing = room.root.find(name);
+      const meshes = wing.object3d.children.filter(c => c.isMesh);
+      expect(meshes.length, name).toBe(1);                       // one continuous piece
+
+      const box = new THREE.Box3().setFromObject(wing.object3d);
+      expect(box.max.y, name).toBeCloseTo(0.864);                // level with the desk top
+      expect(box.min.y, name).toBeCloseTo(0);
+      // It starts on the desk top's own edge (x ±0.75) and reaches the desk's back (z −2.95).
+      expect(side > 0 ? box.min.x : -box.max.x, name).toBeCloseTo(0.75, 2);
+      expect(box.min.z, name).toBeCloseTo(-2.95);
+      expect(overlaps(footprint(wing), kneehole), name).toBe(false);
+    }
   });
 
-  it('has a food-ration dispenser against the left wall: solid, lit and usable', () => {
-    const dispenser = room.root.find('VendingMachine');
-    expect(dispenser.parent).toBe(room.root);
-    expect(dispenser.rigidBody.isFixed()).toBe(true);           // the interact ray hits it
-    expect(engine._bodyToGO.get(dispenser.rigidBody.handle)).toBe(dispenser);
+  it('the wings are solid: a turned box under each top, and a back that closes the wedge beside the desk', () => {
+    for (const side of ['Left', 'Right']) {
+      const solid = room.root.find(`DeskWingSolid_${side}`);
+      expect(solid.rigidBody.isFixed(), side).toBe(true);
+      expect(Math.abs(solid.object3d.rotation.y), side).toBeCloseTo(Math.PI / 4);
+      expect(solid.object3d.children.some(c => c.isMesh), side).toBe(false);   // the wing mesh is what is drawn
+      const half = solid.collider.halfExtents();
+      expect(half.x * 2, side).toBeCloseTo(0.85);
+      expect(half.y * 2, side).toBeCloseTo(0.864);
+      expect(room.root.find(`DeskWingBack_${side}`).rigidBody.isFixed(), side).toBe(true);
+    }
+  });
 
-    const box = new THREE.Box3().setFromObject(dispenser.object3d);
-    expect(box.min.x).toBeGreaterThan(-5.9 - 1e-6);             // not sunk into the wall
-    expect(box.min.x).toBeLessThan(-5.8);                       // but standing against it
-    expect(box.max.y).toBeGreaterThan(1.6);                     // machine-sized
+  it('draws the wings with the desk\'s own material, so the wood, the dark and the cream are the desk\'s', () => {
+    // The real desk comes with its baked texture; the fake one here has no mesh.
+    const withMesh = makeEngine();
+    const deskMaterial = new THREE.MeshStandardMaterial({ name: 'Computer', map: new THREE.Texture() });
+    const spawn = withMesh.spawnModel.getMockImplementation();
+    withMesh.spawnModel.mockImplementation((key, opts) => {
+      const go = spawn(key, opts);
+      if (key === 'model:retro-computer') go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), deskMaterial));
+      return go;
+    });
+    const textured = new MainOffice(withMesh);
+    textured.build();
+    for (const name of ['DeskWing_Left', 'DeskWing_Right']) {
+      expect(textured.root.find(name).object3d.children[0].material, name).toBe(deskMaterial);
+    }
+    // The asset cache owns that material: the room must not free it.
+    let freed = false;
+    deskMaterial.addEventListener('dispose', () => { freed = true; });
+    textured.dispose();
+    expect(freed).toBe(false);
 
+    // Without it (no texture to map into), a plain wood stand-in.
+    const plain = room.root.find('DeskWing_Left').object3d.children[0].material;
+    expect(plain.map).toBeNull();
+  });
+
+  it('leaves the desk itself bare: no joystick, no camera console', () => {
+    expect(room.root.find('Joystick')).toBeNull();
+    expect(room.root.find('CameraConsole')).toBeNull();
+  });
+
+  /** Is the room-local point over the right wing's top, at least `margin`
+   *  in from every edge of it? */
+  const onRightWing = ({ x, z }, margin = 0) => {
+    const { top } = deskWingOutline(1, { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95 });
+    return top.every(([ax, az], i) => {
+      const [bx, bz] = top[(i + 1) % top.length];
+      // The outline runs clockwise seen from above: inside is to the right of each edge.
+      const inside = ((bx - ax) * (z - az) - (bz - az) * (x - ax)) / Math.hypot(bx - ax, bz - az);
+      return inside >= margin;
+    });
+  };
+
+  it('stands a digital clock where the desk meets its right wing, turned to the seat, for the scene to run off the night clock', () => {
+    const clock = room.root.find('DeskClock');
+    expect(clock).toBeInstanceOf(DigitalClock);
+    expect(room.deskClock).toBe(clock);
+    expect(clock.rigidBody).toBeNull();                    // nothing for the interact ray to stop on
+
+    // Placed by eye in the level editor.
+    const pos = clock.object3d.position;
+    expect(pos.x).toBeCloseTo(0.8);
+    expect(pos.y).toBeCloseTo(0.864);                      // standing on the top
+    expect(pos.z).toBeCloseTo(-2.6);
+    expect(THREE.MathUtils.radToDeg(clock.object3d.rotation.y)).toBeCloseTo(-22.7, 1);
+    // Its display looks back toward the seat.
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(clock.object3d.rotation);
+    expect(facing.x).toBeLessThan(0);
+    expect(facing.z).toBeGreaterThan(0.5);
+    // Clear of the drive reader on the desk's right rim (0.65, −2.26).
+    expect(Math.hypot(pos.x - 0.65, pos.z + 2.26)).toBeGreaterThan(0.25);
+  });
+
+  it('a globe on its stand, on the right wing beside the clock: [E] gives it a spin', () => {
+    const globe = room.root.find('Globe'), stand = room.root.find('GlobeStand');
+    expect(globe.physicsAssetKey).toBe('model:mars-globe');
+    expect(stand.physicsAssetKey).toBe('model:mars-stand');
+
+    // The two models share one origin — the globe's centre — so they are
+    // spawned in the same place and turned the same way.
+    expect(stand.object3d.position.toArray()).toEqual(globe.object3d.position.toArray());
+    expect(stand.object3d.rotation.y).toBeCloseTo(globe.object3d.rotation.y);
+    // Placed by eye in the level editor, toward the back of the wing.
+    expect(globe.object3d.position.x).toBeCloseTo(1.1);
+    expect(globe.object3d.position.z).toBeCloseTo(-2.58);
+    // The stand's base is 0.245 m below that origin: on the wing's top.
+    expect(globe.object3d.position.y - 0.245).toBeCloseTo(0.864, 2);
+    expect(onRightWing(globe.object3d.position, 0.124)).toBe(true);   // the base (r 0.124) wholly on the top
+
+    // Clear of the clock.
+    const clock = room.root.find('DeskClock').object3d.position;
+    expect(Math.hypot(clock.x - globe.object3d.position.x, clock.z - globe.object3d.position.z)).toBeGreaterThan(0.143 + 0.14);
+
+    // The globe is what the ray hits and what answers it; the stand is drawn only.
+    expect(globe.rigidBody.isFixed()).toBe(true);
+    expect(engine._bodyToGO.get(globe.rigidBody.handle)).toBe(globe);
+    expect(stand.rigidBody).toBeNull();
+    const spin = globe.getComponent(Interactable);
+    expect(spin).toBeInstanceOf(GlobeSpin);
+    expect(spin.promptLabel).toMatch(/\[E\].*globe/i);
+
+    const rest = globe.object3d.quaternion.clone();
+    spin.onInteract({});
+    for (let i = 0; i < 30; i++) spin.onUpdate(1 / 60);
+    expect(globe.object3d.quaternion.angleTo(rest)).toBeGreaterThan(0.3);
+    expect(stand.object3d.rotation.y).toBeCloseTo(Math.PI / 4);   // the stand stays put
+  });
+
+  it('the ceiling light\'s shadows are biased along the normal, so curved things under it are not striped', () => {
+    // Shadow acne: with no bias, the globe (and every other round surface in
+    // the office) shadows itself in fine stripes. Not fixed on the globe
+    // itself — the base makes every room mesh receive shadows, to keep the
+    // UFO's searchlight out (ShadowSides.js).
+    const { normalBias, bias } = room.ceilingLight.shadow;
+    expect(normalBias).toBeGreaterThanOrEqual(0.02);      // 0.02 clears a 0.14 m ball under a 1024 px map
+    expect(normalBias).toBeLessThanOrEqual(0.04);         // more and shadows start to pull away from their casters
+    expect(bias).toBe(0);
+  });
+
+  it('lines the left wall with the food corner: a two-tier rack of grow beds, then the dispenser and the bin', () => {
+    const rack = room.root.find('GrowBeds');
+    expect(rack.rigidBody.isFixed()).toBe(true);
+    expect(room.root.find('GrowCounter')).toBeNull();          // no counter top any more
+    const c = footprint(rack);
+    expect(c.x0).toBeCloseTo(-5.9);                            // against the wall
+    expect(c.x1 - c.x0).toBeCloseTo(0.7);
+    expect(c.z1 - c.z0).toBeCloseTo(3.75);
+
+    // Two layers of three beds, one above the other.
+    const beds = rack.object3d.children.filter(o => o.name.startsWith('GrowBed_'));
+    expect(beds.length).toBe(6);
+    const levels = [...new Set(beds.map(b => b.position.y.toFixed(3)))].map(Number).sort((a, b) => a - b);
+    expect(levels.length).toBe(2);
+    expect(levels[1] - levels[0]).toBeGreaterThan(0.5);        // room for the plants under the upper tier
+    for (const level of levels) {
+      const row = beds.filter(b => Math.abs(b.position.y - level) < 1e-3);
+      expect(row.length).toBe(3);
+    }
+    const lower = beds.filter(b => Math.abs(b.position.y - levels[0]) < 1e-3).map(b => b.position.z).sort();
+    const upper = beds.filter(b => Math.abs(b.position.y - levels[1]) < 1e-3).map(b => b.position.z).sort();
+    expect(upper).toEqual(lower);                              // stacked, not staggered
+
+    // A grow light over each tier — glows, not light sources.
     const glows = [];
-    dispenser.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
-    expect(glows.length).toBeGreaterThan(0);                    // findable in the dark
+    rack.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
+    expect(glows.length).toBe(2);
+    expect(new THREE.Box3().setFromObject(rack.object3d).max.y).toBeLessThan(1.9);
 
-    const use = dispenser.getComponent(Interactable);
-    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    expect(() => use.onInteract({})).not.toThrow();
-    log.mockRestore();
+    // Front to back along the wall: beds, dispenser, bin — nothing touching.
+    const d = footprint(room.root.find('VendingMachine'));
+    const b = footprint(room.root.find('TrashBin'));
+    expect(c.z1).toBeLessThan(d.z0);
+    expect(d.z1).toBeLessThan(b.z0);
+    expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
@@ -462,6 +617,16 @@ describe('MainOffice wall clock teardown', () => {
     const room = new MainOffice(makeEngine());
     room.build();
     const dispose = vi.spyOn(room.wallClock, 'dispose');
+    room.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+});
+
+describe('MainOffice desk clock teardown', () => {
+  it('dispose frees the desk clock with the rest of the room', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const dispose = vi.spyOn(room.deskClock, 'dispose');
     room.dispose();
     expect(dispose).toHaveBeenCalled();
   });
