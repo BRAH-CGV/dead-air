@@ -295,6 +295,25 @@ const PLACED = {
     url: 'assets/models/poster.glb',
     scale: 0.008,
   },
+  // The desk globe, in two files that share one origin — the globe's
+  // centre — so both spawn at the same point and the globe turns inside its
+  // stand (GlobeSpin). The globe is 14.3 units across the middle as
+  // exported; 0.02 makes it a 0.29 m globe on a 0.42 m stand, the stand's
+  // base 0.245 m below the origin. No `origin: 'floor'` on either: it would
+  // move each to its own floor and pull the two apart. To the physics the
+  // globe is a ball its own size — what the interact ray finds — and the
+  // stand is drawn only.
+  'model:mars-globe': {
+    type: 'model',
+    url: 'assets/models/mars-globe.glb',
+    scale: 0.02,
+    physics: { body: 'static', shape: [{ type: 'sphere', radius: 0.143 }] },
+  },
+  'model:mars-stand': {
+    type: 'model',
+    url: 'assets/models/mars-stand.glb',
+    scale: 0.02,
+  },
   // The UFO threat (UfoThreat, Ufo). 2 × 0.66 × 2 as downloaded, centred on
   // its middle — it flies, so no floor origin. Five times up makes a 10 m
   // saucer that fills the office window from the yard behind it. No shadow:
