@@ -91,9 +91,14 @@ export class NightClock {
    *  @param {number} hour */
   static formatTime(hour) {
     const h24 = ((hour % 24) + 24) % 24;        // wrap into 0–24
-    const h12 = Math.floor(h24) % 12 || 12;      // 12-hour display
-    const minutes = Math.round((h24 % 1) * 60);  // fractional → minutes
-    const suffix = h24 < 12 ? 'AM' : 'PM';
+    // Whole minutes since midnight, floored like a real clock: rounding the
+    // minutes alone showed "1:60" for the last half-minute of every hour
+    // (#61). The epsilon keeps float error (0.1 + 0.2) on its exact minute.
+    const total = Math.floor(h24 * 60 + 1e-6) % (24 * 60);
+    const h = Math.floor(total / 60);
+    const minutes = total % 60;
+    const h12 = h % 12 || 12;                     // 12-hour display
+    const suffix = h < 12 ? 'AM' : 'PM';
     return `${h12}:${String(minutes).padStart(2, '0')} ${suffix}`;
   }
 }
