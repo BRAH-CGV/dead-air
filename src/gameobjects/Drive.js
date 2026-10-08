@@ -38,6 +38,18 @@ const SAVED_EMISSIVE_INTENSITY = 1.5;
 /** Emissive colour when the anomalous (evil) signal is stored — red. */
 const CORRUPTED_EMISSIVE = 0xcc2222;
 
+/** Doom glow: the red drive pulses brighter as the silence timer runs
+ *  down. The curve is exponential (pow 6) so the glow stays subdued for
+ *  most of the countdown, then spikes dramatically in the final seconds.
+ *  A red PointLight fades in as a child of the drive mesh so the glow
+ *  travels with it. */
+const DOOM_BASE_INTENSITY = 1.5;
+const DOOM_PEAK_INTENSITY = 2400.0;
+const DOOM_LIGHT_COLOR = 0xff2200;
+const DOOM_LIGHT_MAX_DISTANCE = 5;
+/** Exponent for the doom curve — higher = sharper end-spike. */
+const DOOM_CURVE = 6;
+
 /**
  * Collision groups for the drive: member of SHELF (not DEFAULT), so it passes
  * through the shelf's player-only envelope box while still resting on the
@@ -281,8 +293,41 @@ export class Drive extends GameObject {
     this.setSaved(false);
   }
 
+  /** Ramp the red doom glow. `fraction` is 0..1 where 0 is the dim base
+   *  and 1 is the blinding peak (the silence timer is about to expire).
+   *  Creates a red PointLight as a child of the drive mesh on first call,
+   *  so the glow travels wherever the physical drive is carried. */
+  setDoomGlow(fraction) {
+    if (!this._material) return;
+    const t = Math.max(0, Math.min(1, fraction));
+    // Exponential curve: stays low for most of the countdown, then
+    // spikes sharply in the final seconds before the game ends.
+    const curved = Math.pow(t, DOOM_CURVE);
+    const intensity = DOOM_BASE_INTENSITY + curved * (DOOM_PEAK_INTENSITY - DOOM_BASE_INTENSITY);
+    this._material.emissive.setHex(CORRUPTED_EMISSIVE);
+    this._material.emissiveIntensity = intensity;
+
+    // Lazily create the PointLight on first call.
+    if (!this._doomLight) {
+      this._doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
+      this._mesh.add(this._doomLight);
+    }
+    this._doomLight.intensity = curved * 40;  // 0 → 40 candela at peak
+  }
+
+  /** Remove the doom glow and its PointLight. Called when the drive is
+   *  wiped, the night resets, or the game-over sequence ends. */
+  clearDoomGlow() {
+    if (this._doomLight) {
+      this._doomLight.removeFromParent();
+      this._doomLight.dispose();
+      this._doomLight = null;
+    }
+  }
+
   /** Free the geometry, material, and physics resources this drive built. */
   dispose() {
+    this.clearDoomGlow();
     this._mesh?.geometry?.dispose();
     this._material?.dispose();
     // Physics bodies are owned by the Rapier world — the engine frees the

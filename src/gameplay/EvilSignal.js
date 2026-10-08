@@ -66,8 +66,11 @@ export const EVIL = {
   respawnDelaySeconds: 30,
   /** Seconds the player has to wipe a corrupted drive at the ServerRoom
    *  console before the shift ends ("You were silenced").
-   *  TEMP: 10 s for debugging. Restore before release. */
-  silenceSeconds: 10,
+   *  TEMP: 15 s for debugging. Restore before release. */
+  silenceSeconds: 15,
+  /** Seconds between random hops of the corrupted drive while the silence
+   *  timer runs. The drive jumps in a random direction every interval. */
+  driveHopSeconds: 1,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -112,6 +115,13 @@ export class EvilSignal extends Component {
   /** Seconds left to wipe the corrupted drive before game over, or null
    *  when no corrupted drive is outstanding. @type {number|null} */
   _silenceTimer = null;
+  /** Seconds until the corrupted drive next hops in a random direction.
+   *  Counts down from EVIL.driveHopSeconds while the silence timer runs.
+   *  @type {number|null} */
+  _driveHopTimer = null;
+  /** The drive currently showing the doom glow, so we can clear it when
+   *  the timer ends or the night resets. @type {object|null} */
+  _lastCorruptedDrive = null;
   /** True after the silence timer expires — the player is locked until
    *  the night resets (retry or next night). @type {boolean} */
   _caught = false;
@@ -220,10 +230,32 @@ export class EvilSignal extends Component {
       if (!corrupted) {
         // The drive was wiped (or lost): no more threat.
         this._silenceTimer = null;
+        this._driveHopTimer = null;
+        // Clear any doom glow that was ramping on the drive.
+        this._lastCorruptedDrive?.clearDoomGlow?.();
+        this._lastCorruptedDrive = null;
       } else {
         this._silenceTimer -= dt;
+
+        // Ramp the doom glow: 0 at the start, 1 when the timer expires.
+        const doomFraction = 1 - (this._silenceTimer / EVIL.silenceSeconds);
+        corrupted.setDoomGlow?.(doomFraction);
+        this._lastCorruptedDrive = corrupted;
+
+        // The corrupted drive hops in a random direction every interval.
+        // The kick strength scales from 1× to 3× as the timer runs out.
+        if (this._driveHopTimer !== null) {
+          this._driveHopTimer -= dt;
+          if (this._driveHopTimer <= 0) {
+            this._driveHopTimer = EVIL.driveHopSeconds;
+            const kickStrength = 1 + doomFraction * 2;  // 1 → 3
+            this._kickDrive(corrupted, kickStrength);
+          }
+        }
+
         if (this._silenceTimer <= 0) {
           this._silenceTimer = null;
+          this._driveHopTimer = null;
           this._caught = true;
           this.controller?.fail(CAUGHT_PROMPT, {
             retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000,
@@ -294,6 +326,7 @@ export class EvilSignal extends Component {
       this.locked = true;
       this._remain = EVIL.lockWithDriveSeconds;
       this._silenceTimer = EVIL.silenceSeconds;
+      this._driveHopTimer = EVIL.driveHopSeconds;
       this._showLock();
       return;
     }
@@ -335,6 +368,27 @@ export class EvilSignal extends Component {
     }
   }
 
+  /** Apply a random kick to the corrupted drive — same direction profile
+   *  as the ejection launch, but scaled by `strength` (1 = baseline half-
+   *  strength, 3 = triple that). The kick and rotation both grow linearly
+   *  as the silence timer runs out, matching the doom glow intensity. */
+  _kickDrive(drive, strength = 1) {
+    const body = drive.rigidBody;
+    if (!body) return;
+    const angle = Math.random() * Math.PI * 2;
+    const hSpeed = (0.75 + Math.random() * 1) * strength;
+    body.setLinvel({
+      x: Math.cos(angle) * hSpeed,
+      y: (1.25 + Math.random() * 0.75) * strength,
+      z: Math.sin(angle) * hSpeed,
+    }, true);
+    body.setAngvel({
+      x: (Math.random() - 0.5) * 20 * strength,
+      y: (Math.random() - 0.5) * 20 * strength,
+      z: (Math.random() - 0.5) * 20 * strength,
+    }, true);
+  }
+
   /** First drive in the manager's pool whose signal is corrupted, or null.
    *  @returns {object|null} */
   _findCorruptedDrive() {
@@ -356,6 +410,10 @@ export class EvilSignal extends Component {
     this._mustLeave = false;
     this._respawnTimer = null;
     this._silenceTimer = null;
+    this._driveHopTimer = null;
+    // Clear the doom glow from whatever drive was showing it.
+    this._lastCorruptedDrive?.clearDoomGlow?.();
+    this._lastCorruptedDrive = null;
     if (this._caught) {
       this._caught = false;
       this.hooks?.setPlayerLocked?.(false);

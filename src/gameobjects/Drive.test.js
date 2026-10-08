@@ -386,4 +386,44 @@ describe('Drive', () => {
       expect(drive.colliders).toHaveLength(0);
     });
   });
+
+  describe('doom glow', () => {
+    it('setDoomGlow ramps emissive intensity exponentially and creates a PointLight', () => {
+      const drive = new Drive('DoomDrive');
+      expect(drive._doomLight).toBeUndefined();
+
+      drive.setDoomGlow(0);
+      expect(drive._material.emissiveIntensity).toBe(1.5);  // DOOM_BASE
+      expect(drive._doomLight).toBeTruthy();
+      expect(drive._doomLight.intensity).toBe(0);
+
+      // Exponential curve (pow 6): at t=0.5 the curve is only ~1.6%.
+      drive.setDoomGlow(0.5);
+      expect(drive._material.emissiveIntensity).toBeCloseTo(38.97, 0);
+      expect(drive._doomLight.intensity).toBeCloseTo(0.625, 2);
+
+      // At the peak (t=1) the glow is 100× the old linear peak.
+      drive.setDoomGlow(1);
+      expect(drive._material.emissiveIntensity).toBe(2400.0);
+      expect(drive._doomLight.intensity).toBeCloseTo(40);
+    });
+
+    it('clearDoomGlow removes the PointLight', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(0.5);
+      expect(drive._doomLight).toBeTruthy();
+
+      drive.clearDoomGlow();
+      expect(drive._doomLight).toBeNull();
+    });
+
+    it('dispose clears the doom glow', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(1);
+      expect(drive._doomLight).toBeTruthy();
+
+      drive.dispose();
+      expect(drive._doomLight).toBeNull();
+    });
+  });
 });

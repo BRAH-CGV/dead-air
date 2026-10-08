@@ -368,9 +368,11 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
 
     evil.hover(sig);                        // saves red, starts silence timer
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
 
     controller.startNight(2);
     expect(evil._silenceTimer).toBeNull();
+    expect(evil._driveHopTimer).toBeNull();
   });
 
   it('clears the whiteOut and unlocks the player when a new night starts (retry)', () => {
@@ -389,5 +391,88 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     controller.startNight(1, { retry: true });
     expect(whiteOut.clear).toHaveBeenCalled();
     expect(hooks.setPlayerLocked).toHaveBeenCalledWith(false);
+  });
+
+  it('the corrupted drive hops in a random direction every second', () => {
+    const drive = makeDrive();
+    const setLinvel = vi.fn();
+    const applyAngularImpulse = vi.fn();
+    drive.rigidBody = { setLinvel, setAngvel: applyAngularImpulse };
+    const { evil, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);                        // saves red, starts silence + hop timers
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+
+    // Tick just under 1 s — no kick yet.
+    evil.onUpdate(EVIL.driveHopSeconds - 0.05);
+    expect(setLinvel).not.toHaveBeenCalled();
+
+    // Tick past the hop interval — the drive gets kicked.
+    evil.onUpdate(0.1);
+    expect(setLinvel).toHaveBeenCalledTimes(1);
+    expect(applyAngularImpulse).toHaveBeenCalledTimes(1);
+    // The timer resets for the next hop.
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+  });
+
+  it('wiping the drive stops the hopping', () => {
+    const drive = makeDrive();
+    const setLinvel = vi.fn();
+    drive.rigidBody = { setLinvel, setAngvel: vi.fn() };
+    const { evil, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    drive.setSaved(false);                  // wipe the drive
+    // The hop timer clears on the next tick, when _findCorruptedDrive()
+    // returns null.
+    evil.onUpdate(0.1);
+    expect(evil._driveHopTimer).toBeNull();
+
+    // Even after a full second more, no kick — the timer is gone.
+    evil.onUpdate(EVIL.driveHopSeconds + 0.1);
+    expect(setLinvel).not.toHaveBeenCalled();
+  });
+
+  it('ramps the doom glow on the corrupted drive as the timer counts down', () => {
+    const drive = makeDrive();
+    const setDoomGlow = vi.fn();
+    const clearDoomGlow = vi.fn();
+    drive.setDoomGlow = setDoomGlow;
+    drive.clearDoomGlow = clearDoomGlow;
+    const { evil, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // starts silence timer
+
+    // After half the timer, the glow fraction should be ~0.5.
+    evil.onUpdate(EVIL.silenceSeconds / 2);
+    expect(setDoomGlow).toHaveBeenCalledWith(expect.closeTo(0.5, 1));
+
+    // Wipe the drive — the glow should clear.
+    drive.setSaved(false);
+    evil.onUpdate(0.1);
+    expect(clearDoomGlow).toHaveBeenCalled();
+  });
+
+  it('clears the doom glow on night reset', () => {
+    const drive = makeDrive();
+    const clearDoomGlow = vi.fn();
+    drive.setDoomGlow = vi.fn();
+    drive.clearDoomGlow = clearDoomGlow;
+    const { evil, controller, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // starts silence timer, sets _lastCorruptedDrive
+    evil.onUpdate(0.5);
+    expect(drive.setDoomGlow).toHaveBeenCalled();
+
+    controller.startNight(2);
+    expect(clearDoomGlow).toHaveBeenCalled();
   });
 });
