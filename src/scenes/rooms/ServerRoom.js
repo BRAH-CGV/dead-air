@@ -165,7 +165,7 @@ export class ServerRoom extends Room {
     }());
 
     // Camera-entity watch volume, over the rack aisle. Not wired to an AI
-    // yet — a stub for phase 10, see docs/ROOM-BASED-SCENE-PLAN.md.
+    // yet.
     this.root.addChild(new SightlineZone('SightlineZone', {
       position: [0, 1.5, -0.5], size: [4, 2, 5],
     }));

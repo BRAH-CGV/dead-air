@@ -11,14 +11,9 @@ Dead Air is a 3D browser-based survival horror game built for the Wits Computer 
 
 ## Game Concept
 
-- **Setting:** Office with desk, computer, huge window, server rack, radar terminal, power box, drive wiper...
+**The story is canon: [`docs/STORY.md`](docs/STORY.md).** It sets the premise, what each night adds, the threats, the locations and the upgrade ideas. It overrides every other doc. Don't invent lore beside it, and where a design decision here disagrees with it, follow STORY.md. The sections below describe the code as it is, not the design to aim for.
+
 - **Core loop:** Collect signals at night → meet minimum quota → survive until morning → upgrade → repeat.
-- **Enemy concepts/ideas (introduced one per night):**
-  1. Sleep Demon — punishes fatigue
-  2. Window entities — hide under desk
-  3. Camera entity
-  4. Evil signal — must be deleted
-  5. UFO — must cut power to hide
 - **Requirement:** 3 genuinely distinct levels/stages, each introducing a new mechanic, environment, story element, or challenge type.
 
 ## Tech Stack
@@ -151,7 +146,7 @@ LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRo
                                Outside (generator, dish)
 ```
 
-Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
+In the current build every interior door is open from night 1 and `NightManager` only counts nights. STORY.md opens the server room on night 2 and the outside on night 3, so this will change. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
 
 The airlock is an interlock — its two doors are never open together. `BaseScene` hands it the office's front door with `Airlock.bindInnerDoor(door)`, and `Airlock.state` runs `pressurised` (inner door open, hatch shut, red beacon) → `depressurising` (both shut, amber) → `depressurised` (hatch open, inner door shut, green) → `pressurising` → back. The door you are leaving shuts the moment the suit changes; the one ahead opens after `cycleTime` (3.1 s, as long as the pressure release that plays through it is audible). Changing your mind mid-cycle runs back only the time already run. The cycle is ticked by a component on the airlock's own root, so nothing else has to call `Airlock.update`. The suit locker does nothing while the airlock cycles ("Airlock cycling…") and answers again once a door has opened — one suit change per cycle, so mashing E while running in from something can't flip the suit back and forth. The suit locker only works from inside the chamber, clear of both doorways by the player's radius — never from the office through the open inner door, and never where a door would shut on the player; elsewhere its label reads "Step into the airlock…".
 
@@ -196,7 +191,7 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
-Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning".
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
 - **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
@@ -411,7 +406,7 @@ All edge-triggered and free while off. Every key here is gated by **dev tools** 
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
-| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
+| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures. Also shown by Settings → GAME → Show FPS, in any build |
 | `F2` | `LevelEditor` | Visual object placement. Opening it drops the pointer lock without pausing the game |
 | `F4` | Engine | Model debug logging, and reload the scene |
@@ -521,7 +516,7 @@ Press **`` ` ``** in game to overlay every collider Rapier knows about. Authorin
 
 ### Worked example: the under-desk gap
 
-`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2). `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `PlayerBody.js`).
+`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and the player needs to be able to crawl into the kneehole. `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `PlayerBody.js`).
 
 Fixed with tier 3, in the manifest (`src/assets/manifest.js`) — after two guesses from the raw mesh data got it wrong (first left 3 of the model's 4 sides open, since it isn't a table on legs; then a U-shaped compound with a full-footprint top slab, which still blocked *walking up to* the desk while standing, since the lid covered the opening too). Third time, measured instead of guessed: box primitives placed in the level editor (F2) against the rendered model, positions/sizes read off their transform panel. That gave three boxes — a solid back region and two solid side walls, all about 0.73 m tall, **no separate top lid** — with the front (the kneehole) having no ceiling at all, so a standing player can walk up to the opening and only needs to crouch further in, toward the back.
 

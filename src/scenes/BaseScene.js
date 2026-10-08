@@ -246,7 +246,7 @@ export class BaseScene extends Scene {
     this._logBuildStats();
   }
 
-  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+  /** Budget check (see docs/PERFORMANCE-PLAN.md): how many
    *  physics bodies and Object3Ds one BaseScene build produces. */
   _logBuildStats() {
     const { engine } = this;
