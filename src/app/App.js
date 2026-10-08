@@ -42,7 +42,7 @@ import { version as PACKAGE_VERSION } from '../../package.json';
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
 
-/** Where Continue remembers the night reached: `{ night }`. */
+/** Where Continue and Select night remember progress: `{ night, highest }`. */
 export const PROGRESS_KEY = 'dead-air.progress.v1';
 
 /** localStorage, or null where touching it throws (blocked site data). */
@@ -226,13 +226,20 @@ export class App {
    *  starting on that night. */
   async _continue() {
     const night = this._savedNight();
-    if (!night) return;
+    if (night) await this._startAtNight(night);
+  }
+
+  /** Play from `night` on the fresh scene the menu sits over — Continue and
+   *  Select night (#18). Night 1 is New game's own path. */
+  async _startAtNight(night) {
+    if (!Number.isInteger(night) || night < 1 || night > this._highestNight()) return;
     this._wakeAudio();
     const lock = this.pointerLock.request();
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
         this.engine.activeScene?.nights?.setNight(night);
+        this._saveNight(null);   // a new run from here: Continue comes back as it's played
         this.flow.newGame();
         this.engine.setPaused(false);
       } else {
@@ -313,7 +320,7 @@ export class App {
     } else if (state === 'finished') {
       // Lands mid sleep-fade, while the screen is black: the screen is up by
       // the time the fade clears.
-      this._saveNight(null);
+      this._saveNight(null, { highest: this._maxNight() });   // the whole run: every night open
       this.flow.runComplete();
     } else {
       return;
@@ -395,6 +402,8 @@ export class App {
     switch (action) {
       case 'newGame':  return this._newGame();
       case 'continue': return this._continue();
+      case 'nightSelect': return flow.openNightSelect();
+      case 'selectNight': return this._startAtNight(Number(data.night));
       case 'resume':   return this._resume();
       case 'settings': return flow.openSettings();
       case 'credits':  return flow.openCredits();
@@ -485,6 +494,8 @@ export class App {
     switch (screen) {
       case 'main':
         return { tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint };
+      case 'nightSelect':
+        return { maxNight: this._maxNight(), highest: this._highestNight(), hint: this._hint };
       case 'pause':
         return { status: this._statusLine(), hint: this._hint };
       case 'confirm':
@@ -572,24 +583,49 @@ export class App {
   // Helpers
   // ──────────────────────────────────────────
 
-  /** The night Continue would start, or null — night 1 isn't worth a
-   *  button, and a corrupt or out-of-range save is ignored. */
-  _savedNight() {
+  /** The save: `{ night, highest }` — the night Continue starts (null for
+   *  none) and the furthest night ever reached, which Select night unlocks
+   *  up to. Corrupt or out-of-range values are dropped; an old `{ night }`
+   *  save reads as reached that far. */
+  _progress() {
+    const max = this._maxNight();
+    const valid = (n) => Number.isInteger(n) && n >= 1 && n <= max;
     try {
-      const { night } = JSON.parse(this.storage?.getItem(PROGRESS_KEY) ?? 'null') ?? {};
-      const max = this.engine.activeScene?.nights?.maxNight ?? 3;
-      return Number.isInteger(night) && night >= 2 && night <= max ? night : null;
+      const saved = JSON.parse(this.storage?.getItem(PROGRESS_KEY) ?? 'null') ?? {};
+      const night = valid(saved.night) ? saved.night : null;
+      const highest = Math.max(1, valid(saved.highest) ? saved.highest : 1, night ?? 1);
+      return { night, highest };
     } catch {
-      return null;
+      return { night: null, highest: 1 };
     }
   }
 
-  /** Remember the night reached (null forgets it). Never throws. */
-  _saveNight(night) {
+  _maxNight() {
+    return this.engine.activeScene?.nights?.maxNight ?? 3;
+  }
+
+  /** The night Continue would start, or null — night 1 isn't worth a button. */
+  _savedNight() {
+    const { night } = this._progress();
+    return night && night >= 2 ? night : null;
+  }
+
+  /** The furthest night Select night offers. */
+  _highestNight() {
+    return this._progress().highest;
+  }
+
+  /** Remember the night being played (null: no Continue). The furthest night
+   *  reached only ever grows. Never throws. */
+  _saveNight(night, { highest } = {}) {
     try {
-      if (night === null) this.storage?.removeItem(PROGRESS_KEY);
-      else this.storage?.setItem(PROGRESS_KEY, JSON.stringify({ night }));
-    } catch { /* blocked or full: Continue just won't be offered */ }
+      const progress = this._progress();
+      const next = {
+        night,
+        highest: Math.max(progress.highest, night ?? 1, highest ?? 1),
+      };
+      this.storage?.setItem(PROGRESS_KEY, JSON.stringify(next));
+    } catch { /* blocked or full: Continue and the unlocks just won't be offered */ }
   }
 
   _currentNight() {

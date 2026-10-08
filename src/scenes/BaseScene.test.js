@@ -700,6 +700,10 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
   });
 
+  it('runs the desk clock off the night clock too', () => {
+    expect(scene.rooms.MainOffice.deskClock.clock).toBe(scene.nightClock);
+  });
+
   it('wires the office signal lamp to the manager and the controller', () => {
     const light = scene.rooms.MainOffice.signalLight;
     expect(light.signalManager).toBe(scene.signalManager);
@@ -1089,6 +1093,23 @@ describe('BaseScene power and the UFO', () => {
     const i = u.uCutoutMin.value.findIndex(v => v.equals(office.min));
     expect(i).toBeGreaterThanOrEqual(0);
     expect(u.uCutoutMax.value[i].equals(office.max)).toBe(true);
+  });
+
+  it('lights the office window\'s smudges by the night outside and by the beam in the window', () => {
+    const glass = scene.rooms.MainOffice.windowGlass;
+    const light = glass.mesh.material.uniforms.uLight.value;
+    const shown = () => { glass.mesh.onBeforeRender(); return light.length(); };
+
+    // The ceiling light off: what is left is the ambient light, faintly.
+    scene.rooms.MainOffice.root.find('CeilingLight').object3d.children.find(c => c.isLight).intensity = 0;
+    const dark = shown();
+    expect(dark).toBeGreaterThan(0);
+    scene.ambientLight.intensity *= 2;
+    expect(shown()).toBeCloseTo(dark * 2);
+
+    // The UFO's beam through the glass lights them up.
+    scene.windowFlood.intensity = 60;
+    expect(shown()).toBeGreaterThan(dark * 4);
   });
 
     it('has a dark light inside the office, under the window, spilling the lethal beam in', () => {

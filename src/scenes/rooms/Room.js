@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../../core/GameObject.js';
 import { Door } from '../../gameobjects/Door.js';
+import { LINING, floorQuad, ceilingQuad, wallQuad, liningGeometry, liningMaterials } from './RoomLining.js';
 
 // ─────────────────────────────────────────────
 // Room  –  Self-contained walled enclosure
@@ -18,6 +19,10 @@ import { Door } from '../../gameobjects/Door.js';
 // Rooms are axis-aligned — no rotation. Rapier bodies have no parent, so
 // each body carries the room offset itself; a rotated room would need the
 // same treatment for orientation.
+//
+// The shell is plain boxes in one colour. Where the base's textures are
+// loaded, the inside of it is lined with them (`Lining`, see RoomLining.js):
+// floor, ceiling and the inner face of every wall.
 //
 // Subclasses override `buildDoors()`, `buildLighting()` and `buildProps()`.
 // ─────────────────────────────────────────────
@@ -48,7 +53,7 @@ export class Room {
    * @param {{side:string, width:number, height:number, offset?:number, sill?:number}[]} [opts.openings]
    *        One per wall at most. `offset` slides the opening along the wall
    *        from its centre (+X for back/front, +Z for left/right). `sill` > 0
-   *        makes it a window; 0 (the default) is a doorway.
+   *        makes it a window — glazed, so solid; 0 (the default) is a doorway.
    */
   constructor(engine, {
     name, width, depth, height, wallThick = 0.2,
@@ -76,6 +81,9 @@ export class Room {
     this.doors = [];
 
     this._openingBySide = new Map();
+    /** Every piece of wall the shell built, for the lining to face.
+     *  @type {{side:string, a0:number, a1:number, y0:number, y1:number}[]} */
+    this._wallPieces = [];
   }
 
   /** Prefix of the root group's name — `Room:<name>`. Subclasses that aren't
@@ -144,6 +152,38 @@ export class Room {
     // step — the character controller has no autostep.
     this._addStaticBox('Floor',   [0, -t / 2, 0],          [width + t, t, depth + t]);
     this._addStaticBox('Ceiling', [0, height + t / 2, 0],  [width + t, t, depth + t]);
+    this._buildLining([width + t, depth + t]);
+  }
+
+  /** Line the inside of the shell with the base's textures: one sheet over
+   *  the floor slab, one under the ceiling slab, and one mesh of all the
+   *  walls' inner faces. `[sizeX, sizeZ]` is the slabs' footprint. Does
+   *  nothing where the textures aren't loaded; the plain boxes stand in. */
+  _buildLining([sizeX, sizeZ]) {
+    const materials = liningMaterials(this.engine.assets, this.material);
+    if (!materials) return;
+    for (const material of Object.values(materials)) this._own(material);
+
+    const { gap } = LINING, origin = this.position;
+    const rect = { x0: -sizeX / 2, x1: sizeX / 2, z0: -sizeZ / 2, z1: sizeZ / 2 };
+    const walls = this._wallPieces.map(({ side, a0, a1, y0, y1 }) => {
+      const inner = this._wallPlane(side) - SIDES[side].sign * (this.wallThick / 2 + gap);
+      return wallQuad(side, a0, a1, y0, y1, inner, origin);
+    });
+    const sheets = [
+      ['Lining_Walls',   walls,                                           materials.wall],
+      ['Lining_Floor',   [floorQuad(rect, gap, origin)],                  materials.floor],
+      ['Lining_Ceiling', [ceilingQuad(rect, this.height - gap, origin)],  materials.ceiling],
+    ];
+
+    // The boxes behind already cast the shadows; the lining only takes them.
+    const go = this._addGroup('Lining');
+    for (const [name, quads, material] of sheets) {
+      const mesh = new THREE.Mesh(this._own(liningGeometry(quads)), material);
+      mesh.name = name;
+      mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    }
   }
 
   /** One wall, or its segments around an opening. Back/front walls span the
@@ -164,7 +204,24 @@ export class Room {
     this._addWallBox(side, `${wall}_A`,      -half, lo,   0,   height);
     this._addWallBox(side, `${wall}_B`,       hi,   half, 0,   height);
     this._addWallBox(side, `${wall}_Header`,  lo,   hi,   top, height);
-    if (sill > 0) this._addWallBox(side, `${wall}_Sill`, lo, hi, 0, sill);
+    if (sill > 0) {
+      this._addWallBox(side, `${wall}_Sill`, lo, hi, 0, sill);
+      this._addWindowPane(side, lo, hi, sill, top);
+    }
+  }
+
+  /** The glass of a window: a solid box filling the opening, with nothing
+   *  drawn. Without it the opening is a hole in the wall, and anything that
+   *  clears the sill — a jumping player, a thrown crate — goes out through
+   *  it. Named `<Side>Window`, apart from the wall's own `<Side>Wall_*`
+   *  segments. */
+  _addWindowPane(side, lo, hi, sill, top) {
+    const { position, size } = this._wallBox(side, lo, hi, sill, top);
+    const go = new GameObject(SIDES[side].wall.replace('Wall', 'Window'));
+    go.object3d.position.set(...position);
+    this._attachFixedBox(go, position, size);
+    this.root.addChild(go);
+    return go;
   }
 
   _wallLength(side) {
@@ -185,15 +242,23 @@ export class Room {
    *  segments (an opening flush with a wall end) are skipped. */
   _addWallBox(side, name, a0, a1, y0, y1) {
     if (a1 - a0 < EPS || y1 - y0 < EPS) return null;
+    this._wallPieces.push({ side, a0, a1, y0, y1 });
+    const { position, size } = this._wallBox(side, a0, a1, y0, y1);
+    return this._addStaticBox(name, position, size);
+  }
+
+  /** Room-local centre and full size of the piece of a wall spanning
+   *  [a0, a1] along it and [y0, y1] vertically, as thick as the wall. */
+  _wallBox(side, a0, a1, y0, y1) {
     const t = this.wallThick;
     const plane = this._wallPlane(side);
     const along = (a0 + a1) / 2;
     const y = (y0 + y1) / 2;
 
     if (SIDES[side].axis === 'x') {
-      return this._addStaticBox(name, [along, y, plane], [a1 - a0, y1 - y0, t]);
+      return { position: [along, y, plane], size: [a1 - a0, y1 - y0, t] };
     }
-    return this._addStaticBox(name, [plane, y, along], [t, y1 - y0, a1 - a0]);
+    return { position: [plane, y, along], size: [t, y1 - y0, a1 - a0] };
   }
 
   _indexOpenings() {
@@ -310,8 +375,6 @@ export class Room {
    *  Same shape as OfficeScene._addStaticBox so the level editor treats
    *  room surfaces like any other static box. */
   _addStaticBox(name, position, size, material = this.material, parent = this.root) {
-    const { world } = this.engine;
-
     const go = new GameObject(name);
     go.object3d.position.set(...position);
     const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), material);
@@ -319,8 +382,16 @@ export class Room {
     mesh.castShadow = mesh.receiveShadow = true;
     go.object3d.add(mesh);
 
-    // The mesh is local to the room group, but the body has no parent —
-    // it needs the room offset baked in.
+    this._attachFixedBox(go, position, size);
+    parent.addChild(go);
+    return go;
+  }
+
+  /** Fixed body + cuboid collider for `go`, `position` room-local. The
+   *  object3d is local to the room group, but the body has no parent — it
+   *  needs the room offset baked in. */
+  _attachFixedBox(go, position, size) {
+    const { world } = this.engine;
     const [ox, oy, oz] = this.position;
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(position[0] + ox, position[1] + oy, position[2] + oz),
@@ -334,9 +405,6 @@ export class Room {
     go.collider  = collider;
     go._originalSize = [...size];
     this.engine._bodyToGO?.set(body.handle, go);
-
-    parent.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────

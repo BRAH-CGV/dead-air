@@ -13,13 +13,18 @@ import * as THREE from 'three';
 //     sky, so its map is redrawn each time it has turned past `angle`
 //     (a fraction of a degree), not on every one of the frames in between;
 //   • a watched shadow caster moved — the satellite dish slewing;
-//   • someone said so — invalidate(): a door shut, an occlusion zone swapped.
+//   • someone said so — invalidate(): a door shut, an occlusion zone swapped;
+//   • a moving physics body moved — update(bodies) is handed the engine's
+//     dynamic and kinematic bodies each frame, so a carried drive or a
+//     knocked crate takes its shadow with it (#57) instead of leaving it
+//     baked where it spawned. Bodies at rest, and ones that cast no shadow
+//     (the player), cost one matrix compare and redraw nothing.
 //
 // Per light (`light.shadow.autoUpdate`), not the renderer-wide switch, so a
 // moving moon doesn't drag the static ceiling light along with it.
 //
 //   engine.shadows.adopt(scene);         // after the scene is built
-//   engine.shadows.update();             // every frame, before render
+//   engine.shadows.update(bodies);       // every frame, before render
 //   engine.shadows.invalidate();         // something casting shadows changed
 // ─────────────────────────────────────────────
 
@@ -45,6 +50,8 @@ export class ShadowScheduler {
     this._lastPose = new Map();
     /** Watched casters: object → { lights, last matrix }. */
     this._watched = new Map();
+    /** Moving bodies seen by update(): object3d → { casts, last matrix }. */
+    this._bodyPoses = new Map();
   }
 
   /** Take over every shadow-casting light under `root`. Each gets one render
@@ -71,8 +78,11 @@ export class ShadowScheduler {
     for (const light of this.lights) this._redraw(light);
   }
 
-  /** Call once a frame, before rendering. */
-  update() {
+  /** Call once a frame, before rendering.
+   *  @param {Map<any, {object3d: THREE.Object3D}>} [bodies]  The moving bodies
+   *         (Engine.rigidBodyMap): any shadow caster among them that moved
+   *         redraws every map. */
+  update(bodies) {
     for (const light of this.lights) {
       if (light.shadow.needsUpdate) continue;
       if (this._moved(light)) this._redraw(light);
@@ -85,6 +95,8 @@ export class ShadowScheduler {
         for (const light of watch.lights) this._redraw(light);
       }
     }
+
+    if (bodies && this._bodiesMoved(bodies)) this.invalidate();
   }
 
   /** Hand every light back to per-frame shadow updates and forget it. */
@@ -93,9 +105,36 @@ export class ShadowScheduler {
     this.lights.length = 0;
     this._lastPose.clear();
     this._watched.clear();
+    this._bodyPoses.clear();
   }
 
   // ── Internals ─────────────────────────────
+
+  /** Whether any shadow-casting body moved past `distance` since the map was
+   *  last drawn for it. A body seen for the first time is remembered (its
+   *  first frame is drawn by whatever drew the scene, or the next redraw). */
+  _bodiesMoved(bodies) {
+    let moved = false;
+    for (const go of bodies.values()) {
+      const object = go?.object3d;
+      if (!object) continue;
+      let pose = this._bodyPoses.get(object);
+      if (!pose) {
+        object.updateWorldMatrix(true, false);
+        pose = { casts: castsShadow(object), last: object.matrixWorld.clone() };
+        this._bodyPoses.set(object, pose);
+        if (pose.casts) moved = true;   // new in view: draw it where it is
+        continue;
+      }
+      if (!pose.casts) continue;
+      object.updateWorldMatrix(true, false);
+      if (matrixMoved(pose.last, object.matrixWorld, this.distance)) {
+        pose.last.copy(object.matrixWorld);
+        moved = true;
+      }
+    }
+    return moved;
+  }
 
   _redraw(light) {
     light.shadow.needsUpdate = true;
@@ -128,6 +167,13 @@ function poseOf(light, scratch = false) {
   _target.setFromMatrixPosition(light.target.matrixWorld);
   const direction = (scratch ? _dir : new THREE.Vector3()).subVectors(position, _target).normalize();
   return { position, direction };
+}
+
+/** Does anything under `object` cast a shadow? Asked once per body. */
+function castsShadow(object) {
+  let casts = false;
+  object.traverse((o) => { if (o.isMesh && o.castShadow) casts = true; });
+  return casts;
 }
 
 /** Has a world matrix changed by more than `distance` in translation, or

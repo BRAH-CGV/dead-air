@@ -26,6 +26,7 @@ import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
 import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { WindowSand } from '../components/WindowSand.js';
 import { AmbienceMix } from '../systems/AmbienceMix.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
@@ -55,6 +56,7 @@ import { WhiteOut } from '../ui/WhiteOut.js';
 import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
+import { SatelliteSound } from '../components/SatelliteSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -184,8 +186,9 @@ const UFO_HOVER_HEIGHT = 35;
  *  into the room); the cone (half-angle + tilt) stays below level, so it
  *  never paints the tops of the walls — light through a window can't reach
  *  them. It casts a shadow (static, drawn once) so the desk and chair keep
- *  the floor beneath them dark: hiding under the desk looks like hiding. */
-const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7 };
+ *  the floor beneath them dark: hiding under the desk looks like hiding.
+ *  `glass` is how much of it the window's smudges show by (WindowGlass). */
+const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
 
 export class BaseScene extends Scene {
@@ -409,6 +412,16 @@ export class BaseScene extends Scene {
       sound:   this._sound(AIRLOCK_SOUND.key),
       isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
     }));
+
+    // In a storm, sand on the office window: heard in the office, louder
+    // the nearer the glass. The storm is built later, so it is read live.
+    const officeShell = rooms.MainOffice.bounds();
+    this.ambience.gameObject.addComponent(new WindowSand({
+      window: this._officeWindow(),
+      storm:  () => this.sandstorm?.level ?? 0,
+      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      isInside: p => officeShell.containsPoint(p),
+    }));
   }
 
   // ──────────────────────────────────────────
@@ -606,8 +619,11 @@ export class BaseScene extends Scene {
     }));
 
     // Rooms build the clock and the bed; gameplay is handed to them here.
-    const { wallClock, signalLight } = this.rooms.MainOffice;
+    const { wallClock, deskClock, signalLight, windowGlass } = this.rooms.MainOffice;
     if (wallClock) wallClock.clock = this.nightClock;
+    if (deskClock) deskClock.clock = this.nightClock;
+    // The window's smudges show by the night outside too, and by the dawn.
+    windowGlass?.addLight(this.ambientLight, 1 / Math.PI);
     if (signalLight) {
       signalLight.signalManager  = this.signalManager;
       signalLight.gameController = this.gameController;
@@ -860,6 +876,8 @@ export class BaseScene extends Scene {
       name: 'Satellite', position: [0, 0, -25], scale: 0.137, type: Satellite,
     });
     this._adopt(this._outside, this.satellite);
+    // Its drive while it slews, and the click as it settles.
+    this.satellite.addComponent(new SatelliteSound());
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
 
@@ -1097,6 +1115,8 @@ export class BaseScene extends Scene {
     floodGO.object3d.add(flood, flood.target);
     this._sceneRoot.addChild(floodGO);
     this.windowFlood = flood;
+    // The beam through the glass lights up every smudge on it.
+    office.windowGlass?.addLight(flood, WINDOW_FLOOD.glass);
 
     const exposedRooms = [office.bounds(), this.rooms.Airlock.bounds()];
     const hooks = {

@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────
 
 /** @typedef {'loading'|'mainMenu'|'playing'|'paused'|'ended'} AppState */
-/** @typedef {'main'|'pause'|'settings'|'credits'|'confirm'|'nightFailed'|'runComplete'} Screen */
+/** @typedef {'main'|'pause'|'settings'|'credits'|'nightSelect'|'confirm'|'nightFailed'|'runComplete'} Screen */
 
 export class AppFlow {
   /** @type {AppState} */
@@ -63,7 +63,8 @@ export class AppFlow {
    *  @returns {{ needsRebuild: boolean }} whether the scene must be rebuilt first */
   newGame() {
     const needsRebuild = this._dirty;
-    if (this.state !== 'mainMenu' || this.screen !== 'main') return { needsRebuild };
+    const fromMenu = this.screen === 'main' || this.screen === 'nightSelect';
+    if (this.state !== 'mainMenu' || !fromMenu) return { needsRebuild };
     this._play();
     return { needsRebuild };
   }
@@ -121,6 +122,11 @@ export class AppFlow {
 
   openCredits() {
     if (this.screen === 'main') this._push('credits');
+  }
+
+  /** Pick a night to play (#18): nights reached before are unlocked. */
+  openNightSelect() {
+    if (this.screen === 'main') this._push('nightSelect');
   }
 
   /** @param {'restart'|'quit'} action */

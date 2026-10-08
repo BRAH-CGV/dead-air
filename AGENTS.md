@@ -69,6 +69,8 @@ src/
 │   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
 │   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
 │   ├── AirlockSound.js  # The pressure release as the airlock seals and cycles
+│   ├── SatelliteSound.js # The dish's drive while it slews, and the click as it settles
+│   ├── WindowSand.js    # A storm's sand on the office window: louder the nearer the glass
 │   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
@@ -80,6 +82,7 @@ src/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
@@ -162,7 +165,7 @@ An Interactable whose `promptLabel` changes while you look at it (the locker's P
 
 Every prop has a job:
 
-- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
+- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. The window is glazed: `Room` fills every window opening (a `sill` above the floor) with a solid, undrawn pane (`BackWindow`), so nothing gets out over the sill. What is seen of the glass is `WindowGlass` (`rooms.MainOffice.windowGlass`): a faint film of dust and smears, so the pane reads as glass without reflections. It is unlit and baked — one texture read per pixel — and shows by the lights it is handed (`addLight`: the ceiling light, the scene's ambient light, the UFO's window flood), read live at each draw, so a power cut darkens it. `WINDOW_GLASS.opacity` is the one number for more or less dirt. It never writes depth; the desk's transparent materials do, so they stay in front of it. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
 - **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
@@ -179,6 +182,8 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
   - **The pressure release** (`AirlockSound`, beside the `Ambience`) fills that silence: `sfx:pressure-release`, once as the doors seal, on the way out and back in. Only for a player in the chamber, so a cycle they aren't in (a retry takes the suit off from the spawn) isn't heard. `Airlock.cycleTime` is `AIRLOCK_SOUND.audibleSeconds`, and a scene test keeps them equal: change the clip, change both. If a door opens with it still sounding it fades out.
   - The gains ease toward the mix (`blendRate`), so a teleport or a door opening is a quick fade, not a cut.
 - **In a sandstorm** (`setStorm(level)`, called by `Sandstorm` every frame) the wind is the storm's sound. Outside it rises from its calm trim (0.5, in `AMBIENCE.volumes`) to `storm.gain` (3.3) times its file level, about what the storm recording it replaced played at. Indoors `storm.inside` (3 %) of that gets through the walls of every room and corridor, and a little more into the office behind its window (`storm.rooms.MainOffice`, 10 %): mixed in slightly, under the room's own loop, which isn't turned down. In `AmbienceMix` that is `seep` (how hard the outside presses, the storm level) times `leak` (how much a place lets in). The sealed airlock stays silent.
+- **Sand on the window** (`WindowSand`, beside the `Ambience`). In a storm, `sfx:window-sand` loops in the office: its level is the storm's level times `sandLevel(distance to the glass)`, full within `near` (0.5 m) and silent from `far` (3 m), so the last steps up to the window fade it in. Only inside the office's shell; the level eases, and the loop stops at zero. The window is `_officeWindow()`'s rectangle, the same one the dust eyes use.
+- **The dish** (`SatelliteSound`, on the Satellite). `sfx:dish-main-loop-distant` loops for as long as the dish is moving, fading in and out over 30 ms (`fade`) as a movement starts and ends; then `sfx:movement-ending` plays once, the dish settling. Moving is read off the dish's angular velocity on either axis, with separate start and stop speeds so a creeping dish doesn't chatter. The fades are gain ramps on the audio clock, since 30 ms is only two frames; between movements the loop runs on at zero rather than being stopped. Paused, it is muted: the game stops but the audio clock doesn't, so it listens to `engine.onPauseChange`, fades the loop out and cuts a click still sounding, and fades the loop back in on resume if the dish is still mid-movement. Levels are `SATELLITE_SOUND`.
 - **Tension music.** One loop that follows a tension level, 0..1. A threat raises it under a name of its own: `scene.ambience.setTension(1, 'window-entity')`, and `setTension(0, 'window-entity')` when it has gone. The music follows the highest level anyone holds, and creeps in and out over `musicFadeIn` / `musicFadeOut` (4 s / 6 s). `clearTension()` drops every source. **Testing only — remove before release:** the `testKeys` in `_addAmbience` each swing a track fully in, and back out on the next press: `M` the spooky music, `,` the ambient music. Pressing the other key crossfades between them. The keys exist in dev builds only.
 - **A second music track.** `AMBIENCE.ambientMusic` (`sfx:interior-base-ambient-music`) is a calmer track: the main menu's music (`MenuMusic`, see App flow). In game nothing raises it except its test key; `setTension` always drives `AMBIENCE.music`. Its file is much hotter than the rest, so it carries a 0.07 trim in `AMBIENCE.volumes`. It also fades out at its end, so it dips to silence where it loops.
 - **Volumes are the clips' own**, each mixed to the loudest it should be. `AMBIENCE.volumes` is a per-track trim on top (a multiplier, by manifest key; left out is 1), for balancing one against the others: the office loop is at 1.2, about +1.6 dB, and the calm wind at 0.5, −6 dB. The spooky music has no trim — its file level is its ceiling.
@@ -365,7 +370,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 **States** (`AppFlow`): `loading → mainMenu → playing ⇄ paused`, and `playing → ended` (Night failed / Run complete). Each menu state has a screen stack, so Settings, Credits and the confirm dialog always go Back to whichever screen opened them.
 
-**Pausing** (`engine.setPaused`). The loop still renders, so settings preview live behind the menu, but nothing steps or updates. The clock, the dish, the airlock and every enemy freeze without knowing why. Input is cleared on pause and on resume, so no key sticks. The rules (`App.js` header):
+**Pausing** (`engine.setPaused`). The loop still renders, so settings preview live behind the menu, but nothing steps or updates. `engine.onPauseChange(listener)` tells whoever asks when it pauses and resumes — a sound that must stop with the game has no frame to notice in (the dish's drive uses it). The clock, the dish, the airlock and every enemy freeze without knowing why. Input is cleared on pause and on resume, so no key sticks. The rules (`App.js` header):
 
 - **What pauses:** a lost pointer lock, Escape, a hidden tab or window blur. Only while playing, and never while the level editor is open (it drops the lock on purpose). While a DOM panel has the mouse (`engine.uiHasMouse`, set by `BaseScene._usePanel` for the breaker panel), a lost lock or Escape isn't a pause either, and Resume leaves the mouse with the panel.
 - **A UFO catch** fails the shift and then plays the white-out. Night failed waits until "You were taken" has been up a moment, and is skipped if the player retries in place with E.
@@ -410,7 +415,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 - The team list lives in `src/ui/menu/text.js` (`TEAM`), shown by name. Roles are kept there and hidden until `SHOW_ROLES` is turned on.
 - Only assets in the game are credited: an entry whose `Manifest key` row names keys, none of them in the manifest, is left out. Removing an asset from the manifest drops it from the credits.
 
-**Continue** remembers the night reached under `dead-air.progress.v1`. It's cleared on New game and at the end of the run.
+**Continue and Select night** share `dead-air.progress.v1` = `{ night, highest }`. `night` is what Continue starts; it's cleared on New game and at the end of the run. `highest` is the furthest night ever reached, so Select night unlocks nights up to it, and finishing the run unlocks them all. It only ever grows. An old `{ night }` save still reads.
 
 ## Debug tooling
 
