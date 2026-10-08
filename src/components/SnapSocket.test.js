@@ -168,4 +168,31 @@ describe('SnapSocket', () => {
     socket.detach(item);
     expect(item._pickupable.promptLabel).toBe('[E] Pick up');
   });
+
+  it('reject() blocks a candidate from re-snapping until the cooldown expires', () => {
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValue(1000);
+
+    const socket = makeSocket({ snapDistance: 0.5 });
+    const item = makeItem('Drive', [0.1, 0, 0]);
+    socket.addCandidate(item);
+
+    // Attach, then detach (simulating a forceful ejection).
+    socket.attach(item, 0);
+    socket.detach(item);
+
+    // Reject the item so it can't re-snap.
+    socket.reject(item, 2);  // 2-second cooldown
+
+    // Still within range — but rejected, so no re-attach.
+    socket.onUpdate(0.016);
+    expect(socket.firstAttached).toBeNull();
+
+    // After the cooldown expires, the item can snap again.
+    now.mockReturnValue(3500);
+    socket.onUpdate(0.016);
+    expect(socket.firstAttached).toBe(item);
+
+    now.mockRestore();
+  });
 });

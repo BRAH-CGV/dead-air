@@ -35,7 +35,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: ['signal-1.png'] });
   signalManager.startNight(night);
   const radar = { setInfo: vi.fn() };
-  const terminal = { radar };
+  const terminal = { radar, exit: vi.fn() };
   const drives = drive ? [drive] : [];
   const driveManager = {
     drives,
@@ -45,13 +45,16 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
     saveEvilToDrive: vi.fn(function () {
       this.insertedDrive.setSaved(true, { corrupted: true });
     }),
+    ejectInsertedDrive: vi.fn(),
   };
   const satellite = { aimAll: vi.fn() };
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
+  const hooks = { setPlayerLocked: vi.fn() };
   const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
   evil.whiteOut = whiteOut;
+  evil.hooks = hooks;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks };
 }
 
 /** The single red target in the manager's list. */
@@ -191,6 +194,7 @@ describe('EvilSignal hover — the red save', () => {
     expect(sig.saved).toBe(true);  // saved immediately
     expect(sig.resolved).toBe(true);
     expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
+    expect(driveManager.ejectInsertedDrive).toHaveBeenCalledTimes(1);
     expect(drive.saved).toBe(true);
     expect(drive.corrupted).toBe(true);
     expect(evil.locked).toBe(true);  // but the lock still runs
@@ -212,6 +216,7 @@ describe('EvilSignal hover — the red save', () => {
     expect(sig.scanned).toBe(true);
     expect(sig.saved).toBe(true);  // saved immediately (overwrites green)
     expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
+    expect(driveManager.ejectInsertedDrive).toHaveBeenCalledTimes(1);
     expect(drive.saved).toBe(true);
     expect(drive.corrupted).toBe(true);  // now red
     expect(evil.locked).toBe(true);  // but the lock still runs
@@ -315,7 +320,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => {
   it('game over ("You were silenced") if the corrupted drive is not wiped in 10 s', () => {
     const drive = makeDrive();
-    const { evil, controller, signalManager, whiteOut } = makeRig({ drive });
+    const { evil, controller, signalManager, terminal, whiteOut, hooks } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
@@ -328,10 +333,12 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
       'You were silenced. [E] to retry',
       expect.objectContaining({ retryAfter: expect.any(Number) }),
     );
+    expect(terminal.exit).toHaveBeenCalled();
     expect(whiteOut.play).toHaveBeenCalledWith(
       'You were silenced. [E] to retry',
       expect.objectContaining({ tone: 'blood' }),
     );
+    expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
   });
 
   it('wiping the corrupted drive before the timer expires cancels the game over', () => {
@@ -366,18 +373,21 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     expect(evil._silenceTimer).toBeNull();
   });
 
-  it('clears the whiteOut when a new night starts (retry)', () => {
+  it('clears the whiteOut and unlocks the player when a new night starts (retry)', () => {
     const drive = makeDrive();
-    const { evil, controller, signalManager, whiteOut } = makeRig({ drive });
+    const { evil, controller, signalManager, whiteOut, hooks } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
     evil.onUpdate(EVIL.silenceSeconds + 0.1);  // game over, whiteOut plays
     expect(whiteOut.play).toHaveBeenCalled();
+    expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
 
-    // Retry: a new night starts — the whiteOut must clear.
+    // Retry: a new night starts — the whiteOut must clear and the player
+    // must be unlocked.
     controller.startNight(1, { retry: true });
     expect(whiteOut.clear).toHaveBeenCalled();
+    expect(hooks.setPlayerLocked).toHaveBeenCalledWith(false);
   });
 });

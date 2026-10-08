@@ -88,6 +88,8 @@ export class EvilSignal extends Component {
   satellite = null;
   /** @type {import('../ui/WhiteOut.js').WhiteOut|null} */
   whiteOut = null;
+  /** @type {{ setPlayerLocked: (locked: boolean) => void }|null} */
+  hooks = null;
 
   /** True while the array is pinned to the red signal (the no-drive
    *  penalty). The terminal freezes its cursor while this is set. */
@@ -110,6 +112,9 @@ export class EvilSignal extends Component {
   /** Seconds left to wipe the corrupted drive before game over, or null
    *  when no corrupted drive is outstanding. @type {number|null} */
   _silenceTimer = null;
+  /** True after the silence timer expires — the player is locked until
+   *  the night resets (retry or next night). @type {boolean} */
+  _caught = false;
 
   /**
    * @param {object} [opts]
@@ -219,10 +224,13 @@ export class EvilSignal extends Component {
         this._silenceTimer -= dt;
         if (this._silenceTimer <= 0) {
           this._silenceTimer = null;
+          this._caught = true;
           this.controller?.fail(CAUGHT_PROMPT, {
             retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000,
           });
+          this.terminal?.exit?.();
           this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
+          this.hooks?.setPlayerLocked?.(true);
           return;
         }
         // Warn the player while the lock is not showing its own message.
@@ -280,6 +288,8 @@ export class EvilSignal extends Component {
       // lock for the shorter duration.
       this.signalManager?.saveSignal(sig.id);
       drive.saveEvilToDrive();
+      // Shoot the corrupted drive out of the reader in a random direction.
+      drive.ejectInsertedDrive?.();
       this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
       this.locked = true;
       this._remain = EVIL.lockWithDriveSeconds;
@@ -346,6 +356,10 @@ export class EvilSignal extends Component {
     this._mustLeave = false;
     this._respawnTimer = null;
     this._silenceTimer = null;
-    this.whiteOut?.clear();
+    if (this._caught) {
+      this._caught = false;
+      this.hooks?.setPlayerLocked?.(false);
+      this.whiteOut?.clear();
+    }
   }
 }

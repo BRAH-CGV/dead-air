@@ -96,6 +96,48 @@ export class DriveManager {
     return drive;
   }
 
+  /** Eject the inserted drive and shoot it out in a random direction.
+   *  Detaches via the snap socket (which restores dynamic physics), then
+   *  applies a random velocity so the drive flies away. Used by the evil
+   *  signal to launch the corrupted drive out of the reader.
+   *  @returns {object|null} The Drive that was ejected, or null. */
+  ejectInsertedDrive() {
+    const drive = this.insertedDrive;
+    if (!drive) return null;
+
+    // Clear the manager state first — the snap socket's onDetached callback
+    // also calls ejectDrive(), but that is a harmless no-op once the state
+    // is already cleared.
+    this.ejectDrive();
+
+    // Detach via the snap socket — this calls makeDynamic() to restore
+    // physics, plays the eject beep, and fires onDetached.
+    const socket = drive._snapOwner;
+    socket?.detach(drive);
+
+    // Block the socket from re-catching the drive while it flies away.
+    // The rejection expires in 2 s, by which time the drive has landed
+    // and the player may have picked it up or carried it elsewhere.
+    socket?.reject(drive);
+
+    // The drive is now dynamic: give it a random kick.
+    if (drive.rigidBody) {
+      const angle = Math.random() * Math.PI * 2;
+      const hSpeed = 1.5 + Math.random() * 2;
+      drive.rigidBody.setLinvel({
+        x: Math.cos(angle) * hSpeed,
+        y: 2.5 + Math.random() * 1.5,
+        z: Math.sin(angle) * hSpeed,
+      }, true);
+      drive.rigidBody.setAngvel({
+        x: (Math.random() - 0.5) * 10,
+        y: (Math.random() - 0.5) * 10,
+        z: (Math.random() - 0.5) * 10,
+      }, true);
+    }
+    return drive;
+  }
+
   /** Save a signal to the inserted drive. Marks the drive as saved (turns
    *  it green) so it cannot accept more signals until cleared.
    *  @returns {number} the new signalsOnDrive count */

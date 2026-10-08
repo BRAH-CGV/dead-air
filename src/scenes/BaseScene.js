@@ -1110,6 +1110,7 @@ export class BaseScene extends Scene {
 
     this.whiteOut = new WhiteOut();
     this.evilSignal.whiteOut = this.whiteOut;
+    this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
       grid:        this.power,
