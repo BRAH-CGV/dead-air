@@ -331,6 +331,48 @@ const PLACED = {
     physics: 'static',
   },
   // ── Textures ────────────────────────────────
+  // The inside of the base: its floor, walls and ceiling. Original work,
+  // painted procedurally for this game, each with its normal map. Each is
+  // a patch of real surface that tiles, and RoomLining.js
+  // maps the rooms onto it in metres, so `repeat` is 1 and only there to
+  // set the textures wrapping — except the ceiling's, which covers 2.4 m
+  // where the lining's ceiling tile is 1.2 m.
+  'tex:interior-floor': {
+    type: 'texture',
+    url: 'assets/textures/interior-floor.png',
+    colorSpace: 'srgb',
+    repeat: [1, 1],
+  },
+  'tex:interior-floor-normal': {
+    type: 'texture',
+    url: 'assets/textures/interior-floor-normal.png',
+    colorSpace: 'linear',
+    repeat: [1, 1],
+  },
+  'tex:interior-wall': {
+    type: 'texture',
+    url: 'assets/textures/interior-wall.png',
+    colorSpace: 'srgb',
+    repeat: [1, 1],
+  },
+  'tex:interior-wall-normal': {
+    type: 'texture',
+    url: 'assets/textures/interior-wall-normal.png',
+    colorSpace: 'linear',
+    repeat: [1, 1],
+  },
+  'tex:interior-ceiling': {
+    type: 'texture',
+    url: 'assets/textures/interior-ceiling.png',
+    colorSpace: 'srgb',
+    repeat: [0.5, 0.5],
+  },
+  'tex:interior-ceiling-normal': {
+    type: 'texture',
+    url: 'assets/textures/interior-ceiling-normal.png',
+    colorSpace: 'linear',
+    repeat: [0.5, 0.5],
+  },
   'tex:floor-basecolor': {
     type: 'texture',
     url: 'assets/textures/floor-basecolor.png',
