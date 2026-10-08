@@ -1,6 +1,6 @@
 import { Component } from '../core/Component.js';
 import { SignalTarget } from './SignalTarget.js';
-import { PITCH_MIN, PITCH_MAX } from './SignalManager.js';
+import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
@@ -41,9 +41,10 @@ export const EVIL = {
   spawnHours: [1, 4],
   /** Real seconds the dot takes to fade in, like an ordinary signal. */
   fadeSeconds: 3,
-  /** Real seconds the dot holds before fading out. Long enough to outlive
-   *  any shift (300 s): the red signal stays until it is dealt with. */
-  visibleSeconds: 1200,
+  /** Real seconds the dot holds before fading out. 1.5× an ordinary
+   *  signal (VISIBLE_SECONDS = 15 s), so the red dot lingers longer but
+   *  doesn't outlive the shift — it must be dealt with before it fades. */
+  visibleSeconds: Math.round(1.5 * VISIBLE_SECONDS),
   /** The no-drive penalty: seconds the array is pinned to it.
    *  TEMP: 10 s for debugging (was 30). Restore before release. */
   lockSeconds: 10,

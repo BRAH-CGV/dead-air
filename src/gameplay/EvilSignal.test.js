@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EvilSignal, EVIL } from './EvilSignal.js';
-import { SignalManager, PITCH_MIN, PITCH_MAX } from './SignalManager.js';
+import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 
 // ─────────────────────────────────────────────
 // EvilSignal — the red signal: instant scan, dish hold, corrupted drives
@@ -64,7 +64,7 @@ describe('EvilSignal summon()', () => {
     expect(sig.pitch).toBeGreaterThanOrEqual(PITCH_MIN);
     expect(sig.pitch).toBeLessThanOrEqual(PITCH_MAX);
     expect(Math.abs(sig.yaw)).toBeLessThanOrEqual(Math.PI);
-    expect(sig.visibleSeconds).toBeGreaterThan(300);   // outlives the shift
+    expect(sig.visibleSeconds).toBe(Math.round(1.5 * VISIBLE_SECONDS));   // 1.5× a normal signal
   });
 
   it('spans the whole spawn band with its own dice', () => {
