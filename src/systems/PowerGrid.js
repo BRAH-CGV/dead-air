@@ -12,6 +12,7 @@
 //   grid.breakLights();                 // the UFO's surge: bulbs gone for the night
 //   grid.surge = 0.8;                   // overdrive + flicker as it closes in
 //   grid.brownout = 1;                  // a failing supply: gutter + dim (StormOutage)
+//   grid.setFactor('fatigue', 0.7);     // a named dimmer, owned by one system
 //   grid.update(dt);                    // once a frame
 //
 // Two separate things can be wrong with the power:
@@ -26,6 +27,13 @@
 //           floods, the desk screen's glow (`userData.unbreakable`, or
 //           collect(…, { breakable: false })) — only care about the switch.
 // `lit` is the two together: are the base's ordinary lamps shining.
+//
+// Dim factors are what the player sees, not what the wires carry. Each
+// system that darkens the base owns one named factor (StaminaDrain's
+// `fatigue`, FatigueEffects' `dread`), and every lamp and fitting shows its
+// built value × the product of them all — so a tired player and a stutter of
+// dread compose instead of fighting over one number. `level` and the
+// consumers ignore them: they are electrical.
 //
 // Lights are never hidden, only zeroed — hiding one changes the light count
 // every lit shader was compiled for (AGENTS.md, performance). A subtree whose
@@ -67,6 +75,10 @@ export class PowerGrid {
   _consumers = [];
   _known = new Set();
   _listeners = new Set();
+  /** @type {Map<string, number>} */
+  _factors = new Map();
+  /** The product of every dim factor. */
+  dim = 1;
 
   _flickerTimer = 0;
   _flicker = 1;
@@ -162,6 +174,19 @@ export class PowerGrid {
     this._emit();
   }
 
+  /** Set one named dimmer (0..1; below 0 is clamped). */
+  setFactor(key, value) {
+    this._factors.set(key, Math.max(0, value));
+    let dim = 1;
+    for (const f of this._factors.values()) dim *= f;
+    this.dim = dim;
+  }
+
+  /** A factor never set reads 1. */
+  getFactor(key) {
+    return this._factors.get(key) ?? 1;
+  }
+
   /** @param {(grid: PowerGrid) => void} fn  @returns {() => void} unsubscribe */
   onChange(fn) {
     this._listeners.add(fn);
@@ -173,11 +198,12 @@ export class PowerGrid {
     const powered = this.on ? this._surgeLevel(dt) : 0;
     const level = this.broken ? 0 : powered;
     this.level = level;
+    const dim = this.dim;
     for (const { light, base, breakable } of this._lights) {
-      light.intensity = base * (breakable ? level : powered);
+      light.intensity = base * (breakable ? level : powered) * dim;
     }
     for (const { material, base, breakable } of this._materials) {
-      const l = breakable ? level : powered;
+      const l = (breakable ? level : powered) * dim;
       if (material.isMeshBasicMaterial) material.color.copy(base).multiplyScalar(Math.min(l, 1));
       else material.emissiveIntensity = base * l;
     }

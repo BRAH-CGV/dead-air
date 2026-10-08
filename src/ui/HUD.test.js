@@ -33,6 +33,45 @@ describe('HUD suit indicator', () => {
   });
 });
 
+// ── Stamina bar ───────────────────────────────────────────
+describe('HUD stamina bar', () => {
+  function fakeRoot() {
+    const bar = { style: {}, dataset: {} };
+    const fill = { style: {} };
+    const els = { '#hud-stamina': bar, '#hud-stamina-fill': fill };
+    return { bar, fill, root: { style: {}, querySelector: sel => els[sel] ?? null } };
+  }
+
+  it('fills to the stamina left and colours by level', () => {
+    const { bar, fill, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setStamina(0.42, 'tired');
+    expect(fill.style.width).toBe('42%');
+    expect(bar.dataset.level).toBe('tired');
+  });
+
+  it('clamps to 0 … 100%', () => {
+    const { fill, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setStamina(1.4);
+    expect(fill.style.width).toBe('100%');
+    hud.setStamina(-1);
+    expect(fill.style.width).toBe('0%');
+  });
+
+  it('only touches the DOM when the shown value changes (it is called every frame)', () => {
+    const { fill, root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.setStamina(0.5, 'ok');
+    fill.style = new Proxy({}, { set() { throw new Error('wrote the DOM'); } });
+    expect(() => hud.setStamina(0.501, 'ok')).not.toThrow();
+  });
+
+  it('does nothing without the markup', () => {
+    expect(() => new HUD(null).setStamina(0.5, 'ok')).not.toThrow();
+  });
+});
+
 // ── Radar sky-mapping tests ───────────────────────────────
 // No DOM in the node test environment: the overlay falls back to a
 // 400x400 logical canvas (radius 200, centre 200,200, rim at 0.85r=170).

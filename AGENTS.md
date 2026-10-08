@@ -70,6 +70,8 @@ src/
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── StaminaDrain.js  # Ticks Stamina through the shift; a tired player sees the base dim
+│   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
@@ -77,10 +79,15 @@ src/
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
+│   ├── MonsterFigure.js # Procedural monster stand-in: hidden, no body, eyes that glow
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
 │   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
+│   ├── Stamina.js       # How awake the player is, 1 → 0 over a shift (pure)
+│   ├── Fatigue.js       # What low stamina does: tunnel and heartbeat curves, yawn/blink/stutter timers (pure)
+│   ├── SleepDemonLogic.js # The Sleep Demon's rules: how near, how far off-centre, fleeing a look (pure)
+│   ├── SleepDemon.js    # Those rules on the camera, sight rays and the figure; every night
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
@@ -102,6 +109,7 @@ src/
 │   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
 │   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
+│   ├── FatigueOverlay.js # A tired player's tunnel vignette and eyelids (#fatigue)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
 │   └── menu/
@@ -156,7 +164,7 @@ An Interactable whose `promptLabel` changes while you look at it (the locker's P
 
 Every prop has a job:
 
-- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
+- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. A food-ration dispenser on the left wall (`VendingMachine`, procedural) is `rationDispenser`, a `RationDispenser`: a ration restores 0.35 stamina, then it takes 40 s to refill (see "Stamina and the Sleep Demon"). There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
 - **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
@@ -211,6 +219,35 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
   - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
+### Stamina and the Sleep Demon
+
+The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away.
+
+- **Stamina** (`Stamina`, pure) runs 1 → 0. `StaminaDrain` (on `GameplaySystems`, after the controller) drains it while the shift is played: empty after 240 s, 4:48 AM with no food. It holds in the morning and behind the failed-night prompt. Every night start (the next night or a retry) fills it and readies the dispenser. The HUD shows it as a bar (`HUD.setStamina`, `#hud-stamina`).
+- **Food.** The office's `RationDispenser` restores 0.35 per ration and plays `sfx:ration`, then reads "refilling" for 40 s. `BaseScene._addStamina` hands it the stamina, since rooms don't know about gameplay.
+- **The Sleep Demon** (`SleepDemon`, on `GameplaySystems` after the drain; the rules are pure, in `SleepDemonLogic`) lives in the corner of the player's eye:
+  - **It shows** a few seconds after stamina falls below `appearBelow` (0.85), at the edge of the view: 10 m off, and 85 % of the view's half-width out from its centre. The lower the stamina, the nearer it stands and the nearer the middle. At empty it is 0.8 m off and 45 % out, just inside the clear middle of the fatigue tunnel.
+  - **Looked at** (any part of its upright body within `focusAngle`, 12°, of the centre of the view), it is gone at once. It shows again at the other edge of the view: 6 s later at first, half a second near empty.
+  - **Out of view** for `lostAfter` (1.5 s), turned away from or with something in the way, it finds the edge of the view again.
+  - **It steps in** each time stamina crosses into a new band (8 of them, from 0.85 down), looked at or not. A ration sends it back the same way.
+  - **Below `holdBelow`** (0.08) it no longer flees a look: it stands there.
+  - **At empty** it takes the player: `controller.fail(SLEEP_DEMON_KILL)`, and `[E]` retries.
+- **Where it stands.** On a level line from the player's eye, turned off the centre of the view by that share:
+  - a sight ray stops it `wallGap` (0.45 m) short of a wall or a prop;
+  - a ray down from its full height steps it in toward the player, 0.25 m at a time, until the floor under it is clear of furniture;
+  - the spot must be inside the camera's frustum.
+
+  With less than `minDistance` (0.6 m) of room it tries the other side. If neither side has room it tries again after `retryAfter` (0.25 s).
+- **In view** means inside the frustum, with nothing solid between the eye and its face (85 % of its height). The sight rays hit walls, props, the floor and shelves, never the player's capsule. While the terminal's radar or review screen is up the player is looking at that, so the demon neither flees nor counts as lost.
+- **When it runs.** Only while `playing`. In the morning and behind the failed-night prompt it is hidden and silent, and every night start sends it away. It holds while the fly camera has frozen the player.
+- **Its breathing** (`sfx:breathing`) is a looping `PositionalAudio` on the figure from its first show, louder the nearer it comes.
+- **The figure** is a `MonsterFigure` placeholder (1.8 m tall, waiting for `sleep-demon.glb`) under a `Threats` group on the scene root. It has no physics and is in no occlusion zone. Its body casts a shadow, so every show, step and hide calls `onFigureChanged` → `engine.shadows.invalidate()`. Turning on the spot doesn't: the body is round. To use a real model, replace what `_addSleepDemon` builds.
+- **Fatigue.** `Fatigue.js` holds the curves and timers, `FatigueEffects` (after the drain) plays them, and `FatigueOverlay` draws `#fatigue` in index.html.
+  - **Tired** (below 0.5): the base dims through the grid's `fatigue` factor, sinking towards `FATIGUE_DIM_MIN` (0.6) at empty. The view narrows (the tunnel), and the player yawns (`sfx:yawn`) every 20–35 s.
+  - **Critical** (below 0.2): a yawn every 7–12 s and a blink every 4–8 s. The lights stutter through the grid's `dread` factor (down to 0.5), and a heartbeat (`sfx:heartbeat`) rises towards empty.
+  - **Below 0.08** the player nods off: the lids stay shut for a moment every 9–15 s.
+  - **Outside `playing`** it all settles: eyes open, lights steady, the heart quiet. The fly camera sees the scene clear.
+
 ### Power and the UFO
 
 The generator outside is the base's one power switch. It stands in the far corner of the fenced yard, on the side away from the buggy (`GENERATOR_CORNER_INSET` in from the fence's corner, read off the fence's rect). `BaseScene._addPower` puts every light and glowing fitting in the rooms, the corridors and on the dish pad on a `PowerGrid`, which remembers what each was built at and rewrites it every frame from one level.
@@ -230,6 +267,7 @@ The generator outside is the base's one power switch. It stands in the far corne
   - **The mouse:** `BaseScene._usePanel` releases the pointer lock while the panel is open and freezes the player.
 - **Unbreakable lamps.** These follow the switch but survive a blow-out: the dish pad's floods (`collect(pad, { breakable: false })`) and the terminal screen's faint green `ScreenGlow` in the office (`userData.unbreakable`), which shows that the computer still works in a dark office.
 - **Off the grid.** `collect()` skips any subtree whose object3d has `userData.offGrid`. The airlock beacon is on its own battery, so the interlock always works. `LEDStrip` and `SignalAlertLight` animate their own glow, so they mark their meshes `offGrid` and are added as consumers instead; the grid hands them `powerLevel` to scale by. A new self-animating light should do the same, or the grid and the component fight over one material.
+- **Dim factors.** `grid.setFactor(key, value)` is a named dimmer, owned by one system: StaminaDrain's `fatigue` and FatigueEffects' `dread`. Every lamp and fitting on the grid, the unbreakable ones included, shows its built value × the level × the product of the factors. So a tired player and a power cut compose instead of fighting over one number. The factors are what the player sees, not what the wires carry: `level` and the consumers ignore them.
 - **Never hidden.** Lights are zeroed, never hidden (see Performance). The UFO's lights follow the same rule.
 - **The generator's sound** (`GeneratorSound`, on the generator):
   - **Switching on** plays the start-up clip, which crossfades into a looping hum.

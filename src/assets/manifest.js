@@ -395,6 +395,26 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/monster-bite.mp3',
   },
+  // Stamina and the Sleep Demon, from the first minute of night 1. Original,
+  // synthesised (short mono wavs): the demon's breathing, looped on its
+  // figure (SleepDemon); the heartbeat, looped, and the yawn of a tired
+  // player (FatigueEffects); a ration dropping from the office dispenser.
+  'sfx:breathing': {
+    type: 'audio',
+    url: 'assets/audio/breathing.wav',
+  },
+  'sfx:heartbeat': {
+    type: 'audio',
+    url: 'assets/audio/heartbeat.wav',
+  },
+  'sfx:yawn': {
+    type: 'audio',
+    url: 'assets/audio/yawn.wav',
+  },
+  'sfx:ration': {
+    type: 'audio',
+    url: 'assets/audio/ration.wav',
+  },
 };
 
 /**

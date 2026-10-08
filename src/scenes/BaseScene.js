@@ -60,6 +60,12 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
+import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -207,6 +213,13 @@ export class BaseScene extends Scene {
    *  @type {PowerGrid|null} */
   power = null;
 
+  /** How awake the player is: drained through the shift, topped up by a
+   *  ration. The Sleep Demon and the fatigue effects read it.
+   *  @type {Stamina|null} */
+  stamina = null;
+  /** The thing in the corner of the eye, every night. @type {SleepDemon|null} */
+  sleepDemon = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
   /** Sounds the scene itself plays (the breaker panel's click). */
@@ -238,6 +251,9 @@ export class BaseScene extends Scene {
     this._keepFogOutside();
     this._addPower();
     this._addGameplaySystems();
+    this._addStamina();
+    this._addSleepDemon();
+    this._addFatigue();
     this._addUfo();
     this._addSandstorm();
     this._buildOcclusion();
@@ -1035,6 +1051,71 @@ export class BaseScene extends Scene {
   _isOutside(p) {
     this._insideBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
     return !this._insideBoxes.some(box => box.containsPoint(p));
+  }
+
+  // ──────────────────────────────────────────
+  // Stamina and the Sleep Demon (every night)
+  // ──────────────────────────────────────────
+  /** Stamina drains through the shift and the office's ration dispenser
+   *  tops it up. The drain ticks on GameplaySystems after the controller,
+   *  and before the demon and the fatigue effects, so within a frame both
+   *  read this frame's stamina. */
+  _addStamina() {
+    this.stamina = new Stamina();
+    const dispenser = this.rooms.MainOffice.rationDispenser;
+    if (dispenser) {
+      dispenser.stamina = this.stamina;
+      const crunch = this._sound('sfx:ration', 0.8);
+      dispenser.onEat = () => {
+        if (!crunch) return;
+        if (crunch.isPlaying) crunch.stop();
+        crunch.play();
+      };
+    }
+    this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      grid:         this.power,
+      onNightStart: () => dispenser?.reset(),
+    }));
+  }
+
+  /** The Sleep Demon, in the corner of the player's eye once they tire (see
+   *  SleepDemon). Its figure is a placeholder under a Threats group on the
+   *  scene root, which sits at the world origin: the demon writes world
+   *  positions, and no occlusion zone ever hides it. Its shadow is redrawn
+   *  when it shows, steps or goes, not as it turns to face the player. */
+  _addSleepDemon() {
+    const { engine } = this;
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, placeholderFor: 'sleep-demon.glb',
+    });
+    this._group('Threats').addChild(figure);
+    this._ownResourcesOf(figure);
+    this.sleepDemon = this._sceneRoot.find('GameplaySystems').addComponent(new SleepDemon({
+      controller:      this.gameController,
+      stamina:         this.stamina,
+      figure,
+      camera:          engine.camera ?? null,
+      terminal:        this.terminal,
+      rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
+      isFrozen:        () => !!engine.debugCamera?.active,
+      onFigureChanged: () => engine.shadows?.invalidate(),
+    }));
+  }
+
+  /** What low stamina does to the player: the tunnel and the eyelids, the
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns. */
+  _addFatigue() {
+    const { engine } = this;
+    this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    new FatigueOverlay(),
+      grid:       this.power,
+      isFrozen:   () => !!engine.debugCamera?.active,
+    }));
   }
 
   // ──────────────────────────────────────────

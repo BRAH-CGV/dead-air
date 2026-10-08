@@ -70,6 +70,15 @@ describe('manifest', () => {
     }
   });
 
+  it('preloads the stamina sounds: the demon breathing, the heartbeat, the yawn and the ration', () => {
+    // The Sleep Demon and fatigue run from the first minute of night 1, so
+    // their clips are decoded behind the loading screen.
+    for (const key of ['sfx:breathing', 'sfx:heartbeat', 'sfx:yawn', 'sfx:ration']) {
+      expect(ASSETS[key], key).toMatchObject({ type: 'audio', url: `assets/audio/${key.slice(4)}.wav` });
+      expect(PRELOAD, key).toContain(key);
+    }
+  });
+
   it('has no validation problems', () => {
     expect(validateManifest(ASSETS)).toEqual([]);
   });
