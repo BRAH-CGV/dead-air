@@ -365,11 +365,12 @@ export class RadarOverlay {
     this._blobPath(ctx, p, R, t, k, 0);
     ctx.fill();
 
-    // Two loose rings shivering around it.
+    // Two loose rings shivering around it — their extra radius scales with
+    // intensity so they grow outward as the effect fades in.
     for (let ring = 1; ring <= 2; ring++) {
       ctx.strokeStyle = `rgba(255, 90, 140, ${(0.25 + 0.3 * k) / ring})`;
       ctx.lineWidth = 1.5 * s;
-      this._blobPath(ctx, p, R * (1 + 0.35 * ring), t * (1 + 0.4 * ring), k, ring * 1.7);
+      this._blobPath(ctx, p, R * (1 + 0.35 * ring * k), t * (1 + 0.4 * ring), k, ring * 1.7);
       ctx.stroke();
     }
 
@@ -416,11 +417,12 @@ export class RadarOverlay {
     this._blobPath(ctx, p, R, t, k, 0);
     ctx.fill();
 
-    // Two loose rings shivering around it.
+    // Two loose rings shivering around it — their extra radius scales with
+    // intensity so they grow outward as the effect fades in.
     for (let ring = 1; ring <= 2; ring++) {
       ctx.strokeStyle = `rgba(255, 60, 60, ${(0.3 + 0.3 * k) / ring})`;
       ctx.lineWidth = 1.5 * s;
-      this._blobPath(ctx, p, R * (1 + 0.35 * ring), t * (1 + 0.4 * ring), k, ring * 1.7);
+      this._blobPath(ctx, p, R * (1 + 0.35 * ring * k), t * (1 + 0.4 * ring), k, ring * 1.7);
       ctx.stroke();
     }
 
@@ -447,15 +449,16 @@ export class RadarOverlay {
   }
 
   /** The blob's outline around `p`: 48 points, radius pushed about by three
-   *  drifting sines — the fastest one only once it's close (`k`). */
+   *  drifting sines — all scaled by intensity `k` so the wobble ramps up
+   *  smoothly as the effect fades in. */
   _blobPath(ctx, p, R, t, k, phase) {
     const N = 48;
     ctx.beginPath();
     for (let i = 0; i <= N; i++) {
       const a = (i / N) * Math.PI * 2;
       const wobble = 1
-        + 0.22 * Math.sin(3 * a + t * 2.1 + phase)
-        + 0.14 * Math.sin(5 * a - t * 3.7 + phase * 2)
+        + 0.22 * k * Math.sin(3 * a + t * 2.1 + phase)
+        + 0.14 * k * Math.sin(5 * a - t * 3.7 + phase * 2)
         + 0.12 * k * Math.sin(11 * a + t * 9.3);
       const x = p.x + Math.cos(a) * R * wobble;
       const y = p.y + Math.sin(a) * R * wobble;

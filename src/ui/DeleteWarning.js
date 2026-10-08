@@ -58,6 +58,11 @@ export class DeleteWarning {
     /** Timestamp when show() was called — used to compute the exclusion
      *  zone shrink progress. @type {number} */
     this._startTime = 0;
+    // Clean up any leftover DOM state from a previous instance (scene rebuild).
+    if (this.root) {
+      this.root.classList.remove('is-active');
+      this.root.innerHTML = '';
+    }
   }
 
   /** Start the flashing DELETE texts. */

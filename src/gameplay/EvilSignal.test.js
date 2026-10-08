@@ -35,7 +35,11 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: ['signal-1.png'] });
   signalManager.startNight(night);
   const radar = { setInfo: vi.fn() };
-  const terminal = { radar, exit: vi.fn() };
+  const terminal = {
+    radar, exit: vi.fn(),
+    get cursorPosition() { return { x: 0, y: 0 }; },
+    setCursorPosition: vi.fn(),
+  };
   const drives = drive ? [drive] : [];
   const driveManager = {
     drives,
@@ -91,6 +95,7 @@ describe('EvilSignal summon()', () => {
 
     const sig = evilSig(signalManager);
     evil.hover(sig);                        // saves red immediately, locks for 5 s
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.resolved).toBe(true);  // resolved right away
 
     expect(evil.summon()).toBe(true);
@@ -111,6 +116,7 @@ describe('EvilSignal hover — the dish hold', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.scanned).toBe(true);
     expect(evil.locked).toBe(true);
     expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('10'));
@@ -130,6 +136,7 @@ describe('EvilSignal hover — the dish hold', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     evil.onUpdate(EVIL.lockSeconds + 0.1);
     expect(evil.locked).toBe(false);
     expect(sig.deleted).toBe(true);  // the signal is gone
@@ -147,6 +154,7 @@ describe('EvilSignal hover — the dish hold', () => {
     const { evil, controller, signalManager } = makeRig();
     evil.summon();
     evil.hover(evilSig(signalManager));
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil.locked).toBe(true);
 
     controller.state = 'morning';
@@ -160,6 +168,7 @@ describe('EvilSignal hover — the dish hold', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil.locked).toBe(true);
     evil.onUpdate(0.1);  // trigger the evilLock setup
     expect(radar.evilLock).not.toBeNull();
@@ -190,6 +199,7 @@ describe('EvilSignal hover — the red save', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.scanned).toBe(true);
     expect(sig.saved).toBe(true);  // saved immediately
     expect(sig.resolved).toBe(true);
@@ -213,6 +223,7 @@ describe('EvilSignal hover — the red save', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.scanned).toBe(true);
     expect(sig.saved).toBe(true);  // saved immediately (overwrites green)
     expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
@@ -227,6 +238,17 @@ describe('EvilSignal hover — the red save', () => {
     expect(evil.locked).toBe(false);
   });
 
+  it('forces the player out of the computer screen after ejecting the corrupted drive', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, terminal } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // saves red, ejects drive
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
+    expect(terminal.exit).toHaveBeenCalledTimes(1);
+  });
+
   it('a resolved red signal never engages again', () => {
     const drive = makeDrive();
     const { evil, signalManager, radar } = makeRig({ drive });
@@ -234,6 +256,7 @@ describe('EvilSignal hover — the red save', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);                        // saves red immediately, locks for 5 s
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.resolved).toBe(true);
 
     // Wait for the lock to end.
@@ -252,6 +275,7 @@ describe('EvilSignal nights', () => {
     const { evil, controller, signalManager } = makeRig();
     evil.summon();
     evil.hover(evilSig(signalManager));
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil.locked).toBe(true);
 
     controller.startNight(2);
@@ -271,6 +295,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
     const sig1 = evilSig(signalManager);
 
     evil.hover(sig1);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     evil.onUpdate(EVIL.lockSeconds + 0.1);
     expect(evil.locked).toBe(false);
     expect(sig1.deleted).toBe(true);
@@ -298,6 +323,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
     const sig = evilSig(signalManager);
 
     evil.hover(sig);  // saves to drive immediately, locks for 5 s
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.saved).toBe(true);
 
     evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
@@ -309,6 +335,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
     const { evil, controller, signalManager } = makeRig();
     evil.summon();
     evil.hover(evilSig(signalManager));
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     evil.onUpdate(EVIL.lockSeconds + 0.1);
     expect(evil._respawnTimer).not.toBeNull();
 
@@ -325,6 +352,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);                        // saves red, starts silence timer
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
 
     // Wait for the silence timer to expire.
@@ -348,6 +376,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);                        // saves red, starts silence timer
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
 
     // Simulate wiping the drive at the ServerRoom console.
@@ -367,6 +396,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);                        // saves red, starts silence timer
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
     expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
 
@@ -382,6 +412,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     evil.onUpdate(EVIL.silenceSeconds + 0.1);  // game over, whiteOut plays
     expect(whiteOut.play).toHaveBeenCalled();
     expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
@@ -403,6 +434,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);                        // saves red, starts silence + hop timers
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
 
     // Tick just under 1 s — no kick yet.
@@ -426,6 +458,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     drive.setSaved(false);                  // wipe the drive
     // The hop timer clears on the next tick, when _findCorruptedDrive()
     // returns null.
@@ -448,6 +481,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);  // starts silence timer
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
 
     // After half the timer, the glow fraction should be ~0.5.
     evil.onUpdate(EVIL.silenceSeconds / 2);
@@ -469,10 +503,52 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const sig = evilSig(signalManager);
 
     evil.hover(sig);  // starts silence timer, sets _lastCorruptedDrive
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     evil.onUpdate(0.5);
     expect(drive.setDoomGlow).toHaveBeenCalled();
 
     controller.startNight(2);
     expect(clearDoomGlow).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal pull-in — cursor drag before engage', () => {
+  it('hovering the evil signal starts a pull-in instead of engaging immediately', () => {
+    const { evil, signalManager, terminal } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    expect(evil.pullingIn).toBe(true);
+    expect(evil.locked).toBe(false);           // not yet engaged
+    expect(evil._pullTimer).toBe(EVIL.pullInSeconds);
+    expect(terminal.setCursorPosition).not.toHaveBeenCalled();  // not yet — needs an update tick
+  });
+
+  it('the pull-in completes and then engages', () => {
+    const { evil, signalManager, terminal } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);   // starts pull-in
+    expect(evil.pullingIn).toBe(true);
+
+    // Tick past the pull-in duration — the cursor should have been animated
+    // and _engage should have fired (locked = true for the no-drive path).
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    expect(evil.pullingIn).toBe(false);
+    expect(evil.locked).toBe(true);            // _engage ran
+    expect(terminal.setCursorPosition).toHaveBeenCalled();
+  });
+
+  it('a new night cancels the pull-in', () => {
+    const { evil, controller, signalManager } = makeRig();
+    evil.summon();
+    evil.hover(evilSig(signalManager));
+    expect(evil.pullingIn).toBe(true);
+
+    controller.startNight(2);
+    expect(evil.pullingIn).toBe(false);
+    expect(evil._pullTarget).toBeNull();
   });
 });

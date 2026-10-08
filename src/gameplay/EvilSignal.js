@@ -1,6 +1,7 @@
 import { Component } from '../core/Component.js';
 import { SignalTarget } from './SignalTarget.js';
 import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
+import { skyToCursor } from '../gameobjects/DishRig.js';
 
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
@@ -71,6 +72,9 @@ export const EVIL = {
   /** Seconds between random hops of the corrupted drive while the silence
    *  timer runs. The drive jumps in a random direction every interval. */
   driveHopSeconds: 1,
+  /** Seconds the cursor and dish are dragged to the evil signal's centre
+   *  before the normal engage logic fires. */
+  pullInSeconds: 0.8,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -96,6 +100,10 @@ export class EvilSignal extends Component {
   /** @type {{ setPlayerLocked: (locked: boolean) => void }|null} */
   hooks = null;
 
+  /** True while the cursor is being dragged to the signal centre.
+   *  ComputerTerminal checks this to freeze WASD input. */
+  pullingIn = false;
+
   /** True while the array is pinned to the red signal (the no-drive
    *  penalty). The terminal freezes its cursor while this is set. */
   locked = false;
@@ -111,6 +119,15 @@ export class EvilSignal extends Component {
   _hover = null;
   /** @type {(() => void)|null} */
   _offNight = null;
+  /** The signal target being pulled toward during the pull-in animation.
+   *  @type {SignalTarget|null} */
+  _pullTarget = null;
+  /** Seconds remaining on the pull-in animation. @type {number} */
+  _pullTimer = 0;
+  /** Cursor position at pull-in start (lerp origin). @type {{x:number,y:number}|null} */
+  _pullStartCursor = null;
+  /** Cursor position at pull-in end (lerp target). @type {{x:number,y:number}|null} */
+  _pullTargetCursor = null;
   /** Seconds until the evil signal respawns after a no-drive lock, or null
    *  when not counting down. @type {number|null} */
   _respawnTimer = null;
@@ -205,8 +222,10 @@ export class EvilSignal extends Component {
     // The cursor left — a lock that has run its course may engage anew.
     if (sig !== this._target) this._mustLeave = false;
     if (!sig || sig !== this._target || sig.resolved) return;
-    if (this.locked || this._mustLeave) return;
-    this._engage(sig);
+    if (this.locked || this._mustLeave || this.pullingIn) return;
+    // Start the pull-in: the cursor and dish are dragged to the signal's
+    // centre before the normal engage logic fires.
+    this._startPullIn(sig);
   }
 
   onUpdate(dt) {
@@ -214,6 +233,33 @@ export class EvilSignal extends Component {
     if (this.controller && this.controller.state !== 'playing') {
       if (this.locked) this._release();
       return;
+    }
+
+    // The pull-in: the cursor and dish are dragged to the signal's centre
+    // before the normal engage logic fires. WASD is frozen during this.
+    if (this.pullingIn) {
+      this._pullTimer -= dt;
+      const t = 1 - Math.max(0, this._pullTimer) / EVIL.pullInSeconds;  // 0→1
+      const x = this._pullStartCursor.x + (this._pullTargetCursor.x - this._pullStartCursor.x) * t;
+      const y = this._pullStartCursor.y + (this._pullTargetCursor.y - this._pullStartCursor.y) * t;
+      this.terminal?.setCursorPosition?.(x, y);
+      // The UFO-style glitch fades in during the pull-in.
+      const sig = this._pullTarget;
+      if (sig && this.terminal?.radar) {
+        this.terminal.radar.evilLock = {
+          active: true,
+          yaw: sig.yaw,
+          pitch: sig.pitch,
+          intensity: t * 0.8,  // fade in from 0 to full
+          time: Date.now() / 1000,
+        };
+      }
+      if (this._pullTimer <= 0) {
+        this.pullingIn = false;
+        this._engage(this._pullTarget);
+        this._pullTarget = null;
+      }
+      return;  // skip the rest while pulling
     }
 
     // The respawn timer ticks even when not locked.
@@ -309,6 +355,19 @@ export class EvilSignal extends Component {
 
   // ── Private ──────────────────────────────
 
+  /** Start the pull-in animation: the cursor and dish are dragged from
+   *  their current position to the signal's centre on the radar disc.
+   *  Once the animation completes, _engage() fires normally. */
+  _startPullIn(sig) {
+    const cursor = this.terminal?.cursorPosition;
+    if (!cursor) { this._engage(sig); return; }  // no terminal — skip
+    this._pullStartCursor = { x: cursor.x, y: cursor.y };
+    this._pullTargetCursor = skyToCursor(sig.yaw, sig.pitch);
+    this._pullTarget = sig;
+    this._pullTimer = EVIL.pullInSeconds;
+    this.pullingIn = true;
+  }
+
   /** Hovered: it scans itself at once, then either locks the dish (with or
    *  without a drive). If a drive is inserted, the evil signal is saved to
    *  it immediately (overwriting any existing signal), but the lock still
@@ -326,6 +385,9 @@ export class EvilSignal extends Component {
       // Shoot the corrupted drive out of the reader in a random direction.
       drive.ejectInsertedDrive?.();
       this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
+      // Force the player out of the computer screen so they must chase the
+      // corrupted drive and wipe it at the ServerRoom console.
+      this.terminal?.exit?.();
       this.locked = true;
       this._remain = EVIL.lockWithDriveSeconds;
       this._silenceTimer = EVIL.silenceSeconds;
@@ -412,6 +474,11 @@ export class EvilSignal extends Component {
     this._target = null;
     this._hover = null;
     this._mustLeave = false;
+    this.pullingIn = false;
+    this._pullTarget = null;
+    this._pullTimer = 0;
+    this._pullStartCursor = null;
+    this._pullTargetCursor = null;
     this._respawnTimer = null;
     this._silenceTimer = null;
     this._driveHopTimer = null;

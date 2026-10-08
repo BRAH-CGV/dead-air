@@ -144,6 +144,21 @@ export class ComputerTerminal extends Component {
     }
   }
 
+  /** Current cursor position in Cartesian unit-circle coords.
+   *  @returns {{x: number, y: number}} */
+  get cursorPosition() { return { x: this._cursorX, y: this._cursorY }; }
+
+  /** Set the cursor position directly (used by the evil signal's pull-in
+   *  animation). Clamps to the unit circle and aims the dish. */
+  setCursorPosition(x, y) {
+    this._cursorX = x;
+    this._cursorY = y;
+    const r = Math.sqrt(x * x + y * y);
+    if (r > 1) { this._cursorX /= r; this._cursorY /= r; }
+    const sky = this._cursorToSky();
+    if (this.satellite) this.satellite.aimAll(sky.yaw, sky.pitch);
+  }
+
   /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
    *  The disc's centre is the zenith (pitch −π/2), its rim the horizon.
    *  The one conversion lives in DishRig — the same coordinates the
@@ -319,8 +334,9 @@ export class ComputerTerminal extends Component {
       const kb = engine.keyBinds;
 
       // WASD moves the cursor — unless the evil signal has the dish held
-      // (EvilSignal.locked): the cursor, and so the array, stays frozen.
-      if (!this.evilSignal?.locked) {
+      // (EvilSignal.locked) or is pulling the cursor in (EvilSignal.pullingIn):
+      // the cursor, and so the array, stays frozen.
+      if (!this.evilSignal?.locked && !this.evilSignal?.pullingIn) {
         this.moveCursor({
           left:  !!keys[kb.left],
           right: !!keys[kb.right],
