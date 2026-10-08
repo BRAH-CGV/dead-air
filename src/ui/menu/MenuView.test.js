@@ -47,7 +47,7 @@ describe('MenuView', () => {
       expect(text).toContain('DEAD AIR');
       expect(text).toContain('> ONE.');
       expect(text).toContain('0.0.1');
-      expect(items(view).map(b => b.dataset.action)).toEqual(['newGame', 'settings', 'credits']);
+      expect(items(view).map(b => b.dataset.action)).toEqual(['newGame', 'nightSelect', 'settings', 'credits']);
       expect(text.toLowerCase()).not.toContain('quit');
     });
 
@@ -130,9 +130,9 @@ describe('MenuView', () => {
 
     it('skips disabled options', () => {
       view.show('main', { tagline: [], version: '1', continueNight: null });
-      byAction(view, 'settings').disabled = true;
+      byAction(view, 'nightSelect').disabled = true;
       view.handleKey(new KeyboardEvent('keydown', { code: 'ArrowDown' }));
-      expect(document.activeElement).toBe(byAction(view, 'credits'));
+      expect(document.activeElement).toBe(byAction(view, 'settings'));
     });
 
     it('leaves other keys to the browser', () => {
@@ -244,5 +244,19 @@ describe('MenuView', () => {
   it('setStatus writes the corner status lines', () => {
     view.setStatus(['STATION: STANDBY', 'LINK: OK']);
     expect(view.root.querySelector('#menu-status').textContent).toContain('LINK: OK');
+  });
+
+  it('night select lists each night, locked ones disabled, with a Back', () => {
+    view.show('nightSelect', { maxNight: 3, highest: 2 });
+    const nights = [...view.panel.querySelectorAll('[data-action="selectNight"]')];
+    expect(nights.map(b => b.dataset.night)).toEqual(['1', '2', '3']);
+    expect(nights.map(b => b.disabled)).toEqual([false, false, true]);
+    expect(nights[2].textContent).toMatch(/locked/i);
+    expect(view.panel.querySelector('[data-action="back"]')).not.toBeNull();
+  });
+
+  it('the main menu offers Select night', () => {
+    view.show('main', { tagline: [], version: '1', continueNight: null });
+    expect(view.panel.querySelector('[data-action="nightSelect"]')).not.toBeNull();
   });
 });
