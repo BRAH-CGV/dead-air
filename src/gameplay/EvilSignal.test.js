@@ -1,0 +1,252 @@
+import { describe, it, expect, vi } from 'vitest';
+import { EvilSignal, EVIL } from './EvilSignal.js';
+import { SignalManager, PITCH_MIN, PITCH_MAX } from './SignalManager.js';
+
+// ─────────────────────────────────────────────
+// EvilSignal — the red signal: instant scan, dish hold, corrupted drives
+// ─────────────────────────────────────────────
+
+/** A drive-shaped fake with the same saved/corrupted contract as Drive. */
+function makeDrive() {
+  return {
+    saved: false,
+    corrupted: false,
+    setSaved(saved, { corrupted = false } = {}) {
+      this.saved = saved;
+      this.corrupted = saved && corrupted;
+    },
+    setEjected() { this.setSaved(false); },
+  };
+}
+
+function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
+  const controller = {
+    state: 'playing',
+    nightNumber: night,
+    _listeners: new Set(),
+    onNightStart(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); },
+    startNight(n) {
+      this.nightNumber = n;
+      signalManager.startNight(n);          // the real controller rebuilds the sky first
+      for (const fn of [...this._listeners]) fn(n, { retry: false });
+    },
+  };
+  const signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: ['signal-1.png'] });
+  signalManager.startNight(night);
+  const radar = { setInfo: vi.fn() };
+  const terminal = { radar };
+  const driveManager = {
+    insertedDrive: drive,
+    get driveInserted() { return this.insertedDrive !== null; },
+    get insertedDriveHasSignal() { return this.insertedDrive?.saved === true; },
+    saveEvilToDrive: vi.fn(function () {
+      this.insertedDrive.setSaved(true, { corrupted: true });
+    }),
+  };
+  const satellite = { aimAll: vi.fn() };
+  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
+  evil.onStart();
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite };
+}
+
+/** The single red target in the manager's list. */
+const evilSig = mgr => mgr.signals.find(s => s.evil) ?? null;
+
+describe('EvilSignal summon()', () => {
+  it('puts one red signal in the sky, anywhere a dish can see it', () => {
+    const { evil, signalManager } = makeRig();
+    expect(evil.summon()).toBe(true);
+    const sig = evilSig(signalManager);
+    expect(sig).toBeTruthy();
+    expect(sig.evil).toBe(true);
+    expect(sig.id).toBe(EVIL.id);
+    expect(sig.scanned).toBe(false);
+    expect(sig.pitch).toBeGreaterThanOrEqual(PITCH_MIN);
+    expect(sig.pitch).toBeLessThanOrEqual(PITCH_MAX);
+    expect(Math.abs(sig.yaw)).toBeLessThanOrEqual(Math.PI);
+    expect(sig.visibleSeconds).toBeGreaterThan(300);   // outlives the shift
+  });
+
+  it('spans the whole spawn band with its own dice', () => {
+    for (const [r, pitch] of [[0, PITCH_MIN], [1, PITCH_MAX]]) {
+      const { evil, signalManager } = makeRig({ random: () => r });
+      evil.summon();
+      expect(evilSig(signalManager).pitch).toBeCloseTo(pitch, 9);
+    }
+  });
+
+  it('is refused while the one up is still unresolved, and allowed once it is spent', () => {
+    const drive = makeDrive();
+    const { evil, signalManager } = makeRig({ drive });
+    expect(evil.summon()).toBe(true);
+    expect(evil.summon()).toBe(false);
+
+    const sig = evilSig(signalManager);
+    evil.hover(sig);                        // saves red immediately, locks for 5 s
+    expect(sig.resolved).toBe(true);  // resolved right away
+
+    expect(evil.summon()).toBe(true);
+    expect(signalManager.signals.filter(s => s.evil)).toHaveLength(1);   // replaced, never stacked
+  });
+
+  it('is refused outside a shift in progress', () => {
+    const { evil, controller } = makeRig();
+    controller.state = 'morning';
+    expect(evil.summon()).toBe(false);
+  });
+});
+
+describe('EvilSignal hover — the dish hold', () => {
+  it('scans itself the instant the cursor is on it, then pins the dish for 10 s', () => {
+    const { evil, signalManager, satellite, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    expect(sig.scanned).toBe(true);
+    expect(evil.locked).toBe(true);
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('10'));
+
+    evil.onUpdate(2);
+    expect(evil.locked).toBe(true);
+    expect(satellite.aimAll).toHaveBeenCalledWith(sig.yaw, sig.pitch);
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('8'));
+
+    evil.onUpdate(EVIL.lockSeconds - 2 + 0.1);
+    expect(evil.locked).toBe(false);
+  });
+
+  it('disappears after the lock ends — no re-hovering', () => {
+    const { evil, signalManager } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+    expect(sig.deleted).toBe(true);  // the signal is gone
+    expect(sig.resolved).toBe(true);  // so the radar skips it
+
+    // Hovering it again does nothing — it's resolved.
+    evil.hover(sig);
+    expect(evil.locked).toBe(false);
+  });
+
+  it('lets go when the shift ends mid-hold', () => {
+    const { evil, controller, signalManager } = makeRig();
+    evil.summon();
+    evil.hover(evilSig(signalManager));
+    expect(evil.locked).toBe(true);
+
+    controller.state = 'morning';
+    evil.onUpdate(0.1);
+    expect(evil.locked).toBe(false);
+  });
+
+  it('sets radar.evilLock while locked, clears it on release', () => {
+    const { evil, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    expect(evil.locked).toBe(true);
+    evil.onUpdate(0.1);  // trigger the evilLock setup
+    expect(radar.evilLock).not.toBeNull();
+    expect(radar.evilLock.active).toBe(true);
+    expect(radar.evilLock.yaw).toBe(sig.yaw);
+    expect(radar.evilLock.pitch).toBe(sig.pitch);
+
+    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+    expect(radar.evilLock).toBeNull();
+  });
+
+  it('ignores a signal that is not the red one', () => {
+    const { evil, signalManager } = makeRig();
+    evil.summon();
+    const other = signalManager.signals.find(s => !s.evil);
+    evil.hover(other);
+    expect(evil.locked).toBe(false);
+    expect(other.scanned).toBe(false);
+  });
+});
+
+describe('EvilSignal hover — the red save', () => {
+  it('saves to a blank drive immediately, then locks for 5 s', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, driveManager, satellite, radar } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    expect(sig.scanned).toBe(true);
+    expect(sig.saved).toBe(true);  // saved immediately
+    expect(sig.resolved).toBe(true);
+    expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
+    expect(drive.saved).toBe(true);
+    expect(drive.corrupted).toBe(true);
+    expect(evil.locked).toBe(true);  // but the lock still runs
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
+
+    // The lock runs for the full duration.
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+  });
+
+  it('a drive that already holds a signal overwrites it red immediately, then locks for 5 s', () => {
+    const drive = makeDrive();
+    drive.setSaved(true);                   // green signal already on it
+    const { evil, signalManager, driveManager, radar } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    expect(sig.scanned).toBe(true);
+    expect(sig.saved).toBe(true);  // saved immediately (overwrites green)
+    expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
+    expect(drive.saved).toBe(true);
+    expect(drive.corrupted).toBe(true);  // now red
+    expect(evil.locked).toBe(true);  // but the lock still runs
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
+
+    // The lock runs for the full duration.
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+  });
+
+  it('a resolved red signal never engages again', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, radar } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);                        // saves red immediately, locks for 5 s
+    expect(sig.resolved).toBe(true);
+
+    // Wait for the lock to end.
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+
+    radar.setInfo.mockClear();
+    evil.hover(sig);                        // resolved signal never engages
+    expect(evil.locked).toBe(false);
+    expect(radar.setInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal nights', () => {
+  it('a new night drops the target and any hold', () => {
+    const { evil, controller, signalManager } = makeRig();
+    evil.summon();
+    evil.hover(evilSig(signalManager));
+    expect(evil.locked).toBe(true);
+
+    controller.startNight(2);
+    expect(evil.locked).toBe(false);
+    expect(evilSig(signalManager)).toBe(null);   // startNight rebuilt the sky
+  });
+
+  it('has no night of its own yet — the debug key is the way in', () => {
+    expect(EVIL.nights).toEqual([]);
+  });
+});

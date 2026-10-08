@@ -35,6 +35,9 @@ const DEFAULT_COLOR = 0x3a3a3a;
 const SAVED_EMISSIVE = 0x22cc44;
 const SAVED_EMISSIVE_INTENSITY = 1.5;
 
+/** Emissive colour when the anomalous (evil) signal is stored — red. */
+const CORRUPTED_EMISSIVE = 0xcc2222;
+
 /**
  * Collision groups for the drive: member of SHELF (not DEFAULT), so it passes
  * through the shelf's player-only envelope box while still resting on the
@@ -62,6 +65,12 @@ export class Drive extends GameObject {
 
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
+
+  /** Set while the anomalous (red) signal is stored on it — the indicator
+   *  shows red, and a red drive never counts towards the night quota
+   *  (DriveBoxDock). Deleted the same way as a green one: wipe it at the
+   *  ServerRoom console (setSaved(false)). */
+  corrupted = false;
 
   /** Set when makeKinematic() is called before _init builds a body — a
    *  socket receiver attaching the drive during scene build. _init honours
@@ -252,11 +261,14 @@ export class Drive extends GameObject {
 
   // ── Visual ─────────────────────────────────────────────────
 
-  /** Turn the indicator green (signal saved to this drive). */
-  setSaved(saved) {
+  /** Turn the indicator on — green for a saved signal, red when that
+   *  signal was the anomalous one ({ corrupted: true }). Turning it off
+   *  clears both flags, so a wiped drive keeps no trace of the red signal. */
+  setSaved(saved, { corrupted = false } = {}) {
     this.saved = saved;
-    if (saved) {
-      this._material.emissive.setHex(SAVED_EMISSIVE);
+    this.corrupted = saved && corrupted;
+    if (this.saved) {
+      this._material.emissive.setHex(this.corrupted ? CORRUPTED_EMISSIVE : SAVED_EMISSIVE);
       this._material.emissiveIntensity = SAVED_EMISSIVE_INTENSITY;
     } else {
       this._material.emissive.setHex(0x000000);

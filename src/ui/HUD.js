@@ -314,6 +314,7 @@ export class RadarOverlay {
    *  fade-in opacity — a signal mid-fade shows as a ghost of its state. */
   _blipColor(sig) {
     const a = sig.opacity;
+    if (sig.evil)       return `rgba(255, 45, 45, ${((sig.saved || sig.deleted) ? 0.5 : 0.8) * a})`;   // hostile red, dim once resolved
     if (sig.saved)      return `rgba(80, 200, 80, ${0.5 * a})`;      // dim green
     if (sig.deleted)    return `rgba(200, 60, 60, ${0.5 * a})`;      // dim red
     if (sig.scanned)    return `rgba(180, 180, 60, ${0.7 * a})`;     // scanned but unresolved
@@ -323,6 +324,7 @@ export class RadarOverlay {
   /** RGB triplet for a signal's state colour — used by the ripple
    *  animation which applies its own alpha. */
   _blipRgb(sig) {
+    if (sig.evil)    return '255, 45, 45';
     if (sig.saved)   return '80, 200, 80';
     if (sig.deleted) return '200, 60, 60';
     if (sig.scanned) return '180, 180, 60';
@@ -333,6 +335,11 @@ export class RadarOverlay {
    *  it in place every frame: { active, yaw, pitch, size 0..1,
    *  intensity 0..1, time }. */
   threat = null;
+
+  /** The evil signal's dish lock, or null. EvilSignal sets it while locked:
+   *  { active, yaw, pitch, intensity 0..1, time }. Draws the same glitchy
+   *  effect as the UFO threat but in red, centered on the locked signal. */
+  evilLock = null;
 
   /** A big, wobbling, glitching blob where the UFO is in the sky — on the
    *  shared _skyToCanvas mapping, like everything else. Its outline is a
@@ -369,6 +376,57 @@ export class RadarOverlay {
     // Static: specks thrown off the blob.
     const specks = Math.floor(6 + 30 * k);
     ctx.fillStyle = `rgba(255, 160, 190, ${(0.3 + 0.5 * k).toFixed(3)})`;
+    for (let i = 0; i < specks; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = R * (0.8 + Math.random() * 1.6);
+      ctx.fillRect(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 2 * s, 2 * s);
+    }
+
+    // Tearing: strips of the finished disc copied back a few pixels off.
+    if (this._canvas && ctx.drawImage) {
+      const strips = Math.floor(k * 5);
+      const w = this._radius * 2;
+      for (let i = 0; i < strips; i++) {
+        const y = Math.random() * w;
+        const h = (2 + Math.random() * 10) * s;
+        const dx = (Math.random() - 0.5) * 30 * s * k;
+        ctx.drawImage(this._canvas, 0, y, w, h, dx, y, w, h);
+      }
+    }
+  }
+
+  /** The evil signal's dish lock — same glitchy effect as the UFO threat,
+   *  but in red, centered on the locked signal. Active while EvilSignal
+   *  holds the dish. */
+  _drawEvilGlitch(ctx, s) {
+    const lock = this.evilLock;
+    if (!lock?.active) return;
+    const maxR = this._radius * 0.85;
+    const p = this._skyToCanvas(lock.yaw, lock.pitch);
+    const t = lock.time;
+    const k = lock.intensity;
+    const R = this._radius * 0.15;  // smaller than the UFO blob
+
+    // Body: red filled outline that never holds still.
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R * 1.4);
+    glow.addColorStop(0, `rgba(255, 45, 45, ${(0.6 + 0.35 * k).toFixed(3)})`);
+    glow.addColorStop(0.6, `rgba(200, 20, 20, ${(0.4 + 0.3 * k).toFixed(3)})`);
+    glow.addColorStop(1, 'rgba(120, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    this._blobPath(ctx, p, R, t, k, 0);
+    ctx.fill();
+
+    // Two loose rings shivering around it.
+    for (let ring = 1; ring <= 2; ring++) {
+      ctx.strokeStyle = `rgba(255, 60, 60, ${(0.3 + 0.3 * k) / ring})`;
+      ctx.lineWidth = 1.5 * s;
+      this._blobPath(ctx, p, R * (1 + 0.35 * ring), t * (1 + 0.4 * ring), k, ring * 1.7);
+      ctx.stroke();
+    }
+
+    // Static: specks thrown off the blob.
+    const specks = Math.floor(6 + 30 * k);
+    ctx.fillStyle = `rgba(255, 100, 100, ${(0.35 + 0.5 * k).toFixed(3)})`;
     for (let i = 0; i < specks; i++) {
       const a = Math.random() * Math.PI * 2;
       const d = R * (0.8 + Math.random() * 1.6);
@@ -537,7 +595,7 @@ export class RadarOverlay {
     const RIPPLE_MAX   = 18;         // max ripple radius (in s units)
     for (let i = 0; i < signals.length; i++) {
       const sig = signals[i];
-      if (sig.opacity <= 0) continue;
+      if (sig.opacity <= 0 || sig.resolved) continue;
       const pos = this._skyToCanvas(sig.yaw, sig.pitch);
       const rgb = this._blipRgb(sig);
 
@@ -559,6 +617,9 @@ export class RadarOverlay {
 
     // Something big coming in — over the blips, under the dish and cursor.
     this._drawThreat(ctx, s);
+
+    // The dish is locked on the evil signal — same glitch, red.
+    this._drawEvilGlitch(ctx, s);
 
     // Hover highlight — pulsing glow around the hovered signal
     if (hoveredSignal && !hoveredSignal.resolved) {

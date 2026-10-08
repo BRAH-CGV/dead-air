@@ -91,6 +91,7 @@ src/
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
 │   ├── Sandstorm.js     # Random dust storms from night 2: wind sound, fog, sky, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
+│   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   └── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
@@ -215,6 +216,15 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
     - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
   - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
+
+### Evil signal
+
+`EvilSignal` (on `GameplaySystems`) is the red one that is not a signal: an ordinary-looking blip except that the radar draws it red (`_blipColor` / `_blipRgb` check `sig.evil` first), and it never counts towards the quota. It has no night of its own yet — until `EVIL.nights` grows one, for testing `summon()` (the **G** key, to go before release) puts it in the sky: once, on any night, only while playing.
+
+- **It scans itself.** The moment the radar cursor is on it (12° like any signal) it is scanned — no Enter, no dish-settle wait — and then:
+  - **No drive**: the array is pinned to it for `EVIL.lockSeconds` (10 s, debug value). The terminal freezes its cursor while `locked`, `EvilSignal` holds the dish on it every frame (walking away from the terminal doesn't free it), the info line counts down, and the radar shows the same glitchy effect as the UFO (wobbling red blob with static and screen tearing, centered on the locked signal). Once the lock ends, the signal disappears — it's been dealt with.
+  - **Drive inserted** (blank or with a signal): the evil signal is saved to the drive **immediately** (overwriting any existing signal), turning it **red** (`corrupted`): `setSaved(true, { corrupted: true })`, carried by the night-retry snapshot (`DriveSnapshot`), wiped to blank at the ServerRoom console like any signal. The array is then pinned for `EVIL.lockWithDriveSeconds` (5 s, debug value) — shorter than no-drive. The lock runs even though the signal is already resolved.
+- **Red never counts.** `DriveBoxDock.collectedCount` accepts only `saved && !corrupted`, so a red drive seated in the docked box is worth zero — the quota cannot be met with it merely stored; it must be wiped. The "or you lose the game" rule is deferred; its hooks are `drive.corrupted` and the evil target's state.
 
 ### Power and the UFO
 

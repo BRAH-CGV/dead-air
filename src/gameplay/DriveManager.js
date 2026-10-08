@@ -16,6 +16,7 @@
 //   dm.hasAvailableDrives();       // true
 //   dm.insertDrive(drive1);        // drive1 is now in the reader
 //   dm.saveToDrive();              // signalsOnDrive = 1
+//   dm.saveEvilToDrive();          // …or the red one: the drive turns red
 //   const ejected = dm.ejectDrive(); // returns drive1
 // ─────────────────────────────────────────────
 
@@ -102,6 +103,17 @@ export class DriveManager {
     if (!this.insertedDrive) return this.signalsOnDrive;
     this.signalsOnDrive++;
     this.insertedDrive.setSaved(true);
+    return this.signalsOnDrive;
+  }
+
+  /** Save the anomalous (evil) signal to the inserted drive. Like
+   *  saveToDrive(), but the drive shows red (corrupted) and never counts
+   *  towards the night quota (DriveBoxDock) until it is wiped.
+   *  @returns {number} the new signalsOnDrive count */
+  saveEvilToDrive() {
+    if (!this.insertedDrive) return this.signalsOnDrive;
+    this.signalsOnDrive++;
+    this.insertedDrive.setSaved(true, { corrupted: true });
     return this.signalsOnDrive;
   }
 

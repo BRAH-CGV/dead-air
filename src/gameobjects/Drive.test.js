@@ -129,6 +129,7 @@ describe('Drive', () => {
   it('starts in the default (unsaved) state', () => {
     const drive = new Drive();
     expect(drive.saved).toBe(false);
+    expect(drive.corrupted).toBe(false);
     expect(drive._material.emissive.getHex()).toBe(0x000000);
     expect(drive._material.emissiveIntensity).toBe(0);
   });
@@ -155,6 +156,41 @@ describe('Drive', () => {
     drive.setSaved(true);
     drive.setEjected();
     expect(drive.saved).toBe(false);
+    expect(drive._material.emissive.getHex()).toBe(0x000000);
+  });
+
+  it('setSaved(true, { corrupted: true }) turns the material red', () => {
+    const drive = new Drive();
+    drive.setSaved(true, { corrupted: true });
+    expect(drive.saved).toBe(true);
+    expect(drive.corrupted).toBe(true);
+    expect(drive._material.emissive.getHex()).toBe(0xcc2222);
+    expect(drive._material.emissiveIntensity).toBeGreaterThan(0);
+  });
+
+  it('a plain setSaved(true) stays green and clears any corruption', () => {
+    const drive = new Drive();
+    drive.setSaved(true, { corrupted: true });
+    drive.setSaved(true);
+    expect(drive.corrupted).toBe(false);
+    expect(drive._material.emissive.getHex()).toBe(0x22cc44);
+  });
+
+  it('setSaved(false) wipes the red indicator too', () => {
+    const drive = new Drive();
+    drive.setSaved(true, { corrupted: true });
+    drive.setSaved(false);
+    expect(drive.saved).toBe(false);
+    expect(drive.corrupted).toBe(false);
+    expect(drive._material.emissive.getHex()).toBe(0x000000);
+  });
+
+  it('setEjected clears a red drive back to the default', () => {
+    const drive = new Drive();
+    drive.setSaved(true, { corrupted: true });
+    drive.setEjected();
+    expect(drive.saved).toBe(false);
+    expect(drive.corrupted).toBe(false);
     expect(drive._material.emissive.getHex()).toBe(0x000000);
   });
 

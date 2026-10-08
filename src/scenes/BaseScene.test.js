@@ -21,6 +21,7 @@ import { ScreenFade } from '../ui/ScreenFade.js';
 import { hiddenFromRegion } from '../systems/Sightlines.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { EvilSignal } from '../gameplay/EvilSignal.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -1188,6 +1189,17 @@ describe('BaseScene power and the UFO', () => {
     expect(threat.grid).toBe(scene.power);
     expect(threat.radar).toBe(scene.radarOverlay);
     expect(threat.signalLight).toBe(scene.rooms.MainOffice.signalLight);
+  });
+
+  it('runs an EvilSignal on the gameplay systems, wired to the terminal, drives and array', () => {
+    const evil = scene._sceneRoot.find('GameplaySystems').getComponent(EvilSignal);
+    expect(evil).toBe(scene.evilSignal);
+    expect(evil.controller).toBe(scene.gameController);
+    expect(evil.signalManager).toBe(scene.signalManager);
+    expect(evil.terminal).toBe(scene.terminal);
+    expect(evil.driveManager).toBe(scene.driveManager);
+    expect(evil.satellite).toBe(scene.satellite);
+    expect(scene.terminal.evilSignal).toBe(evil);
   });
 
   it('in view of the window means anywhere in the main office — no hiding behind the furniture', () => {

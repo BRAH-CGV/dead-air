@@ -142,6 +142,9 @@ export class Engine {
     // TESTING ONLY — remove before release: bring a dust eye now, with a
     // storm if none is blowing (BaseScene).
     summonEyes:  'KeyJ',
+    // TESTING ONLY — remove before release: put the evil signal in the sky
+    // (BaseScene).
+    summonEvil:  'KeyG',
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -311,6 +314,10 @@ export class Engine {
       if (e.code === this.keyBinds.summonEyes && this.activeScene?.dustEyes) {
         const coming = this.activeScene.dustEyes.summon();
         console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
+      }
+      if (e.code === this.keyBinds.summonEvil && this.activeScene?.evilSignal) {
+        const came = this.activeScene.evilSignal.summon();
+        console.log(came ? '[DEBUG] Evil signal summoned' : '[DEBUG] Evil signal not summoned — one is already up, or no shift is');
       }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);

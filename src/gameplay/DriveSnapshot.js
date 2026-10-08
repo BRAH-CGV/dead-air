@@ -53,6 +53,7 @@ export class DriveSnapshot {
       return {
         drive,
         saved: drive.saved,
+        corrupted: drive.corrupted,
         owner: drive._snapOwner ?? null,
         slotIndex: drive._snapSlotIndex ?? null,
         position,
@@ -106,7 +107,7 @@ export class DriveSnapshot {
   _reinstate(state, released) {
     const { owner, slotIndex, position, quaternion } = state;
     const item = state.box ?? state.drive;
-    if (state.saved !== undefined) item.setSaved?.(state.saved);
+    if (state.saved !== undefined) item.setSaved?.(state.saved, { corrupted: state.corrupted });
 
     // Skipped only when pass 1 left this item alone AND it still sits where
     // the capture left it — a released item must be moved even if its owner

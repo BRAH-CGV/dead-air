@@ -9,6 +9,7 @@ vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 import * as THREE from 'three';
 import { ComputerTerminal, createComputerInteractable } from './ComputerTerminal.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
 
@@ -508,6 +509,84 @@ describe('ComputerTerminal', () => {
     term.radar.setInfo('No dish aimed — wait for one to settle');
     expect(radar.setInfo).toHaveBeenCalledWith('No dish aimed — wait for one to settle');
     expect(term.state).toBe('radar');
+  });
+
+  // ── The evil signal hook ──
+
+  /** A fake engine just wide enough for onUpdate: key states + WASD binds. */
+  function makeEngine(keys = {}) {
+    return {
+      input: { keys },
+      keyBinds: {
+        left: 'KeyA', right: 'KeyD', forward: 'KeyW', back: 'KeyS',
+        jump: 'Space', crouch: 'ShiftLeft',
+      },
+    };
+  }
+
+  /** The red target parked exactly where the cursor points, revealed. */
+  function parkEvilAtCursor() {
+    const sky = term._cursorToSky();
+    const sig = new SignalTarget({ id: -1, yaw: sky.yaw, pitch: sky.pitch, scanTime: 0, evil: true });
+    sig.appeared = true;
+    sig.fadeElapsed = sig.fadeSeconds;
+    mgr.signals.push(sig);
+    return sig;
+  }
+
+  it('reports the hovered evil signal to EvilSignal — and null off it', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+
+    const evil = { hover: vi.fn(), locked: false };
+    term.evilSignal = evil;
+
+    mgr.signals.length = 0;             // only the red one is in the sky
+    const sig = parkEvilAtCursor();
+
+    term.onUpdate(1 / 60);
+    expect(term._hoveredSignal).toBe(sig);
+    expect(evil.hover).toHaveBeenCalledWith(sig);
+
+    // Cursor off the signal: EvilSignal is told the hover ended.
+    term._cursorX = 0.5;
+    term._cursorY = 0;
+    term.onUpdate(1 / 60);
+    expect(evil.hover).toHaveBeenLastCalledWith(null);
+  });
+
+  it('freezes the cursor while EvilSignal holds the dish', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({ KeyA: true }) } } };
+    term.enter();
+
+    term.evilSignal = { hover: vi.fn(), locked: true };
+    term.onUpdate(1 / 60);
+    expect(term._cursorX).toBe(0);              // WASD ignored while locked
+
+    term.evilSignal.locked = false;             // hold over: the same key moves it
+    term.onUpdate(1 / 60);
+    expect(term._cursorX).toBeLessThan(0);
+  });
+
+  it('Enter never starts an ordinary scan on the evil signal', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({ Enter: true }) } } };
+    term.enter();
+
+    term.evilSignal = { hover: vi.fn(), locked: false };
+    mgr.signals.length = 0;
+    const sig = parkEvilAtCursor();
+
+    // A dish is aimed at it and a blank drive is in the reader — an
+    // ordinary signal would scan on this Enter.
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    expect(sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
+
+    term.onUpdate(1 / 60);
+
+    expect(term._hoveredSignal).toBe(sig);
+    expect(term.state).toBe('radar');
+    expect(sat.isScanning).toBe(false);
   });
 
   // ── SCANNING → REVIEW ──

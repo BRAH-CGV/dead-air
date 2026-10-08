@@ -12,7 +12,8 @@ function makeMockDrive(held = false) {
     name: `Drive_${Math.random().toString(36).slice(2, 6)}`,
     components: [pickupable],
     saved: false,
-    setSaved(v) { this.saved = v; },
+    corrupted: false,
+    setSaved(v, { corrupted = false } = {}) { this.saved = v; this.corrupted = v && corrupted; },
     getComponent(Type) {
       return this.components.find(c => c instanceof Type) ?? null;
     },
@@ -180,6 +181,34 @@ describe('DriveManager', () => {
     expect(d.saved).toBe(true);
   });
 
+  // ── Save (the red one) ──
+
+  it('saveEvilToDrive marks the inserted drive saved and corrupted', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    expect(dm.saveEvilToDrive()).toBe(1);
+    expect(d.saved).toBe(true);
+    expect(d.corrupted).toBe(true);
+    expect(dm.signalsOnDrive).toBe(1);
+  });
+
+  it('saveEvilToDrive is a no-op without an inserted drive', () => {
+    const dm = new DriveManager();
+    expect(dm.saveEvilToDrive()).toBe(0);
+    expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('a corrupted drive still reads as having a signal', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveEvilToDrive();
+    expect(dm.insertedDriveHasSignal).toBe(true);
+  });
+
   // ── insertedDriveHasSignal ──
 
   it('insertedDriveHasSignal is false when no drive is inserted', () => {
@@ -220,6 +249,19 @@ describe('DriveManager', () => {
     expect(result).toBe(true);
     expect(d.saved).toBe(false);
     expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('clearInsertedDriveSignal wipes a corrupted drive back to blank', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveEvilToDrive();
+    expect(d.corrupted).toBe(true);
+
+    expect(dm.clearInsertedDriveSignal()).toBe(true);
+    expect(d.saved).toBe(false);
+    expect(d.corrupted).toBe(false);
   });
 
   it('clearInsertedDriveSignal is a no-op without an inserted drive', () => {

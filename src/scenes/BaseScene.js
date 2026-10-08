@@ -50,6 +50,7 @@ import { FirstPersonController } from '../components/FirstPersonController.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { EvilSignal } from '../gameplay/EvilSignal.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
@@ -483,6 +484,20 @@ export class BaseScene extends Scene {
 
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
+
+    // The red signal (the next threat, in early): it scans itself, pins
+    // the dish when no drive is in, and corrupts the drive it is saved to
+    // — a red drive never counts towards the quota. Summoned with G until
+    // it gets a night of its own.
+    this.evilSignal = new EvilSignal({
+      controller:    this.gameController,
+      signalManager: this.signalManager,
+      terminal:      this.terminal,
+      driveManager:  this.driveManager,
+      satellite:     this.satellite,
+    });
+    gameplayGO.addComponent(this.evilSignal);
+    this.terminal.evilSignal = this.evilSignal;
 
     // Wire the drive manager to the office's drive reader slot.
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
