@@ -13,7 +13,7 @@ function memoryStorage(initial = {}) {
 
 const DEFAULT_BINDS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-  jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF',
+  jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
 };
 
 const make = (storage = memoryStorage()) =>

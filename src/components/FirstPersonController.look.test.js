@@ -56,4 +56,14 @@ describe('FirstPersonController mouse look', () => {
     ctrl.onUpdate(DT);
     expect(ctrl.pitch).toBeGreaterThan(0);
   });
+
+  it('lookLocked freezes the view (rotating a held object) but not the legs', () => {
+    const ctrl = makeController({}, { dx: 10, dy: 10 });
+    ctrl.gameObject.scene.userData.engine.input.keys.KeyW = true;
+    ctrl.lookLocked = true;
+    ctrl.onUpdate(DT);
+    expect(ctrl.yaw).toBe(0);
+    expect(ctrl.pitch).toBe(0);
+    expect(ctrl._wish).toBe(true);
+  });
 });

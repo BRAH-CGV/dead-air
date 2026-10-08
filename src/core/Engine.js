@@ -132,6 +132,7 @@ export class Engine {
     crouch:   'KeyC',
     interact: 'KeyE',
     flashlight: 'KeyF',
+    rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
     // Debug keys, in the same table so they remap with everything else.
     debugFly:   'KeyV',   // toggle the noclip fly camera
     fullbright: 'KeyB',   // toggle the unlit lighting mode
