@@ -783,7 +783,8 @@ export class Engine {
     // The editor moves shadow casters the scheduler isn't watching; while it
     // is open, shadows go back to every frame.
     if (this.levelEditor?.enabled) this.shadows.invalidate();
-    this.shadows.update();
+    // The moving bodies too: a carried or knocked object's shadow follows it.
+    this.shadows.update(this.rigidBodyMap);
     this.renderer.render(this.scene, this.camera);
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
