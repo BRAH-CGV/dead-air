@@ -8,11 +8,13 @@ import { withKeys, setInteractKey } from '../ui/promptKeys.js';
 
 // ── Fakes: no WebGL, no Rapier, no real pointer lock ──
 
-/** A scene with just what App reads: the controller, nights, clock, signals. */
+/** A scene with just what App reads: the controller, nights, clock, drives. */
 function makeScene() {
   const listeners = new Set();
+  const quotaDock = { collectedCount: 2, requiredCount: 4 };
   const gameController = {
     state: 'playing', nightNumber: 1,
+    quotaDock,
     onStateChange: vi.fn((cb) => { listeners.add(cb); return () => listeners.delete(cb); }),
     /** Test helper: move the controller to `state` and tell its listeners. */
     fire(state) {
@@ -29,7 +31,6 @@ function makeScene() {
   return {
     gameController, nights,
     nightClock: { timeString: '3:14 AM' },
-    signalManager: { getProgress: () => ({ saved: 2, required: 4 }) },
   };
 }
 
@@ -233,9 +234,9 @@ describe('App', () => {
       expect(app.flow.state).toBe('paused');
     });
 
-    it('the status block reads night, clock and signals when it opens', () => {
+    it('the status block reads night, clock and drives when it opens', () => {
       lock.lose();
-      expect(document.getElementById('menu-panel').textContent).toContain('NIGHT 1 · 3:14 AM · SIGNALS 2/4');
+      expect(document.getElementById('menu-panel').textContent).toContain('NIGHT 1 · 3:14 AM · DRIVES 2/4');
     });
 
     it('Escape on the pause root does nothing', () => {
@@ -387,7 +388,7 @@ describe('App', () => {
       expect(engine.paused).toBe(true);
       expect(exitSpy).toHaveBeenCalled();
       expect(app.flow.state).toBe('ended');   // not paused by the lost lock
-      expect(document.getElementById('menu-panel').textContent).toContain('Night 1 failed: 2/4 signals');
+      expect(document.getElementById('menu-panel').textContent).toContain('Night 1 failed: 2/4 drives');
     });
 
     it('Retry from Night failed rebuilds the same night', async () => {

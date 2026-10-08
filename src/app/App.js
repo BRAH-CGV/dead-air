@@ -323,11 +323,11 @@ export class App {
   }
 
   _showNightFailed() {
-    const progress = this.engine.activeScene?.signalManager?.getProgress?.();
+    const dock = this.engine.activeScene?.gameController?.quotaDock;
     this._failed = {
       night: this._currentNight(),
-      saved: progress?.saved ?? 0,
-      required: progress?.required ?? 0,
+      saved: dock?.collectedCount ?? 0,
+      required: dock?.requiredCount ?? 0,
     };
     this.flow.nightFailed();
     this.engine.setPaused(true);
@@ -541,13 +541,13 @@ export class App {
     return { tabs: TABS, tab, rows, message: this._settingsMessage };
   }
 
-  /** `NIGHT 2 · 03:14 AM · SIGNALS 2/4`, read when the pause menu opens. */
+  /** `NIGHT 2 · 03:14 AM · DRIVES 2/4`, read when the pause menu opens. */
   _statusLine() {
     const scene = this.engine.activeScene;
-    const progress = scene?.signalManager?.getProgress?.();
+    const dock = scene?.gameController?.quotaDock;
     const parts = [`NIGHT ${this._currentNight()}`];
     if (scene?.nightClock) parts.push(scene.nightClock.timeString.toUpperCase());
-    if (progress) parts.push(`SIGNALS ${progress.saved}/${progress.required}`);
+    if (dock) parts.push(`DRIVES ${dock.collectedCount}/${dock.requiredCount}`);
     return parts.join(' · ');
   }
 

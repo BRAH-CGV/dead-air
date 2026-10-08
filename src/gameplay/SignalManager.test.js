@@ -79,18 +79,18 @@ describe('SignalManager', () => {
     expect(mgr.required).toBeLessThanOrEqual(3);
   });
 
-  it('save increments the saved counter, delete does not', () => {
+  it('save marks the signal as saved, delete marks as deleted', () => {
     const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
     mgr.startNight(1);
 
     mgr.saveSignal(1);
-    expect(mgr.saved).toBe(1);
+    expect(mgr.signals[0].saved).toBe(true);
 
     mgr.deleteSignal(2);
-    expect(mgr.saved).toBe(1);  // unchanged
+    expect(mgr.signals[1].deleted).toBe(true);
 
     mgr.saveSignal(3);
-    expect(mgr.saved).toBe(2);
+    expect(mgr.signals[2].saved).toBe(true);
   });
 
   it('marks signals as saved or deleted correctly', () => {
@@ -110,29 +110,12 @@ describe('SignalManager', () => {
     expect(mgr.signals[1].saved).toBe(false);
   });
 
-  it('isComplete returns true when saved >= required', () => {
+  it('getProgress returns the required count', () => {
     const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
     mgr.startNight(1);  // required = 3
 
-    expect(mgr.isComplete()).toBe(false);
-
-    mgr.saveSignal(1);
-    mgr.saveSignal(2);
-    expect(mgr.isComplete()).toBe(false);
-
-    mgr.saveSignal(3);
-    expect(mgr.isComplete()).toBe(true);
-  });
-
-  it('getProgress returns correct snapshot', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
-    mgr.startNight(1);  // required = 3
-
-    mgr.saveSignal(1);
     const p = mgr.getProgress();
-    expect(p.saved).toBe(1);
     expect(p.required).toBe(3);
-    expect(p.remaining).toBe(2);
   });
 
   it('assigns payload URLs from pool without repeats until exhausted', () => {
@@ -160,21 +143,24 @@ describe('SignalManager', () => {
     const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
     mgr.startNight(1);
     mgr.saveSignal(1);
-    expect(mgr.saved).toBe(1);
+    expect(mgr.signals[0].saved).toBe(true);
 
     mgr.startNight(2);
-    expect(mgr.saved).toBe(0);
+    // Fresh signals, none saved
+    expect(mgr.signals).toHaveLength(3);
+    expect(mgr.signals.every(s => !s.saved)).toBe(true);
   });
 
   it('ignores save/delete for unknown IDs', () => {
     const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
     mgr.startNight(1);
 
+    // Should not throw
     mgr.saveSignal(99);
-    expect(mgr.saved).toBe(0);
-
     mgr.deleteSignal(99);
-    expect(mgr.saved).toBe(0);
+
+    // No signal was affected
+    expect(mgr.signals.every(s => !s.saved && !s.deleted)).toBe(true);
   });
 
   it('handles empty payload pool gracefully', () => {

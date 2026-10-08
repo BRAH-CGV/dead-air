@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as THREE from 'three';
 
 // Recording-free fake: InteractionSystem only needs Ray construction and a
@@ -16,6 +16,7 @@ vi.mock('@dimforge/rapier3d', () => ({
 
 import { InteractionSystem } from './InteractionSystem.js';
 import { Interactable } from './Interactable.js';
+import { Pickupable } from './Pickupable.js';
 import { GameObject } from '../core/GameObject.js';
 
 function makePlayer({ hit = null } = {}) {
@@ -221,6 +222,107 @@ describe('InteractionSystem line of sight', () => {
     sys.onUpdate(0);
 
     expect(sys.currentTarget).toBe(use);
+  });
+});
+
+// ── Pickups ─────────────────────────────────────────────────
+// A Pickupable carries no Interactable, but it must still be targetable —
+// the crosshair lights up and the prompt reads '[E] Pick up'. PickupSystem
+// reads `currentPickupable` instead of casting its own ray, so an
+// Interactable on the same object wins by simply never setting it.
+
+function pickupAt(engine, handle) {
+  const go = new GameObject('Drive');
+  const pickupable = go.addComponent(new Pickupable());
+  engine._bodyToGO.set(handle, go);
+  return pickupable;
+}
+
+describe('InteractionSystem pickups', () => {
+  it('targets a Pickupable and offers to pick it up', () => {
+    const { sys, engine, prompt } = makePlayer();
+    const pickupable = pickupAt(engine, 30);
+    engine.world.castRay = rayThrough({ collider: collider(30), timeOfImpact: 1.5 });
+
+    sys.onUpdate(0);
+
+    expect(sys.currentPickupable).toBe(pickupable);
+    expect(sys.currentTarget).toBeNull();
+    expect(prompt.show).toHaveBeenCalledWith('[E] Pick up');
+  });
+
+  it('ignores a Pickupable that is already held', () => {
+    const { sys, engine, prompt } = makePlayer();
+    const pickupable = pickupAt(engine, 30);
+    pickupable.held = true;
+    engine.world.castRay = rayThrough({ collider: collider(30), timeOfImpact: 1.5 });
+
+    sys.onUpdate(0);
+
+    expect(sys.currentPickupable).toBeNull();
+    expect(prompt.show).not.toHaveBeenCalled();
+  });
+
+  it('prefers an Interactable over a Pickupable on the same object', () => {
+    const { sys, engine } = makePlayer();
+    const go = new GameObject('Both');
+    const use = go.addComponent(new class extends Interactable {
+      promptLabel = '[E] Insert drive';
+    }());
+    go.addComponent(new Pickupable());
+    engine._bodyToGO.set(40, go);
+    engine.world.castRay = rayThrough({ collider: collider(40), timeOfImpact: 1.5 });
+
+    sys.onUpdate(0);
+
+    expect(sys.currentTarget).toBe(use);
+    expect(sys.currentPickupable).toBeNull();
+  });
+
+  it('excludes the carried body from the ray, so it cannot block the reader behind it', () => {
+    const { sys, engine } = makePlayer();
+    const use = lockerAt(engine, 20);              // stands in for the drive reader
+    const heldBody = { handle: 30 };
+    const heldCollider = { parent: () => heldBody, isSensor: () => false };
+    engine.world.castRay = rayThrough(
+      { collider: heldCollider, timeOfImpact: 1 }, // carried drive, on the camera axis
+      { collider: collider(20), timeOfImpact: 2 },
+    );
+
+    sys.onUpdate(0);
+    expect(sys.currentTarget).toBeNull();          // the carried drive stops the ray…
+
+    sys.excludeBody = heldBody;
+    sys.onUpdate(0);
+    expect(sys.currentTarget).toBe(use);           // …until it is excluded
+  });
+});
+
+// ── Crosshair ───────────────────────────────────────────────
+// #crosshair.active is the blue "something can be used" state. It must
+// light for an Interactable and for a Pickupable alike.
+
+describe('InteractionSystem crosshair', () => {
+  beforeEach(() => { document.body.innerHTML = '<div id="crosshair"></div>'; });
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  it('turns active for a target in view, and off again when nothing is targeted', () => {
+    const { sys, engine } = makePlayer();          // caches #crosshair on start
+    const crosshair = document.getElementById('crosshair');
+
+    lockerAt(engine, 20);
+    engine.world.castRay = rayThrough({ collider: collider(20), timeOfImpact: 1.5 });
+    sys.onUpdate(0);
+    expect(crosshair.classList.contains('active')).toBe(true);   // Interactable
+
+    pickupAt(engine, 30);
+    engine.world.castRay = rayThrough({ collider: collider(30), timeOfImpact: 1.5 });
+    sys.onUpdate(0);
+    expect(crosshair.classList.contains('active')).toBe(true);   // Pickupable
+
+    engine.world.castRay = vi.fn(() => null);
+    sys.onUpdate(0);
+    expect(crosshair.classList.contains('active')).toBe(false);  // neither
   });
 });
 

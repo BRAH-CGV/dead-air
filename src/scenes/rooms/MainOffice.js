@@ -3,6 +3,26 @@ import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
+import { Drive } from '../../gameobjects/Drive.js';
+import { DriveBox } from '../../gameobjects/DriveBox.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
+
+// ── Drive boxes on the shelf ──
+// The shelf collider (manifest) has five boards; these are their top
+// surfaces — board centre y + half the 0.025 thickness — in the same
+// world space the ShelfCube's resting height uses.
+const SHELF_LEVEL_TOPS = [0.2236, 0.6458, 1.0681, 1.4903, 1.9125];
+const SHELF_XZ = [5.68, -2.0];   // where the Shelf prop stands
+const DRIVE_BOX_GAP = 0.03;      // clearance between a box pair on a board
+
+// One entry per box: which board it rests on, which side of the board
+// centre it sits on, its colour, and how many drives it starts with.
+const DRIVE_BOX_LAYOUT = [
+  { name: 'DriveBox_A', level: 0, slot: -1, color: 0x405064, fill: 8 },
+  { name: 'DriveBox_B', level: 0, slot: +1, color: 0x584064, fill: 8 },
+  { name: 'DriveBox_C', level: 1, slot: -1, color: 0x3e5a50, fill: 8 },
+  { name: 'DriveBox_D', level: 1, slot: +1, color: 0x5a4a3e, fill: 8 },
+];
 
 // ─────────────────────────────────────────────
 // MainOffice  –  the signal lab, open from night 1
@@ -33,6 +53,16 @@ export class MainOffice extends Room {
 
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
+
+  /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
+  driveReader = null;
+
+  /** Physical drives in the room: the drives pre-seated in the drive
+   *  boxes. @type {Drive[]} */
+  drives = [];
+
+  /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
+  driveBoxes = [];
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -154,6 +184,11 @@ export class MainOffice extends Room {
 
     // By the airlock door, where a fire would be fought from.
     this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
+
+    // Drive reader on the desk and the shelf's drive boxes, each
+    // pre-filled with seated drives.
+    this._buildDriveStation();
+    this._buildDriveBoxes();
   }
 
   /** Where food comes from: a wall-mounted machine that dispenses rations
@@ -196,6 +231,65 @@ export class MainOffice extends Room {
     }());
   }
 
+  /** Drive reader slot on the desk surface, right of the computer. A small
+   *  static box with a DriveSlot component that auto-snaps nearby unheld
+   *  drives. The inserted drive can be picked up directly (no [E] prompt). */
+  _buildDriveStation() {
+    // Reader: a small dark box on the desk surface, right of centre.
+    // Desk surface is at about y = 0.73 m; the reader is 3 cm tall, so
+    // its centre sits at 0.73 + 0.015 = 0.745.
+    const readerSize = [0.12, 0.03, 0.15];
+    const readerPos  = [0.650, 0.875, -2.260];
+    const readerMat  = this._own(new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a, roughness: 0.7, metalness: 0.4,
+      emissive: 0x003311, emissiveIntensity: 0.3,
+    }));
+    this.driveReader = this._addStaticBox('DriveReader', readerPos, readerSize, readerMat);
+
+    // Tooltip on hover (no interact action — just a label)
+    const readerTooltip = new Interactable();
+    readerTooltip.promptLabel = 'Drive reader';
+    this.driveReader.addComponent(readerTooltip);
+
+    // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
+    // The slot is configured with a snap offset that places the drive on
+    // top of the reader (half reader height + half drive height).
+    const driveHeight = 0.02; // Drive._size[1] default
+    this.driveReader.addComponent(new DriveSlot({
+      snapDistance: 0.25,
+      snapOffset: { y: readerSize[1] / 2 + driveHeight / 2 },
+    }));
+  }
+
+  /** Pickupable drive boxes stocked on the office shelf. Each rests on a
+   *  board with its sockets pre-filled; a taken drive can go to a reader or
+   *  another box, and a released drive snaps into any free socket nearby. */
+  _buildDriveBoxes() {
+    for (const spec of DRIVE_BOX_LAYOUT) {
+      const box = this._own(new DriveBox(spec.name, { color: spec.color }));
+      // Rest on the board: top surface + half box height. Along the board
+      // the boxes spread from the shelf centre, spaced off the box's own
+      // depth so a resized box keeps its clearance.
+      box.object3d.position.set(
+        SHELF_XZ[0],
+        SHELF_LEVEL_TOPS[spec.level] + box.size[1] / 2,
+        SHELF_XZ[1] + spec.slot * (box.size[2] / 2 + DRIVE_BOX_GAP),
+      );
+      this.driveBoxes.push(box);
+      this.root.addChild(box);
+
+      // Seat its starting drives. Attaching at build time swaps the prompt
+      // and installs the detach-on-pickup hook; the drive's deferred
+      // kinematic lands the body kinematic in the socket once _init runs.
+      for (let i = 0; i < (spec.fill ?? 0); i++) {
+        const drive = new Drive(`${spec.name}_Drive_${i + 1}`);
+        this.root.addChild(drive);
+        box.receiver.attach(drive, i);
+        this.drives.push(drive);
+      }
+    }
+  }
+
   /** Right of the window, between its frame (x 4.43) and the side wall
    *  (x 5.9), flush on the back wall's inner face. */
   _buildWallClock() {
@@ -208,7 +302,7 @@ export class MainOffice extends Room {
    *  placeholder sphere until a proper warning-lamp model is sourced. */
   _buildSignalLight() {
     this.signalLight = this._own(new SignalAlertLight());
-    this.signalLight.object3d.position.set(0, 1.3, -2.45);
+    this.signalLight.object3d.position.set(-0.240, 1.090, -2.820);
     this.root.addChild(this.signalLight);
   }
 

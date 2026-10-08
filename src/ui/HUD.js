@@ -6,7 +6,7 @@
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
 //                      EVA suit indicator
 //   RadarOverlay     – 2D canvas radar display with signal blips
-//   SignalReviewPanel– modal for save/delete after scanning a signal
+//   SignalReviewPanel– modal for viewing a scanned signal's payload
 //
 // All follow the Crosshair/LoadingScreen pattern: markup + CSS live in
 // index.html so the panel renders before any JS parses; these classes
@@ -43,7 +43,7 @@ export class HUD {
   }
 
   setSignals(saved, required) {
-    if (this._signals) this._signals.textContent = `Signals: ${saved} / ${required}`;
+    if (this._signals) this._signals.textContent = `Drives: ${saved} / ${required}`;
   }
 
   setNight(number) {
@@ -320,6 +320,15 @@ export class RadarOverlay {
     return `rgba(0, 220, 200, ${0.8 * a})`;                          // unscanned cyan
   }
 
+  /** RGB triplet for a signal's state colour — used by the ripple
+   *  animation which applies its own alpha. */
+  _blipRgb(sig) {
+    if (sig.saved)   return '80, 200, 80';
+    if (sig.deleted) return '200, 60, 60';
+    if (sig.scanned) return '180, 180, 60';
+    return '0, 220, 200';
+  }
+
   /** The UFO on its way in, or null. UfoThreat owns the object and rewrites
    *  it in place every frame: { active, yaw, pitch, size 0..1,
    *  intensity 0..1, time }. */
@@ -519,17 +528,33 @@ export class RadarOverlay {
       ctx.fill();
     }
 
-    // Signal blips — shared _skyToCanvas mapping. Each signal appears on
-    // its own schedule through the night and fades in (sig.opacity), so
-    // an un-appeared signal draws nothing at all.
-    for (const sig of signals) {
+    // Signal blips — each signal is a single expanding ripple that
+    // repeats continuously.  A ring grows outward from the signal's
+    // position and fades before starting again, staggered per signal
+    // so they never pulse in lock-step.
+    const now = Date.now();
+    const RIPPLE_CYCLE = 2000;       // ms per ripple
+    const RIPPLE_MAX   = 18;         // max ripple radius (in s units)
+    for (let i = 0; i < signals.length; i++) {
+      const sig = signals[i];
       if (sig.opacity <= 0) continue;
       const pos = this._skyToCanvas(sig.yaw, sig.pitch);
+      const rgb = this._blipRgb(sig);
 
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 5 * s, 0, Math.PI * 2);
-      ctx.fillStyle = this._blipColor(sig);
-      ctx.fill();
+      // Stagger each signal's phase so the sky never pulses as one.
+      const offset = (i * 737) % RIPPLE_CYCLE;
+      const phase  = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
+
+      // The expanding ring — radius grows, alpha fades.
+      const ringR   = phase * RIPPLE_MAX * s;
+      const ringA   = (1 - phase) * 0.8 * sig.opacity;
+      if (ringA > 0.01) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${rgb}, ${ringA.toFixed(3)})`;
+        ctx.lineWidth = 1.5 * s;
+        ctx.stroke();
+      }
     }
 
     // Something big coming in — over the blips, under the dish and cursor.

@@ -77,7 +77,16 @@ function makeRadar() {
 function makeReviewPanel() {
   return {
     show: vi.fn(), hide: vi.fn(),
-    onSave: vi.fn(), onDelete: vi.fn(),
+  };
+}
+
+function makeDriveManager(inserted = true) {
+  return {
+    driveInserted: inserted,
+    hasAvailableDrives: vi.fn(() => true),
+    insertDrive: vi.fn(),
+    ejectDrive: vi.fn(),
+    saveToDrive: vi.fn(),
   };
 }
 
@@ -101,7 +110,7 @@ function revealAll(mgr) {
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('ComputerTerminal', () => {
-  let term, sat, mgr, hud, radar, review, crosshair;
+  let term, sat, mgr, hud, radar, review, crosshair, driveMgr;
 
   beforeEach(() => {
     term   = new ComputerTerminal();
@@ -111,6 +120,7 @@ describe('ComputerTerminal', () => {
     radar  = makeRadar();
     review = makeReviewPanel();
     crosshair = makeCrosshair();
+    driveMgr  = makeDriveManager(true);
 
     term.satellite    = sat;
     term.signalManager = mgr;
@@ -118,6 +128,7 @@ describe('ComputerTerminal', () => {
     term.radar        = radar;
     term.reviewPanel  = review;
     term.crosshair    = crosshair;
+    term.driveManager = driveMgr;
 
     mgr.startNight(1);  // required=3, 5 signals
     revealAll(mgr);     // hide the appearance schedule from these tests
@@ -304,6 +315,11 @@ describe('ComputerTerminal', () => {
     term.enter();
     const sig1 = mgr.signals[0];
     const sig2 = mgr.signals[1];
+    // Hide other signals so they don't interfere.
+    for (let i = 2; i < mgr.signals.length; i++) {
+      mgr.signals[i].appeared = false;
+      mgr.signals[i].fadeElapsed = 0;
+    }
     // Place both signals at the same spot (within tolerance)
     sig2.yaw = sig1.yaw + sig1.tolerance * 0.3;
     sig2.pitch = sig1.pitch;
@@ -329,8 +345,11 @@ describe('ComputerTerminal', () => {
   it('hover ignores signals that have not appeared yet', () => {
     term.enter();
     const sig = mgr.signals[0];
-    sig.appeared = false;   // not yet scheduled — still invisible
-    sig.fadeElapsed = 0;
+    // Hide ALL signals so no other random signal is near the cursor.
+    for (const s of mgr.signals) {
+      s.appeared = false;
+      s.fadeElapsed = 0;
+    }
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
     term._cursorY = cur.y;
@@ -561,7 +580,7 @@ describe('ComputerTerminal', () => {
 
   // ── REVIEW ──
 
-  it('saveSignal marks signal saved and returns to radar', () => {
+  it('saveSignal marks signal saved, saves to drive, and returns to radar', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -575,24 +594,37 @@ describe('ComputerTerminal', () => {
 
     term.saveSignal();
     expect(sig.saved).toBe(true);
-    expect(mgr.saved).toBe(1);
+    expect(driveMgr.saveToDrive).toHaveBeenCalled();
     expect(term.state).toBe('radar');
     expect(review.hide).toHaveBeenCalled();
   });
 
-  it('deleteSignal marks signal deleted and does NOT increment counter', () => {
+  it('scan is blocked when no drive is inserted', () => {
+    driveMgr.driveInserted = false;
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
     term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
     term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
 
-    term._enterReview();
-    term.deleteSignal();
-    expect(sig.deleted).toBe(true);
-    expect(mgr.saved).toBe(0);
+    // Even though dish is aimed, scanning should not start without a drive.
+    // Simulate the Enter gate check from onUpdate.
+    expect(sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
+    expect(driveMgr.driveInserted).toBe(false);
+    // The terminal stays in radar — scanning is blocked.
     expect(term.state).toBe('radar');
+  });
+
+  it('radar hint tells the player to insert a drive when none is inserted', () => {
+    driveMgr.driveInserted = false;
+    term.enter();
+    expect(radar.setHint).toHaveBeenCalledWith(
+      expect.stringContaining('Insert a drive'),
+    );
   });
 
   // ── EXIT ──
@@ -605,7 +637,7 @@ describe('ComputerTerminal', () => {
     expect(radar.hide).toHaveBeenCalled();
   });
 
-  it('exit during review leaves signal scanned but unresolved', () => {
+  it('exit during review auto-saves the signal', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -616,10 +648,11 @@ describe('ComputerTerminal', () => {
     term._enterReview();
     expect(sig.scanned).toBe(true);
 
+    // Simulate Q key: the onUpdate handler calls saveSignal then exit.
+    term.saveSignal();
     term.exit();
     expect(term.state).toBe('idle');
-    expect(sig.saved).toBe(false);
-    expect(sig.deleted).toBe(false);
+    expect(sig.saved).toBe(true);
     expect(review.hide).toHaveBeenCalled();
   });
 

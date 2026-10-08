@@ -284,7 +284,7 @@ export class MenuView {
   _drawNightFailed({ night = 1, saved = 0, required = 0 }) {
     return [
       h('h2', { class: 'menu-heading is-danger' }, COPY.nightFailedTitle),
-      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} signals`),
+      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} drives`),
       h('nav', { class: 'menu-list' },
         option('retry', 'Retry night'),
         option('quit', 'Main menu'),
