@@ -282,8 +282,9 @@ export class EvilSignal extends Component {
         this._silenceTimer = null;
         this._driveHopTimer = null;
         this.deleteWarning?.hide();
-        // Clear any doom glow that was ramping on the drive.
-        this._lastCorruptedDrive?.clearDoomGlow?.();
+        // The doom glow fades out on the drive over a few seconds rather
+        // than cutting — the drive owns the fade now.
+        this._lastCorruptedDrive?.startDoomFadeOut?.();
         this._lastCorruptedDrive = null;
       } else {
         this._silenceTimer -= dt;

@@ -425,5 +425,55 @@ describe('Drive', () => {
       drive.dispose();
       expect(drive._doomLight).toBeNull();
     });
+
+    it('startDoomFadeOut eases the glow down over the duration, then clears', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(1);  // emissive 2400, light 40
+      drive.startDoomFadeOut(3);
+
+      // Halfway through the fade the glow is half of what the ramp left.
+      drive._tickDoomFade(1.5);
+      expect(drive._material.emissive.getHex()).toBe(0xcc2222);
+      expect(drive._material.emissiveIntensity).toBeCloseTo(1200, 0);
+      expect(drive._doomLight.intensity).toBeCloseTo(20, 0);
+
+      // Past the end the glow is gone entirely: light removed, material
+      // back to the unmarked look.
+      drive._tickDoomFade(1.6);
+      expect(drive._doomLight).toBeNull();
+      expect(drive._material.emissive.getHex()).toBe(0x000000);
+      expect(drive._material.emissiveIntensity).toBe(0);
+    });
+
+    it('startDoomFadeOut after a hard clear has nothing to fade', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(0.5);
+      drive.clearDoomGlow();
+      drive.startDoomFadeOut(3);  // no stored glow — just clears
+      expect(drive._doomLight).toBeNull();
+    });
+
+    it('the wipe re-applies the glow through the fade instead of going dark at once', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(0.5);
+      drive.setSaved(false);      // the ServerRoom console wipe
+      expect(drive._material.emissive.getHex()).toBe(0x000000);
+      drive.startDoomFadeOut(3);  // EvilSignal starts the fade next tick
+      drive._tickDoomFade(0.1);
+      // The red is back, easing down from where the ramp left it.
+      expect(drive._material.emissive.getHex()).toBe(0xcc2222);
+      expect(drive._material.emissiveIntensity).toBeGreaterThan(0);
+    });
+
+    it('a state change during the fade cancels it', () => {
+      const drive = new Drive('DoomDrive');
+      drive.setDoomGlow(1);
+      drive.startDoomFadeOut(3);
+      drive.setSaved(true);   // a fresh signal saved mid-fade
+      drive._tickDoomFade(1);
+      // The green stands — the fade no longer re-applies the red.
+      expect(drive._material.emissive.getHex()).toBe(0x22cc44);
+      expect(drive._material.emissiveIntensity).toBe(1.5);
+    });
   });
 });

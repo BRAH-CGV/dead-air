@@ -510,8 +510,10 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     const drive = makeDrive();
     const setDoomGlow = vi.fn();
     const clearDoomGlow = vi.fn();
+    const startDoomFadeOut = vi.fn();
     drive.setDoomGlow = setDoomGlow;
     drive.clearDoomGlow = clearDoomGlow;
+    drive.startDoomFadeOut = startDoomFadeOut;
     const { evil, signalManager } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
@@ -523,10 +525,11 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     evil.onUpdate(EVIL.silenceSeconds / 2);
     expect(setDoomGlow).toHaveBeenCalledWith(expect.closeTo(0.5, 1));
 
-    // Wipe the drive — the glow should clear.
+    // Wipe the drive — the glow fades out on the drive instead of cutting.
     drive.setSaved(false);
     evil.onUpdate(0.1);
-    expect(clearDoomGlow).toHaveBeenCalled();
+    expect(startDoomFadeOut).toHaveBeenCalled();
+    expect(clearDoomGlow).not.toHaveBeenCalled();
   });
 
   it('clears the doom glow on night reset', () => {
