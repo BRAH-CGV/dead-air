@@ -140,6 +140,8 @@ export class EvilSignal extends Component {
   _caught = false;
   /** True once a drive has been infected during this lockout — prevents
    *  re-infecting if another drive is inserted after the first was wiped.
+   *  Cleared when the next signal's pull-in begins, so a later signal in
+   *  the same night can infect a drive again.
    *  @type {boolean} */
   _driveInfected = false;
   /** Sparks flying from the corrupted drive while the silence timer runs.
@@ -381,6 +383,9 @@ export class EvilSignal extends Component {
    *  their current position to the signal's centre on the radar disc.
    *  Once the animation completes, _engage() fires normally. */
   _startPullIn(sig) {
+    // A fresh encounter: the previous signal's infection latch is stale,
+    // so a later signal in the same night can corrupt a drive again.
+    this._driveInfected = false;
     const cursor = this.terminal?.cursorPosition;
     if (!cursor) { this._engage(sig); return; }  // no terminal — skip
     this._pullStartCursor = { x: cursor.x, y: cursor.y };
@@ -424,7 +429,10 @@ export class EvilSignal extends Component {
     this._driveHopTimer = EVIL.driveHopSeconds;
     this._driveInfected = true;
     this.deleteWarning?.show();
-    // Sparks: fly out of the corrupted drive at an increasing rate.
+    // Sparks: fly out of the corrupted drive at an increasing rate. A
+    // second infection while the first window still runs must not leak
+    // the first system.
+    this._disposeSparks();
     this._sparks = new DriveSparks();
     this.scene?.add(this._sparks.points);
   }

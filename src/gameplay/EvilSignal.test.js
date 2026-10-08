@@ -304,6 +304,41 @@ describe('EvilSignal hover — the red save', () => {
     expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
     expect(driveManager.ejectInsertedDrive).toHaveBeenCalledTimes(1);
   });
+
+  it('a successive signal in the same night infects a drive again', () => {
+    const { evil, signalManager, driveManager } = makeRig();  // no drive yet
+    evil.summon();
+    const sig1 = evilSig(signalManager);
+
+    // First signal: a drive is inserted and infected.
+    const drive1 = makeDrive();
+    driveManager.insertedDrive = drive1;
+    driveManager.drives.push(drive1);
+    evil.hover(sig1);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
+    expect(drive1.corrupted).toBe(true);
+    expect(evil._driveInfected).toBe(true);
+
+    // The player wipes it and the first lock runs out.
+    drive1.setSaved(false);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+
+    // A second signal arrives the same night, replacing the spent one.
+    expect(evil.summon()).toBe(true);
+    const sig2 = evilSig(signalManager);
+    expect(sig2).not.toBe(sig1);
+
+    // A fresh drive goes in: the second signal must infect it too.
+    const drive2 = makeDrive();
+    driveManager.insertedDrive = drive2;
+    driveManager.drives.push(drive2);
+    evil.hover(sig2);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
+    expect(drive2.corrupted).toBe(true);
+    expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(2);
+    expect(driveManager.ejectInsertedDrive).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('EvilSignal nights', () => {
