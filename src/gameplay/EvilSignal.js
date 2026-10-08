@@ -1,7 +1,7 @@
 import { Component } from '../core/Component.js';
 import { SignalTarget } from './SignalTarget.js';
-import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
-import { skyToCursor } from '../gameobjects/DishRig.js';
+import { VISIBLE_SECONDS } from './SignalManager.js';
+import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 import { DriveSparks, SPARKS } from './DriveSparks.js';
 
 // ─────────────────────────────────────────────
@@ -40,6 +40,9 @@ export const EVIL = {
   nights: [],
   /** Where it fades in (clock hours after midnight), once scheduled. */
   spawnHours: [1, 4],
+  /** Spawn band on the radar disc, as a fraction of its radius: the
+   *  middle 2/3 — never at the zenith's dead centre nor out on the rim. */
+  spawnRadius: [1 / 6, 5 / 6],
   /** Real seconds the dot takes to fade in, like an ordinary signal. */
   fadeSeconds: 3,
   /** Real seconds the dot holds before fading out. 1.5× an ordinary
@@ -192,13 +195,18 @@ export class EvilSignal extends Component {
       if (i !== -1) sigs.splice(i, 1);
     }
 
-    // Anywhere a dish can see it — the manager's own band, its own numbers.
+    // The middle 2/3 of the radar's radius: pick a point on the cursor
+    // disc inside the band and read the sky back off it, through the same
+    // cursorToSky the radar maps with — the blip lands exactly where it
+    // was sampled, and stays inside every dish's reach.
     const yaw = (this.random() * 2 - 1) * Math.PI;
-    const pitch = PITCH_MIN + this.random() * (PITCH_MAX - PITCH_MIN);
+    const [rMin, rMax] = EVIL.spawnRadius;
+    const r = rMin + this.random() * (rMax - rMin);
+    const sky = cursorToSky(r * Math.sin(yaw), -r * Math.cos(yaw));
     const target = new SignalTarget({
       id: EVIL.id,
-      yaw,
-      pitch,
+      yaw: sky.yaw,
+      pitch: sky.pitch,
       tolerance: EVIL.tolerance,
       scanTime: 0,                    // it never runs through a scan
       payloadUrl: '',

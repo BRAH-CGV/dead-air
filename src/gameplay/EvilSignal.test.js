@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EvilSignal, EVIL } from './EvilSignal.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
+import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 
 // Mock the DriveSparks module so EvilSignal tests don't build real Three.js objects.
 let _sparksMock;
@@ -91,10 +92,25 @@ describe('EvilSignal summon()', () => {
   });
 
   it('spans the whole spawn band with its own dice', () => {
-    for (const [r, pitch] of [[0, PITCH_MIN], [1, PITCH_MAX]]) {
-      const { evil, signalManager } = makeRig({ random: () => r });
+    for (const dice of [0, 1]) {
+      const { evil, signalManager } = makeRig({ random: () => dice });
       evil.summon();
-      expect(evilSig(signalManager).pitch).toBeCloseTo(pitch, 9);
+      // Two dice calls: yaw first, then the radius inside the band.
+      const r = EVIL.spawnRadius[dice];
+      expect(evilSig(signalManager).pitch).toBeCloseTo(cursorToSky(0, -r).pitch, 9);
+    }
+  });
+
+  it('spawns only in the middle 2/3 of the radar radius', () => {
+    const { evil, signalManager } = makeRig();
+    for (let i = 0; i < 100; i++) {
+      expect(evil.summon()).toBe(true);
+      const sig = evilSig(signalManager);
+      const { x, y } = skyToCursor(sig.yaw, sig.pitch);
+      const r = Math.hypot(x, y);
+      expect(r).toBeGreaterThanOrEqual(EVIL.spawnRadius[0] - 1e-9);
+      expect(r).toBeLessThanOrEqual(EVIL.spawnRadius[1] + 1e-9);
+      sig.deleted = true;   // spent, so the next summon is allowed
     }
   });
 
