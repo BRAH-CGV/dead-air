@@ -2,6 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { EvilSignal, EVIL } from './EvilSignal.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 
+// Mock the DriveSparks module so EvilSignal tests don't build real Three.js objects.
+let _sparksMock;
+vi.mock('./DriveSparks.js', () => ({
+  DriveSparks: vi.fn(function () { return _sparksMock; }),
+  SPARKS: { burstCount: [15, 25] },
+}));
+
 // ─────────────────────────────────────────────
 // EvilSignal — the red signal: instant scan, dish hold, corrupted drives
 // ─────────────────────────────────────────────
@@ -55,12 +62,14 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn() };
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
+  const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
+  _sparksMock = sparks;
   const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks };
 }
 
 /** The single red target in the manager's list. */
@@ -624,5 +633,81 @@ describe('EvilSignal redOut — last-moment red filter', () => {
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal sparks — corrupted drive particle effects', () => {
+  it('sparks are created when a drive is infected', async () => {
+    const { DriveSparks } = await import('./DriveSparks.js');
+    const drive = makeDrive();
+    const { evil, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage → infect
+
+    expect(DriveSparks).toHaveBeenCalled();
+  });
+
+  it('sparks are ticked each frame with the doom fraction', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, sparks } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
+
+    // Tick one frame — sparks should be ticked with (dt, corrupted, doomFraction).
+    evil.onUpdate(0.016);
+    expect(sparks.tick).toHaveBeenCalled();
+    const lastCall = sparks.tick.mock.calls.at(-1);
+    expect(lastCall[0]).toBe(0.016);            // dt
+    expect(lastCall[1]).toBe(drive);            // the corrupted drive
+    expect(lastCall[2]).toBeGreaterThanOrEqual(0);  // doomFraction >= 0
+  });
+
+  it('sparks burst on each drive hop', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, sparks } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
+
+    // Tick past the hop interval so the drive jumps.
+    evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    expect(sparks.burst).toHaveBeenCalled();
+  });
+
+  it('sparks are disposed when the drive is wiped', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, sparks } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → infect
+
+    // Wipe the drive.
+    drive.setSaved(false);
+    // One tick to detect the corrupted drive is gone.
+    evil.onUpdate(0.016);
+    expect(sparks.dispose).toHaveBeenCalled();
+  });
+
+  it('sparks are disposed on night reset', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager, sparks } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → infect
+
+    controller.startNight(2);
+    expect(sparks.dispose).toHaveBeenCalled();
   });
 });

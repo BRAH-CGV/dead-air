@@ -2,6 +2,7 @@ import { Component } from '../core/Component.js';
 import { SignalTarget } from './SignalTarget.js';
 import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor } from '../gameobjects/DishRig.js';
+import { DriveSparks, SPARKS } from './DriveSparks.js';
 
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
@@ -141,6 +142,9 @@ export class EvilSignal extends Component {
    *  re-infecting if another drive is inserted after the first was wiped.
    *  @type {boolean} */
   _driveInfected = false;
+  /** Sparks flying from the corrupted drive while the silence timer runs.
+   *  @type {import('./DriveSparks.js').DriveSparks|null} */
+  _sparks = null;
 
   /**
    * @param {object} [opts]
@@ -274,6 +278,7 @@ export class EvilSignal extends Component {
       const corrupted = this._findCorruptedDrive();
       if (!corrupted) {
         // The drive was wiped (or lost): no more threat.
+        this._disposeSparks();
         this._silenceTimer = null;
         this._driveHopTimer = null;
         this.deleteWarning?.hide();
@@ -287,6 +292,9 @@ export class EvilSignal extends Component {
         const doomFraction = 1 - (this._silenceTimer / EVIL.silenceSeconds);
         corrupted.setDoomGlow?.(doomFraction);
         this._lastCorruptedDrive = corrupted;
+
+        // Sparks: fly out of the corrupted drive, rate scaling with doom.
+        this._sparks?.tick(dt, corrupted, doomFraction);
 
         // Red filter: fades in over the last 0.5 s before the player dies.
         if (this.redOut) {
@@ -305,10 +313,14 @@ export class EvilSignal extends Component {
             this._driveHopTimer = EVIL.driveHopSeconds;
             const kickStrength = 1 + doomFraction * 2;  // 1 → 3
             this._kickDrive(corrupted, kickStrength);
+            this._sparks?.burst(
+              SPARKS.burstCount[0] + (Math.random() * (SPARKS.burstCount[1] - SPARKS.burstCount[0])) | 0,
+            );
           }
         }
 
         if (this._silenceTimer <= 0) {
+          this._disposeSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;
           this._caught = true;
@@ -411,6 +423,9 @@ export class EvilSignal extends Component {
     this._driveHopTimer = EVIL.driveHopSeconds;
     this._driveInfected = true;
     this.deleteWarning?.show();
+    // Sparks: fly out of the corrupted drive at an increasing rate.
+    this._sparks = new DriveSparks();
+    this.scene?.add(this._sparks.points);
   }
 
   /** The radar info line while the dish is held — seconds remaining. */
@@ -465,6 +480,15 @@ export class EvilSignal extends Component {
     }, true);
   }
 
+  /** Dispose the sparks system and remove its Points from the scene. */
+  _disposeSparks() {
+    if (this._sparks) {
+      this._sparks.dispose();
+      this._sparks.points.removeFromParent();
+      this._sparks = null;
+    }
+  }
+
   /** First drive in the manager's pool whose signal is corrupted, or null.
    *  @returns {object|null} */
   _findCorruptedDrive() {
@@ -495,6 +519,7 @@ export class EvilSignal extends Component {
     this._driveInfected = false;
     this.deleteWarning?.hide();
     this.redOut?.clear();
+    this._disposeSparks();
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;
