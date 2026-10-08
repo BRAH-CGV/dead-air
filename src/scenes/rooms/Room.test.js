@@ -214,6 +214,63 @@ describe('Room openings', () => {
     expect(meshSize(header)[1]).toBeCloseTo(BASE.height - 2.3);
   });
 
+  it('a window is solid: an undrawn pane fills the opening, so nobody climbs out', () => {
+    const room = new Room(engine, {
+      ...BASE, position: [14, 0, -2],
+      openings: [{ side: 'back', width: 4, height: 1.5, sill: 0.8, offset: 1 }],
+    });
+    room.build();
+    const pane = room.root.find('BackWindow');
+    expect(pane.rigidBody.isFixed()).toBe(true);
+    expect(pane.collider.isSensor()).toBe(false);
+    // Exactly the opening: its width and height, as thick as the wall.
+    const [w, h, t] = colliderSize(pane);
+    expect(w).toBeCloseTo(4);
+    expect(h).toBeCloseTo(1.5);
+    expect(t).toBeCloseTo(BASE.wallThick);
+    // Local to the room for the scene graph; the body carries the offset.
+    const local = pane.object3d.position;
+    expect(local.x).toBeCloseTo(1);
+    expect(local.y).toBeCloseTo(0.8 + 0.75);
+    expect(local.z).toBeCloseTo(-BASE.depth / 2);
+    const world = pane.rigidBody.translation();
+    expect(world.x).toBeCloseTo(15);
+    expect(world.y).toBeCloseTo(0.8 + 0.75);
+    expect(world.z).toBeCloseTo(-2 - BASE.depth / 2);
+    // Nothing is drawn — the opening still looks open.
+    expect(pane.object3d.children.some(c => c.isMesh)).toBe(false);
+  });
+
+  it('a window in a side wall gets its pane turned along that wall', () => {
+    const room = new Room(engine, {
+      ...BASE, openings: [{ side: 'left', width: 2, height: 1, sill: 1, offset: -0.5 }],
+    });
+    room.build();
+    const pane = room.root.find('LeftWindow');
+    const [t, h, w] = colliderSize(pane);
+    expect(t).toBeCloseTo(BASE.wallThick);
+    expect(h).toBeCloseTo(1);
+    expect(w).toBeCloseTo(2);
+    expect(pane.object3d.position.x).toBeCloseTo(-BASE.width / 2);
+    expect(pane.object3d.position.y).toBeCloseTo(1.5);
+    expect(pane.object3d.position.z).toBeCloseTo(-0.5);
+  });
+
+  it('a doorway gets no pane', () => {
+    const room = new Room(engine, { ...BASE, openings: [{ side: 'back', width: 1, height: 2.2 }] });
+    room.build();
+    expect(room.root.find('BackWindow')).toBeFalsy();
+  });
+
+  it('dispose removes the pane\'s body with the rest', () => {
+    const room = new Room(engine, {
+      ...BASE, openings: [{ side: 'back', width: 4, height: 1.5, sill: 0.8 }],
+    });
+    room.build();
+    room.dispose();
+    expect(engine.world.bodies.len()).toBe(0);
+  });
+
   it('rejects an opening that does not fit in its wall', () => {
     expect(() => new Room(engine, {
       ...BASE, openings: [{ side: 'front', width: 3, height: 2, offset: 3.5 }],

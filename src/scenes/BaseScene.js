@@ -181,8 +181,9 @@ const UFO_HOVER_HEIGHT = 35;
  *  into the room); the cone (half-angle + tilt) stays below level, so it
  *  never paints the tops of the walls — light through a window can't reach
  *  them. It casts a shadow (static, drawn once) so the desk and chair keep
- *  the floor beneath them dark: hiding under the desk looks like hiding. */
-const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7 };
+ *  the floor beneath them dark: hiding under the desk looks like hiding.
+ *  `glass` is how much of it the window's smudges show by (WindowGlass). */
+const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
 
 export class BaseScene extends Scene {
@@ -589,8 +590,10 @@ export class BaseScene extends Scene {
     }));
 
     // Rooms build the clock and the bed; gameplay is handed to them here.
-    const { wallClock, signalLight } = this.rooms.MainOffice;
+    const { wallClock, signalLight, windowGlass } = this.rooms.MainOffice;
     if (wallClock) wallClock.clock = this.nightClock;
+    // The window's smudges show by the night outside too, and by the dawn.
+    windowGlass?.addLight(this.ambientLight, 1 / Math.PI);
     if (signalLight) {
       signalLight.signalManager  = this.signalManager;
       signalLight.gameController = this.gameController;
@@ -1080,6 +1083,8 @@ export class BaseScene extends Scene {
     floodGO.object3d.add(flood, flood.target);
     this._sceneRoot.addChild(floodGO);
     this.windowFlood = flood;
+    // The beam through the glass lights up every smudge on it.
+    office.windowGlass?.addLight(flood, WINDOW_FLOOD.glass);
 
     const exposedRooms = [office.bounds(), this.rooms.Airlock.bounds()];
     const hooks = {

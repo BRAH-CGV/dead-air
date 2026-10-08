@@ -48,7 +48,7 @@ export class Room {
    * @param {{side:string, width:number, height:number, offset?:number, sill?:number}[]} [opts.openings]
    *        One per wall at most. `offset` slides the opening along the wall
    *        from its centre (+X for back/front, +Z for left/right). `sill` > 0
-   *        makes it a window; 0 (the default) is a doorway.
+   *        makes it a window — glazed, so solid; 0 (the default) is a doorway.
    */
   constructor(engine, {
     name, width, depth, height, wallThick = 0.2,
@@ -164,7 +164,24 @@ export class Room {
     this._addWallBox(side, `${wall}_A`,      -half, lo,   0,   height);
     this._addWallBox(side, `${wall}_B`,       hi,   half, 0,   height);
     this._addWallBox(side, `${wall}_Header`,  lo,   hi,   top, height);
-    if (sill > 0) this._addWallBox(side, `${wall}_Sill`, lo, hi, 0, sill);
+    if (sill > 0) {
+      this._addWallBox(side, `${wall}_Sill`, lo, hi, 0, sill);
+      this._addWindowPane(side, lo, hi, sill, top);
+    }
+  }
+
+  /** The glass of a window: a solid box filling the opening, with nothing
+   *  drawn. Without it the opening is a hole in the wall, and anything that
+   *  clears the sill — a jumping player, a thrown crate — goes out through
+   *  it. Named `<Side>Window`, apart from the wall's own `<Side>Wall_*`
+   *  segments. */
+  _addWindowPane(side, lo, hi, sill, top) {
+    const { position, size } = this._wallBox(side, lo, hi, sill, top);
+    const go = new GameObject(SIDES[side].wall.replace('Wall', 'Window'));
+    go.object3d.position.set(...position);
+    this._attachFixedBox(go, position, size);
+    this.root.addChild(go);
+    return go;
   }
 
   _wallLength(side) {
@@ -185,15 +202,22 @@ export class Room {
    *  segments (an opening flush with a wall end) are skipped. */
   _addWallBox(side, name, a0, a1, y0, y1) {
     if (a1 - a0 < EPS || y1 - y0 < EPS) return null;
+    const { position, size } = this._wallBox(side, a0, a1, y0, y1);
+    return this._addStaticBox(name, position, size);
+  }
+
+  /** Room-local centre and full size of the piece of a wall spanning
+   *  [a0, a1] along it and [y0, y1] vertically, as thick as the wall. */
+  _wallBox(side, a0, a1, y0, y1) {
     const t = this.wallThick;
     const plane = this._wallPlane(side);
     const along = (a0 + a1) / 2;
     const y = (y0 + y1) / 2;
 
     if (SIDES[side].axis === 'x') {
-      return this._addStaticBox(name, [along, y, plane], [a1 - a0, y1 - y0, t]);
+      return { position: [along, y, plane], size: [a1 - a0, y1 - y0, t] };
     }
-    return this._addStaticBox(name, [plane, y, along], [t, y1 - y0, a1 - a0]);
+    return { position: [plane, y, along], size: [t, y1 - y0, a1 - a0] };
   }
 
   _indexOpenings() {
@@ -310,8 +334,6 @@ export class Room {
    *  Same shape as OfficeScene._addStaticBox so the level editor treats
    *  room surfaces like any other static box. */
   _addStaticBox(name, position, size, material = this.material, parent = this.root) {
-    const { world } = this.engine;
-
     const go = new GameObject(name);
     go.object3d.position.set(...position);
     const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), material);
@@ -319,8 +341,16 @@ export class Room {
     mesh.castShadow = mesh.receiveShadow = true;
     go.object3d.add(mesh);
 
-    // The mesh is local to the room group, but the body has no parent —
-    // it needs the room offset baked in.
+    this._attachFixedBox(go, position, size);
+    parent.addChild(go);
+    return go;
+  }
+
+  /** Fixed body + cuboid collider for `go`, `position` room-local. The
+   *  object3d is local to the room group, but the body has no parent — it
+   *  needs the room offset baked in. */
+  _attachFixedBox(go, position, size) {
+    const { world } = this.engine;
     const [ox, oy, oz] = this.position;
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(position[0] + ox, position[1] + oy, position[2] + oz),
@@ -334,9 +364,6 @@ export class Room {
     go.collider  = collider;
     go._originalSize = [...size];
     this.engine._bodyToGO?.set(body.handle, go);
-
-    parent.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────

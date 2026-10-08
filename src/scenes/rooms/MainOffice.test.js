@@ -478,6 +478,19 @@ describe('MainOffice signal alert light teardown', () => {
 });
 
 describe('MainOffice window frame', () => {
+  it('the window is glazed: a solid pane fills the whole opening', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const pane = room.root.find('BackWindow');
+    expect(pane.rigidBody.isFixed()).toBe(true);
+    const half = pane.collider.halfExtents();
+    expect(half.x * 2).toBeCloseTo(8.5);
+    expect(half.y * 2).toBeCloseTo(2.35);
+    // Sill at 0.475 m, top at 2.825 m, in the back wall's plane.
+    expect(pane.object3d.position.y).toBeCloseTo(1.65);
+    expect(pane.object3d.position.z).toBeCloseTo(-5);
+  });
+
   it('frame parts are static boxes centred on their pivots', () => {
     const room = new MainOffice(makeEngine());
     room.build();
@@ -486,5 +499,44 @@ describe('MainOffice window frame', () => {
       const mesh = go.object3d.children.find(c => c.isMesh);
       expect(mesh.position.equals(new THREE.Vector3()), go.name).toBe(true);
     }
+  });
+});
+
+describe('MainOffice window glass', () => {
+  const build = () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    return room;
+  };
+
+  it('glazes the window: a smudged pane fills the opening, in the plane of the wall', () => {
+    const room = build();
+    const glass = room.windowGlass;
+    expect(glass.parent).toBe(room.root);
+    expect(glass.object3d.position.x).toBeCloseTo(0);
+    expect(glass.object3d.position.y).toBeCloseTo(1.65);
+    // Mid-wall: behind the frame and mullions from inside, set back in the
+    // reveal from outside.
+    expect(glass.object3d.position.z).toBeCloseTo(-5);
+    const { width, height } = glass.mesh.geometry.parameters;
+    expect(width).toBeCloseTo(8.5);
+    expect(height).toBeCloseTo(2.35);
+  });
+
+  it('shows by the ceiling light, and goes dark when the power grid zeroes it', () => {
+    const room = build();
+    const light = room.windowGlass.mesh.material.uniforms.uLight.value;
+    room.windowGlass.mesh.onBeforeRender();
+    expect(light.length()).toBeGreaterThan(0.3);
+    room.root.find('CeilingLight').object3d.children.find(c => c.isLight).intensity = 0;
+    room.windowGlass.mesh.onBeforeRender();
+    expect(light.length()).toBe(0);
+  });
+
+  it('dispose frees the glass with the rest of the room', () => {
+    const room = build();
+    const dispose = vi.spyOn(room.windowGlass, 'dispose');
+    room.dispose();
+    expect(dispose).toHaveBeenCalled();
   });
 });
