@@ -699,6 +699,10 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.rooms.MainOffice.wallClock.clock).toBe(scene.nightClock);
   });
 
+  it('runs the desk clock off the night clock too', () => {
+    expect(scene.rooms.MainOffice.deskClock.clock).toBe(scene.nightClock);
+  });
+
   it('wires the office signal lamp to the manager and the controller', () => {
     const light = scene.rooms.MainOffice.signalLight;
     expect(light.signalManager).toBe(scene.signalManager);

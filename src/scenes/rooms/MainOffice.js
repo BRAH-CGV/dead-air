@@ -1,12 +1,17 @@
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d';
 import { Room } from './Room.js';
+import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
+import { DigitalClock } from '../../gameobjects/DigitalClock.js';
+import { GlobeSpin } from '../../components/GlobeSpin.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { deskWingGeometry, deskWingOutline, WING } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
 // The shelf collider (manifest) has five boards; these are their top
@@ -33,16 +38,32 @@ const DRIVE_BOX_LAYOUT = [
 // (ambient, moon) belongs to the scene, not the room.
 //
 // Furnished for the job and nothing else: the computer desk facing the
-// window, its chair, a food-ration dispenser (the player eats here, between
-// scans), a bin, a shelf of spares, an extinguisher by the door, a poster.
+// window, a food-ration dispenser (the player eats here, between scans), a
+// bin, a shelf of spares, a poster.
+//
+// ── Interior layout mock-up ──
+// Placeholder shapes for the planned layout, to walk around in before the
+// real assets are found. Everything usable before is usable still.
+//   • The station: the desk top carries on into an angled wing each side
+//     (`DeskWing_*`, see DeskWing.js), drawn with the desk's own material
+//     so it reads as one piece of furniture. The left wing is empty for
+//     now. On the right one stand a digital clock and a globe on its
+//     stand; [E] on the globe gives it a spin (GlobeSpin). The clock and
+//     the stand are render-only — a collider on the desk could stop the
+//     interact ray short of the terminal or the drive reader — and the
+//     globe's is a ball no bigger than itself.
+//   • The food corner, down the left wall: a two-tier rack of grow beds,
+//     then the dispenser and the bin, short of the doorway.
+//   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
 // Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
 // The side doorways sit toward the front, leaving the back half of the
 // side walls for the dispenser and the shelf.
 //
-// A wall clock hangs right of the window. The room builds it; the scene
-// hands it the NightClock (`wallClock.clock`), since rooms don't know about
+// A wall clock hangs right of the window, and a digital one stands on the desk.
+// The room builds them; the scene hands them the NightClock
+// (`wallClock.clock`, `deskClock.clock`), since rooms don't know about
 // gameplay. Same for the red signal lamp above the computer desk: the room
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
@@ -55,9 +76,19 @@ const WINDOW_MULLION_X = 1.42;
 const WINDOW_CROSSBAR_Y = 1.65;
 const WINDOW_BAR = 0.08;
 
+/** The computer desk, as MainOffice seats it, read off retro-computer.glb
+ *  at its 0.016 spawn scale: its centre; the half-width of its side panels
+ *  and of its top (the sides are chamfered in to it); its front (the
+ *  kneehole side) and back; and the height of its top, where the drive
+ *  reader rests. The wings and what stands on them are placed from these. */
+const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95, top: 0.864 };
+
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
   wallClock = null;
+
+  /** Stood on the desk's right wing by buildProps(). @type {DigitalClock|null} */
+  deskClock = null;
 
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
@@ -105,6 +136,11 @@ export class MainOffice extends Room {
     ceiling.position.set(0, 2.75, 0.4);
     ceiling.castShadow = true;
     ceiling.shadow.mapSize.set(1024, 1024);
+    // Without a bias, anything round under this light shadows itself in
+    // fine stripes (shadow acne) — the desk globe showed it. Two centimetres
+    // along the surface normal clears it, and is too little to pull a
+    // shadow away from what casts it.
+    ceiling.shadow.normalBias = 0.02;
     ceilingGO.object3d.add(ceiling);
     this.ceilingLight = ceiling;
 
@@ -151,20 +187,20 @@ export class MainOffice extends Room {
     // own Interactable to this desk. InteractionSystem resolves
     // getComponent(Interactable) — the first match wins — so a stub of our
     // own would silently shadow the terminal.
-    this._spawnProp('model:retro-computer', {
+    const desk = this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
 
-    // Pulled out to the right and turned toward the door, as if just left:
-    // the kneehole (x ±0.545) stays open to crouch into.
-    this._spawnProp('model:metal-chair', {
-      name: 'DeskChair', position: [0.95, 0, -1.75], rotationY: Math.PI - 0.45,
-    });
+    // The station around it: the wings, and what stands on the right one.
+    this._buildDeskWings(desk);
+    this._buildDeskClock();
+    this._buildGlobe();
 
-    // Left wall, behind the doorway: the ration dispenser and a bin for the
-    // wrappers.
+    // Left wall, back to front: the grow beds, the ration dispenser and a
+    // bin for the wrappers, all short of the doorway.
+    this._buildGrowBeds();
     this._buildRationDispenser();
-    this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 0.05] });
+    this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 1.9] });
 
     // Right wall: spare parts on a shelf; a poster where the eye lands
     // walking in from the airlock. The shelf's open sides face ±x.
@@ -192,9 +228,6 @@ export class MainOffice extends Room {
       name: 'Poster', position: [5.9, 1.05, 0.6], rotationY: -Math.PI / 2, physics: 'none',
     });
 
-    // By the airlock door, where a fire would be fought from.
-    this._spawnProp('model:fire-extinguisher', { name: 'FireExtinguisher', position: [3.05, 0, 4.72] });
-
     // Drive reader on the desk and the shelf's drive boxes, each
     // pre-filled with seated drives.
     this._buildDriveStation();
@@ -208,7 +241,7 @@ export class MainOffice extends Room {
   _buildRationDispenser() {
     const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
     const size = [0.7, 1.9, 0.9];
-    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, -1.0], size, body);
+    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
 
     // Front face is +x, into the room; positions are relative to the body's
     // centre, 0.95 m up.
@@ -306,6 +339,149 @@ export class MainOffice extends Room {
     this.wallClock = this._own(new WallClock());
     this.wallClock.object3d.position.set(5.15, 1.95, -4.9);
     this.root.addChild(this.wallClock);
+  }
+
+  // ──────────────────────────────────────────
+  // Interior layout mock-up — placeholder shapes
+  // ──────────────────────────────────────────
+  /** `_addStaticBox` with a yaw: the body is turned with the mesh. Pass no
+   *  material for a collider with nothing drawn. */
+  _addTurnedBox(name, position, size, rotationY, material = null) {
+    const go = new GameObject(name);
+    go.object3d.position.set(...position);
+    go.object3d.rotation.y = rotationY;
+    if (material) {
+      const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), material);
+      mesh.name = name;
+      mesh.castShadow = mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    }
+
+    const { world } = this.engine;
+    const [ox, oy, oz] = this.position;
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(position[0] + ox, position[1] + oy, position[2] + oz)
+        .setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) }),
+    );
+    const collider = world.createCollider(
+      RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2),
+      body,
+    );
+    go.rigidBody = body;
+    go.colliders = [collider];
+    go.collider  = collider;
+    go._originalSize = [...size];
+    this.engine._bodyToGO?.set(body.handle, go);
+    this.root.addChild(go);
+    return go;
+  }
+
+  /** The desk top carried on to each side: a wing turned 45° in toward the
+   *  seat, its inner corner on the desk's front corner, drawn as one piece
+   *  with the desk's own material (DeskWing.js maps it into the desk's
+   *  texture). What is solid is simpler than what is drawn: a turned box
+   *  under the square of the top (`DeskWingSolid_*`), and a back to the
+   *  wedge between it and the desk's side (`DeskWingBack_*`), so nobody
+   *  walks into that from behind the desk. */
+  _buildDeskWings(desk) {
+    // The desk's material belongs to the asset cache — shared, never freed
+    // here. A desk with no textured mesh (a stand-in model, a test) gets
+    // plain wood instead.
+    let material = null;
+    desk?.object3d.traverse(o => { if (!material && o.isMesh && o.material?.map) material = o.material; });
+    material ??= this._own(new THREE.MeshStandardMaterial({ color: 0x4a2c1a, roughness: 0.7 }));
+
+    for (const [label, side] of [['Left', -1], ['Right', 1]]) {
+      const mesh = new THREE.Mesh(this._own(deskWingGeometry(side, DESK)), material);
+      mesh.name = `DeskWing_${label}`;
+      mesh.castShadow = mesh.receiveShadow = true;
+      this._addGroup(mesh.name).object3d.add(mesh);
+
+      const { body, centre } = deskWingOutline(side, DESK);
+      this._addTurnedBox(`DeskWingSolid_${label}`, [centre[0], DESK.top / 2, centre[1]], [WING.size, DESK.top, WING.size], Math.PI / 4);
+
+      // The wedge's back edge, from the desk's back corner out to the wing's.
+      const [[ax, az], [bx, bz]] = body;
+      this._addTurnedBox(
+        `DeskWingBack_${label}`,
+        [(ax + bx) / 2, DESK.top / 2, (az + bz) / 2],
+        [Math.hypot(bx - ax, bz - az), DESK.top, 0.06],
+        Math.atan2(-(bz - az), bx - ax),
+      );
+    }
+  }
+
+  /** A digital clock where the desk top meets the right wing, turned to
+   *  the seat: placed by eye in the level editor. The scene runs it off the
+   *  NightClock like the one on the wall. */
+  _buildDeskClock() {
+    this.deskClock = this._own(new DigitalClock('DeskClock'));
+    this.deskClock.object3d.position.set(0.8, DESK.top, -2.6);
+    this.deskClock.object3d.rotation.y = THREE.MathUtils.degToRad(-22.7);
+    this.root.addChild(this.deskClock);
+  }
+
+  /** A globe on its stand, on the right wing. The two are
+   *  separate models that share one origin, the globe's centre, 0.245 m
+   *  above the stand's base: both are spawned at that one point and turned
+   *  the same way — toward the back of the wing, placed by eye in the level
+   *  editor, with the stand's arc to the back, away from the seat — and
+   *  the globe spins inside the stand when it is used (GlobeSpin). The
+   *  stand is drawn only; the globe's collider is what the interact ray
+   *  finds. */
+  _buildGlobe() {
+    const place = { position: [1.1, DESK.top + 0.245, -2.58], rotationY: Math.PI / 4 };
+    this._spawnProp('model:mars-stand', { name: 'GlobeStand', ...place, physics: 'none' });
+    const globe = this._spawnProp('model:mars-globe', { name: 'Globe', ...place });
+    globe.addComponent(new GlobeSpin());
+  }
+
+  /** Along the left wall, behind the dispenser: a rack of grow beds, two
+   *  tiers of three trays of soil and green, each tier under a strip of
+   *  grow light. The strips are glows, not lights: the light count is
+   *  compiled into every lit shader. One box is the collider — the whole
+   *  rack is solid to walk into — and the frame, trays and strips are drawn
+   *  on it. */
+  _buildGrowBeds() {
+    const size = [0.7, 1.6, 3.75];
+    const go = this._addTurnedBox('GrowBeds', [-5.9 + size[0] / 2, size[1] / 2, -1.52], size, 0);
+
+    const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.6, metalness: 0.35 }));
+    const soil  = this._own(new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 1 }));
+    const green = this._own(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
+    const lamp  = this._own(new THREE.MeshStandardMaterial({
+      color: 0x241020, emissive: 0xff4fd8, emissiveIntensity: 1.4,
+    }));
+    const board  = this._own(new THREE.BoxGeometry(size[0], 0.04, size[2]));
+    const tray   = this._own(new THREE.BoxGeometry(0.52, 0.1, 1.05));
+    const leaves = this._own(new THREE.BoxGeometry(0.4, 0.14, 0.9));
+    const strip  = this._own(new THREE.BoxGeometry(0.06, 0.04, size[2] - 0.2));
+    const post   = this._own(new THREE.BoxGeometry(0.05, size[1], 0.05));
+
+    // Heights are from the floor; the rack's own origin is its middle.
+    const part = (geometry, material, x, y, z, name) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      if (name) mesh.name = name;
+      mesh.position.set(x, y - size[1] / 2, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    };
+
+    // Each tier: a board, three trays on it, the green in them, and a
+    // light strip 0.55 m above the board.
+    [0.33, 0.95].forEach((shelf, tier) => {
+      part(board, frame, 0, shelf, 0);
+      [-1.25, 0, 1.25].forEach((z, i) => {
+        part(tray, soil, 0, shelf + 0.07, z, `GrowBed_${tier * 3 + i + 1}`);
+        part(leaves, green, 0, shelf + 0.19, z);
+      });
+      part(strip, lamp, 0, shelf + 0.55, 0, `GrowLight_${tier + 1}`);
+    });
+
+    for (const x of [-(size[0] / 2 - 0.025), size[0] / 2 - 0.025]) {
+      for (const z of [-(size[2] / 2 - 0.025), size[2] / 2 - 0.025]) part(post, frame, x, size[1] / 2, z);
+    }
   }
 
   /** Above the computer desk, where it reads from anywhere in the room. A

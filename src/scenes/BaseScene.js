@@ -590,8 +590,9 @@ export class BaseScene extends Scene {
     }));
 
     // Rooms build the clock and the bed; gameplay is handed to them here.
-    const { wallClock, signalLight, windowGlass } = this.rooms.MainOffice;
+    const { wallClock, deskClock, signalLight, windowGlass } = this.rooms.MainOffice;
     if (wallClock) wallClock.clock = this.nightClock;
+    if (deskClock) deskClock.clock = this.nightClock;
     // The window's smudges show by the night outside too, and by the dawn.
     windowGlass?.addLight(this.ambientLight, 1 / Math.PI);
     if (signalLight) {
