@@ -401,7 +401,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 - The team list lives in `src/ui/menu/text.js` (`TEAM`), shown by name. Roles are kept there and hidden until `SHOW_ROLES` is turned on.
 - Only assets in the game are credited: an entry whose `Manifest key` row names keys, none of them in the manifest, is left out. Removing an asset from the manifest drops it from the credits.
 
-**Continue** remembers the night reached under `dead-air.progress.v1`. It's cleared on New game and at the end of the run.
+**Continue and Select night** share `dead-air.progress.v1` = `{ night, highest }`. `night` is what Continue starts; it's cleared on New game and at the end of the run. `highest` is the furthest night ever reached, so Select night unlocks nights up to it, and finishing the run unlocks them all. It only ever grows. An old `{ night }` save still reads.
 
 ## Debug tooling
 

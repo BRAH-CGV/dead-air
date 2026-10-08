@@ -252,4 +252,23 @@ describe('AppFlow', () => {
     flow.pause();
     expect(flow.isMenuOpen).toBe(true);
   });
+
+  it('night select opens from the main menu only, and Back returns there', () => {
+    flow.ready();
+    flow.openNightSelect();
+    expect(flow.screen).toBe('nightSelect');
+    flow.back();
+    expect(flow.screen).toBe('main');
+    flow.newGame();
+    flow.pause();
+    flow.openNightSelect();
+    expect(flow.screen).toBe('pause');
+  });
+
+  it('a night picked from night select goes straight to playing', () => {
+    flow.ready();
+    flow.openNightSelect();
+    flow.newGame();
+    expect(flow.state).toBe('playing');
+  });
 });

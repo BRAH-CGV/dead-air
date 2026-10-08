@@ -647,7 +647,7 @@ describe('App', () => {
     it('saves the night each time one starts', async () => {
       await startGame();
       reachNight(2);
-      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2 });
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2, highest: 2 });
     });
 
     it('offers Continue on the main menu from night 2, and plays that night without a rebuild', async () => {
@@ -677,14 +677,14 @@ describe('App', () => {
     it('New game forgets the old save', async () => {
       storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 3 }));
       await startGame();
-      expect(storage.map.has(PROGRESS_KEY)).toBe(false);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY)).night).toBe(null);
     });
 
     it('clears the save when the run is finished', async () => {
       await startGame();
       reachNight(3);
       engine.activeScene.gameController.fire('finished');
-      expect(storage.map.has(PROGRESS_KEY) ? storage.map.get(PROGRESS_KEY) : null).toBe(null);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY)).night).toBe(null);
     });
   });
 
@@ -776,6 +776,75 @@ describe('App', () => {
       expect(text).not.toContain('Server V2 + console');
     });
   });
+  describe('night select (#18)', () => {
+    const panel = () => document.getElementById('menu-panel');
+    const nightButton = (n) => document.querySelector(`[data-action="selectNight"][data-night="${n}"]`);
+    const newApp = async () => {
+      const e2 = makeEngine();
+      const a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage, dev: false });
+      await a2.start();
+      return { e2, a2 };
+    };
+
+    it('opens from the main menu; only night 1 is open on a fresh save, and Esc goes back', async () => {
+      await click('nightSelect');
+      expect(view.screen).toBe('nightSelect');
+      expect(nightButton(1).disabled).toBe(false);
+      expect(nightButton(2).disabled).toBe(true);
+      expect(nightButton(3).disabled).toBe(true);
+      expect(panel().textContent).toMatch(/locked/i);
+      key('Escape');
+      expect(view.screen).toBe('main');
+    });
+
+    it('a night reached is unlocked next time, and picking it plays that night without a rebuild', async () => {
+      await startGame();
+      engine.activeScene.nights.setNight(2);
+      engine.activeScene.gameController.fire('morning');
+      engine.activeScene.gameController.fire('playing');
+
+      const { e2, a2 } = await newApp();
+      await click('nightSelect');
+      expect(nightButton(2).disabled).toBe(false);
+      expect(nightButton(3).disabled).toBe(true);
+      a2.dispose();
+    });
+
+    it('picking an unlocked night starts it', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: null, highest: 3 }));
+      const { e2, a2 } = await newApp();
+      await click('nightSelect');
+      nightButton(3).click();
+      await flush();
+      expect(e2.activeScene.nights.setNight).toHaveBeenCalledWith(3);
+      expect(e2.loadScene).not.toHaveBeenCalled();
+      expect(a2.flow.state).toBe('playing');
+      a2.dispose();
+    });
+
+    it('New game keeps the nights unlocked (Continue goes, the unlocks stay)', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2, highest: 2 }));
+      const { a2 } = await newApp();
+      await click('newGame');
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: null, highest: 2 });
+      a2.dispose();
+    });
+
+    it('finishing the run unlocks every night', async () => {
+      await startGame();
+      engine.activeScene.gameController.fire('finished');
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: null, highest: 3 });
+    });
+
+    it('reads an old save that only has { night }', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2 }));
+      const { a2 } = await newApp();
+      await click('nightSelect');
+      expect(nightButton(2).disabled).toBe(false);
+      a2.dispose();
+    });
+  });
+
 });
 
 describe('App menu music', () => {
