@@ -110,7 +110,7 @@ describe('EvilSignal summon()', () => {
 });
 
 describe('EvilSignal hover — the dish hold', () => {
-  it('scans itself the instant the cursor is on it, then pins the dish for 10 s', () => {
+  it('scans itself the instant the cursor is on it, then pins the dish for 5 s', () => {
     const { evil, signalManager, satellite, radar } = makeRig();
     evil.summon();
     const sig = evilSig(signalManager);
@@ -119,14 +119,14 @@ describe('EvilSignal hover — the dish hold', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.scanned).toBe(true);
     expect(evil.locked).toBe(true);
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('10'));
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
 
     evil.onUpdate(2);
     expect(evil.locked).toBe(true);
     expect(satellite.aimAll).toHaveBeenCalledWith(sig.yaw, sig.pitch);
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('8'));
+    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('3'));
 
-    evil.onUpdate(EVIL.lockSeconds - 2 + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds - 2 + 0.1);
     expect(evil.locked).toBe(false);
   });
 
@@ -267,6 +267,31 @@ describe('EvilSignal hover — the red save', () => {
     evil.hover(sig);                        // resolved signal never engages
     expect(evil.locked).toBe(false);
     expect(radar.setInfo).not.toHaveBeenCalled();
+  });
+
+  it('infects a drive inserted during the lock phase (after pull-in with no drive)', () => {
+    const { evil, signalManager, driveManager } = makeRig();  // no drive
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    // Complete pull-in with no drive inserted
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    expect(evil.locked).toBe(true);
+    expect(evil._driveInfected).toBe(false);
+    expect(driveManager.saveEvilToDrive).not.toHaveBeenCalled();
+
+    // Now insert a drive during the lock phase
+    const drive = makeDrive();
+    driveManager.insertedDrive = drive;
+    driveManager.drives.push(drive);
+
+    // Tick — should infect the newly inserted drive
+    evil.onUpdate(0.1);
+    expect(evil._driveInfected).toBe(true);
+    expect(drive.corrupted).toBe(true);
+    expect(driveManager.saveEvilToDrive).toHaveBeenCalledTimes(1);
+    expect(driveManager.ejectInsertedDrive).toHaveBeenCalledTimes(1);
   });
 });
 

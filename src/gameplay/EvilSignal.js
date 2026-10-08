@@ -11,22 +11,13 @@ import { skyToCursor } from '../gameobjects/DishRig.js';
 //
 // It reads as an ordinary blip except that it is red. The moment the radar
 // cursor is on it, it scans itself — no Enter, no wait, no dish to settle —
-// and then one of two things happens:
-//
-//   no drive       the array is pinned to it for EVIL.lockSeconds (10 s):
-//                  the cursor is frozen, the dish holds the bearing, and
-//                  the night is that much shorter. When the hold ends, the
-//                  signal disappears — but respawns later in the night
-//                  (after EVIL.respawnDelaySeconds), so the player must
-//                  deal with it again.
-//   drive inserted the evil signal is saved to the drive immediately
-//                  (overwriting any existing signal), turning it RED
-//                  (corrupted). The array is then pinned for
-//                  EVIL.lockWithDriveSeconds (5 s). A red drive never
-//                  counts towards the night quota — it has to be wiped at
-//                  the ServerRoom console within EVIL.silenceSeconds
-//                  (10 s) or the shift ends: "You were silenced."
-//                  No respawn: the drive carries the consequence.
+// and then the dish is locked. During the entire lockout (pull-in + lock),
+// any drive inserted into the reader is infected immediately: the evil
+// signal is saved to it (turning it RED/corrupted), the drive is ejected,
+// and the player must wipe it at the ServerRoom console within
+// EVIL.silenceSeconds (15 s) or the shift ends: "You were silenced."
+// If no drive is inserted during the lock, the signal disappears but
+// respawns later in the night (after EVIL.respawnDelaySeconds).
 //
 // Rooms don't know about gameplay: the scene hands it the signal manager,
 // the terminal, the drive reader and the array, and it drives itself.
@@ -144,6 +135,10 @@ export class EvilSignal extends Component {
   /** True after the silence timer expires — the player is locked until
    *  the night resets (retry or next night). @type {boolean} */
   _caught = false;
+  /** True once a drive has been infected during this lockout — prevents
+   *  re-infecting if another drive is inserted after the first was wiped.
+   *  @type {boolean} */
+  _driveInfected = false;
 
   /**
    * @param {object} [opts]
@@ -332,6 +327,9 @@ export class EvilSignal extends Component {
     if (!sig) { this._release(); return; }
     this.satellite?.aimAll(sig.yaw, sig.pitch);
 
+    // Infect any drive inserted during the lock phase.
+    this._infectDrive();
+
     // The radar shows the same glitchy effect as the UFO, centered on the
     // locked signal, while the dish is held.
     if (this.terminal?.radar) {
@@ -368,39 +366,40 @@ export class EvilSignal extends Component {
     this.pullingIn = true;
   }
 
-  /** Hovered: it scans itself at once, then either locks the dish (with or
-   *  without a drive). If a drive is inserted, the evil signal is saved to
-   *  it immediately (overwriting any existing signal), but the lock still
-   *  runs for the full duration. */
+  /** Hovered: it scans itself at once, then locks the dish. The lock runs
+   *  for a single duration; during the lock, any inserted drive is
+   *  infected immediately. */
   _engage(sig) {
     this.signalManager?.markScanned(sig.id);
-
-    const drive = this.driveManager;
-    if (drive?.driveInserted) {
-      // A drive is in the reader (blank or with a signal): save the evil
-      // signal to it right away (overwriting any existing signal), then
-      // lock for the shorter duration.
-      this.signalManager?.saveSignal(sig.id);
-      drive.saveEvilToDrive();
-      // Shoot the corrupted drive out of the reader in a random direction.
-      drive.ejectInsertedDrive?.();
-      this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
-      // Force the player out of the computer screen so they must chase the
-      // corrupted drive and wipe it at the ServerRoom console.
-      this.terminal?.exit?.();
-      this.locked = true;
-      this._remain = EVIL.lockWithDriveSeconds;
-      this._silenceTimer = EVIL.silenceSeconds;
-      this._driveHopTimer = EVIL.driveHopSeconds;
-      this.deleteWarning?.show();
-      this._showLock();
-      return;
-    }
-
-    // No drive: longer lock, no save.
     this.locked = true;
-    this._remain = EVIL.lockSeconds;
+    this._remain = EVIL.lockWithDriveSeconds;
     this._showLock();
+    // Infect any drive that's already inserted right as the lock starts.
+    this._infectDrive();
+  }
+
+  /** Infect any drive currently inserted in the reader. Called continuously
+   *  during the lockout phase (pull-in + lock) so a drive inserted mid-way
+   *  is caught immediately. Only infects once per lockout. */
+  _infectDrive() {
+    // Already infected a drive this lockout — nothing more to do.
+    if (this._driveInfected) return;
+    const drive = this.driveManager;
+    if (!drive?.driveInserted) return;
+    // A drive is in the reader: save the evil signal to it right away
+    // (overwriting any existing signal), then start the silence timer.
+    this.signalManager?.saveSignal(this._target?.id);
+    drive.saveEvilToDrive();
+    // Shoot the corrupted drive out of the reader in a random direction.
+    drive.ejectInsertedDrive?.();
+    this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
+    // Force the player out of the computer screen so they must chase the
+    // corrupted drive and wipe it at the ServerRoom console.
+    this.terminal?.exit?.();
+    this._silenceTimer = EVIL.silenceSeconds;
+    this._driveHopTimer = EVIL.driveHopSeconds;
+    this._driveInfected = true;
+    this.deleteWarning?.show();
   }
 
   /** The radar info line while the dish is held — seconds remaining. */
@@ -482,6 +481,7 @@ export class EvilSignal extends Component {
     this._respawnTimer = null;
     this._silenceTimer = null;
     this._driveHopTimer = null;
+    this._driveInfected = false;
     this.deleteWarning?.hide();
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
