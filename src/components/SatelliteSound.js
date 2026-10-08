@@ -21,6 +21,11 @@ import { loopable } from './GeneratorSound.js';
 // movements the loop runs on at zero rather than being stopped, so there is
 // only ever one copy, and nothing to cut.
 //
+// Paused, the game stops but the audio clock doesn't, so the drive would
+// run on under the pause menu. The engine says when it pauses: the loop is
+// faded out and a click still sounding is cut, and on resume the loop comes
+// back if the dish is still mid-movement.
+//
 // Neither clip is placed in the stereo field: the loop was recorded as the
 // dish heard from a distance, which is where the player sits to steer it.
 // ─────────────────────────────────────────────
@@ -55,11 +60,14 @@ export class SatelliteSound extends Component {
     super();
     this.satellite = satellite;
     this.sounds = sounds;
+    this._offPause = null;
   }
 
   onStart() {
     this.satellite ??= this.gameObject;
     this.sounds ??= this._buildSounds();
+    const engine = this.gameObject?.scene?.userData?.engine;
+    this._offPause ??= engine?.onPauseChange?.(paused => this._onPause(paused)) ?? null;
   }
 
   onUpdate(_dt) {
@@ -78,6 +86,8 @@ export class SatelliteSound extends Component {
   }
 
   onDestroy() {
+    this._offPause?.();
+    this._offPause = null;
     for (const sound of Object.values(this.sounds ?? {})) {
       if (sound?.isPlaying) sound.stop();
       try { sound?.disconnect?.(); } catch (_) { /* never connected */ }
@@ -85,6 +95,18 @@ export class SatelliteSound extends Component {
   }
 
   // ── Internals ─────────────────────────────
+
+  /** The game paused or resumed. `moving` is left as it is: the movement
+   *  carries on from where it was, so a pause is no reason for the click. */
+  _onPause(paused) {
+    if (paused) {
+      this._fadeLoop(0);
+      const ending = this.sounds?.ending;
+      if (ending?.isPlaying) ending.stop();
+    } else if (this.moving) {
+      this._fadeLoop(SATELLITE_SOUND.loopVolume);
+    }
+  }
 
   /** Ramp the loop to `target` over the fade, from where its gain is now. */
   _fadeLoop(target) {

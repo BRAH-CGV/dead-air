@@ -96,6 +96,8 @@ export class Engine {
   uiHasMouse = false;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();
+  /** Told when the simulation pauses and resumes (onPauseChange). */
+  _pauseListeners = new Set();
   /** Resolves once the loading screen is gone and the game is on show —
    *  the moment the main menu can appear. @type {Promise<void>} */
   revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
@@ -146,7 +148,9 @@ export class Engine {
    *  into the pause menu would otherwise walk the player on resume.
    *  @param {boolean} paused */
   setPaused(paused) {
+    const changed = this.paused !== !!paused;
     this.paused = !!paused;
+    if (changed) for (const listener of [...this._pauseListeners]) listener(this.paused);
     this._accumulator = 0;
     // Cleared in place — components and the debug camera hold these objects.
     for (const code in this.input.keys) delete this.input.keys[code];
@@ -154,6 +158,16 @@ export class Engine {
     this._consumed.clear();
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
+  }
+
+  /** Subscribe to pauses and resumes: `listener(paused)`, only when it
+   *  changes. Nothing is updated while paused, so whatever has to stop with
+   *  the game — a looping sound — has no frame to notice in.
+   *  @param {(paused: boolean) => void} listener
+   *  @returns {() => void} unsubscribe */
+  onPauseChange(listener) {
+    this._pauseListeners.add(listener);
+    return () => this._pauseListeners.delete(listener);
   }
 
   /** Whether the debug keys may act right now. */
