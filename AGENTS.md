@@ -226,7 +226,7 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
 
 ### Stamina and the Sleep Demon
 
-The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away.
+The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away. Its four sounds (breathing, heartbeat, yawn, ration) are placeholders: see "Note for the sound owner".
 
 - **Stamina** (`Stamina`, pure) runs 1 → 0. `StaminaDrain` (on `GameplaySystems`, after the controller) drains it while the shift is played: empty after 240 s, 4:48 AM with no food. It holds in the morning and behind the failed-night prompt. Every night start (the next night or a retry) fills it and readies the dispenser. The HUD shows it as a bar (`HUD.setStamina`, `#hud-stamina`).
 - **Food.** The office's `RationDispenser` restores 0.35 per ration and plays `sfx:ration`, then reads "refilling" for 40 s. `BaseScene._addStamina` hands it the stamina, since rooms don't know about gameplay.
@@ -425,6 +425,10 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 - A volume slider is one `SCHEMA` entry, e.g. `volume: { tab: 'game', type: 'number', label: 'Volume', min: 0, max: 1, step: 0.05, default: 0.8, format }`, plus `engine.audioListener.setMasterVolume(s.volume)` in `applySettings`.
 - To silence sound while paused, suspend and resume the `AudioContext` where App calls `engine.setPaused(true/false)`, or watch `app.flow.onChange`.
+- **Placeholder sounds.** `sfx:breathing`, `sfx:heartbeat`, `sfx:yawn` and `sfx:ration` (stamina and the Sleep Demon) are short synthesised stand-ins, not final audio.
+  - **Swapping one in:** drop the file into `public/assets/audio/` named after its key, in any format, and change its `url` in the manifest. The key stays, so no code changes. The breathing and the heartbeat are looped as they are, with no seam crossfade, so give them a clean loop point.
+  - **Their levels:** `BREATH` in `SleepDemon.js` (0.8 right beside the player, 30 % of that when it first shows). `HEARTBEAT_VOLUME` (0.9) and `YAWN_VOLUME` (0.7) in `FatigueEffects.js`, where `HEARTBEAT_QUICKEN` (0.35) speeds the heartbeat up towards empty through its playback rate, which raises its pitch too (0 leaves a recording as it is). The ration's 0.8 is in `BaseScene._addStamina`.
+  - **The state they follow**, to hang your own on: `scene.sleepDemon.logic` has `around` (stamina low enough for it to be about), `shown` (in view) and `closeness` (0 when it first shows, 1 at empty). `heartbeat(stamina)` in `Fatigue.js` is the heartbeat's level, 0 until critical and 1 at empty. `FatigueLogic` calls `onYawn` on each yawn, and `RationDispenser` calls `onEat` on each ration.
 
 **Dev tools gate.** `engine.devTools` gates every debug key (`` ` `` F2 V B I N F4 U), and they are also off while paused. It isn't a setting, because the dev tools go before release: App sets it from the build, on in `npm run dev` and off in the production bundle, so graders never open the level editor by accident. Show FPS (Settings → GAME) works either way.
 

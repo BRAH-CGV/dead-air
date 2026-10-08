@@ -40,7 +40,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
 
-/** Manifest key behind each sound. */
+/** Manifest key behind each sound. The breathing is a placeholder for the
+ *  sound owner to replace (see the manifest): the key stays, the file swaps. */
 export const SLEEP_DEMON_SOUNDS = { breathing: 'sfx:breathing' };
 
 /** The placeholder figure, metres: person-sized, so right beside the player

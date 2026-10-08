@@ -1083,7 +1083,7 @@ export class BaseScene extends Scene {
     const dispenser = this.rooms.MainOffice.rationDispenser;
     if (dispenser) {
       dispenser.stamina = this.stamina;
-      const crunch = this._sound('sfx:ration', 0.8);
+      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
       dispenser.onEat = () => {
         if (!crunch) return;
         if (crunch.isPlaying) crunch.stop();

@@ -19,7 +19,8 @@ import { FatigueLogic, tunnel, heartbeat } from '../gameplay/Fatigue.js';
 // camera sees the scene clear.
 // ─────────────────────────────────────────────
 
-/** Manifest key behind each sound. */
+/** Manifest key behind each sound. Both are placeholders for the sound owner
+ *  to replace (see the manifest): the keys stay, the files swap. */
 export const FATIGUE_SOUNDS = { heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn' };
 
 const YAWN_VOLUME = 0.7;
