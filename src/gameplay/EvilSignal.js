@@ -88,6 +88,8 @@ export class EvilSignal extends Component {
   whiteOut = null;
   /** @type {import('../ui/DeleteWarning.js').DeleteWarning|null} */
   deleteWarning = null;
+  /** @type {import('../core/RedOut.js').RedOut|null} */
+  redOut = null;
   /** @type {{ setPlayerLocked: (locked: boolean) => void }|null} */
   hooks = null;
 
@@ -286,6 +288,15 @@ export class EvilSignal extends Component {
         corrupted.setDoomGlow?.(doomFraction);
         this._lastCorruptedDrive = corrupted;
 
+        // Red filter: fades in over the last 0.5 s before the player dies.
+        if (this.redOut) {
+          const REDOUT_WINDOW = 0.5;
+          const lastWindow = this._silenceTimer < REDOUT_WINDOW
+            ? 1 - this._silenceTimer / REDOUT_WINDOW   // 0 → 1 over the final 0.5 s
+            : 0;
+          this.redOut.setIntensity(lastWindow);
+        }
+
         // The corrupted drive hops in a random direction every interval.
         // The kick strength scales from 1× to 3× as the timer runs out.
         if (this._driveHopTimer !== null) {
@@ -483,6 +494,7 @@ export class EvilSignal extends Component {
     this._driveHopTimer = null;
     this._driveInfected = false;
     this.deleteWarning?.hide();
+    this.redOut?.clear();
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;

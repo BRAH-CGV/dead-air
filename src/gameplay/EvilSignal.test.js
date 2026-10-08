@@ -54,11 +54,13 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const satellite = { aimAll: vi.fn() };
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn() };
+  const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
   const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
+  evil.redOut = redOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut };
 }
 
 /** The single red target in the manager's list. */
@@ -575,5 +577,52 @@ describe('EvilSignal pull-in — cursor drag before engage', () => {
     controller.startNight(2);
     expect(evil.pullingIn).toBe(false);
     expect(evil._pullTarget).toBeNull();
+  });
+});
+
+describe('EvilSignal redOut — last-moment red filter', () => {
+  it('redOut intensity is 0 while the silence timer is above 0.5 s', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, redOut } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in, starts silence timer
+    expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
+
+    // Tick 1 s — still well above the 0.5 s threshold.
+    evil.onUpdate(1);
+    expect(redOut.setIntensity).toHaveBeenCalledWith(0);
+  });
+
+  it('redOut intensity ramps during the last 0.5 s', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, redOut } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
+
+    // Tick past most of the timer so ~0.25 s remains (half of the 0.5 s window).
+    evil.onUpdate(EVIL.silenceSeconds - 0.25);
+    expect(evil._silenceTimer).toBeCloseTo(0.25, 2);
+    // The intensity is 1 - (0.25 / 0.5) = 0.5, allow for float imprecision.
+    const lastCall = redOut.setIntensity.mock.calls.at(-1)[0];
+    expect(lastCall).toBeCloseTo(0.5, 3);
+  });
+
+  it('redOut is cleared on night reset', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager, redOut } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);
+
+    controller.startNight(2);
+    expect(redOut.clear).toHaveBeenCalled();
   });
 });

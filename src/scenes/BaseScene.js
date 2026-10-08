@@ -53,6 +53,7 @@ import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { EvilSignal } from '../gameplay/EvilSignal.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { DeleteWarning } from '../ui/DeleteWarning.js';
+import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -1113,6 +1114,10 @@ export class BaseScene extends Scene {
     this.evilSignal.whiteOut = this.whiteOut;
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
+    this._redOut = new RedOut();
+    this._redOut.attach(this.engine);
+    this.engine.postProcess = this._redOut;
+    this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
       grid:        this.power,

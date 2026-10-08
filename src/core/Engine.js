@@ -61,6 +61,9 @@ export class Engine {
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
   /** @type {Fullbright}   */ fullbright;
+  /** Optional post-processing pass (e.g. RedOut). When set, preRender()
+   *  redirects the scene render to a target and postRender() composites.
+   *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -383,6 +386,11 @@ export class Engine {
       renderer: this.renderer, scene: this.scene, camera: this.camera,
       onStage: (label, fraction) => this.loadingScreen.setStage(label, fraction),
     });
+
+    // Post-processing shaders live outside the main scene graph, so the
+    // WarmUp pass above never sees them. Compile them here while the
+    // loading screen still covers the canvas.
+    this.postProcess?.warmUp();
 
     // ── Kick off the loop — still behind the loading screen ──
     // The first frames after that are the JIT, the physics world and the
@@ -791,7 +799,9 @@ export class Engine {
     // is open, shadows go back to every frame.
     if (this.levelEditor?.enabled) this.shadows.invalidate();
     this.shadows.update();
+    this.postProcess?.preRender();
     this.renderer.render(this.scene, this.camera);
+    this.postProcess?.postRender();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);
