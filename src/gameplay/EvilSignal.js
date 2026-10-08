@@ -91,6 +91,8 @@ export class EvilSignal extends Component {
   satellite = null;
   /** @type {import('../ui/WhiteOut.js').WhiteOut|null} */
   whiteOut = null;
+  /** @type {import('../ui/DeleteWarning.js').DeleteWarning|null} */
+  deleteWarning = null;
   /** @type {{ setPlayerLocked: (locked: boolean) => void }|null} */
   hooks = null;
 
@@ -231,6 +233,7 @@ export class EvilSignal extends Component {
         // The drive was wiped (or lost): no more threat.
         this._silenceTimer = null;
         this._driveHopTimer = null;
+        this.deleteWarning?.hide();
         // Clear any doom glow that was ramping on the drive.
         this._lastCorruptedDrive?.clearDoomGlow?.();
         this._lastCorruptedDrive = null;
@@ -327,6 +330,7 @@ export class EvilSignal extends Component {
       this._remain = EVIL.lockWithDriveSeconds;
       this._silenceTimer = EVIL.silenceSeconds;
       this._driveHopTimer = EVIL.driveHopSeconds;
+      this.deleteWarning?.show();
       this._showLock();
       return;
     }
@@ -411,6 +415,7 @@ export class EvilSignal extends Component {
     this._respawnTimer = null;
     this._silenceTimer = null;
     this._driveHopTimer = null;
+    this.deleteWarning?.hide();
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;
