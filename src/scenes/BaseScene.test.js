@@ -566,12 +566,14 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.state).toBe('radar');
   });
 
-  it('wires the terminal to the satellite, signals and UI', () => {
+  it('wires the terminal to the satellite, signals, UI and drive manager', () => {
     expect(scene.terminal.satellite).toBe(scene.satellite);
     expect(scene.terminal.signalManager).toBe(scene.signalManager);
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
     expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
+    expect(scene.terminal.driveManager).toBe(scene.driveManager);
+    expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
   });
 
@@ -588,19 +590,12 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.hud).toBe(scene.hud);
   });
 
-  it('routes the review panel buttons through the terminal and the controller', () => {
-    const saved = vi.spyOn(scene.terminal, 'saveSignal').mockImplementation(() => {});
-    const deleted = vi.spyOn(scene.terminal, 'deleteSignal').mockImplementation(() => {});
-    const onSaved = vi.spyOn(scene.gameController, 'onSignalSaved').mockImplementation(() => {});
-    const onDeleted = vi.spyOn(scene.gameController, 'onSignalDeleted').mockImplementation(() => {});
-
-    scene.reviewPanel._saveCb();
-    expect(saved).toHaveBeenCalled();
-    expect(onSaved).toHaveBeenCalled();
-
-    scene.reviewPanel._deleteCb();
-    expect(deleted).toHaveBeenCalled();
-    expect(onDeleted).toHaveBeenCalled();
+  it('wires the drive manager to the office drive reader', () => {
+    expect(scene.driveManager).toBeDefined();
+    // Every drive in the room registers: 4 shelf boxes × 8 seated drives.
+    expect(scene.driveManager.totalDrives).toBe(32);
+    const reader = scene.rooms.MainOffice.driveReader;
+    expect(reader).not.toBeNull();
   });
 
   it('starts the controller on the night the NightManager is actually on', () => {
@@ -614,10 +609,17 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
   });
 
-  /** Save the night's whole quota and run the clock out: it is morning. */
+  /** Dock a shelf box with enough saved drives to meet the quota, then run
+   *  the clock out: it is morning. */
   function workTheShift() {
-    const { signalManager, gameController } = scene;
-    for (let id = 1; id <= signalManager.required; id++) signalManager.saveSignal(id);
+    const { gameController, rooms } = scene;
+    const dock = rooms.Airlock.quotaDock;
+    const box = rooms.MainOffice.driveBoxes[0];
+    dock.socket.attach(box, 0);
+    const seated = box.receiver.attachedItems.filter(Boolean);
+    for (let i = 0; i < dock.requiredCount; i++) {
+      seated[i].setSaved(true);
+    }
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
@@ -639,6 +641,58 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.state).toBe('playing');
     expect(setNight).toHaveBeenLastCalledWith(2);
     expect(scene.nightClock.timeString).toBe('12:00 AM');
+  });
+
+  it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
+    const { gameController, rooms } = scene;
+    const dock = rooms.Airlock.quotaDock;
+    const [docked, other] = rooms.MainOffice.driveBoxes;
+
+    // Meet the quota with one docked box; another box's drive is saved
+    // too, but that box never enters the dock.
+    dock.socket.attach(docked, 0);
+    const dockedDrives = docked.receiver.attachedItems.filter(Boolean);
+    for (let i = 0; i < dock.requiredCount; i++) dockedDrives[i].setSaved(true);
+    const otherDrive = other.receiver.attachedItems[0];
+    otherDrive.setSaved(true);
+    gameController.onSignalSaved();
+    gameController.onUpdate(999);
+    expect(gameController.state).toBe('morning');
+
+    scene.rooms.LivingQuarters.bed.onInteract({});
+    expect(scene.gameController.nightNumber).toBe(2);
+
+    // The docked box: released, parked resting on the floor, drives blank.
+    expect(docked._snapOwner).toBeNull();
+    expect(dock.depositedBox).toBeNull();
+    expect(docked.object3d.position.x).toBeCloseTo(1.1);
+    expect(docked.object3d.position.y).toBeCloseTo(0.06);
+    expect(docked.object3d.position.z).toBeCloseTo(4.72);
+    for (const drive of dockedDrives) expect(drive.saved, drive.name).toBe(false);
+
+    // A saved drive outside the docked box keeps its signal.
+    expect(otherDrive.saved).toBe(true);
+  });
+
+  it('a retry reverts drives and boxes to the night-start snapshot', () => {
+    const { gameController, rooms } = scene;
+    const box = rooms.MainOffice.driveBoxes[0];
+    const drive = box.receiver.attachedItems[0];
+    const startPos = worldPos(drive).clone();
+
+    // Mid-night: pull the drive out, carry it away and save it.
+    box.receiver.detach(drive);
+    drive.object3d.position.set(-4, 0.02, 3);
+    drive.setSaved(true);
+
+    gameController.fail('taken');
+    gameController.retryNight();
+
+    expect(drive.saved).toBe(false);
+    expect(drive._snapOwner).toBe(box.receiver);
+    expect(worldPos(drive).x).toBeCloseTo(startPos.x);
+    expect(worldPos(drive).y).toBeCloseTo(startPos.y);
+    expect(worldPos(drive).z).toBeCloseTo(startPos.z);
   });
 
   it('hangs the night clock on the office wall', () => {

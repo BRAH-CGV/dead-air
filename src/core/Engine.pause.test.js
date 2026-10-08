@@ -81,11 +81,12 @@ describe('Engine pause', () => {
     engine.input.pressed.KeyE = true;
     engine.input.mouse.dx = 5;
     engine.input.mouse.dy = -3;
+    engine.input.mouse.wheel = 2;
     engine._accumulator = 0.01;
     engine.setPaused(true);
     expect(engine.input.keys).toEqual({});
     expect(engine.input.pressed).toEqual({});
-    expect(engine.input.mouse).toEqual({ dx: 0, dy: 0 });
+    expect(engine.input.mouse).toEqual({ dx: 0, dy: 0, wheel: 0 });
     expect(engine._accumulator).toBe(0);
   });
 

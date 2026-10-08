@@ -6,6 +6,7 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.j
 import { ServerRoom } from './ServerRoom.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
 
@@ -114,13 +115,42 @@ describe('ServerRoom', () => {
     expect(after).not.toEqual(before);
   });
 
-  it('the console is an Interactable stub for evil-signal deletion (phase 10)', () => {
+  it('the console has a separate DriveSlot box for inserting drives', () => {
+    const slotBox = room.root.find('DriveSlot');
+    expect(slotBox).not.toBeNull();
+    const slot = slotBox.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    expect(slot.snapDistance).toBe(0.25);
+  });
+
+  it('the console Interactable clears the signal from the inserted drive in the slot', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    const slotBox = room.root.find('DriveSlot');
+    const slot = slotBox.getComponent(DriveSlot);
     expect(interactable).not.toBeNull();
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(slot).not.toBeNull();
+
+    // Simulate a saved drive inserted in the slot.
+    const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
+    slot._insertedDrive = fakeDrive;
+
+    // The prompt shows the delete option.
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+
+    // Interact to clear the signal.
     interactable.onInteract({});
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('signal deleted'));
-    log.mockRestore();
+    expect(fakeDrive.saved).toBe(false);
+
+    // After clearing, the prompt should revert.
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
+  });
+
+  it('the console shows "No signal to delete" when the slot has no drive', () => {
+    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
   });
 
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {

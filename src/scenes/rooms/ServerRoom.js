@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
 
@@ -23,6 +24,13 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // ─────────────────────────────────────────────
 
 export class ServerRoom extends Room {
+  /** The server console with the "Delete signal" interactable.
+   *  @type {import('../../core/GameObject.js').GameObject|null} */
+  _serverConsole = null;
+
+  /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
+  _driveSlot = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -45,6 +53,9 @@ export class ServerRoom extends Room {
   buildDoors() {
     this.addDoor('ToMainOffice', 'left', 'MainOffice');
   }
+
+  /** The drive slot on the console (for external wiring). */
+  get driveSlot() { return this._driveSlot; }
 
   buildLighting() {
     // Blue only, to match the racks' own glow — a red light here read as an
@@ -77,12 +88,80 @@ export class ServerRoom extends Room {
     });
 
     // Console against the back wall, facing the racks' aisle.
+    // The drive slot passively snaps in a drive when it comes close.
+    // The interactable deletes the signal from the inserted drive.
     const console_ = this._spawnProp('model:radar-terminal', {
       name: 'ServerConsole', position: [-1, 0, -2.45], scale: 0.478,
     });
+    this._serverConsole = console_;
+
+    // Drive slot on top of the console. The slot works independently —
+    // no DriveManager needed. The console's Interactable checks the slot's
+    // insertedDrive for signals.
+    // The slot is a separate static box (like the MainOffice drive reader),
+    // not a child of the scaled console model, so it keeps its own size.
+    // Console is at [-1, 0, -2.45]; slot is 1.5 units forward (z) and on top.
+    const consoleTopY = 0.75;
+    const slotSize = [0.12, 0.03, 0.15]; // same as MainOffice reader
+    const slotPos = [-1.160, 0.405, -1.750];
+    const slotMat = this._own(new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      roughness: 0.7,
+      metalness: 0.4,
+      emissive: 0x003311,
+      emissiveIntensity: 0.3,
+    }));
+    const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
+
+    // Tooltip on hover (no interact action — just a label)
+    const slotTooltip = new Interactable();
+    slotTooltip.promptLabel = 'Drive reader';
+    slotBox.addComponent(slotTooltip);
+
+    // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
+    const driveHeight = 0.02; // Drive._size[1] default
+    const driveSlot = new DriveSlot({
+      snapDistance: 0.25,
+      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+    });
+    slotBox.addComponent(driveSlot);
+    this._driveSlot = driveSlot;
+
+    const self = this;
     console_.addComponent(new class extends Interactable {
       promptLabel = '[E] Delete signal';
-      onInteract() { console.log('[ServerRoom] signal deleted'); }
+      interactRange = 2;
+
+      // Check the console's drive slot for a drive with a signal.
+      _findDriveWithSignal() {
+        const slot = self._driveSlot;
+        if (!slot) return null;
+        const drive = slot.insertedDrive;
+        if (drive?.saved) return drive;
+        return null;
+      }
+
+      // The prompt follows the drive state — shows "No signal to delete"
+      // when there's nothing to clear.
+      refreshPrompt() {
+        if (this._findDriveWithSignal()) {
+          this.promptLabel = '[E] Delete signal';
+        } else {
+          this.promptLabel = 'No signal to delete';
+        }
+      }
+
+      onHover() {
+        this.refreshPrompt();
+      }
+
+      onInteract() {
+        const drive = this._findDriveWithSignal();
+        if (drive) {
+          drive.setSaved(false);
+        }
+        this.refreshPrompt();
+      }
     }());
 
     // Camera-entity watch volume, over the rack aisle. Not wired to an AI

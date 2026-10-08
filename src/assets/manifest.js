@@ -251,8 +251,10 @@ const PLACED = {
     physics: {
       body: 'static',
       // SHELF layer: player walks through, items rest on the boards.
-      // Member of SHELF only, interacts with DEFAULT (ground, props) only.
-      groups: { membership: ['SHELF'], filter: ['DEFAULT'] },
+      // Member of SHELF only; filters DEFAULT (environment, legacy props) and
+      // SHELF (dynamic items with SHELF membership, e.g. drives and crates).
+      // The player has PLAYER membership, so it passes through regardless.
+      groups: { membership: ['SHELF'], filter: ['DEFAULT', 'SHELF'] },
       shape: [
         // 5 shelf levels, evenly spaced from the top of the model down to
         // 8/9 of the way to the bottom. Each board is 0.35 deep, 0.025 thick,
@@ -272,9 +274,11 @@ const PLACED = {
         // only the player collides with (items pass through). This prevents
         // the player from walking through the shelf visually while allowing
         // items to rest on the individual shelf boards above.
+        // PLAYER membership so the interaction ray (which excludes PLAYER-layer
+        // colliders) passes through to reaches items on/behind the shelf.
         {
           type: 'box', size: [0.36, 1.9, 1.03], position: [0, 0.95, 0],
-          groups: { membership: ['DEFAULT'], filter: ['PLAYER'] },
+          groups: { membership: ['PLAYER'], filter: ['DEFAULT', 'PLAYER'] },
         },
       ],
     },

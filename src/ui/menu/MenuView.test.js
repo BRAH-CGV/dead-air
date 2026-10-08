@@ -103,10 +103,10 @@ describe('MenuView', () => {
     expect(intents[0][0]).toBe('confirm');
   });
 
-  it('the night failed screen reports the night and the signals', () => {
+  it('the night failed screen reports the night and the drives', () => {
     view.show('nightFailed', { night: 2, saved: 1, required: 4 });
     expect(view.panel.textContent).toContain('SIGNAL LOST');
-    expect(view.panel.textContent).toContain('Night 2 failed: 1/4 signals');
+    expect(view.panel.textContent).toContain('Night 2 failed: 1/4 drives');
     expect(items(view).map(b => b.dataset.action)).toEqual(['retry', 'quit']);
   });
 

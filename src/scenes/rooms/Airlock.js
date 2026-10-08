@@ -3,6 +3,8 @@ import { Corridor } from './Corridor.js';
 import { Component } from '../../core/Component.js';
 import { Interactable } from '../../components/Interactable.js';
 import { PLAYER_BODY } from '../../components/PlayerBody.js';
+import { SnapSocket } from '../../components/SnapSocket.js';
+import { DriveBoxDock } from '../../gameplay/DriveBoxDock.js';
 
 // ─────────────────────────────────────────────
 // Airlock  –  the only way out, sealed without the EVA suit
@@ -114,6 +116,14 @@ export class Airlock extends Corridor {
     /** Hatch status light — red sealed, amber cycling, green open. @type {THREE.PointLight|null} */
     this.beacon = null;
 
+    /** The dock pedestal (placeholder). @type {import('../../core/GameObject.js').GameObject|null} */
+    this.quotaDockGO = null;
+    /** The socket seating a whole drive box on the pedestal.
+     *  @type {SnapSocket|null} */
+    this.quotaSocket = null;
+    /** The DriveBoxDock quota counter. @type {DriveBoxDock|null} */
+    this.quotaDock = null;
+
     /** @type {'pressurised'|'depressurising'|'depressurised'|'pressurising'} */
     this.state = 'pressurised';
     /** Seconds to cycle from one door to the other: as long as the pressure
@@ -181,6 +191,42 @@ export class Airlock extends Corridor {
     }());
 
     this.root.addComponent(new AirlockCycle(this));
+
+    // Drive-box dock inside the chamber, against the right wall: the
+    // night's quota is the saved drives seated in the box docked there.
+    this._buildQuotaDock();
+  }
+
+  /** A pedestal that receives whole drive boxes. Same chamber spot as the
+   *  old loose-drive quota box; SnapSocket seats a carried box on top and
+   *  DriveBoxDock counts the saved drives inside it. */
+  _buildQuotaDock() {
+    const dockSize = [0.42, 0.12, 0.36];
+    const inX = this.corridorWidth / 2 - this.wallThick / 2;
+    const dockPos = [inX - dockSize[0] / 2 - 0.05, dockSize[1] / 2, 0];
+    const dockMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3a3a, roughness: 0.6, metalness: 0.3,
+      emissive: 0x220000, emissiveIntensity: 0.2,
+    });
+    this._own(dockMat);
+
+    this.quotaDockGO = this._addStaticBox('QuotaDock', dockPos, dockSize, dockMat);
+
+    // Tooltip on hover (no interact action — just a label)
+    const dockTooltip = new Interactable();
+    dockTooltip.promptLabel = 'Drive box dock';
+    this.quotaDockGO.addComponent(dockTooltip);
+
+    // Slot y: half pedestal + half box height (a DriveBox is 0.12 m tall),
+    // so a seated box rests exactly on the pedestal top.
+    this.quotaSocket = this.quotaDockGO.addComponent(new SnapSocket({
+      snapDistance: 0.35,
+      slots: [{ offset: { y: dockSize[1] / 2 + 0.06 } }],
+      attachedPromptLabel: '[E] Take drive box',
+      canAccept: item => item?.isDriveBox === true,
+    }));
+
+    this.quotaDock = this.quotaDockGO.addComponent(new DriveBoxDock({ socket: this.quotaSocket }));
   }
 
   /** Give the airlock the office door it opens from. It is locked and

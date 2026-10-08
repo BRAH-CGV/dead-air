@@ -21,8 +21,13 @@ import { GameObject } from '../core/GameObject.js';
 function bodyDesc(type) {
   const d = {
     type, t: { x: 0, y: 0, z: 0 }, q: { x: 0, y: 0, z: 0, w: 1 },
+    linearDamping: 0, angularDamping: 0, gravityScale: 1, ccd: false,
     setTranslation(x, y, z) { d.t = { x, y, z }; return d; },
     setRotation(q) { d.q = { ...q }; return d; },
+    setLinearDamping(v) { d.linearDamping = v; return d; },
+    setAngularDamping(v) { d.angularDamping = v; return d; },
+    setGravityScale(v) { d.gravityScale = v; return d; },
+    setCcdEnabled(v) { d.ccd = v; return d; },
   };
   return d;
 }
@@ -31,12 +36,20 @@ function bodyDesc(type) {
 export function rapierModule() {
   return {
     default: {
-      RigidBodyDesc: { fixed: () => bodyDesc('fixed') },
+      RigidBodyDesc: {
+        fixed: () => bodyDesc('fixed'),
+        dynamic: () => bodyDesc('dynamic'),
+        kinematicPositionBased: () => bodyDesc('kinematic'),
+      },
       ColliderDesc: {
         cuboid: (x, y, z) => {
           const d = {
             half: { x, y, z }, t: { x: 0, y: 0, z: 0 }, sensor: false,
             setSensor(s) { d.sensor = s; return d; },
+            setFriction(v) { d.friction = v; return d; },
+            setRestitution(v) { d.restitution = v; return d; },
+            setDensity(v) { d.density = v; return d; },
+            setCollisionGroups(v) { d.groups = v; return d; },
             // Real Rapier supports positioning a collider independently of
             // its body — a fixed body carrying several colliders at their
             // own offsets, the pattern the rock field and the fence both use.
@@ -72,6 +85,18 @@ export class FakeWorld {
       isFixed: () => desc.type === 'fixed',
       translation: () => ({ ...desc.t }),
       rotation: () => ({ ...desc.q }),
+      bodyType: () => desc.type,
+      setTranslation: (t) => { desc.t = { ...t }; },
+      setRotation: (q) => { desc.q = { ...q }; },
+      setGravityScale: vi.fn(),
+      setLinearDamping: vi.fn(),
+      setAngularDamping: vi.fn(),
+      setLinvel: vi.fn(),
+      setAngvel: vi.fn(),
+      resetForces: vi.fn(),
+      addForce: vi.fn(),
+      mass: () => 1,
+      linvel: () => ({ x: 0, y: 0, z: 0 }),
     };
     this._bodies.add(body);
     return body;

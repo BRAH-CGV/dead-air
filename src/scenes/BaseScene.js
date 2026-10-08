@@ -14,6 +14,9 @@ import { createDishPad } from '../gameobjects/DishPad.js';
 import { createWindDust, WindDustMotion } from '../gameobjects/WindDust.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
+import { InteractionSystem } from '../components/InteractionSystem.js';
+import { PickupSystem } from '../components/PickupSystem.js';
+import { DriveSlot } from '../components/DriveSlot.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice } from './rooms/MainOffice.js';
@@ -29,7 +32,9 @@ import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
+import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -256,6 +261,7 @@ export class BaseScene extends Scene {
    *  Engine drops the whole physics world right after this. */
   dispose() {
     this._offNightStart?.();
+    this._offNightReset?.();
     this._offSuitHud?.();
     this._offRetry?.();
     this._offPower?.forEach(off => off());
@@ -431,6 +437,9 @@ export class BaseScene extends Scene {
     );
     this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
 
+    // ── Drive manager (physical hard drives) ──
+    this.driveManager = new DriveManager();
+
     // UI wrappers over the markup in index.html. With no DOM (tests) each
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
@@ -448,8 +457,8 @@ export class BaseScene extends Scene {
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
     this.terminal.reviewPanel   = this.reviewPanel;
+    this.terminal.driveManager  = this.driveManager;
     this.terminal.crosshair     = this.engine.crosshair;
-
     // The desk is a room prop, so it is found through the room rather than
     // the scene root. MainOffice deliberately leaves it without an
     // Interactable of its own — InteractionSystem takes the first one it
@@ -473,14 +482,86 @@ export class BaseScene extends Scene {
     this.gameController.hud           = this.hud;
     gameplayGO.addComponent(this.gameController);
 
-    this.reviewPanel.onSave(() => {
-      this.terminal.saveSignal();
-      this.gameController.onSignalSaved();
+    // The terminal notifies the controller when a signal is auto-saved.
+    this.terminal.gameController = this.gameController;
+
+    // Wire the drive manager to the office's drive reader slot.
+    const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
+    if (driveSlot) {
+      driveSlot.bindDriveManager(this.driveManager);
+    }
+
+    // Wire the server room's drive slot to watch the same drives.
+    // The slot works independently (no DriveManager) — the console's
+    // Interactable checks the slot's insertedDrive for signals.
+    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Wire the drive box dock in the airlock and the drive boxes on the
+    // office shelf.
+    const quotaDock = this.rooms.Airlock.quotaDock;
+    const driveBoxes = this.rooms.MainOffice.driveBoxes ?? [];
+    if (quotaDock) {
+      quotaDock.requiredCount = this.signalManager.required;
+      this.gameController.quotaDock = quotaDock;
+    }
+
+    // Drives are already in the room (added by MainOffice._buildDriveBoxes)
+    // so they have physics from the engine lifecycle. Register every drive
+    // with the manager and every snap receiver up front, so any drive can
+    // snap into any slot or box the same way.
+    const office = this.rooms.MainOffice;
+    for (const drive of office.drives) {
+      this.driveManager.addDrive(drive);
+      if (driveSlot) driveSlot.addDrive(drive);
+      if (serverSlot) serverSlot.addDrive(drive);
+      for (const box of driveBoxes) box.addDrive?.(drive);
+    }
+
+    // Hook into slot eject callbacks to ensure drives stay in the room
+    const addDriveToRoom = (drive) => {
+      if (drive.object3d.parent !== office.root.object3d) {
+        office.root.addChild(drive);
+      }
+    };
+    if (driveSlot) {
+      const origOnRemoved = driveSlot.onDriveRemoved;
+      driveSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+    if (serverSlot) {
+      const origOnRemoved = serverSlot.onDriveRemoved;
+      serverSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+
+    // The dock's socket only accepts whole drive boxes — introduce it to
+    // every shelf box so a carried box released near the pedestal snaps on.
+    if (quotaDock?.socket) {
+      for (const box of driveBoxes) quotaDock.socket.addCandidate(box);
+    }
+
+    // ── Pickup system (generic carry mechanic) ──
+    // Attached to the player so it can detect Pickupable objects via
+    // InteractionSystem's raycast and apply spring-damper hold forces.
+    this.pickupSystem = new PickupSystem();
+    this.engine.player.addComponent(this.pickupSystem);
+    this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
+    this.pickupSystem.terminal = this.terminal;
+
+    // The night baseline for every drive and box: a retry reverts to it.
+    this.driveSnapshot = new DriveSnapshot({
+      drives: office.drives,
+      boxes: driveBoxes,
+      driveManager: this.driveManager,
+      pickupSystem: this.pickupSystem,
     });
-    this.reviewPanel.onDelete(() => {
-      this.terminal.deleteSignal();
-      this.gameController.onSignalDeleted();
-    });
+
+    // The review panel is now display-only — Q auto-saves via the terminal.
+    // No onSave/onDelete callbacks needed.
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on
@@ -488,6 +569,14 @@ export class BaseScene extends Scene {
     // while the HUD still read "Night 1". autoStart is off for the same
     // reason: it hardcodes night 1.
     this.gameController.autoStart = false;
+    // A retry reverts to the night-start snapshot; a real night change
+    // resets the dock and captures a fresh baseline. Registered before the
+    // respawn listener below, so physics is settled before the player
+    // teleports.
+    this._offNightReset = this.gameController.onNightStart((_night, { retry }) => {
+      if (retry) this.driveSnapshot.restore();
+      else { this._resetForNewNight(); this.driveSnapshot.capture(); }
+    });
     this._offNightStart = this.gameController.bindNights(this.nights);
 
     // The day. Added after the controller so, within a frame, it reads the
@@ -530,6 +619,37 @@ export class BaseScene extends Scene {
     // does, blown bulbs or not.
     this.terminal.setPowered(this.power.on);
     this._offPower.push(this.power.onChange(grid => this.terminal.setPowered(grid.on)));
+  }
+
+  /** Between-nights reset. Machine-slot drives are ejected but keep their
+   *  signals; the docked drive box loses everything — every drive seated
+   *  in it is wiped, even over quota — and the empty box is released and
+   *  parked on the office floor. Drives outside that box keep their
+   *  signals and positions. */
+  _resetForNewNight() {
+    const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
+    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Eject drives from reader and server slot (they keep their signal)
+    if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
+    if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+
+    // Empty the dock: wipe the docked box's drives and release it.
+    const box = this.rooms.Airlock.quotaDock?.empty();
+    if (!box) return;
+
+    // Park it on the office floor. The office root sits at the origin, so
+    // room-local equals world; centre y is half the box height.
+    const release = new THREE.Vector3(1.1, 0.06, 4.72);
+    box.object3d.position.copy(release);
+    box.object3d.updateMatrixWorld(true);
+    const body = box.rigidBody;
+    if (body) {
+      const world = box.object3d.getWorldPosition(new THREE.Vector3());
+      body.setTranslation({ x: world.x, y: world.y, z: world.z }, true);
+      body.setLinvel?.({ x: 0, y: 0, z: 0 }, true);
+      body.setAngvel?.({ x: 0, y: 0, z: 0 }, true);
+    }
   }
 
   // ──────────────────────────────────────────
