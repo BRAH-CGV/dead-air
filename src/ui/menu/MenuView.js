@@ -96,6 +96,7 @@ export class MenuView {
     this._hint = null;
     const draw = {
       main: this._drawMain, pause: this._drawPause, confirm: this._drawConfirm,
+      nightSelect: this._drawNightSelect,
       settings: this._drawSettings, credits: this._drawCredits,
       nightFailed: this._drawNightFailed, runComplete: this._drawRunComplete,
     }[screen];
@@ -170,12 +171,32 @@ export class MenuView {
       h('nav', { class: 'menu-list' },
         option('newGame', 'New game'),
         continueNight ? option('continue', `Continue — Night ${continueNight}`) : null,
+        option('nightSelect', 'Select night'),
         option('settings', 'Settings'),
         option('credits', 'Credits'),
       ),
       this._hint,
       h('div', { class: 'menu-footer' }, version ? `v${version}` : ''),
       h('div', { class: 'menu-music-credit' }, COPY.menuMusic),
+    ];
+  }
+
+  /** @param {{ maxNight?: number, highest?: number, hint?: string }} m */
+  _drawNightSelect({ maxNight = 3, highest = 1, hint = '' }) {
+    this._hint = h('div', { class: 'menu-hint', role: 'status' }, hint);
+    const nights = Array.from({ length: maxNight }, (_, i) => i + 1);
+    return [
+      h('h2', { class: 'menu-heading' }, 'SELECT NIGHT'),
+      h('nav', { class: 'menu-list' },
+        nights.map((n) => {
+          const button = option('selectNight', n <= highest ? `Night ${n}` : `Night ${n} \u2014 locked`,
+            { data: { night: String(n) }, focusKey: `night:${n}` });
+          button.disabled = n > highest;
+          return button;
+        }),
+        option('back', 'Back'),
+      ),
+      this._hint,
     ];
   }
 

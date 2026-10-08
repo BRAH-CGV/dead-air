@@ -18,7 +18,8 @@ function makeEngine() {
   return {
     camera,
     input: { keys: {}, pressed: {}, mouse: { dx: 0, dy: 0, wheel: 0 }, locked: true },
-    keyBinds: { interact: 'KeyE', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC' },
+    keyBinds: { interact: 'KeyE', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', rotateHeld: 'KeyR' },
+    playerController: { lookLocked: false },
     isAction(action) { const code = this.keyBinds[action]; return code ? !!this.input.keys[code] : false; },
   };
 }
@@ -31,13 +32,14 @@ function makePlayer(engine) {
   return player;
 }
 
-function makePickupableGO(name = 'PickupGO') {
+function makePickupableGO(name = 'PickupGO', rotation = new THREE.Quaternion()) {
   const go = new GameObject(name);
   const pickupable = new Pickupable();
   go.addComponent(pickupable);
   // Fake rigid body for physics manipulation
   go.rigidBody = {
     translation: () => ({ x: 0, y: 1, z: -2 }),
+    rotation: () => ({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w }),
     linvel: () => ({ x: 0, y: 0, z: 0 }),
     setGravityScale: vi.fn(),
     setLinearDamping: vi.fn(),
@@ -286,7 +288,7 @@ describe('PickupSystem', () => {
 
     system.onLateUpdate(1 / 60);
     expect(interactionSys.promptOverride).toBe(system);
-    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop');
+    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [R] Rotate');
   });
 
   it('clears promptOverride when not holding', () => {
@@ -330,6 +332,96 @@ describe('PickupSystem', () => {
 
     system.onLateUpdate(1 / 60);
     expect(interactionSys.promptOverride).toBe(system);
-    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop');
+    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [R] Rotate');
+  });
+
+  // ── Rotation (#60) ──
+
+  describe('rotation', () => {
+    const yaw = (rad) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rad);
+    const angleBetween = (a, b) => a.angleTo(b);
+
+    it('keeps the angle it was picked up at, relative to the camera, as the player turns', () => {
+      const { pickupable } = makePickupableGO('Box', yaw(0.5));
+      system.pickUp(pickupable);
+      engine.camera.quaternion.copy(yaw(Math.PI / 2));
+      engine.camera.updateMatrixWorld();
+      const target = system.targetRotation(new THREE.Quaternion());
+      expect(angleBetween(target, yaw(Math.PI / 2 + 0.5))).toBeLessThan(1e-6);
+    });
+
+    it('turns the body toward that angle on the physics step', () => {
+      const { go, pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      go.rigidBody.setAngvel.mockClear();
+      engine.camera.quaternion.copy(yaw(0.4));
+      engine.camera.updateMatrixWorld();
+      system.onFixedUpdate(1 / 60);
+      const w = go.rigidBody.setAngvel.mock.calls.at(-1)[0];
+      expect(w.y).toBeGreaterThan(0);
+      expect(Math.abs(w.x)).toBeLessThan(1e-6);
+      expect(Math.abs(w.z)).toBeLessThan(1e-6);
+    });
+
+    it('settles: no spin once the body is at the angle', () => {
+      const { go, pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      go.rigidBody.setAngvel.mockClear();
+      system.onFixedUpdate(1 / 60);
+      const w = go.rigidBody.setAngvel.mock.calls.at(-1)[0];
+      expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(1e-6);
+    });
+
+    it('holding R turns the object with the mouse, and freezes the view', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      engine.input.keys.KeyR = true;
+      engine.input.mouse.dx = 100;
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(true);
+      const target = system.targetRotation(new THREE.Quaternion());
+      // Mouse right spins it about the camera's up axis.
+      const axisAngle = 2 * Math.acos(Math.min(1, Math.abs(target.w)));
+      expect(axisAngle).toBeGreaterThan(0.1);
+      expect(Math.abs(target.x)).toBeLessThan(1e-6);
+    });
+
+    it('without R the mouse looks around as usual and the object keeps its angle', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      engine.input.mouse.dx = 100;
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+      expect(system.targetRotation(new THREE.Quaternion()).w).toBeCloseTo(1);
+    });
+
+    it('lets go of the view when R is released, or the object is dropped', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      engine.input.keys.KeyR = true;
+      system.onUpdate(1 / 60);
+      engine.input.keys.KeyR = false;
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+
+      engine.input.keys.KeyR = true;
+      system.onUpdate(1 / 60);
+      system.dropHeld();
+      expect(engine.playerController.lookLocked).toBe(false);
+    });
+
+    it('R does nothing with empty hands', () => {
+      engine.input.keys.KeyR = true;
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+    });
+
+    it('the prompt names the rotate key as bound', () => {
+      engine.keyBinds.rotateHeld = 'KeyT';
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      system.onLateUpdate(1 / 60);
+      expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [T] Rotate');
+    });
   });
 });

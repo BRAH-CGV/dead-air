@@ -491,6 +491,19 @@ Which of these was downloaded as `retro_futuristic_computer.glb` (now
 | **Manifest key** | `model:security-camera` |
 | **Title / author / licence** | TODO — open the link and fill in |
 
+### Mars globe and stand
+
+"Stylized Globes Collection – Earth, Mars & More" (https://sketchfab.com/3d-models/stylized-globes-collection-earth-mars-more-1dd5c95bb8794f99b785f032d910ca2e)
+by My Name Is This (profileFromHere) is licensed under Creative Commons
+Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/mars-globe.glb`, `public/assets/models/mars-stand.glb` |
+| **Manifest key** | `model:mars-globe`, `model:mars-stand` |
+| **Used for** | The globe on the office desk; [E] spins it on its stand (`GlobeSpin`) |
+| **Modifications** | The Mars globe and its stand taken from the collection and exported as two files sharing one origin; scaled ×0.02 in the manifest |
+
 ### UFO
 
 "Bob Lazar Ufo" (https://skfb.ly/6URJp) by Batuhan13 is licensed under
@@ -660,6 +673,28 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 | **Manifest key** | `sfx:pressure-release` |
 | **Used for** | The airlock sealing and cycling (`AirlockSound`) |
 | **Modifications** | The two recordings layered and mixed down into one clip |
+
+### Sand on the window
+
+"sand pour on glass FF675.aif" (https://freesound.org/people/martinimeniscus/sounds/199361/) by martinimeniscus on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/window-sand.mp3` |
+| **Manifest key** | `sfx:window-sand` |
+| **Used for** | A storm's sand hitting the office window (`WindowSand`) |
+| **Modifications** | Cut to a short clip; crossfaded into a seamless loop at load |
+
+### Satellite dish
+
+"Satellite dish1.wav" (https://freesound.org/people/juskiddink/sounds/68077/) by juskiddink on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/dish-main-loop-distant.mp3`, `movement-ending.mp3` |
+| **Manifest key** | `sfx:dish-main-loop-distant`, `sfx:movement-ending` |
+| **Used for** | The dish slewing (`SatelliteSound`): its drive while it moves, and the click as it settles |
+| **Modifications** | Cut into two clips: a loop of the drive and the ending; the loop is crossfaded into a seamless loop at load |
 
 ### Base ambience (room tone loops)
 

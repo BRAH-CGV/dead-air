@@ -147,4 +147,96 @@ describe('ShadowScheduler', () => {
     expect(lamp.shadow.autoUpdate).toBe(true);
     expect(shadows.lights).toHaveLength(0);
   });
+
+  describe('moving bodies (#57)', () => {
+    /** A GameObject-shaped wrapper round a mesh, as Engine.rigidBodyMap holds. */
+    function body(root, { castShadow = true } = {}) {
+      const group = new THREE.Group();
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+      mesh.castShadow = castShadow;
+      group.add(mesh);
+      root.add(group);
+      root.updateMatrixWorld(true);
+      return { object3d: group };
+    }
+
+    it('re-renders every map when a shadow-casting body moves, so its shadow follows it', () => {
+      const { root, moon, lamp } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      const drive = body(root);
+      const bodies = new Map([[1, drive]]);
+      shadows.update(bodies);
+      rendered(moon, lamp);
+
+      drive.object3d.position.x += 0.5;
+      shadows.update(bodies);
+      expect(moon.shadow.needsUpdate).toBe(true);
+      expect(lamp.shadow.needsUpdate).toBe(true);
+    });
+
+    it('leaves the maps frozen while bodies are at rest', () => {
+      const { root, moon, lamp } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      const bodies = new Map([[1, body(root)]]);
+      shadows.update(bodies);
+      rendered(moon, lamp);
+      shadows.update(bodies);
+      shadows.update(bodies);
+      expect(moon.shadow.needsUpdate).toBe(false);
+      expect(lamp.shadow.needsUpdate).toBe(false);
+    });
+
+    it('ignores a moving body that casts no shadow (the player)', () => {
+      const { root, moon, lamp } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      const player = body(root, { castShadow: false });
+      const bodies = new Map([[1, player]]);
+      shadows.update(bodies);
+      rendered(moon, lamp);
+      player.object3d.position.z -= 2;
+      shadows.update(bodies);
+      expect(moon.shadow.needsUpdate).toBe(false);
+    });
+
+    it('picks up a body spawned after the scene was adopted', () => {
+      const { root, moon, lamp } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      const bodies = new Map();
+      shadows.update(bodies);
+      rendered(moon, lamp);
+      const box = body(root);
+      bodies.set(7, box);
+      shadows.update(bodies);          // first sight: remembered, and drawn where it is
+      rendered(moon, lamp);
+      box.object3d.position.y += 1;
+      shadows.update(bodies);
+      expect(moon.shadow.needsUpdate).toBe(true);
+    });
+
+    it('a sub-threshold jitter does not re-render', () => {
+      const { root, moon, lamp } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      const drive = body(root);
+      const bodies = new Map([[1, drive]]);
+      shadows.update(bodies);
+      rendered(moon, lamp);
+      drive.object3d.position.x += 0.001;
+      shadows.update(bodies);
+      expect(moon.shadow.needsUpdate).toBe(false);
+    });
+
+    it('forgets bodies on release', () => {
+      const { root } = scene();
+      const shadows = new ShadowScheduler();
+      shadows.adopt(root);
+      shadows.update(new Map([[1, body(root)]]));
+      shadows.release();
+      expect(shadows._bodyPoses.size).toBe(0);
+    });
+  });
 });

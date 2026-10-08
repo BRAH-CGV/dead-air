@@ -99,6 +99,8 @@ export class Engine {
   uiHasMouse = false;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();
+  /** Told when the simulation pauses and resumes (onPauseChange). */
+  _pauseListeners = new Set();
   /** Resolves once the loading screen is gone and the game is on show —
    *  the moment the main menu can appear. @type {Promise<void>} */
   revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
@@ -130,6 +132,7 @@ export class Engine {
     crouch:   'KeyC',
     interact: 'KeyE',
     flashlight: 'KeyF',
+    rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
     // Debug keys, in the same table so they remap with everything else.
     debugFly:   'KeyV',   // toggle the noclip fly camera
     fullbright: 'KeyB',   // toggle the unlit lighting mode
@@ -149,7 +152,9 @@ export class Engine {
    *  into the pause menu would otherwise walk the player on resume.
    *  @param {boolean} paused */
   setPaused(paused) {
+    const changed = this.paused !== !!paused;
     this.paused = !!paused;
+    if (changed) for (const listener of [...this._pauseListeners]) listener(this.paused);
     this._accumulator = 0;
     // Cleared in place — components and the debug camera hold these objects.
     for (const code in this.input.keys) delete this.input.keys[code];
@@ -158,6 +163,16 @@ export class Engine {
     this.input.mouse.dx = 0;
     this.input.mouse.dy = 0;
     this.input.mouse.wheel = 0;
+  }
+
+  /** Subscribe to pauses and resumes: `listener(paused)`, only when it
+   *  changes. Nothing is updated while paused, so whatever has to stop with
+   *  the game — a looping sound — has no frame to notice in.
+   *  @param {(paused: boolean) => void} listener
+   *  @returns {() => void} unsubscribe */
+  onPauseChange(listener) {
+    this._pauseListeners.add(listener);
+    return () => this._pauseListeners.delete(listener);
   }
 
   /** Whether the debug keys may act right now. */
@@ -783,7 +798,8 @@ export class Engine {
     // The editor moves shadow casters the scheduler isn't watching; while it
     // is open, shadows go back to every frame.
     if (this.levelEditor?.enabled) this.shadows.invalidate();
-    this.shadows.update();
+    // The moving bodies too: a carried or knocked object's shadow follows it.
+    this.shadows.update(this.rigidBodyMap);
     this.renderer.render(this.scene, this.camera);
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.

@@ -66,9 +66,35 @@ export class ServerRoom extends Room {
   }
 
   buildProps() {
-    // One row along the right wall, set off it the same way as the office
-    // rack (1.35 m in from the inner face, facing into the room).
-    const rackX = this.width / 2 - this.wallThick / 2 - 1.35;
+    // Interior layout mock-up: sixteen racks. Four pairs stand down each
+    // side wall — one rack against the wall and one in front of it, both
+    // facing the aisle between the two sides — and the console is at the
+    // back of that aisle.
+    //
+    // A rack is 0.666 m square; the wall row's backs stand 2 cm off the
+    // wall's inner face, and the front row 4 mm off the wall row, so the
+    // two don't z-fight.
+    const rackX = this.width / 2 - this.wallThick / 2 - 0.333 - 0.02;
+    const frontX = rackX - 0.67;
+    const consoleAt = [0, -(this.depth / 2 - this.wallThick / 2) + 0.243 + 0.03];   // x, z
+
+    // Four pairs a side, 1.35 m apart from the back of the room: the
+    // spacing that fits the fourth in short of the doorway where BaseScene
+    // puts it.
+    const PAIRS = 4, first = -2.9, pitch = 1.35;
+    const rightZ = Array.from({ length: PAIRS }, (_, i) => first + i * pitch);
+
+    // The left wall has the doorway in it. Its pairs are laid out the same
+    // way, but step over the doorway: none stands within a pace (0.3 m) of
+    // the opening. With the doorway forward of them, as in the base, the
+    // two sides stand opposite each other.
+    const door = this.openings.find(o => o.side === 'left');
+    const keepOut = door.width / 2 + 0.333 + 0.3;
+    const leftZ = [];
+    for (let z = first; leftZ.length < PAIRS; z += pitch) {
+      if (Math.abs(z - (door.offset ?? 0)) < keepOut) z = (door.offset ?? 0) + keepOut + 0.01;
+      leftZ.push(z);
+    }
 
     // One geometry and one material shared by every rack's trim, and one
     // geometry shared by every LED — 16 identical slats and 12 identical
@@ -80,18 +106,33 @@ export class ServerRoom extends Room {
       ledGeometry:  this._own(new THREE.BoxGeometry(0.05, 0.05, 0.02)),
     };
 
-    [-2.6, -1.2, 0.2, 1.6].forEach((z, i) => {
+    let n = 0;
+    const addPair = (side, z) => {
+      // Both face the aisle: the model's front is +z, turned to −x on the
+      // right and +x on the left.
+      const rotationY = -side * Math.PI / 2;
       this._spawnProp('model:server-rack', {
-        name: `ServerRack_${i + 1}`, position: [rackX, 0, z], rotationY: -Math.PI / 2, scale: 0.333,
+        name: `ServerRackBack_${n + 1}`, position: [side * rackX, 0, z], rotationY, scale: 0.333,
       });
-      this._addRackGlow([rackX, 0, z], i, shared);
-    });
+      this._spawnProp('model:server-rack', {
+        name: `ServerRack_${n + 1}`, position: [side * frontX, 0, z], rotationY, scale: 0.333,
+      });
+      // The glow goes on the face that shows — the front rack's. Only the
+      // right side's cast light: the light count is compiled into every
+      // lit shader, and each PointLight is paid for by every surface in
+      // the base. The left side's glow without casting.
+      this._addRackGlow([side * frontX, 0, z], n, shared, { side, light: side > 0 });
+      n++;
+    };
+    for (const z of rightZ) addPair(1, z);
+    for (const z of leftZ) addPair(-1, z);
 
-    // Console against the back wall, facing the racks' aisle.
+    // Console in the middle of the aisle, backed up to the back wall and
+    // facing down it. Its footprint runs 0.24 m behind its origin.
     // The drive slot passively snaps in a drive when it comes close.
     // The interactable deletes the signal from the inserted drive.
     const console_ = this._spawnProp('model:radar-terminal', {
-      name: 'ServerConsole', position: [-1, 0, -2.45], scale: 0.478,
+      name: 'ServerConsole', position: [consoleAt[0], 0, consoleAt[1]], scale: 0.478,
     });
     this._serverConsole = console_;
 
@@ -100,10 +141,10 @@ export class ServerRoom extends Room {
     // insertedDrive for signals.
     // The slot is a separate static box (like the MainOffice drive reader),
     // not a child of the scaled console model, so it keeps its own size.
-    // Console is at [-1, 0, -2.45]; slot is 1.5 units forward (z) and on top.
-    const consoleTopY = 0.75;
+    // It sits on the console's front ledge: 0.16 m left of the console's
+    // origin, 0.7 m forward of it, 0.405 m up.
     const slotSize = [0.12, 0.03, 0.15]; // same as MainOffice reader
-    const slotPos = [-1.160, 0.405, -1.750];
+    const slotPos = [consoleAt[0] - 0.16, 0.405, consoleAt[1] + 0.7];
     const slotMat = this._own(new THREE.MeshStandardMaterial({
       color: 0x1a1a1a,
       roughness: 0.7,
@@ -181,13 +222,19 @@ export class ServerRoom extends Room {
    *  the rack's 0.333 spawn scale and would shrink and squeeze in every
    *  child position by that same factor. `server.glb` measures 2×6×2 raw
    *  (0.666×2.0×0.666 m once scaled), origin on the floor, centred on
-   *  x/z, so `faceX` sits just proud of the front face (rackX − half the
-   *  rack's depth), toward the room's centre — outside the rack's own
-   *  solid geometry, not embedded in it. */
-  _addRackGlow([rackX, , rackZ], index, shared) {
-    const faceX = rackX - 0.35;
+   *  x/z, so the group sits just proud of the front face (half the rack's
+   *  depth, and a little, toward the aisle) — outside the rack's own solid
+   *  geometry, not embedded in it.
+   *
+   *  `side` is the wall the rack stands on (1 = right, −1 = left). The
+   *  group is laid out for a rack facing −x, and turned half round for one
+   *  facing +x. `light: false` leaves out the PointLight: the trim and the
+   *  LEDs still glow. */
+  _addRackGlow([rackX, , rackZ], index, shared, { side = 1, light = true } = {}) {
+    const faceX = rackX - side * 0.35;
     const groupGO = this._addGroup(`RackGlow_${index + 1}`);
     groupGO.object3d.position.set(faceX, 0, rackZ);
+    if (side < 0) groupGO.object3d.rotation.y = Math.PI;
 
     // Static glow-in-the-dark trim, like the console's — unlit so it reads
     // as self-luminous regardless of how dark the room is. Wide, flat
@@ -215,6 +262,7 @@ export class ServerRoom extends Room {
 
     // The light source sits right at the LED cluster, not somewhere else —
     // the blinking dots *are* the point of light.
+    if (!light) return;
     const glow = new THREE.PointLight(0x3a6bff, 0.9, 9, 1.2);
     glow.position.set(0.02, 1.63, 0.3);
     groupGO.object3d.add(glow);

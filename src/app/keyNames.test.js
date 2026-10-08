@@ -54,7 +54,7 @@ describe('isReserved', () => {
 describe('rebind', () => {
   const defaults = () => ({
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-    jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF',
+    jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
     debugFly: 'KeyV',
   });
 
@@ -96,6 +96,6 @@ describe('rebind', () => {
   });
 
   it('lists the gameplay actions as rebindable', () => {
-    expect(REBINDABLE).toEqual(['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight']);
+    expect(REBINDABLE).toEqual(['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld']);
   });
 });

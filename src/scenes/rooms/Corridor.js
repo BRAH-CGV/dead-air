@@ -118,5 +118,6 @@ export class Corridor extends Room {
       : [this.corridorWidth + t, t, this.length];
     this._addStaticBox('Floor',   [0, -t / 2, 0],               size);
     this._addStaticBox('Ceiling', [0, this.height + t / 2, 0],  size);
+    this._buildLining([size[0], size[2]]);
   }
 }

@@ -141,6 +141,22 @@ describe('NightClock', () => {
     it('formats afternoon hours as PM', () => {
       expect(NightClock.formatTime(14.5)).toBe('2:30 PM');
     });
+
+    it('never shows :60 in the last moments of an hour (#61)', () => {
+      expect(NightClock.formatTime(1.9999)).toBe('1:59 AM');
+      expect(NightClock.formatTime(0.995)).toBe('12:59 AM');
+      expect(NightClock.formatTime(11.9999)).toBe('11:59 AM');
+      expect(NightClock.formatTime(23.9999)).toBe('11:59 PM');
+    });
+
+    it('never shows a minute ahead of the clock', () => {
+      expect(NightClock.formatTime(2 + 29.6 / 60)).toBe('2:29 AM');
+    });
+
+    it('lands on the exact minute despite float error', () => {
+      expect(NightClock.formatTime(0.1 + 0.2)).toBe('12:18 AM');
+      expect(NightClock.formatTime(3 + 7 / 60)).toBe('3:07 AM');
+    });
   });
 
   it('exposes a formatted timeString', () => {

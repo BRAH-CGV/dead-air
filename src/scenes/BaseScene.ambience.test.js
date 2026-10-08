@@ -8,6 +8,8 @@ import { GameObject } from '../core/GameObject.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
 import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { SatelliteSound } from '../components/SatelliteSound.js';
+import { WindowSand, windowDistance } from '../components/WindowSand.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
@@ -217,6 +219,42 @@ describe('BaseScene ambience', () => {
     camera.updateMatrixWorld();
     expect(voice.isInside()).toBe(false);
     delete scene.engine.camera;
+  });
+
+  it('puts sand on the office window in a storm, for a player in the office', () => {
+    const sand = scene.ambience.gameObject.getComponent(WindowSand);
+    expect(sand).not.toBeNull();
+
+    // The window is the office's own back window, in its wall.
+    const office = scene.rooms.MainOffice;
+    const centre = centreOf(office);
+    expect(sand.window.z).toBeCloseTo(office.bounds().min.z + office.wallThick);
+    expect(sand.window.x1 - sand.window.x0).toBeCloseTo(8.5);
+    // Nearer the glass at the desk than at the front door.
+    const front = centre.clone(); front.z = office.bounds().max.z - 0.5;
+    const desk = centre.clone();  desk.z = office.bounds().min.z + 2.5;
+    expect(windowDistance(desk, sand.window)).toBeLessThan(windowDistance(front, sand.window));
+
+    // Only in the office.
+    expect(sand.isInside(centre)).toBe(true);
+    expect(sand.isInside(centreOf(scene.rooms.ServerRoom))).toBe(false);
+    expect(sand.isInside(new THREE.Vector3(0, 1, 40))).toBe(false);
+
+    // It follows the storm's own level.
+    const level = scene.sandstorm.level;
+    scene.sandstorm.level = 0.7;
+    expect(sand.storm()).toBe(0.7);
+    scene.sandstorm.level = level;
+  });
+
+  it('gives the dish the sound of its drive', () => {
+    const voice = scene.satellite.getComponent(SatelliteSound);
+    expect(voice).not.toBeNull();
+    // It reads the dish it rides on.
+    voice.onStart();
+    expect(voice.satellite).toBe(scene.satellite);
+    expect(typeof scene.satellite.velYaw).toBe('number');
+    expect(typeof scene.satellite.velPitch).toBe('number');
   });
 
   it('plays the wind alone out in the yard, and up on the roof', () => {
