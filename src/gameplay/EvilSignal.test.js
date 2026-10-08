@@ -116,7 +116,7 @@ describe('EvilSignal hover — the dish hold', () => {
     expect(evil.locked).toBe(false);
   });
 
-  it('disappears after the lock ends — no re-hovering', () => {
+  it('disappears after the lock ends — no re-hovering, but respawns later', () => {
     const { evil, signalManager } = makeRig();
     evil.summon();
     const sig = evilSig(signalManager);
@@ -130,6 +130,9 @@ describe('EvilSignal hover — the dish hold', () => {
     // Hovering it again does nothing — it's resolved.
     evil.hover(sig);
     expect(evil.locked).toBe(false);
+
+    // But a respawn timer is counting down.
+    expect(evil._respawnTimer).not.toBeNull();
   });
 
   it('lets go when the shift ends mid-hold', () => {
@@ -248,5 +251,58 @@ describe('EvilSignal nights', () => {
 
   it('has no night of its own yet — the debug key is the way in', () => {
     expect(EVIL.nights).toEqual([]);
+  });
+});
+
+describe('EvilSignal respawn — no drive means it comes back', () => {
+  it('respawns at a new position after the delay when no drive was used', () => {
+    const { evil, signalManager } = makeRig();
+    evil.summon();
+    const sig1 = evilSig(signalManager);
+
+    evil.hover(sig1);
+    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+    expect(sig1.deleted).toBe(true);
+    expect(evil._respawnTimer).toBe(EVIL.respawnDelaySeconds);
+
+    // Tick most of the timer — still gone.
+    evil.onUpdate(EVIL.respawnDelaySeconds - 0.1);
+    expect(evil._respawnTimer).toBeCloseTo(0.1, 5);
+    expect(signalManager.signals.filter(s => s.evil)).toHaveLength(1);  // old one still in list
+
+    // The last tick fires the respawn.
+    evil.onUpdate(0.2);
+    expect(evil._respawnTimer).toBeNull();
+    const sigs = signalManager.signals.filter(s => s.evil);
+    expect(sigs).toHaveLength(1);   // replaced, never stacked
+    expect(sigs[0]).not.toBe(sig1); // a new target
+    expect(sigs[0].deleted).toBe(false);
+    expect(sigs[0].resolved).toBe(false);
+  });
+
+  it('does not respawn when a drive was used', () => {
+    const drive = makeDrive();
+    const { evil, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // saves to drive immediately, locks for 5 s
+    expect(sig.saved).toBe(true);
+
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(evil.locked).toBe(false);
+    expect(evil._respawnTimer).toBeNull();  // no respawn — drive carries it
+  });
+
+  it('a new night cancels the respawn timer', () => {
+    const { evil, controller, signalManager } = makeRig();
+    evil.summon();
+    evil.hover(evilSig(signalManager));
+    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    expect(evil._respawnTimer).not.toBeNull();
+
+    controller.startNight(2);
+    expect(evil._respawnTimer).toBeNull();
   });
 });

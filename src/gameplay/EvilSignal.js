@@ -15,13 +15,16 @@ import { PITCH_MIN, PITCH_MAX } from './SignalManager.js';
 //   no drive       the array is pinned to it for EVIL.lockSeconds (10 s):
 //                  the cursor is frozen, the dish holds the bearing, and
 //                  the night is that much shorter. When the hold ends, the
-//                  signal disappears.
-//   drive inserted the array is pinned for EVIL.lockWithDriveSeconds (5 s):
-//                  shorter than no-drive. When the hold ends, the evil
-//                  signal is saved to the drive (overwriting any existing
-//                  signal), turning it RED (corrupted). A red drive never
+//                  signal disappears — but respawns later in the night
+//                  (after EVIL.respawnDelaySeconds), so the player must
+//                  deal with it again.
+//   drive inserted the evil signal is saved to the drive immediately
+//                  (overwriting any existing signal), turning it RED
+//                  (corrupted). The array is then pinned for
+//                  EVIL.lockWithDriveSeconds (5 s). A red drive never
 //                  counts towards the night quota — it has to be wiped at
 //                  the ServerRoom console like any deleted signal.
+//                  No respawn: the drive carries the consequence.
 //
 // Rooms don't know about gameplay: the scene hands it the signal manager,
 // the terminal, the drive reader and the array, and it drives itself.
@@ -48,6 +51,10 @@ export const EVIL = {
    *  is in the reader (blank or with a signal). Shorter than no-drive.
    *  TEMP: 5 s for debugging. Restore before release. */
   lockWithDriveSeconds: 5,
+  /** Seconds after a no-drive lock before the evil signal respawns at a
+   *  new random position. The player dealt with it, but it comes back.
+   *  TEMP: 30 s for debugging. Restore before release. */
+  respawnDelaySeconds: 30,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -82,6 +89,9 @@ export class EvilSignal extends Component {
   _hover = null;
   /** @type {(() => void)|null} */
   _offNight = null;
+  /** Seconds until the evil signal respawns after a no-drive lock, or null
+   *  when not counting down. @type {number|null} */
+  _respawnTimer = null;
 
   /**
    * @param {object} [opts]
@@ -170,6 +180,16 @@ export class EvilSignal extends Component {
       if (this.locked) this._release();
       return;
     }
+
+    // The respawn timer ticks even when not locked.
+    if (this._respawnTimer !== null) {
+      this._respawnTimer -= dt;
+      if (this._respawnTimer <= 0) {
+        this._respawnTimer = null;
+        this.summon();   // a new red signal at a new random position
+      }
+    }
+
     if (!this.locked) return;
 
     // The array stays physically on it — even if the player walks away
@@ -237,7 +257,8 @@ export class EvilSignal extends Component {
   }
 
   /** Let go of the dish: the hold is over, or the shift ended. The signal
-   *  disappears — it's been dealt with (either saved red or just locked). */
+   *  disappears — it's been dealt with. If no drive was inserted (the
+   *  signal wasn't saved), it will respawn later in the night. */
   _release() {
     if (!this.locked) return;
     this.locked = false;
@@ -246,9 +267,16 @@ export class EvilSignal extends Component {
     if (this.terminal?.radar) {
       this.terminal.radar.evilLock = null;
     }
+    // No drive was used: the signal will respawn later so the player must
+    // deal with it again. With a drive, the consequence is on the drive —
+    // no respawn. Check before marking deleted (which makes resolved true).
+    const noDrive = !this._target?.resolved;
     // The signal has been dealt with — make it disappear from the radar.
     if (this._target && !this._target.resolved) {
       this._target.deleted = true;
+    }
+    if (noDrive) {
+      this._respawnTimer = EVIL.respawnDelaySeconds;
     }
   }
 
@@ -260,5 +288,6 @@ export class EvilSignal extends Component {
     this._target = null;
     this._hover = null;
     this._mustLeave = false;
+    this._respawnTimer = null;
   }
 }
