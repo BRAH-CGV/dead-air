@@ -60,7 +60,7 @@ function makeEngine() {
     devTools: true,
     keyBinds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-      jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF',
+      jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
       debugFly: 'KeyV', fullbright: 'KeyB', nextNight: 'KeyN', perfStats: 'KeyI',
     },
     revealed: Promise.resolve(),

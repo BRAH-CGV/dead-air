@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { InteractionSystem } from './InteractionSystem.js';
 import { Pickupable } from './Pickupable.js';
+import { keyName } from '../app/keyNames.js';
 
 // ─────────────────────────────────────────────
 // PickupSystem  –  Component (attach to Player)
@@ -9,6 +10,13 @@ import { Pickupable } from './Pickupable.js';
 // Generic carry mechanic: detects Pickupable objects via InteractionSystem's
 // raycast, picks them up on E, holds them in front of the camera with
 // spring-damper forces, and drops them on E again.
+//
+// Rotation (#60): a held object keeps the angle it was picked up at
+// relative to the camera — turn round and it turns with you, instead of
+// spinning freely in world space. Holding R (keyBinds.rotateHeld) turns the
+// object with the mouse instead of the view (the controller's lookLocked).
+// The angle is held by setting the body's angular velocity toward the
+// target each physics step, so it still knocks against things.
 //
 // The held object is a real physics body — it can bump into things, be pushed
 // by the player walking, and falls when dropped. Mouse wheel scrolling
@@ -45,6 +53,22 @@ const _target = new THREE.Vector3();
 const _disp   = new THREE.Vector3();
 const _camFwd = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
+const _camQuat = new THREE.Quaternion();
+const _bodyQuat = new THREE.Quaternion();
+const _err = new THREE.Quaternion();
+const _turn = new THREE.Quaternion();
+const _axisX = new THREE.Vector3(1, 0, 0);
+const _axisY = new THREE.Vector3(0, 1, 0);
+
+/** Radians the held object turns per pixel of mouse while R is held. */
+const ROTATE_SENSITIVITY = 0.008;
+
+/** How fast the body closes on its target angle: angular velocity is the
+ *  remaining angle × this, per second (a ~1/12 s time constant). */
+const ROTATE_GAIN = 12;
+
+/** Cap on that angular velocity (rad/s), so a big error can't whip. */
+const MAX_SPIN = 20;
 
 export class PickupSystem extends Component {
   // ── External references (set by scene wiring) ──
@@ -59,6 +83,10 @@ export class PickupSystem extends Component {
    *  carried (or null). */
   heldPickupable = null;
 
+  /** The held object's rotation in camera space: its world rotation is
+   *  camera × this, so it turns with the player. */
+  holdRotation = new THREE.Quaternion();
+
   // ──────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────
@@ -70,6 +98,7 @@ export class PickupSystem extends Component {
     const pickupable = this.heldPickupable;
     this.heldPickupable = null;
     pickupable.held = false;
+    this._setLookLocked(false);
 
     // Restore normal physics so the object falls / sits.
     const go = pickupable.gameObject;
@@ -107,6 +136,14 @@ export class PickupSystem extends Component {
       go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
       go.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     }
+
+    // Hold it at the angle it was picked up at, relative to the camera.
+    const engine = this._getEngine();
+    const r = go?.rigidBody?.rotation?.();
+    _bodyQuat.set(r?.x ?? 0, r?.y ?? 0, r?.z ?? 0, r?.w ?? 1);
+    if (engine?.camera) engine.camera.getWorldQuaternion(_camQuat);
+    else _camQuat.identity();
+    this.holdRotation.copy(_camQuat).invert().multiply(_bodyQuat);
     return true;
   }
 
@@ -125,6 +162,20 @@ export class PickupSystem extends Component {
       // Scroll down (positive wheel) = bring closer.
       p.holdDistance -= engine.input.mouse.wheel * SCROLL_STEP;
       p.holdDistance = Math.max(p.minHoldDistance, Math.min(p.maxHoldDistance, p.holdDistance));
+    }
+
+    // ── R + mouse turns the held object, not the view ──
+    const rotating = !!this.heldPickupable && engine.isAction('rotateHeld');
+    this._setLookLocked(rotating);
+    if (rotating) {
+      const { dx = 0, dy = 0 } = engine.input.mouse;
+      // Camera-space turns, applied before the current angle: mouse right
+      // spins it about the view's up axis, mouse up/down about its right.
+      _turn.setFromAxisAngle(_axisY, dx * ROTATE_SENSITIVITY);
+      this.holdRotation.premultiply(_turn);
+      _turn.setFromAxisAngle(_axisX, dy * ROTATE_SENSITIVITY);
+      this.holdRotation.premultiply(_turn);
+      this.holdRotation.normalize();
     }
 
     // ── Terminal gating: no pickup/drop while the terminal is open ──
@@ -190,6 +241,8 @@ export class PickupSystem extends Component {
       { x: ax * mass, y: ay * mass, z: az * mass },
       true,
     );
+
+    this._holdAngle(go.rigidBody);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -210,7 +263,8 @@ export class PickupSystem extends Component {
     // take priority over tooltip Interactables like the drive reader label.
     if (held) {
       this.interactionSystem.promptOverride = this;
-      this.interactionSystem.prompt?.show('[E] Drop');
+      const rotateKey = keyName(this._getEngine()?.keyBinds?.rotateHeld ?? 'KeyR');
+      this.interactionSystem.prompt?.show(`[E] Drop \u00b7 hold [${rotateKey}] Rotate`);
     } else {
       this.interactionSystem.promptOverride = null;
     }
@@ -224,6 +278,41 @@ export class PickupSystem extends Component {
    *  InteractionSystem's raycast — the same ray the prompt runs on. */
   _getPickupTarget() {
     return this.interactionSystem?.currentPickupable ?? null;
+  }
+
+  /** The world rotation the held object is steered to: camera × holdRotation.
+   *  @param {THREE.Quaternion} out
+   *  @returns {THREE.Quaternion} out */
+  targetRotation(out) {
+    const camera = this._getEngine()?.camera;
+    if (camera) camera.getWorldQuaternion(out);
+    else out.identity();
+    return out.multiply(this.holdRotation);
+  }
+
+  /** Steer the body's angular velocity toward targetRotation: proportional
+   *  to the remaining angle, along the shortest way round. */
+  _holdAngle(body) {
+    if (!body.rotation || !body.setAngvel) return;
+    const r = body.rotation();
+    _bodyQuat.set(r.x, r.y, r.z, r.w);
+    this.targetRotation(_err).multiply(_bodyQuat.invert());
+    if (_err.w < 0) _err.set(-_err.x, -_err.y, -_err.z, -_err.w);   // shortest way
+    const w = Math.min(1, _err.w);
+    const angle = 2 * Math.acos(w);
+    const s = Math.sqrt(1 - w * w);
+    if (s < 1e-6) {
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      return;
+    }
+    const speed = Math.min(angle * ROTATE_GAIN, MAX_SPIN) / s;
+    body.setAngvel({ x: _err.x * speed, y: _err.y * speed, z: _err.z * speed }, true);
+  }
+
+  /** Freeze or free the player's view while the held object is turned. */
+  _setLookLocked(locked) {
+    const ctrl = this._getEngine()?.playerController;
+    if (ctrl) ctrl.lookLocked = locked;
   }
 
   /** Reach the Engine from the component's GameObject. */

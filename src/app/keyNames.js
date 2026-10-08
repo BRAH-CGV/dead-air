@@ -7,13 +7,14 @@
 // ─────────────────────────────────────────────
 
 /** The gameplay actions the player can rebind, in the order the UI lists
- *  them. The debug binds stay fixed (listed read-only on DEVELOPER). */
-export const REBINDABLE = ['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight'];
+ *  them. The debug binds stay fixed and are never listed. */
+export const REBINDABLE = ['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld'];
 
 /** Labels for the rebind rows. */
 export const ACTION_LABELS = {
   forward: 'Move forward', back: 'Move back', left: 'Move left', right: 'Move right',
   jump: 'Jump', crouch: 'Crouch', interact: 'Interact', flashlight: 'Flashlight',
+  rotateHeld: 'Rotate held object',
 };
 
 const NAMED = {

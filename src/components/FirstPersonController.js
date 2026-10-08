@@ -102,6 +102,10 @@ export class FirstPersonController extends Component {
      */
     this.inputLocked = false;
 
+    /** Public: while true, the mouse doesn't turn the view but the player
+     *  can still walk. PickupSystem sets it while R turns a held object. */
+    this.lookLocked = false;
+
     this.pitch     = 0;
     this.yaw       = 0;
     this._smoothYaw = 0;
@@ -209,7 +213,8 @@ export class FirstPersonController extends Component {
     const { input, keyBinds } = engine;
 
     // ── Mouse look (accumulate angles, apply in late update) ──
-    if (input.locked) {
+    // lookLocked: the mouse is turning a held object instead (PickupSystem).
+    if (input.locked && !this.lookLocked) {
       const dx = this._clampMouseDelta(input.mouse.dx);
       const dy = this._clampMouseDelta(input.mouse.dy);
     
