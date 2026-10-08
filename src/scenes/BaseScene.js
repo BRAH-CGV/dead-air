@@ -1109,6 +1109,7 @@ export class BaseScene extends Scene {
     };
 
     this.whiteOut = new WhiteOut();
+    this.evilSignal.whiteOut = this.whiteOut;
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
       grid:        this.power,

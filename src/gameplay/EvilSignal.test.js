@@ -24,6 +24,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
     state: 'playing',
     nightNumber: night,
     _listeners: new Set(),
+    fail: vi.fn(),
     onNightStart(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); },
     startNight(n) {
       this.nightNumber = n;
@@ -35,7 +36,9 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   signalManager.startNight(night);
   const radar = { setInfo: vi.fn() };
   const terminal = { radar };
+  const drives = drive ? [drive] : [];
   const driveManager = {
+    drives,
     insertedDrive: drive,
     get driveInserted() { return this.insertedDrive !== null; },
     get insertedDriveHasSignal() { return this.insertedDrive?.saved === true; },
@@ -44,9 +47,11 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
     }),
   };
   const satellite = { aimAll: vi.fn() };
+  const whiteOut = { play: vi.fn(), clear: vi.fn() };
   const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
+  evil.whiteOut = whiteOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut };
 }
 
 /** The single red target in the manager's list. */
@@ -304,5 +309,75 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 
     controller.startNight(2);
     expect(evil._respawnTimer).toBeNull();
+  });
+});
+
+describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => {
+  it('game over ("You were silenced") if the corrupted drive is not wiped in 10 s', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager, whiteOut } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);                        // saves red, starts silence timer
+    expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
+
+    // Wait for the silence timer to expire.
+    evil.onUpdate(EVIL.silenceSeconds + 0.1);
+    expect(controller.fail).toHaveBeenCalledWith(
+      'You were silenced. [E] to retry',
+      expect.objectContaining({ retryAfter: expect.any(Number) }),
+    );
+    expect(whiteOut.play).toHaveBeenCalledWith(
+      'You were silenced. [E] to retry',
+      expect.objectContaining({ tone: 'blood' }),
+    );
+  });
+
+  it('wiping the corrupted drive before the timer expires cancels the game over', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);                        // saves red, starts silence timer
+    expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
+
+    // Simulate wiping the drive at the ServerRoom console.
+    drive.setSaved(false);
+    expect(drive.corrupted).toBe(false);
+
+    // Tick past the silence deadline — no game over.
+    evil.onUpdate(EVIL.silenceSeconds + 0.1);
+    expect(controller.fail).not.toHaveBeenCalled();
+    expect(evil._silenceTimer).toBeNull();
+  });
+
+  it('the silence timer resets on a new night', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);                        // saves red, starts silence timer
+    expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
+
+    controller.startNight(2);
+    expect(evil._silenceTimer).toBeNull();
+  });
+
+  it('clears the whiteOut when a new night starts (retry)', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager, whiteOut } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.silenceSeconds + 0.1);  // game over, whiteOut plays
+    expect(whiteOut.play).toHaveBeenCalled();
+
+    // Retry: a new night starts — the whiteOut must clear.
+    controller.startNight(1, { retry: true });
+    expect(whiteOut.clear).toHaveBeenCalled();
   });
 });

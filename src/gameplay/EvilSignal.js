@@ -23,7 +23,8 @@ import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 //                  (corrupted). The array is then pinned for
 //                  EVIL.lockWithDriveSeconds (5 s). A red drive never
 //                  counts towards the night quota — it has to be wiped at
-//                  the ServerRoom console like any deleted signal.
+//                  the ServerRoom console within EVIL.silenceSeconds
+//                  (10 s) or the shift ends: "You were silenced."
 //                  No respawn: the drive carries the consequence.
 //
 // Rooms don't know about gameplay: the scene hands it the signal manager,
@@ -31,6 +32,13 @@ import { PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 // The terminal reports the radar cursor through hover() every frame it is
 // open; everything else is decided here.
 // ─────────────────────────────────────────────
+
+/** Game-over prompt when the corrupted drive is not wiped in time. */
+const CAUGHT_PROMPT = 'You were silenced. [E] to retry';
+
+/** White-out config: instant black, slow fade to blood red, message once
+ *  it has settled — same pattern as DustEyes. */
+const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2200 };
 
 /** Tuning. Seconds and radians unless stated. */
 export const EVIL = {
@@ -56,6 +64,10 @@ export const EVIL = {
    *  new random position. The player dealt with it, but it comes back.
    *  TEMP: 30 s for debugging. Restore before release. */
   respawnDelaySeconds: 30,
+  /** Seconds the player has to wipe a corrupted drive at the ServerRoom
+   *  console before the shift ends ("You were silenced").
+   *  TEMP: 10 s for debugging. Restore before release. */
+  silenceSeconds: 10,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -74,6 +86,8 @@ export class EvilSignal extends Component {
   driveManager = null;
   /** @type {import('../gameobjects/Satellite.js').Satellite|null} */
   satellite = null;
+  /** @type {import('../ui/WhiteOut.js').WhiteOut|null} */
+  whiteOut = null;
 
   /** True while the array is pinned to the red signal (the no-drive
    *  penalty). The terminal freezes its cursor while this is set. */
@@ -93,6 +107,9 @@ export class EvilSignal extends Component {
   /** Seconds until the evil signal respawns after a no-drive lock, or null
    *  when not counting down. @type {number|null} */
   _respawnTimer = null;
+  /** Seconds left to wipe the corrupted drive before game over, or null
+   *  when no corrupted drive is outstanding. @type {number|null} */
+  _silenceTimer = null;
 
   /**
    * @param {object} [opts]
@@ -191,6 +208,32 @@ export class EvilSignal extends Component {
       }
     }
 
+    // The silence timer ticks even when not locked — the corrupted drive
+    // must be wiped at the ServerRoom console before it runs out.
+    if (this._silenceTimer !== null) {
+      const corrupted = this._findCorruptedDrive();
+      if (!corrupted) {
+        // The drive was wiped (or lost): no more threat.
+        this._silenceTimer = null;
+      } else {
+        this._silenceTimer -= dt;
+        if (this._silenceTimer <= 0) {
+          this._silenceTimer = null;
+          this.controller?.fail(CAUGHT_PROMPT, {
+            retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000,
+          });
+          this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
+          return;
+        }
+        // Warn the player while the lock is not showing its own message.
+        if (!this.locked) {
+          this.terminal?.radar?.setInfo?.(
+            `ANOMALOUS SIGNAL ON DRIVE — wipe in ${Math.ceil(this._silenceTimer)} s`,
+          );
+        }
+      }
+    }
+
     if (!this.locked) return;
 
     // The array stays physically on it — even if the player walks away
@@ -240,6 +283,7 @@ export class EvilSignal extends Component {
       this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
       this.locked = true;
       this._remain = EVIL.lockWithDriveSeconds;
+      this._silenceTimer = EVIL.silenceSeconds;
       this._showLock();
       return;
     }
@@ -281,6 +325,17 @@ export class EvilSignal extends Component {
     }
   }
 
+  /** First drive in the manager's pool whose signal is corrupted, or null.
+   *  @returns {object|null} */
+  _findCorruptedDrive() {
+    const drives = this.driveManager?.drives;
+    if (!drives) return null;
+    for (const d of drives) {
+      if (d.corrupted) return d;
+    }
+    return null;
+  }
+
   /** A new night: the manager rebuilds its signals, so drop the old target
    *  and any hold. (When it gets a night of its own, the scheduled spawn
    *  goes here.) */
@@ -290,5 +345,7 @@ export class EvilSignal extends Component {
     this._hover = null;
     this._mustLeave = false;
     this._respawnTimer = null;
+    this._silenceTimer = null;
+    this.whiteOut?.clear();
   }
 }
