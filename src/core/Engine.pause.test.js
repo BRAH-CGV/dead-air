@@ -76,6 +76,34 @@ describe('Engine pause', () => {
     expect(update.mock.calls[0][0]).toBeCloseTo(0.016, 3);
   });
 
+  it('tells whoever is listening when it pauses and when it resumes', () => {
+    // Nothing is updated while paused, so a sound that should stop with the
+    // game has no frame to notice in: it is told instead.
+    const heard = [];
+    engine.onPauseChange(paused => heard.push(paused));
+    engine.setPaused(true);
+    engine.setPaused(false);
+    expect(heard).toEqual([true, false]);
+  });
+
+  it('says nothing when asked for the state it is already in', () => {
+    const listener = vi.fn();
+    engine.onPauseChange(listener);
+    engine.setPaused(false);
+    expect(listener).not.toHaveBeenCalled();
+    engine.setPaused(true);
+    engine.setPaused(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops telling a listener that has unsubscribed', () => {
+    const listener = vi.fn();
+    const off = engine.onPauseChange(listener);
+    off();
+    engine.setPaused(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('setPaused clears held keys, presses, mouse deltas and the accumulator', () => {
     engine.input.keys.KeyW = true;
     engine.input.pressed.KeyE = true;

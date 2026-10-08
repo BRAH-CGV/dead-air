@@ -26,6 +26,7 @@ import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
 import { AirlockSound, AIRLOCK_SOUND } from '../components/AirlockSound.js';
+import { WindowSand } from '../components/WindowSand.js';
 import { AmbienceMix } from '../systems/AmbienceMix.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
@@ -52,6 +53,7 @@ import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
+import { SatelliteSound } from '../components/SatelliteSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -406,6 +408,16 @@ export class BaseScene extends Scene {
       airlock: rooms.Airlock,
       sound:   this._sound(AIRLOCK_SOUND.key),
       isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
+    }));
+
+    // In a storm, sand on the office window: heard in the office, louder
+    // the nearer the glass. The storm is built later, so it is read live.
+    const officeShell = rooms.MainOffice.bounds();
+    this.ambience.gameObject.addComponent(new WindowSand({
+      window: this._officeWindow(),
+      storm:  () => this.sandstorm?.level ?? 0,
+      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      isInside: p => officeShell.containsPoint(p),
     }));
   }
 
@@ -846,6 +858,8 @@ export class BaseScene extends Scene {
       name: 'Satellite', position: [0, 0, -25], scale: 0.137, type: Satellite,
     });
     this._adopt(this._outside, this.satellite);
+    // Its drive while it slews, and the click as it settles.
+    this.satellite.addComponent(new SatelliteSound());
     this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
     this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
 
