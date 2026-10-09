@@ -1120,6 +1120,8 @@ export class BaseScene extends Scene {
       rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
       isFrozen:        () => !!engine.debugCamera?.active,
       onFigureChanged: () => engine.shadows?.invalidate(),
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
     }));
   }
 

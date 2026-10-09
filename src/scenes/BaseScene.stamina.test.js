@@ -128,6 +128,10 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.sleepDemon.terminal).toBe(scene.terminal);
   });
 
+  it("ducks the scene's ambience as the view comes round to it: dead air", () => {
+    expect(scene.sleepDemon.ambience).toBe(scene.ambience);
+  });
+
   it('comes for the player on every night, 1 to 3', () => {
     scene.sleepDemon.onStart();
     for (const night of [1, 2, 3]) {
