@@ -214,9 +214,62 @@ describe('SleepDemon', () => {
     terminal.state = 'radar';
     const at = figure.object3d.position.clone();
     face(at.x, EYE, at.z);
+    run(0.1);                               // it slips out of sight
+    const spot = figure.object3d.position.clone();
     run(2);
     expect(visible()).toBe(true);
-    expect(figure.object3d.position.distanceTo(at)).toBeLessThan(1e-9);
+    expect(spot.distanceTo(at)).toBeGreaterThan(1);
+    expect(figure.object3d.position.distanceTo(spot)).toBeLessThan(1e-9);
+  });
+
+  it('with the terminal screen up it stands out of sight: beside the player at first, behind them near empty', () => {
+    terminal.state = 'radar';
+    stamina.value = 0.8;
+    run(7);
+    expect(visible()).toBe(true);
+    let at = seen();
+    const halfBody = Math.atan2(SLEEP_DEMON_FIGURE.radius, at.distance);
+    expect(Math.abs(at.angle) - halfBody).toBeGreaterThan(HALF_WIDTH);
+    expect(Math.abs(at.angle)).toBeGreaterThan(70 * DEG);
+    expect(Math.abs(at.angle)).toBeLessThan(100 * DEG);
+    expect(demon.sounds.breathing.isPlaying).toBe(true);   // heard from out of sight
+
+    stamina.value = 0.05;
+    run(0.1);
+    at = seen();
+    expect(at.distance).toBeLessThan(1.5);
+    expect(Math.abs(at.angle)).toBeGreaterThan(135 * DEG);
+    const feet = figure.object3d.position;
+    expect(feet.y).toBeCloseTo(terrainHeightAt(feet.x, feet.z));
+  });
+
+  it('out of sight it still keeps clear of walls, and with no room either side it waits', () => {
+    terminal.state = 'radar';
+    wall = 3;
+    stamina.value = 0.8;
+    run(7);
+    expect(visible()).toBe(true);
+    expect(seen().distance).toBeCloseTo(3 - T.wallGap, 5);
+
+    wall = 0.5;
+    stamina.value = 0.7;                    // a new band: somewhere new
+    run(0.1);
+    expect(visible()).toBe(false);
+  });
+
+  it('the screen closed, it is still there behind the player: turning round to look at it sends it away', () => {
+    stamina.value = 0.425;
+    run(4);
+    terminal.state = 'radar';
+    run(0.1);
+    const spot = figure.object3d.position.clone();
+    terminal.state = 'idle';
+    run(1);                                 // inside lostAfter: it holds
+    expect(visible()).toBe(true);
+    expect(figure.object3d.position.distanceTo(spot)).toBeLessThan(1e-9);
+    face(spot.x, EYE, spot.z);              // turn round
+    run(0.1);
+    expect(visible()).toBe(false);
   });
 
   it('below holdBelow, stared at, it walks in on the player along the line it is seen along, to arm\'s length', () => {
