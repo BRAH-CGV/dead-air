@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SleepDemonLogic, SLEEP_DEMON as T, closenessFor, angleToUpright } from './SleepDemonLogic.js';
+import { STAMINA } from './Stamina.js';
 
 const DEG = Math.PI / 180;
 /** In view and off to one side: the corner of the eye. */
@@ -256,5 +257,194 @@ describe('SleepDemonLogic', () => {
     expect(logic.closeness).toBe(0);
     logic.update(0.1, 0);
     expect(onKill).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the stare-down, below holdBelow', () => {
+  /** Where the player's view is from it, and how far off it stands. */
+  let angle, standing;
+
+  /** approach() walks it in `step` from where it stands, with no floor of
+   *  its own: the floor these tests check is the logic's. */
+  function make({ tuning = T, approach = step => (standing -= step) } = {}) {
+    angle = CORNER;
+    standing = Infinity;
+    const spies = {
+      place: vi.fn(spot => { standing = spot.distance; return true; }),
+      hide: vi.fn(), onKill: vi.fn(), approach: vi.fn(approach),
+    };
+    const logic = new SleepDemonLogic({ ...spies, lookAngle: () => angle, rand: () => 0.9, tuning });
+    return { logic, ...spies };
+  }
+
+  function run(logic, seconds, stamina, dt = 0.1) {
+    for (let t = 0; t < seconds - 1e-9; t += dt) logic.update(dt, stamina);
+  }
+
+  /** At `stamina`, shown and seen in the corner of the eye. */
+  function shown(logic, stamina) {
+    run(logic, 2, stamina);
+    expect(logic.shown).toBe(true);
+  }
+
+  /** Where the rules alone stand it at `stamina`. */
+  const ruled = stamina => T.farthest + (T.nearest - T.farthest) * closenessFor(stamina);
+
+  it('is on, a slow walk, down to arm\'s length', () => {
+    expect(T.stareDown).toBe(true);
+    expect(T.stareSpeed).toBeGreaterThan(0);
+    expect(T.stareSpeed).toBeLessThan(0.2);
+    expect(T.stareFloor).toBeGreaterThanOrEqual(0.45);
+    expect(T.stareFloor).toBeLessThanOrEqual(0.55);
+  });
+
+  it('takes it from where it holds to arm\'s length in about the time the last of the stamina lasts', () => {
+    const holdsAt = T.farthest + (T.nearest - T.farthest) * (1 - 1 / T.bands);   // the last band's spot
+    const walk = (holdsAt - T.stareFloor) / T.stareSpeed;
+    const left = T.holdBelow / STAMINA.drainPerSecond;
+    expect(walk).toBeGreaterThan(0.75 * left);
+    expect(walk).toBeLessThanOrEqual(left);
+  });
+
+  it('stared at, it walks in over dt, and never past the floor', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.05);
+    angle = 0;
+    const before = logic.distance;
+    logic.update(0.1, 0.05);
+    expect(logic.distance).toBeCloseTo(before - T.stareSpeed * 0.1);
+    expect(standing).toBeCloseTo(logic.distance);
+    run(logic, 60, 0.05);
+    expect(logic.distance).toBeCloseTo(T.stareFloor);
+    expect(standing).toBeGreaterThanOrEqual(T.stareFloor - 1e-9);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('in the corner of the eye it walks in too', () => {
+    const { logic } = make();
+    shown(logic, 0.05);
+    const before = logic.distance;
+    run(logic, 1, 0.05);
+    expect(logic.distance).toBeCloseTo(before - T.stareSpeed);
+  });
+
+  it('out of view, or behind the terminal screen, it holds', () => {
+    const { logic, approach } = make();
+    shown(logic, 0.05);
+    approach.mockClear();
+    angle = Infinity;
+    run(logic, 1, 0.05);
+    angle = null;
+    run(logic, 5, 0.05);
+    expect(approach).not.toHaveBeenCalled();
+  });
+
+  it('a step it can\'t take, it holds, and tries again the next frame', () => {
+    let room = false;
+    const { logic, approach } = make({ approach: step => (room ? (standing -= step) : false) });
+    shown(logic, 0.05);
+    const before = logic.distance;
+    run(logic, 1, 0.05);
+    expect(logic.distance).toBe(before);
+    room = true;
+    const tries = approach.mock.calls.length;
+    logic.update(0.1, 0.05);
+    expect(approach.mock.calls.length).toBe(tries + 1);
+    expect(logic.distance).toBeLessThan(before);
+  });
+
+  it('closingIn: 0 until it walks, 1 at arm\'s length', () => {
+    const { logic } = make();
+    run(logic, 2, 0.1);
+    expect(logic.shown).toBe(true);
+    expect(logic.closingIn).toBe(0);
+    shown(logic, 0.05);
+    expect(logic.closingIn).toBeGreaterThan(0);
+    expect(logic.closingIn).toBeLessThan(1);
+    run(logic, 60, 0.05);
+    expect(logic.closingIn).toBeCloseTo(1);
+  });
+
+  it('a look away doesn\'t send it back out: it shows again no farther than it had come', () => {
+    const { logic, place } = make();
+    shown(logic, 0.05);
+    run(logic, 3, 0.05);
+    const walked = logic.distance;
+    angle = Infinity;
+    run(logic, T.lostAfter + 0.2, 0.05);
+    expect(place).toHaveBeenCalledTimes(2);
+    expect(place.mock.calls[1][0].distance).toBeCloseTo(walked);
+
+    angle = CORNER;
+    run(logic, 60, 0.05);                   // to arm's length; it can't show nearer than it needs room for
+    angle = Infinity;
+    run(logic, T.lostAfter + 0.2, 0.05);
+    expect(place.mock.calls.at(-1)[0].distance).toBeCloseTo(T.minDistance);
+  });
+
+  it('above holdBelow nothing changes: seen, it stands, and a look sends it off', () => {
+    const { logic, approach, hide } = make();
+    shown(logic, 0.1);
+    run(logic, 3, 0.1);
+    expect(approach).not.toHaveBeenCalled();
+    angle = 0;
+    logic.update(0.1, 0.1);
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('a ration back above holdBelow restores the flee and the return', () => {
+    const { logic, place, hide, approach } = make();
+    shown(logic, 0.05);
+    run(logic, 5, 0.05);
+    logic.update(0.1, 0.4);                 // a ration: 0.35 back
+    expect(place).toHaveBeenCalledTimes(2);
+    expect(place.mock.calls[1][0].distance).toBeCloseTo(ruled(0.4));
+    expect(logic.closingIn).toBe(0);
+    approach.mockClear();
+    run(logic, 1, 0.4);
+    expect(approach).not.toHaveBeenCalled();
+
+    angle = 0;
+    logic.update(0.1, 0.4);
+    expect(hide).toHaveBeenCalledTimes(1);
+    angle = CORNER;
+    run(logic, 6, 0.4);
+    expect(place).toHaveBeenCalledTimes(3);
+    expect(place.mock.calls[2][0].side).toBe(-1);
+    expect(place.mock.calls[2][0].distance).toBeCloseTo(ruled(0.4));
+  });
+
+  it('turned off, or at a speed of 0, it only stands there, as before', () => {
+    for (const tuning of [{ ...T, stareDown: false }, { ...T, stareSpeed: 0 }]) {
+      const { logic, approach, place } = make({ tuning });
+      shown(logic, 0.05);
+      angle = 0;
+      run(logic, 10, 0.05);
+      angle = Infinity;
+      run(logic, T.lostAfter + 0.2, 0.05);
+      expect(approach).not.toHaveBeenCalled();
+      expect(place.mock.calls.at(-1)[0].distance).toBeCloseTo(ruled(0.05));
+      expect(logic.closingIn).toBe(0);
+    }
+  });
+
+  it('at empty it takes the player, as before, once', () => {
+    const { logic, onKill } = make();
+    shown(logic, 0.05);
+    run(logic, 3, 0.05);
+    logic.update(0.1, 0);
+    run(logic, 2, 0);
+    expect(onKill).toHaveBeenCalledTimes(1);
+  });
+
+  it('start() ends a stare-down', () => {
+    const { logic, place } = make();
+    shown(logic, 0.05);
+    run(logic, 10, 0.05);
+    logic.start();
+    expect(logic.closingIn).toBe(0);
+    run(logic, 2, 0.05);
+    expect(place.mock.calls.at(-1)[0].distance).toBeCloseTo(ruled(0.05));
   });
 });

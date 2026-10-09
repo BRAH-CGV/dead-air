@@ -36,6 +36,11 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // Its body casts a shadow and the shadow maps are frozen between redraws,
 // so every show, step or hide calls onFigureChanged — turning on the spot
 // doesn't (the body is round).
+//
+// The stare-down (below holdBelow, while seen) walks it in along the line
+// from the eye, each step checked like a new spot: nothing at eye height in
+// the way, the floor clear, in view. A step that fails, it holds. Its shadow
+// is redrawn once a centimetre, not on each of the frames between.
 // ─────────────────────────────────────────────
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
@@ -66,6 +71,9 @@ const SIGHT_SLACK = 0.25;
 const STEP = 0.25;
 /** Furniture stands higher than this off the floor (a threshold doesn't). */
 const CLEAR = 0.15;
+/** Metres the stare-down walks between shadow redraws: ShadowScheduler's own
+ *  threshold for a moving caster. Every frame would redraw every map. */
+const SHADOW_STEP = 0.01;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -146,7 +154,10 @@ export class SleepDemon extends Component {
       place: spot => this._place(spot),
       hide: () => this._hide(),
       onKill: () => this.controller.fail(SLEEP_DEMON_KILL),
+      approach: step => this._approach(step),
     });
+    /** Metres walked since its shadow was last redrawn. */
+    this._unshadowed = 0;
   }
 
   onStart() {
@@ -279,6 +290,38 @@ export class SleepDemon extends Component {
     this.camera.getWorldPosition(_look);
     _look.y = o.position.y;
     o.lookAt(_look);
+  }
+
+  /** The stare-down: `step` metres in toward the eye, along the level line
+   *  from it, never nearer than stareFloor. The metres it then stands off,
+   *  or false when the new spot is no good. */
+  _approach(step) {
+    const camera = this.camera;
+    if (!camera) return false;
+    const o = this.figure.object3d;
+    camera.getWorldPosition(_eye);
+    _dir.set(o.position.x - _eye.x, 0, o.position.z - _eye.z);
+    const now = _dir.length();
+    if (now < 1e-6) return false;
+    _dir.divideScalar(now);
+    const t = this.tuning;
+    const d = Math.max(t.stareFloor, now - step);
+    if (d >= now) return now;               // at arm's length, or the player came to it
+    // The same checks as _place makes of a new spot, so it never walks into
+    // a shelf, onto a desk, or out of view.
+    if (this.rayHit(_eye, _dir, d + t.wallGap) < d + t.wallGap) return false;
+    _spot.copy(_eye).addScaledVector(_dir, d);
+    if (this._occupied(_spot.x, _spot.z)) return false;
+    _spot.y = terrainHeightAt(_spot.x, _spot.z);
+    if (!this._inView(_spot)) return false;
+
+    o.position.copy(_spot);
+    this._facePlayer();
+    if ((this._unshadowed += now - d) >= SHADOW_STEP) {
+      this._unshadowed = 0;
+      this.onFigureChanged?.();
+    }
+    return d;
   }
 
   /** The breathing at `level` (0 … 1): silent and stopped at 0. */

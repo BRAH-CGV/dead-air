@@ -19,6 +19,9 @@
 // `holdBelow` it no longer flees a look: it stands there. At empty it takes
 // the player.
 //
+// With the stare-down on (see the tuning), "stands there" is a slow walk in
+// on the player for as long as it is seen, down to arm's length.
+//
 // The scene is injected: lookAngle() says where the view is from it,
 // place() puts it at the edge of the view, hide() takes it away. SleepDemon
 // (the component) maps them onto the camera, the physics and the figure.
@@ -53,6 +56,20 @@ export const SLEEP_DEMON = Object.freeze({
   wallGap: 0.45,
   /** Less room than this and it doesn't show on that side (SleepDemon). */
   minDistance: 0.6,
+  /** The stare-down. Below holdBelow, while it is in view, it walks in on the
+   *  player along the line it is seen along, and a look away no longer sends
+   *  it back out. On, it is a predator that closes in for the kill; off (or a
+   *  stareSpeed of 0) it is a presence that only stands there, as before.
+   *  Which it should be is still open: flip this to A/B the two. */
+  stareDown: true,
+  /** Metres a second it walks in. 0.08 brings it from where the last band
+   *  stood it (1.95 m) to arm's length in about the 19 s the last of the
+   *  stamina lasts. Faster, it is there early and waits; slower, the kill
+   *  comes before it arrives. */
+  stareSpeed: 0.08,
+  /** Metres from the eye it walks in to: arm's length. Nearer than
+   *  minDistance, which is the room it needs to show, not to stand. */
+  stareFloor: 0.5,
 });
 
 const clamp01 = x => Math.min(1, Math.max(0, x));
@@ -105,6 +122,10 @@ export class SleepDemonLogic {
   closeness = 0;
   /** Where it shows next: +1 right of the view, −1 left. */
   side = 1;
+  /** Metres from the player's eye it stands, as last placed or walked in. */
+  distance = Infinity;
+  /** 0 until the stare-down walks it in … 1 at arm's length. For a sound. */
+  closingIn = 0;
 
   /**
    * @param {object} [opts]
@@ -116,12 +137,17 @@ export class SleepDemonLogic {
    * @param {() => void} [opts.onKill]
    * @param {() => number} [opts.rand]
    * @param {typeof SLEEP_DEMON} [opts.tuning]
+   * @param {(step: number) => number|false} [opts.approach]  the stare-down:
+   *        walks it `step` metres in toward the eye; the metres it then stands
+   *        off, or false when it couldn't step there
    */
   constructor({
     lookAngle = () => Infinity, place = () => true, hide = () => {}, onKill = () => {},
     rand = Math.random, tuning = SLEEP_DEMON,
+    approach = () => false,
   } = {}) {
     Object.assign(this, { lookAngle, place, hide, onKill, rand, tuning });
+    this.approach = approach;
     this.start();
   }
 
@@ -135,6 +161,8 @@ export class SleepDemonLogic {
     this._gone = 0;
     this._lost = 0;
     this._killed = false;
+    this.distance = Infinity;
+    this._endStare();
   }
 
   /** @param {number} dt @param {number} stamina  0 … 1 */
@@ -146,6 +174,7 @@ export class SleepDemonLogic {
       return;
     }
     const t = this.tuning;
+    if (stamina >= t.holdBelow) this._endStare();
     if (stamina >= t.appearBelow) {
       this._vanish();
       this.around = false;
@@ -176,6 +205,7 @@ export class SleepDemonLogic {
         this.shown = false;
         this._gone = 0;
       }
+      if (this.shown && Number.isFinite(angle) && stamina < t.holdBelow) this._walkIn(dt);
     }
     if (!this.shown && (this._gone -= dt) <= 0) this._show(band);
   }
@@ -185,8 +215,11 @@ export class SleepDemonLogic {
   _show(band) {
     const { closeness: c, tuning: t } = this;
     const spot = { distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c) };
+    // A glance away doesn't undo a stare-down: it shows again as near as it came.
+    if (this._walkFrom !== null) spot.distance = Math.min(spot.distance, Math.max(t.minDistance, this.distance));
     for (const side of [this.side, -this.side]) {
       if (!this.place({ ...spot, side })) continue;
+      this.distance = spot.distance;
       this.side = side;
       this.shown = true;
       this._band = band;
@@ -210,5 +243,22 @@ export class SleepDemonLogic {
 
   _anySide() {
     return this.rand() < 0.5 ? -1 : 1;
+  }
+
+  /** The stare-down's step. A step of 0 still asks, so a player who backed
+   *  off is walked after again rather than left at a stale distance. */
+  _walkIn(dt) {
+    const t = this.tuning;
+    if (!t.stareDown || !(t.stareSpeed > 0)) return;
+    this._walkFrom ??= this.distance;
+    const at = this.approach(Math.max(0, Math.min(t.stareSpeed * dt, this.distance - t.stareFloor)));
+    if (at !== false) this.distance = at;
+    const span = this._walkFrom - t.stareFloor;
+    this.closingIn = span > 0 ? clamp01((this._walkFrom - this.distance) / span) : 1;
+  }
+
+  _endStare() {
+    this._walkFrom = null;
+    this.closingIn = 0;
   }
 }
