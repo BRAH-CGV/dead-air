@@ -36,6 +36,10 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // Its body casts a shadow and the shadow maps are frozen between redraws,
 // so every show, step or hide calls onFigureChanged — turning on the spot
 // doesn't (the body is round).
+//
+// The torch betrays it: while it shows, the flashlight stutters whenever its
+// beam (the cone, and a margin) falls on any of it. The beam is wider than
+// the look that sends it away, so a sweep toward it stutters first.
 // ─────────────────────────────────────────────
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
@@ -66,6 +70,10 @@ const SIGHT_SLACK = 0.25;
 const STEP = 0.25;
 /** Furniture stands higher than this off the floor (a threshold doesn't). */
 const CLEAR = 0.15;
+
+/** The torch's beam on it: radians past the cone's edge that still count,
+ *  for the width of its body and a sweep that only comes near. */
+export const SLEEP_DEMON_BEAM = Object.freeze({ margin: 0.05 });
 
 const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -126,16 +134,19 @@ export class SleepDemon extends Component {
    * @param {typeof SLEEP_DEMON} [opts.tuning]
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from SLEEP_DEMON_SOUNDS when left out.
    * @param {() => number} [opts.rand]  Which side it shows first.
+   * @param {import('../components/Flashlight.js').Flashlight|null} [opts.flashlight]
+   *        The player's torch: it stutters while its beam is on it.
    */
   constructor({
     controller, stamina, figure, camera = null, terminal = null, rayHit = () => Infinity,
     isFrozen = () => false, onFigureChanged = null, height = SLEEP_DEMON_FIGURE.height,
-    tuning = SLEEP_DEMON, sounds = null, rand = Math.random,
+    tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
   }) {
     super();
     Object.assign(this, {
       controller, stamina, figure, camera, terminal, rayHit, isFrozen, onFigureChanged, height, tuning, sounds,
     });
+    this.flashlight = flashlight;
     this._breath = 0;
     /** It has stood somewhere since it came: there is a spot to breathe from. */
     this._placed = false;
@@ -158,6 +169,7 @@ export class SleepDemon extends Component {
   onDestroy() {
     this._off?.();
     this._off = null;
+    this.flashlight?.setInterference(false, 'sleep-demon');
     for (const sound of Object.values(this.sounds ?? {})) {
       if (sound?.isPlaying) sound.stop();
       sound?.parent?.remove(sound);
@@ -177,12 +189,19 @@ export class SleepDemon extends Component {
     if (this.controller.state !== 'playing') {
       this._hide();
       this._breathe(0);
+      this.flashlight?.setInterference(false, 'sleep-demon');
       return;
     }
-    if (this.isFrozen()) return;
+    if (this.isFrozen()) {
+      // The torch is frozen with the player: a stutter left on would hold
+      // it mid-dip, or dark, the whole flight.
+      this.flashlight?.setInterference(false, 'sleep-demon');
+      return;
+    }
     const logic = this.logic;
     logic.update(dt, this.stamina.value);
     if (this.figure.object3d.visible) this._facePlayer();
+    this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
     if (!logic.around) this._placed = false;
     this._breathe(this._placed ? lerp(BREATH.far, 1, logic.closeness) : 0);
   }
@@ -208,6 +227,19 @@ export class SleepDemon extends Component {
   }
 
   // ── Private ──
+
+  /** Showing, with the torch on and its beam, cone and margin, on any of
+   *  its upright body. The beam is taken down the view: the torch is held
+   *  close beside the eye. */
+  _inBeam() {
+    const torch = this.flashlight;
+    const camera = this.camera;
+    if (!torch?.on || !torch.light || !camera || !this.figure.object3d.visible) return false;
+    camera.getWorldPosition(_eye);
+    camera.getWorldDirection(_forward);
+    const angle = angleToUpright(_eye, _forward, this.figure.object3d.position, this.height);
+    return angle <= torch.light.angle + SLEEP_DEMON_BEAM.margin;
+  }
 
   /** The terminal's radar or review screen fills the view. */
   _onScreen() {
