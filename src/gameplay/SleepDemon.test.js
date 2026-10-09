@@ -219,6 +219,69 @@ describe('SleepDemon', () => {
     expect(figure.object3d.position.distanceTo(at)).toBeLessThan(1e-9);
   });
 
+  it('below holdBelow, stared at, it walks in on the player along the line it is seen along, to arm\'s length', () => {
+    stamina.value = 0.05;
+    run(1);
+    expect(visible()).toBe(true);
+    const at = figure.object3d.position.clone();
+    face(at.x, EYE, at.z);
+    const from = Math.hypot(at.x, at.z);
+    run(1);
+    const now = figure.object3d.position;
+    expect(Math.hypot(now.x, now.z)).toBeCloseTo(from - T.stareSpeed, 2);
+    expect(Math.atan2(now.x, now.z)).toBeCloseTo(Math.atan2(at.x, at.z), 5);
+    expect(now.y).toBeCloseTo(terrainHeightAt(now.x, now.z));
+    run(30);
+    expect(visible()).toBe(true);
+    expect(Math.hypot(now.x, now.z)).toBeCloseTo(T.stareFloor, 5);
+    expect(controller.fail).not.toHaveBeenCalled();
+  });
+
+  it('each step of the walk is checked like a new spot: furniture on the floor and it stops short', () => {
+    // Something 0.75 m high on the floor within 0.9 m of the player.
+    rayHit.mockImplementation((from, dir) => {
+      if (dir.y > -0.5) return wall;
+      return Math.hypot(from.x, from.z) < 0.9 ? from.y - 0.75 : Infinity;
+    });
+    stamina.value = 0.05;
+    run(1);
+    const at = figure.object3d.position;
+    face(at.x, EYE, at.z);
+    run(30);
+    expect(visible()).toBe(true);
+    expect(Math.hypot(at.x, at.z)).toBeGreaterThanOrEqual(0.9);
+    expect(Math.hypot(at.x, at.z)).toBeLessThan(0.91);
+  });
+
+  it('tells the scene as it walks, a centimetre at a time, and not once it stands still', () => {
+    stamina.value = 0.05;
+    run(1);
+    onFigureChanged.mockClear();
+    run(1, 1 / 60);                         // 8 cm in 60 frames
+    expect(onFigureChanged.mock.calls.length).toBeGreaterThanOrEqual(6);
+    expect(onFigureChanged.mock.calls.length).toBeLessThanOrEqual(8);
+    run(30);
+    onFigureChanged.mockClear();
+    run(2);
+    expect(onFigureChanged).not.toHaveBeenCalled();
+  });
+
+  it('with the stare-down off, below holdBelow it only stands there', () => {
+    demon.onDestroy();
+    demon = new SleepDemon({
+      controller, stamina, figure, camera, terminal, rayHit, onFigureChanged,
+      sounds: { breathing: fakeSound() }, rand: () => 0.9, tuning: { ...T, stareDown: false },
+    });
+    demon.onStart();
+    stamina.value = 0.05;
+    run(1);
+    const at = figure.object3d.position.clone();
+    face(at.x, EYE, at.z);
+    run(5);
+    expect(visible()).toBe(true);
+    expect(figure.object3d.position.distanceTo(at)).toBeLessThan(1e-9);
+  });
+
   it('ends the night when the player runs out of stamina, with the retry prompt', () => {
     stamina.value = 0;
     run(0.1);
