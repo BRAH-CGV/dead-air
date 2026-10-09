@@ -146,6 +146,31 @@ describe('FirstPersonController movement math', () => {
   });
 });
 
+describe('FirstPersonController speedScale', () => {
+  it('scales the wish speed on the fixed step: the Sleep Demon\'s walk-down slows a heavy-legged player', () => {
+    const { controller } = buildControllerWithStubs();
+    controller.gameObject = {
+      collider: {},
+      rigidBody: {
+        translation: () => ({ x: 0, y: 0, z: 0 }),
+        setNextKinematicTranslation: vi.fn(),
+      },
+    };
+    controller._wish = true;
+    controller._wishDir = { x: 1, z: 0 };
+
+    controller.grounded = true;
+    controller.onFixedUpdate(DT);
+    expect(controller._vel.x).toBeCloseTo(6 * 5 * DT, 10);        // 0.5: full speed
+
+    controller._vel.x = 0;
+    controller.grounded = true;                                   // the stub controller clears it each step
+    controller.speedScale = 0.5;
+    controller.onFixedUpdate(DT);
+    expect(controller._vel.x).toBeCloseTo(6 * 5 * 0.5 * DT, 10);  // 0.25: half the gain
+  });
+});
+
 describe('FirstPersonController mouse input', () => {
   it('clamps one-frame touchpad mouse spikes before applying camera look', () => {
     const { controller } = buildControllerWithStubs({ maxMouseDelta: 5 });

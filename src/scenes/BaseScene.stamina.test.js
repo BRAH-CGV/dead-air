@@ -9,8 +9,10 @@ import { makeEngine } from '../test/fakeRapier.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { StaminaDrain, FATIGUE_DIM_MIN } from '../components/StaminaDrain.js';
 import { SleepDemon } from '../gameplay/SleepDemon.js';
+import { SLEEP_DEMON_DEATH } from '../gameplay/SleepDemonDeath.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { Flashlight } from '../components/Flashlight.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -31,6 +33,7 @@ function makeSceneEngine() {
   engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
     const player = new GameObject('Player');
     player.object3d.position.set(...position);
+    player.addComponent(new Flashlight());   // as Engine.buildPlayer gives it one
     engine.player = player;
     engine._rootObjects.push(player);
     return player;
@@ -128,6 +131,21 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.sleepDemon.terminal).toBe(scene.terminal);
   });
 
+  it("is handed the player's flashlight, which stutters while the beam is on it", () => {
+    expect(scene.sleepDemon.flashlight).toBeInstanceOf(Flashlight);
+    expect(scene.sleepDemon.flashlight).toBe(engine.player.getComponent(Flashlight));
+  });
+
+  it("is handed fatigue itself: the walk-down's dread lands on the breath and the heart", () => {
+    const fx = gameplay.getComponent(FatigueEffects);
+    expect(scene.fatigueEffects).toBe(fx);
+    expect(scene.sleepDemon.fatigue).toBe(fx);
+  });
+
+  it("ducks the scene's ambience as the view comes round to it: dead air", () => {
+    expect(scene.sleepDemon.ambience).toBe(scene.ambience);
+  });
+
   it('comes for the player on every night, 1 to 3', () => {
     scene.sleepDemon.onStart();
     for (const night of [1, 2, 3]) {
@@ -154,11 +172,21 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(engine.shadows.invalidate).toHaveBeenCalled();
   });
 
-  it('ends the night when stamina runs out', () => {
+  it('ends the night when stamina runs out, once the player has fallen asleep on it', () => {
     scene.sleepDemon.onStart();
     scene.stamina.value = 0;
     scene.sleepDemon.onUpdate(0.1);
+    expect(scene.gameController.state).toBe('playing');
+    const { passOut, black, loom, cut } = SLEEP_DEMON_DEATH;
+    runDemon(passOut + black + loom + cut + 0.2);
     expect(scene.gameController.state).toBe('gameOver');
+  });
+
+  it("its death writes FatigueEffects' own overlay, and has the screen fade and the listener", () => {
+    const fx = gameplay.getComponent(FatigueEffects);
+    expect(scene.sleepDemon.overlay).toBe(fx.overlay);
+    expect(scene.sleepDemon.fade).toBe(scene.screenFade);
+    expect(scene.sleepDemon.listener).toBe(engine.audioListener ?? null);
   });
 
   it("frees the placeholder's geometry on dispose", () => {

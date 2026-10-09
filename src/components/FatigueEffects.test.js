@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { FatigueEffects, FATIGUE_SOUNDS } from './FatigueEffects.js';
+import { FatigueEffects, FATIGUE_SOUNDS, FATIGUE_DREAD } from './FatigueEffects.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { FATIGUE, tunnel } from '../gameplay/Fatigue.js';
 
@@ -37,7 +37,7 @@ describe('FatigueEffects', () => {
     controller = fakeController();
     overlay = { set: vi.fn(), clear: vi.fn() };
     grid = { setFactor: vi.fn() };
-    sounds = { heartbeat: fakeSound(), yawn: fakeSound() };
+    sounds = { heartbeat: fakeSound(), yawn: fakeSound(), breathing: fakeSound() };
     frozen = false;
     fx = new FatigueEffects({ stamina, controller, overlay, grid, sounds, isFrozen: () => frozen, rand: () => 0 });
     fx.onStart();
@@ -48,7 +48,7 @@ describe('FatigueEffects', () => {
   }
 
   it('names the clips it plays', () => {
-    expect(FATIGUE_SOUNDS).toEqual({ heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn' });
+    expect(FATIGUE_SOUNDS).toEqual({ heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn', breathing: 'sfx:breathing' });
   });
 
   it('narrows the view as stamina falls', () => {
@@ -125,6 +125,47 @@ describe('FatigueEffects', () => {
     expect(sounds.heartbeat.isPlaying).toBe(false);
   });
 
+  it("the walk-down's dread: the player's breath in over a heartbeat floor, eased in", () => {
+    const beat = sounds.heartbeat;
+    const breath = sounds.breathing;
+    stamina.value = 0.5;                     // above critical: no heartbeat of its own
+    fx.setDread(1);
+    fx.onUpdate(FATIGUE_DREAD.ease / 2);     // halfway into the grip
+    expect(breath.isPlaying).toBe(true);
+    expect(breath.volume).toBeCloseTo(FATIGUE_DREAD.breath / 2, 2);
+    expect(beat.isPlaying).toBe(true);
+    const half = beat.volume;
+    expect(half).toBeGreaterThan(0);
+
+    fx.onUpdate(FATIGUE_DREAD.ease / 2);     // fully gripped
+    expect(breath.volume).toBeCloseTo(FATIGUE_DREAD.breath, 2);
+    expect(beat.volume).toBeGreaterThan(half);
+    expect(FATIGUE_DREAD.heart).toBeGreaterThan(0);
+  });
+
+  it('the dread let go: the breath and the heartbeat stop once it has eased out', () => {
+    stamina.value = 0.5;
+    fx.setDread(1);
+    fx.onUpdate(FATIGUE_DREAD.ease);
+    expect(sounds.breathing.isPlaying).toBe(true);
+    fx.setDread(0);
+    fx.onUpdate(FATIGUE_DREAD.ease / 2);
+    expect(sounds.breathing.volume).toBeCloseTo(FATIGUE_DREAD.breath / 2, 2);
+    fx.onUpdate(FATIGUE_DREAD.ease / 2);
+    expect(sounds.breathing.isPlaying).toBe(false);
+    expect(sounds.heartbeat.isPlaying).toBe(false);
+  });
+
+  it('off shift mid-dread it all settles at once: the breath stopped with the rest', () => {
+    fx.setDread(1);
+    fx.onUpdate(0.1);
+    expect(sounds.breathing.isPlaying).toBe(true);
+    controller.state = 'morning';
+    fx.onUpdate(0.016);
+    expect(sounds.breathing.isPlaying).toBe(false);
+    expect(sounds.heartbeat.isPlaying).toBe(false);
+  });
+
   it('off shift: eyes open, lights steady, heart quiet, no yawns', () => {
     stamina.value = 0.05;
     run(FATIGUE.blinkGap[0] + 0.05, 0.01);
@@ -166,7 +207,9 @@ describe('FatigueEffects', () => {
     const bare = new FatigueEffects({ stamina, controller });
     bare.onStart();
     stamina.value = 0.1;
-    expect(() => { for (let i = 0; i < 200; i++) bare.onUpdate(0.05); }).not.toThrow();
+    expect(() => {
+      for (let i = 0; i < 200; i++) { bare.setDread(i < 100 ? 1 : 0); bare.onUpdate(0.05); }
+    }).not.toThrow();
     expect(() => bare.onDestroy()).not.toThrow();
   });
 });

@@ -23,23 +23,25 @@ describe('clockDigits', () => {
     expect(clockDigits(13.25)).toEqual([null, 1, 1, 5]);   //  1:15 pm
   });
 
-  it('keeps time with the HUD: the nearest minute, not the last one gone', () => {
-    // The HUD shows NightClock.formatTime, which rounds. A clock that
-    // rounded down would trail it by up to a minute.
-    expect(clockDigits(0.0084)).toEqual([1, 2, 0, 1]);     // 12:00:30 → 12:01, as the HUD has it
-    expect(clockDigits(0.0082)).toEqual([1, 2, 0, 0]);
+  it('keeps time with the HUD: the minute it is in, floored like a real clock', () => {
+    // The HUD shows NightClock.formatTime, which floors (#61: it never
+    // shows xx:60). The digits must floor the same way, or the two trail
+    // each other by up to a minute.
+    expect(clockDigits(0.0084)).toEqual([1, 2, 0, 0]);     // 12:00:30 → 12:00, as the HUD has it
+    expect(clockDigits(0.0166)).toEqual([1, 2, 0, 0]);     // 12:00:57 → 12:00
+    expect(clockDigits(0.0167)).toEqual([1, 2, 0, 1]);     // 12:01:01 → 12:01: the turn is exact
     for (let hour = 0; hour <= 6; hour += 1 / 977) {
       const hud = NightClock.formatTime(hour).split(' ')[0];           // "H:MM"
-      if (hud.endsWith(':60')) continue;                               // the HUD's own slip, below
       const [h10, h1, m10, m1] = clockDigits(hour);
       expect(`${h10 ?? ''}${h1}:${m10}${m1}`, `hour ${hour}`).toBe(hud);
     }
   });
 
-  it('never reads :60: the last half-minute of an hour is already the next hour', () => {
-    expect(clockDigits(0.995)).toEqual([null, 1, 0, 0]);   // 12:59:42 → 1:00
-    expect(clockDigits(5.999)).toEqual([null, 6, 0, 0]);
-    expect(clockDigits(11.9999)).toEqual([1, 2, 0, 0]);    // and 11:59:59 → 12:00, not 0:00
+  it('never reads :60: the last seconds of an hour are still its last minute', () => {
+    expect(clockDigits(0.995)).toEqual([1, 2, 5, 9]);      // 12:59:42 → 12:59, not 1:00
+    expect(clockDigits(5.999)).toEqual([null, 5, 5, 9]);   // 5:59:57 → 5:59
+    expect(clockDigits(11.9999)).toEqual([1, 1, 5, 9]);    // and 11:59:59 → 11:59, not 0:00
+    expect(clockDigits(12)).toEqual([1, 2, 0, 0]);         // the turn: 12:00 on the 12-hour face
   });
 });
 
