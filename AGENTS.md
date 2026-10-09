@@ -61,7 +61,7 @@ src/
 │   └── controlsList.js  # The fixed keys listed on the CONTROLS tab
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
-│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
+│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera; stutters under interference
 │   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
 │   ├── AirlockSound.js  # The pressure release as the airlock seals and cycles
 │   ├── SatelliteSound.js # The dish's drive while it slews, and the click as it settles
@@ -238,6 +238,8 @@ The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away. Its fo
   - **Below `holdBelow`** (0.08) it no longer flees a look: it stands there.
   - **The stare-down.** Below `holdBelow`, while it is in view, it walks in on the player along the line it is seen along: `stareSpeed` (0.08 m/s) down to `stareFloor` (0.5 m, arm's length). From where the last band stood it, that is about the 19 s the last of the stamina lasts. Each step is checked like a new spot (nothing in the way at eye height, the floor clear, in view); a step that fails, it holds. A look away doesn't send it back out: it shows again as near as it had come, but no nearer than `minDistance`. A ration back above `holdBelow` ends it. `stareDown: false` (or `stareSpeed: 0`) turns it off, so it only stands there, as before. Whether the Sleep Demon is a passive presence or an active predator is still open, and this switch is there to A/B the two. Its shadow is redrawn once a centimetre it walks. `logic.distance` (metres from the eye) and `logic.closingIn` (0 → 1 over the walk) are there for a sound to follow.
   - **At empty** it takes the player: `controller.fail(SLEEP_DEMON_KILL)`, and `[E]` retries.
+  - **The torch betrays it.** While it shows and the flashlight is on, the torch stutters whenever its beam falls on any of its upright body: within the light's cone (`angle`, 0.45 rad) plus `SLEEP_DEMON_BEAM.margin` (0.05 rad) of the centre of the view. The beam is wider than `focusAngle`, so a sweep toward it stutters before the look that sends it away. Looking at it still sends it away as before. From about 0.18 stamina (at the default 75° view) it stands inside the beam, so the torch stutters whenever it shows.
+  - **The stutter** is the flashlight's own: `Flashlight.setInterference(on, source)`, the demon's source being `'sleep-demon'`. Irregular dips down to `FLASHLIGHT_STUTTER.floor` (15 %), each held 0.03–0.12 s, and about three dropouts a second (`dropoutsPerSecond`), each fully off for only 0.03–0.08 s. It opens with a dip, so a quick sweep shows. When the last source stops it is back at exactly `intensity`; switched off, it stays off. Intensity only, never `visible`. The demon lets go of it outside the shift and while the fly camera is out.
 - **Where it stands.** On a level line from the player's eye, turned off the centre of the view by that share:
   - a sight ray stops it `wallGap` (0.45 m) short of a wall or a prop;
   - a ray down from its full height steps it in toward the player, 0.25 m at a time, until the floor under it is clear of furniture;

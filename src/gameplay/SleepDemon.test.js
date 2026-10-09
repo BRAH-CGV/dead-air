@@ -14,7 +14,7 @@ vi.mock('@dimforge/rapier3d', () => ({
 import { GameObject } from '../core/GameObject.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { Stamina } from './Stamina.js';
-import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, sightRay } from './SleepDemon.js';
+import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, sightRay } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
 
 const EYE = 1.24;
@@ -360,6 +360,117 @@ describe('SleepDemon', () => {
     const eyes = SLEEP_DEMON_FIGURE.height - SLEEP_DEMON_FIGURE.radius * 0.9;
     expect(Math.atan2(eyes - EYE, T.nearest)).toBeLessThan(37.5 * DEG);
     expect(SLEEP_DEMON_FIGURE.height).toBeGreaterThan(1.6);
+  });
+});
+
+describe('SleepDemon and the flashlight', () => {
+  let camera, figure, stamina, controller, torch, frozen, demon;
+  const run = (seconds, dt = 0.1) => {
+    for (let t = 0; t < seconds - 1e-9; t += dt) demon.onUpdate(dt);
+  };
+  /** Whether the demon has the torch stuttering now: its last word. */
+  const stuttering = () => torch.setInterference.mock.calls.at(-1)?.[0] ?? false;
+
+  /** Aim the view, and the torch on it, level and `angle` radians off the
+   *  line to the figure, toward the middle of the view it showed in. */
+  function aimOff(angle) {
+    const eye = camera.getWorldPosition(new THREE.Vector3());
+    const to = figure.object3d.position.clone().sub(eye).setY(0).normalize();
+    to.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);   // it shows on the right: turn left
+    camera.lookAt(eye.add(to));
+    camera.updateMatrixWorld(true);
+  }
+
+  beforeEach(() => {
+    camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
+    camera.position.set(0, EYE, 0);
+    camera.lookAt(0, EYE, -10);
+    camera.updateMatrixWorld(true);
+    figure = new GameObject('SleepDemon');
+    figure.object3d.visible = false;
+    stamina = new Stamina();
+    controller = fakeController();
+    torch = { on: true, light: { angle: 0.45 }, setInterference: vi.fn() };
+    frozen = false;
+    demon = new SleepDemon({
+      controller, stamina, figure, camera, isFrozen: () => frozen,
+      sounds: { breathing: fakeSound() },
+      rand: () => 0.9,                      // the right-hand side first
+      flashlight: torch,
+    });
+    demon.onStart();
+    stamina.value = 0.8;
+    run(7);                                 // showing, at the very edge of the view
+  });
+
+  it('stutters the torch while its beam is on him, and not while it points past him', () => {
+    expect(figure.object3d.visible).toBe(true);
+    expect(stuttering()).toBe(false);       // the edge of the view is outside the beam
+    aimOff(20 * DEG);
+    run(0.1);
+    expect(figure.object3d.visible).toBe(true);
+    expect(stuttering()).toBe(true);
+    expect(torch.setInterference).toHaveBeenLastCalledWith(true, 'sleep-demon');
+    aimOff(40 * DEG);
+    run(0.1);
+    expect(stuttering()).toBe(false);
+  });
+
+  it("the beam reaches him at its cone's edge plus a margin", () => {
+    const edge = torch.light.angle + SLEEP_DEMON_BEAM.margin;
+    aimOff(edge - 0.01);
+    run(0.1);
+    expect(stuttering()).toBe(true);
+    aimOff(edge + 0.01);
+    run(0.1);
+    expect(stuttering()).toBe(false);
+    expect(SLEEP_DEMON_BEAM.margin).toBeGreaterThan(0);
+    expect(SLEEP_DEMON_BEAM.margin).toBeLessThan(0.15);
+  });
+
+  it('is a warning, not a cure: centred on him he still goes, as ever, and the stutter with him', () => {
+    aimOff(20 * DEG);
+    run(0.1);
+    expect(stuttering()).toBe(true);
+    aimOff(0);
+    run(0.1);
+    expect(figure.object3d.visible).toBe(false);
+    expect(stuttering()).toBe(false);
+  });
+
+  it('leaves a switched-off torch alone', () => {
+    torch.on = false;
+    aimOff(20 * DEG);
+    run(1);
+    expect(torch.setInterference).not.toHaveBeenCalledWith(true, expect.anything());
+  });
+
+  it('lets go of the torch outside the shift, and when destroyed', () => {
+    aimOff(20 * DEG);
+    run(0.1);
+    expect(stuttering()).toBe(true);
+    controller.state = 'morning';
+    run(0.1);
+    expect(stuttering()).toBe(false);
+
+    controller.state = 'playing';
+    stamina.value = 0.8;
+    run(7);
+    aimOff(20 * DEG);
+    run(0.1);
+    expect(stuttering()).toBe(true);
+    demon.onDestroy();
+    expect(stuttering()).toBe(false);
+  });
+
+  it('lets go of the torch while the fly camera has the view: it carries the torch off', () => {
+    aimOff(20 * DEG);
+    run(0.1);
+    expect(stuttering()).toBe(true);
+    frozen = true;
+    run(0.1);
+    expect(stuttering()).toBe(false);
+    expect(figure.object3d.visible).toBe(true);           // the demon itself holds
   });
 });
 

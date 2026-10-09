@@ -11,6 +11,7 @@ import { StaminaDrain, FATIGUE_DIM_MIN } from '../components/StaminaDrain.js';
 import { SleepDemon } from '../gameplay/SleepDemon.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { Flashlight } from '../components/Flashlight.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -31,6 +32,7 @@ function makeSceneEngine() {
   engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
     const player = new GameObject('Player');
     player.object3d.position.set(...position);
+    player.addComponent(new Flashlight());   // as Engine.buildPlayer gives it one
     engine.player = player;
     engine._rootObjects.push(player);
     return player;
@@ -126,6 +128,11 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
   it("watches the player's camera, and the terminal's screen covers the view", () => {
     expect(scene.sleepDemon.camera).toBe(engine.camera);
     expect(scene.sleepDemon.terminal).toBe(scene.terminal);
+  });
+
+  it("is handed the player's flashlight, which stutters while the beam is on it", () => {
+    expect(scene.sleepDemon.flashlight).toBeInstanceOf(Flashlight);
+    expect(scene.sleepDemon.flashlight).toBe(engine.player.getComponent(Flashlight));
   });
 
   it('comes for the player on every night, 1 to 3', () => {

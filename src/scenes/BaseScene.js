@@ -48,6 +48,7 @@ import { PLAYER_BODY } from '../components/PlayerBody.js';
 import { Component } from '../core/Component.js';
 import { LEDStrip } from '../components/LEDStrip.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
@@ -1120,6 +1121,7 @@ export class BaseScene extends Scene {
       rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
       isFrozen:        () => !!engine.debugCamera?.active,
       onFigureChanged: () => engine.shadows?.invalidate(),
+      flashlight:      engine.player?.getComponent(Flashlight) ?? null,
     }));
   }
 
