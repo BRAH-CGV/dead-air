@@ -16,7 +16,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //              ask. Something solid along it (a sight ray) and it stands
 //              wallGap in front of that; furniture on the floor there (a ray
 //              down from its full height) and it steps in toward the player
-//              until the floor is clear. It must land inside the view.
+//              until the floor is clear. It must land inside the view, unless
+//              the terminal's screen covers it: then beside or behind them.
 //   in view    inside the camera's frustum, with nothing solid between the
 //              eye and its face. While the terminal's radar or review screen
 //              is up the player is looking at that, not the room.
@@ -216,8 +217,9 @@ export class SleepDemon extends Component {
   }
 
   /** Stand it `distance` out from the eye, `edge` of the way out to the
-   *  `side` (+1 right, −1 left) of the view. False: no room there. */
-  _place({ distance, side, edge }) {
+   *  `side` (+1 right, −1 left) of the view; an ambush may land out of
+   *  view. False: no room there. */
+  _place({ distance, side, edge, ambush = false }) {
     const camera = this.camera;
     if (!camera) return false;
     camera.getWorldPosition(_eye);
@@ -235,7 +237,7 @@ export class SleepDemon extends Component {
 
     _spot.copy(_eye).addScaledVector(_dir, d);
     _spot.y = terrainHeightAt(_spot.x, _spot.z);
-    if (!this._inView(_spot)) return false;
+    if (!ambush && !this._inView(_spot)) return false;
 
     const o = this.figure.object3d;
     o.position.copy(_spot);
@@ -297,7 +299,9 @@ export class SleepDemon extends Component {
   }
 
   /** The breathing as a looping PositionalAudio on the figure, from the
-   *  preloaded buffer. Without a listener or the buffer: silence. */
+   *  preloaded buffer. Without a listener or the buffer: silence. Its cone
+   *  is left all round (the Web Audio default): standing behind the player,
+   *  after the terminal, it must still be heard. */
   _buildSounds() {
     const engine = this.gameObject?.scene?.userData?.engine;
     const sounds = {};

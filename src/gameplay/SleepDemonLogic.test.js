@@ -19,6 +19,11 @@ describe('SLEEP_DEMON tuning', () => {
   it('a look within 12° of it is looking at it', () => {
     expect(T.focusAngle).toBeCloseTo(12 * DEG);
   });
+
+  it('while the view is covered it stands past the edge of the view, further round as it nears', () => {
+    expect(T.ambushEdgeFar).toBeGreaterThan(1);
+    expect(T.ambushEdgeNear).toBeGreaterThan(T.ambushEdgeFar);
+  });
 });
 
 describe('closenessFor', () => {
@@ -235,7 +240,92 @@ describe('SleepDemonLogic', () => {
     angle = null;
     run(logic, 10, 0.425);
     expect(hide).not.toHaveBeenCalled();
+    expect(place).toHaveBeenCalledTimes(2);  // once more: it slips out of sight
+  });
+
+  it('the view covered, it slips round out of sight at once: past the edge of the view, as near as before', () => {
+    const { logic, place, hide } = make();
+    shown(logic, 0.425);
+    expect(logic.ambush).toBe(false);
+    angle = null;
+    logic.update(0.1, 0.425);
+    expect(place).toHaveBeenCalledTimes(2);
+    const [[before], [after]] = place.mock.calls;
+    expect(after).toEqual({ ...before, edge: expect.any(Number), ambush: true });
+    expect(after.edge).toBeGreaterThan(1);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+    expect(logic.ambush).toBe(true);
+  });
+
+  it('first showing while the view is covered, it shows out of sight', () => {
+    const { logic, place } = make();
+    angle = null;
+    shown(logic, 0.425);
     expect(place).toHaveBeenCalledTimes(1);
+    expect(place.mock.calls[0][0]).toMatchObject({ ambush: true, side: 1 });
+    expect(logic.ambush).toBe(true);
+  });
+
+  it('while the player works it steps in band by band, each time out of sight, and further round', () => {
+    const { logic, place } = make();
+    angle = null;
+    shown(logic, 0.8);
+    logic.update(0.1, 0.7);                 // into the second band
+    logic.update(0.1, 0.05);                // near empty
+    const spots = place.mock.calls.map(([spot]) => spot);
+    expect(spots).toHaveLength(3);
+    for (const spot of spots) expect(spot.ambush).toBe(true);
+    expect(spots[1].distance).toBeLessThan(spots[0].distance);
+    expect(spots[2].distance).toBeLessThan(spots[1].distance);
+    expect(spots[1].edge).toBeGreaterThan(spots[0].edge);
+    expect(spots[2].edge).toBeGreaterThan(spots[1].edge);
+    expect(spots[0].edge).toBeGreaterThanOrEqual(T.ambushEdgeFar);
+    expect(spots[2].edge).toBeLessThanOrEqual(T.ambushEdgeNear);
+  });
+
+  it('with no room out of sight on either side it waits, and tries again a moment later', () => {
+    let room = true;
+    const { logic, place, hide } = make({ place: ({ ambush }) => room || !ambush });
+    shown(logic, 0.425);
+    room = false;
+    angle = null;
+    logic.update(0.1, 0.425);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(logic.shown).toBe(false);
+    expect(logic.ambush).toBe(false);
+    const tries = place.mock.calls.length;
+    room = true;
+    run(logic, 0.3, 0.425);
+    expect(place.mock.calls.length).toBeGreaterThan(tries);
+    expect(logic.ambush).toBe(true);
+  });
+
+  it('the screen closed, the usual rules come back: out of view for 1.5 s, it finds the edge of the view', () => {
+    const { logic, place } = make();
+    shown(logic, 0.425);
+    angle = null;
+    logic.update(0.1, 0.425);               // out of sight, behind the player
+    angle = Infinity;                       // the screen closed: still out of view
+    run(logic, 1.4, 0.425);
+    expect(place).toHaveBeenCalledTimes(2);
+    run(logic, 0.2, 0.425);
+    expect(place).toHaveBeenCalledTimes(3);
+    expect(place.mock.calls[2][0].ambush).toBeUndefined();
+    expect(place.mock.calls[2][0].edge).toBeLessThan(1);
+    expect(logic.ambush).toBe(false);
+  });
+
+  it('the screen closed, turning round to look at it sends it away', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.425);
+    angle = null;
+    logic.update(0.1, 0.425);
+    angle = 5 * DEG;
+    logic.update(0.1, 0.425);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(logic.shown).toBe(false);
+    expect(logic.ambush).toBe(false);
   });
 
   it('closeness: 0 while it is away, rising as stamina falls', () => {

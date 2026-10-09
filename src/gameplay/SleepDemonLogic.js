@@ -19,6 +19,11 @@
 // `holdBelow` it no longer flees a look: it stands there. At empty it takes
 // the player.
 //
+// While the view is covered (the terminal's screen) it neither flees nor
+// wanders. It slips round out of sight, beside or behind the player, and
+// steps in there band by band, so closing the screen may find it right
+// behind them. Then the usual rules take over.
+//
 // The scene is injected: lookAngle() says where the view is from it,
 // place() puts it at the edge of the view, hide() takes it away. SleepDemon
 // (the component) maps them onto the camera, the physics and the figure.
@@ -53,6 +58,12 @@ export const SLEEP_DEMON = Object.freeze({
   wallGap: 0.45,
   /** Less room than this and it doesn't show on that side (SleepDemon). */
   minDistance: 0.6,
+  /** While the view is covered it stands this far round instead, as a share
+   *  of the view's half-width: past 1 is out of view. Beside the player when
+   *  it first shows (86° off the centre of the default view), behind them at
+   *  empty (150°). */
+  ambushEdgeFar: 1.6,
+  ambushEdgeNear: 2.8,
 });
 
 const clamp01 = x => Math.min(1, Math.max(0, x));
@@ -105,13 +116,15 @@ export class SleepDemonLogic {
   closeness = 0;
   /** Where it shows next: +1 right of the view, −1 left. */
   side = 1;
+  /** Standing out of sight, where it went while the view was covered. */
+  ambush = false;
 
   /**
    * @param {object} [opts]
    * @param {() => number|null} [opts.lookAngle]  radians from the centre of the
    *        view; Infinity out of view, null while the view is covered
-   * @param {(spot: {distance: number, side: number, edge: number}) => boolean} [opts.place]
-   *        puts it at the edge of the view; false: no room there
+   * @param {(spot: {distance: number, side: number, edge: number, ambush?: boolean}) => boolean} [opts.place]
+   *        puts it at the edge of the view (ambush: past it, out of sight); false: no room there
    * @param {() => void} [opts.hide]
    * @param {() => void} [opts.onKill]
    * @param {() => number} [opts.rand]
@@ -131,6 +144,7 @@ export class SleepDemonLogic {
     this.shown = false;
     this.closeness = 0;
     this.side = this._anySide();
+    this.ambush = false;
     this._band = -1;
     this._gone = 0;
     this._lost = 0;
@@ -171,8 +185,9 @@ export class SleepDemonLogic {
         this._lost = Number.isFinite(angle) ? 0 : this._lost + dt;
       }
       if (this._lost >= t.lostAfter) this.side = this._anySide();
-      // Somewhere new, now: it moves straight there.
-      if (this._lost >= t.lostAfter || band !== this._band) {
+      // Somewhere new, now: it moves straight there. The view just covered,
+      // it slips out of sight.
+      if (this._lost >= t.lostAfter || band !== this._band || (angle === null && !this.ambush)) {
         this.shown = false;
         this._gone = 0;
       }
@@ -185,14 +200,20 @@ export class SleepDemonLogic {
   _show(band) {
     const { closeness: c, tuning: t } = this;
     const spot = { distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c) };
+    // Nobody is watching the room: it may stand anywhere, so it stands
+    // where turning round will find it.
+    const ambush = this.lookAngle() === null;
+    if (ambush) Object.assign(spot, { edge: lerp(t.ambushEdgeFar, t.ambushEdgeNear, c), ambush });
     for (const side of [this.side, -this.side]) {
       if (!this.place({ ...spot, side })) continue;
       this.side = side;
       this.shown = true;
+      this.ambush = ambush;
       this._band = band;
       this._lost = 0;
       return;
     }
+    this.ambush = false;
     this.hide();             // it may still stand where it was
     this._gone = t.retryAfter;
   }
@@ -200,6 +221,7 @@ export class SleepDemonLogic {
   _vanish() {
     if (!this.shown) return;
     this.shown = false;
+    this.ambush = false;
     this.hide();
   }
 
