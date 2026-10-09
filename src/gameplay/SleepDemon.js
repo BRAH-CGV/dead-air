@@ -19,7 +19,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //              wallGap in front of that; furniture on the floor there (a ray
 //              down from its full height) and it steps in toward the player
 //              until the floor is clear. It must land inside the view, unless
-//              the terminal's screen covers it: then beside or behind them.
+//              the rules ask for out of sight — the terminal's screen is up,
+//              or a behind-roll landed: then beside or behind them.
 //   in view    inside the camera's frustum, with nothing solid between the
 //              eye and its face. While the terminal's radar or review screen
 //              is up the player is looking at that, not the room.
@@ -30,28 +31,45 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // starts (a new one, a retry, the N key) sends it away. It holds while the
 // debug fly camera has frozen the player.
 //
-// It breathes: a loop on the figure, from the moment it first shows, louder
-// the nearer it comes, on top of the distance falloff. Looked away, it still
-// breathes from where it stood.
+// It is silent but for its footsteps (FOOTSTEP): a step as it shows, steps
+// in or slips round out of sight (see _place), and one now and then while it
+// stands there — brisker once it is walking in, quicker still as it sneaks
+// out of sight. Everything else about it is stillness: no breathing, no growl.
 //
 // The figure is a hidden, body-less GameObject the scene builds and owns,
 // under a group at the world origin, so its position is a world position.
 // Its body casts a shadow and the shadow maps are frozen between redraws,
 // so every show, step or hide calls onFigureChanged — turning on the spot
-// doesn't (the body is round).
+// doesn't (the body is round). It fades rather than popping: a look fades
+// it away where it stood (FIGURE_FADE.out), and it fades back in
+// (FIGURE_FADE.in) wherever it next shows; only a night start, the shift
+// ending or the death take it away at once.
 //
 // The stare-down (below holdBelow, while seen) walks it in along the line
 // from the eye, each step checked like a new spot: nothing at eye height in
-// the way, the floor clear, in view. A step that fails, it holds. Its shadow
-// is redrawn once a centimetre, not on each of the frames between.
+// the way, the floor clear, in view. A step that fails, it holds. It follows
+// a player who backs away — but only half as fast as they retreat, so they
+// gain ground: it follows, it doesn't stick. While it walks the player is
+// slowed down and the dread lifted on the breathing and the heartbeat
+// (FatigueEffects.setDread): the last stretch of the shift is heavy-legged.
+// Its shadow is redrawn once a centimetre, not on each of the frames between.
+//
+// Out of sight — turned away from, or something in between — it sneaks (the
+// rules' sneak): it takes up the player's own retreat and more (sneakSpeed),
+// at any stamina, and the footsteps quicken with it. Only a look that
+// banishes it, the hold coming back, or a night start gives the ground back.
 //
 // The torch betrays it: while it shows, the flashlight stutters whenever its
-// beam (the cone, and a margin) falls on any of it. The beam is wider than
-// the look that sends it away, so a sweep toward it stutters first.
+// beam (the cone, and a margin) falls on any of it. At the stamina of the
+// first showings the look that sends it away reaches a little wider than the
+// beam, so a sweep doesn't stutter without already banishing it; as stamina
+// falls the look closes in (focusAngleFor) and the beam outgrows it, until
+// the stare it can no longer flee (below holdBelow), and the ambush nobody
+// is watching, are lit by a torch that gives it away anyway.
 //
 // Dead air: while it stands in view, the ambience is ducked by how near the
 // view has come round to it (duckFor), down to near-silence at the look. Its
-// breathing is not part of the ambience, so it stands over the silence.
+// footsteps are not part of the ambience, so it walks over the silence.
 // Hidden, out of view, outside the shift or on a new night, it lets go.
 //
 // At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
@@ -67,19 +85,28 @@ export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
 /** The name it ducks the ambience under (Ambience.setDuck). */
 export const SLEEP_DEMON_DUCK = 'sleep-demon';
 
-/** Manifest key behind each sound. The breathing is a placeholder for the
+/** Manifest key behind each sound. The footsteps are a placeholder for the
  *  sound owner to replace (see the manifest): the key stays, the file swaps. */
-export const SLEEP_DEMON_SOUNDS = { breathing: 'sfx:breathing' };
+export const SLEEP_DEMON_SOUNDS = { footstep: 'sfx:footsteps' };
 
 /** The placeholder figure, metres: person-sized, so right beside the player
  *  its eyes are still in view. */
 export const SLEEP_DEMON_FIGURE = Object.freeze({ height: 1.8, radius: 0.26 });
 
-/** The breathing: its volume right beside the player, the share of that when
- *  it first shows, and the distance it is that loud at. */
-const BREATH = { volume: 0.8, far: 0.3, refDistance: 1.5 };
-/** The level is rounded to these steps, so it isn't re-set every frame. */
-const BREATH_STEPS = 20;
+/** The footsteps: its volume right beside the player, the share of that
+ *  when it first shows, the distance it is that loud at, and the seconds
+ *  between steps while it only stands there … walking in … sneaking out of
+ *  sight, which is brisker still — the hurry in the dark is all you get. */
+const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, every: [2.5, 7], walk: [1.4, 2.4], sneak: [0.6, 1.1] };
+
+/** The walk-down's grip: the share of the player's speed it leaves them
+ *  while it walks in on them. The breathing and the heartbeat floor come
+ *  with it (FatigueEffects.setDread). */
+export const SLEEP_DEMON_DREAD = Object.freeze({ slow: 0.6 });
+
+/** The figure's fade, seconds: away where it stood on a look, back in where
+ *  it next shows. */
+const FIGURE_FADE = { in: 0.4, out: 0.35 };
 
 /** What blocks sight: walls, props, the floor, shelves and what is on them.
  *  Not the player's capsule. The interaction ray's groups. */
@@ -98,7 +125,8 @@ const CLEAR = 0.15;
 const SHADOW_STEP = 0.01;
 
 /** The torch's beam on it: radians past the cone's edge that still count,
- *  for the width of its body and a sweep that only comes near. */
+ *  for the width of its body. The look that banishes it is a little wider,
+ *  so a sweep is already sending it away when the stutter starts. */
 export const SLEEP_DEMON_BEAM = Object.freeze({ margin: 0.05 });
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -165,7 +193,10 @@ export class SleepDemon extends Component {
    *        The player's torch: it stutters while its beam is on it.
    * @param {{ setDuck: (level: number, source: string) => void }|null} [opts.ambience]
    *        Ducked as the view comes round to it (dead air).
-   * @param {{ enabled: boolean }|null} [opts.player]  The FirstPersonController, frozen as they pass out.
+   * @param {{ enabled: boolean, speedScale?: number }|null} [opts.player]
+   *        The FirstPersonController, slowed while it walks in and frozen as they pass out.
+   * @param {{ setDread: (level: number) => void }|null} [opts.fatigue]
+   *        FatigueEffects, told 1 while it walks in and 0 whenever it isn't.
    * @param {{ set(tunnel: number, lid: number): void, clear(): void }|null} [opts.overlay]
    *        The FatigueOverlay FatigueEffects writes: the same one, so their caches agree.
    * @param {{ play(onDark?: () => void): boolean }|null} [opts.fade]  The ScreenFade for the cut.
@@ -178,6 +209,7 @@ export class SleepDemon extends Component {
     tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
     ambience = null,
     player = null, overlay = null, fade = null, listener = null, deathTuning = SLEEP_DEMON_DEATH,
+    fatigue = null,
   }) {
     super();
     Object.assign(this, {
@@ -185,6 +217,8 @@ export class SleepDemon extends Component {
     });
     this.flashlight = flashlight;
     this.ambience = ambience;
+    this.rand = rand;
+    this.fatigue = fatigue;
     Object.assign(this, { player, overlay, fade, listener, deathTuning });
     /** What the death took over, to give back: the camera's pose, the drop
      *  to the floor and which way the view tips. Null when it took nothing. */
@@ -196,17 +230,31 @@ export class SleepDemon extends Component {
       onPhase: phase => this._onDeathPhase(phase),
       onDone: () => this._died(),
     });
-    this._breath = 0;
-    /** It has stood somewhere since it came: there is a spot to breathe from. */
-    this._placed = false;
+    this._stepIn = 0;
+    /** The last cadence's mode (0 standing, 1 sneaking, 2 walking in), so a
+     *  change of pace re-times the next step. */
+    this._stepMode = 0;
+    /** Metres the eye backed away from it this frame (playerDrift), and the
+     *  eye's last position — no frame before the first. */
+    this._away = 0;
+    this._eyeWas = new THREE.Vector3();
+    this._hasEye = false;
+    /** The figure's fade: 1 fully there, 0 away, and which way it is
+     *  going: +1 in, −1 out, 0 settled. */
+    this._opacity = 0;
+    this._fadeDir = 0;
+    /** Its materials, and the opacity each was built at, collected on the
+     *  first fade so the fade scales what a model came with. */
+    this._fadeMaterials = null;
     this._off = null;
     this.logic = new SleepDemonLogic({
       tuning, rand,
       lookAngle: () => this.lookAngle(),
       place: spot => this._place(spot),
-      hide: () => this._hide(),
+      hide: () => this._fadeAway(),
       onKill: () => this._death.start(),
-      approach: step => this._approach(step),
+      approach: (step, unseen) => this._approach(step, unseen),
+      playerDrift: () => this._away,
     });
     /** Metres walked since its shadow was last redrawn. */
     this._unshadowed = 0;
@@ -236,9 +284,10 @@ export class SleepDemon extends Component {
   reset() {
     this._wake();
     this.logic.start();
-    this._placed = false;
     this._hide();
-    this._breathe(0);
+    this._hushStep();
+    this._release();
+    this._hasEye = false;
     this._duck(1);
   }
 
@@ -248,8 +297,10 @@ export class SleepDemon extends Component {
       // over, the freeze holds behind the failed night until the retry.
       if (this._death.running) this._wake();
       this._hide();
-      this._breathe(0);
+      this._hushStep();
       this.flashlight?.setInterference(false, 'sleep-demon');
+      this._release();
+      this._hasEye = false;
       this._duck(1);
       return;
     }
@@ -257,20 +308,28 @@ export class SleepDemon extends Component {
       // The torch is frozen with the player: a stutter left on would hold
       // it mid-dip, or dark, the whole flight.
       this.flashlight?.setInterference(false, 'sleep-demon');
+      this._release();
+      this._hasEye = false;
       return;
     }
     if (this._death.active) {
       // Still on it as it looms over them: the torch in their hand stutters.
       this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
+      this._release();
       this._dying(dt);
       return;
     }
     const logic = this.logic;
+    this._trackAway();
     logic.update(dt, this.stamina.value);
+    this._tickFade(dt);
     if (this.figure.object3d.visible) this._facePlayer();
     this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
-    if (!logic.around) this._placed = false;
-    this._breathe(this._placed ? lerp(BREATH.far, 1, logic.closeness) : 0);
+    this._footsteps(dt);
+    // Walking in on them: heavy-legged, with the dread on the breath and
+    // the heart. Anything else, let go.
+    if (this.player) this.player.speedScale = logic.walking ? SLEEP_DEMON_DREAD.slow : 1;
+    this.fatigue?.setDread(logic.walking ? 1 : 0);
     this._deadAir();
   }
 
@@ -354,9 +413,10 @@ export class SleepDemon extends Component {
     const o = this.figure.object3d;
     o.position.copy(_spot);
     o.visible = true;
-    this._placed = true;
+    if (this._opacity < 1 || this._fadeDir < 0) this._fadeDir = 1;   // a return
     this._facePlayer();
     this.onFigureChanged?.();
+    this._playStep();                       // a step with every move it takes
     return true;
   }
 
@@ -379,12 +439,64 @@ export class SleepDemon extends Component {
     return _frustum.intersectsSphere(_sphere);
   }
 
-  /** Out of sight. Tells the scene only if it was showing. */
+  /** Out of sight at once, whatever fade ran: a night start, the shift
+   *  ending, the death. The look fades instead (see _fadeAway). */
   _hide() {
+    this._fadeDir = 0;
+    this._applyOpacity(0);
     const o = this.figure.object3d;
     if (!o.visible) return;
     o.visible = false;
     this.onFigureChanged?.();
+  }
+
+  /** Out of sight, fading away where it stood. It stays visible (and
+   *  casting) until the fade is done: _tickFade hides it then. */
+  _fadeAway() {
+    this._fadeDir = this.figure.object3d.visible ? -1 : 0;
+  }
+
+  /** A frame of the fade: in over FIGURE_FADE.in, out over FIGURE_FADE.out.
+   *  Out done, it is gone, and the frozen shadow maps are told. */
+  _tickFade(dt) {
+    if (!this._fadeDir) return;
+    const o = this.figure.object3d;
+    const seconds = this._fadeDir > 0 ? FIGURE_FADE.in : FIGURE_FADE.out;
+    const x = this._opacity + this._fadeDir * (dt / seconds);
+    if (x >= 1) {
+      this._fadeDir = 0;
+      this._applyOpacity(1);
+    } else if (x <= 0) {
+      this._fadeDir = 0;
+      this._applyOpacity(0);
+      if (o.visible) {
+        o.visible = false;
+        this.onFigureChanged?.();
+      }
+    } else {
+      this._applyOpacity(x);
+    }
+  }
+
+  /** How there it is, 0 … 1: every material the figure was built with,
+   *  scaled from the opacity it came with. Collected on the first fade. */
+  _applyOpacity(x) {
+    this._opacity = x;
+    if (!this._fadeMaterials) {
+      this._fadeMaterials = [];
+      const seen = new Set();
+      this.figure.object3d.traverse(node => {
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of materials) {
+          if (!material || seen.has(material)) continue;
+          seen.add(material);
+          this._fadeMaterials.push({ material, opacity: material.opacity });
+        }
+      });
+    }
+    for (const { material, opacity } of this._fadeMaterials) {
+      material.opacity = x * opacity;
+    }
   }
 
   _facePlayer() {
@@ -395,10 +507,34 @@ export class SleepDemon extends Component {
     o.lookAt(_look);
   }
 
-  /** The stare-down: `step` metres in toward the eye, along the level line
-   *  from it, never nearer than stareFloor. The metres it then stands off,
-   *  or false when the new spot is no good. */
-  _approach(step) {
+  /** The player's eye as the rules need it: how far it has backed away from
+   *  the figure since the last frame, along the line between them. Only
+   *  retreats count. The rules walk it after (playerDrift). */
+  _trackAway() {
+    this._away = 0;
+    const camera = this.camera;
+    const o = this.figure.object3d;
+    if (!camera || !o.visible) { this._hasEye = false; return; }
+    camera.getWorldPosition(_eye);
+    if (this._hasEye) {
+      const dx = _eye.x - this._eyeWas.x;
+      const dz = _eye.z - this._eyeWas.z;
+      const fx = o.position.x - _eye.x;
+      const fz = o.position.z - _eye.z;
+      const len = Math.hypot(fx, fz);
+      if (len > 1e-6) this._away = Math.max(0, -(dx * fx + dz * fz) / len);
+    }
+    this._eyeWas.copy(_eye);
+    this._hasEye = true;
+  }
+
+  /** The walk-down or the sneak: `step` metres in toward the eye, along the
+   *  level line from it, never nearer than stareFloor. The metres it then
+   *  stands off, or false when the new spot is no good. `unseen` is the
+   *  sneak: with the player turned away (or something in between) the spot
+   *  is allowed out of view — but the walls, the floor and the room still
+   *  are not, so it can never creep through what hides it. */
+  _approach(step, unseen = false) {
     const camera = this.camera;
     if (!camera) return false;
     const o = this.figure.object3d;
@@ -411,12 +547,13 @@ export class SleepDemon extends Component {
     const d = Math.max(t.stareFloor, now - step);
     if (d >= now) return now;               // at arm's length, or the player came to it
     // The same checks as _place makes of a new spot, so it never walks into
-    // a shelf, onto a desk, or out of view.
+    // a shelf, onto a desk, or (a walk-down, seen) out of view. A sneak
+    // waives only the view: what hides it still stops it.
     if (this.rayHit(_eye, _dir, d + t.wallGap) < d + t.wallGap) return false;
     _spot.copy(_eye).addScaledVector(_dir, d);
     if (this._occupied(_spot.x, _spot.z)) return false;
     _spot.y = terrainHeightAt(_spot.x, _spot.z);
-    if (!this._inView(_spot)) return false;
+    if (!unseen && !this._inView(_spot)) return false;
 
     o.position.copy(_spot);
     this._facePlayer();
@@ -427,19 +564,57 @@ export class SleepDemon extends Component {
     return d;
   }
 
-  /** The breathing at `level` (0 … 1): silent and stopped at 0. */
-  _breathe(level) {
-    level = Math.round(level * BREATH_STEPS) / BREATH_STEPS;
-    if (level === this._breath) return;
-    this._breath = level;
-    const breath = this.sounds?.breathing;
-    if (!breath) return;
-    breath.setVolume(level * BREATH.volume);
-    if (level > 0) {
-      if (!breath.isPlaying) breath.play();
-    } else if (breath.isPlaying) {
-      breath.stop();
+  /** One footstep, now: the nearer it stands, the louder, and what the next
+   *  one is timed from. Not part of the ambience, so dead air doesn't take
+   *  it with it. */
+  _playStep() {
+    this._stepIn = this._stepEvery();
+    const sound = this.sounds?.footstep;
+    if (!sound) return;
+    sound.setVolume(FOOTSTEP.volume * lerp(FOOTSTEP.far, 1, this.logic.closeness));
+    if (sound.isPlaying) sound.stop();
+    sound.play();
+  }
+
+  /** How long to the next step: a slow shuffle while it only stands there,
+   *  quicker while it is walking in, brisker still as it sneaks. */
+  _stepEvery() {
+    const logic = this.logic;
+    const [lo, hi] = logic.walking ? FOOTSTEP.walk
+      : logic.sneaking ? FOOTSTEP.sneak : FOOTSTEP.every;
+    return lo + (hi - lo) * this.rand();
+  }
+
+  /** The occasional step while it is there. Starting to walk in or to sneak
+   *  re-times the next one, so the new cadence begins at once, not after an
+   *  old gap. Gone: nothing, and no step from nowhere. */
+  _footsteps(dt) {
+    const logic = this.logic;
+    if (!logic.shown) {
+      this._stepIn = 0;
+      this._stepMode = 0;
+      return;
     }
+    const mode = logic.walking ? 2 : logic.sneaking ? 1 : 0;
+    if (mode !== this._stepMode) {
+      this._stepMode = mode;
+      this._stepIn = Math.min(this._stepIn, this._stepEvery());
+    }
+    if ((this._stepIn -= dt) > 0) return;
+    this._playStep();
+  }
+
+  /** Cut a step still sounding: a night start, the shift ending, the death. */
+  _hushStep() {
+    const sound = this.sounds?.footstep;
+    if (sound?.isPlaying) sound.stop();
+  }
+
+  /** Let the player go: full speed, no dread on the breath and the heart.
+   *  Called whenever the walk-down isn't running, and it never hurts. */
+  _release() {
+    if (this.player) this.player.speedScale = 1;
+    this.fatigue?.setDread(0);
   }
 
   /** Duck the ambience by how near the view has come round to it. Measured
@@ -450,7 +625,7 @@ export class SleepDemon extends Component {
     const { logic, tuning: t } = this;
     if (!logic.shown || !this.camera) return this._duck(1);
     const shownAt = lerp(t.edgeFar, t.edgeNear, logic.closeness) * halfWidth(this.camera);
-    this._duck(duckFor(this.lookAngle(), shownAt, t));
+    this._duck(duckFor(this.lookAngle(), shownAt, logic.focus));
   }
 
   /** The ambience at `level` of itself; 1 lets go. */
@@ -458,24 +633,23 @@ export class SleepDemon extends Component {
     this.ambience?.setDuck(level, SLEEP_DEMON_DUCK);
   }
 
-  /** The breathing as a looping PositionalAudio on the figure, from the
-   *  preloaded buffer. Without a listener or the buffer: silence. Its cone
-   *  is left all round (the Web Audio default): standing behind the player,
-   *  after the terminal, it must still be heard. */
+  /** The footsteps as a PositionalAudio on the figure, from the preloaded
+   *  buffer — one-shots, not a loop. Without a listener or the buffer:
+   *  silence. Its cone is left all round (the Web Audio default): standing
+   *  behind the player, after the terminal, it must still be heard. */
   _buildSounds() {
     const engine = this.gameObject?.scene?.userData?.engine;
     const sounds = {};
     if (!engine?.audioListener || !engine.assets) return sounds;
-    const key = SLEEP_DEMON_SOUNDS.breathing;
+    const key = SLEEP_DEMON_SOUNDS.footstep;
     if (engine.assets.has && !engine.assets.has(key)) return sounds;
     const buffer = engine.assets.get(key);
     if (!buffer) return sounds;
     const audio = new THREE.PositionalAudio(engine.audioListener);
     audio.setBuffer(buffer);
-    audio.setLoop(true);
-    audio.setRefDistance(BREATH.refDistance);
+    audio.setRefDistance(FOOTSTEP.refDistance);
     this.figure.object3d.add(audio);
-    sounds.breathing = audio;
+    sounds.footstep = audio;
     return sounds;
   }
 
@@ -555,6 +729,8 @@ export class SleepDemon extends Component {
     const o = this.figure.object3d;
     o.position.copy(_spot);
     o.visible = true;
+    this._fadeDir = 0;
+    this._applyOpacity(1);                  // fully there at once, whatever fade ran
     this._facePlayer();
     o.rotateX(t.lean);
     this.onFigureChanged?.();
@@ -563,7 +739,7 @@ export class SleepDemon extends Component {
   /** Every beat has run, behind the black: the failed night, as before. */
   _died() {
     this._hide();
-    this._breathe(0);
+    this._hushStep();
     this.controller.fail(SLEEP_DEMON_KILL);
   }
 

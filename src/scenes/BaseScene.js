@@ -256,8 +256,8 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addStamina();
-    this._addSleepDemon();
     this._addFatigue();
+    this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
     this._buildOcclusion();
@@ -1124,6 +1124,8 @@ export class BaseScene extends Scene {
       flashlight:      engine.player?.getComponent(Flashlight) ?? null,
       // Dead air: the room dies as the view comes round to it.
       ambience:        this.ambience,
+      // Walking them down: the breath and the heart carry the dread.
+      fatigue:         this.fatigueEffects,
       // Its death (falling asleep on it) takes these over, and gives them back.
       player:          engine.player?.getComponent(FirstPersonController) ?? null,
       overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
@@ -1133,10 +1135,11 @@ export class BaseScene extends Scene {
   }
 
   /** What low stamina does to the player: the tunnel and the eyelids, the
-   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns. */
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns.
+   *  Built before the demon, which tells it how hard the walk-down grips. */
   _addFatigue() {
     const { engine } = this;
-    this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+    this.fatigueEffects = this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
       stamina:    this.stamina,
       controller: this.gameController,
       overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown

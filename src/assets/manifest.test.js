@@ -70,12 +70,12 @@ describe('manifest', () => {
     }
   });
 
-  it('preloads the stamina sounds: the demon breathing, the heartbeat, the yawn and the ration', () => {
+  it("preloads the stamina sounds: the demon's footsteps, the heartbeat, the yawn, the breathing and the ration", () => {
     // The Sleep Demon and fatigue run from the first minute of night 1, so
     // their clips are decoded behind the loading screen. They are
     // placeholders, and a replacement may come in any format, so only the
     // folder is pinned (the file is named after its key, above).
-    for (const key of ['sfx:breathing', 'sfx:heartbeat', 'sfx:yawn', 'sfx:ration']) {
+    for (const key of ['sfx:footsteps', 'sfx:breathing', 'sfx:heartbeat', 'sfx:yawn', 'sfx:ration']) {
       expect(ASSETS[key], key).toMatchObject({ type: 'audio' });
       expect(ASSETS[key].url, key).toMatch(/^assets\/audio\//);
       expect(PRELOAD, key).toContain(key);

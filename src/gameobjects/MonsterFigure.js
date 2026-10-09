@@ -36,10 +36,12 @@ export function createMonsterFigure({
   const go = new GameObject(name);
 
   // CapsuleGeometry's `length` is the straight middle; the caps add a
-  // radius at each end. Lift it so its lowest point is the floor.
+  // radius at each end. Lift it so its lowest point is the floor. Both
+  // materials are laid down transparent up front: a fade (the Sleep Demon)
+  // never swaps a shader state mid-game.
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(radius, height - radius * 2, 4, 10),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, transparent: true }),
   );
   body.name = `${name}Body`;
   body.position.y = height / 2;
@@ -48,7 +50,7 @@ export function createMonsterFigure({
 
   // One geometry and one material for both eyes.
   const eyeGeometry = new THREE.SphereGeometry(radius * 0.14, 8, 6);
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: eyeColor, fog: false });
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: eyeColor, fog: false, transparent: true });
   go.eyes = [-1, 1].map(side => {
     const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
     eye.name = `${name}Eye`;

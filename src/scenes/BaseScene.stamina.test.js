@@ -136,6 +136,12 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.sleepDemon.flashlight).toBe(engine.player.getComponent(Flashlight));
   });
 
+  it("is handed fatigue itself: the walk-down's dread lands on the breath and the heart", () => {
+    const fx = gameplay.getComponent(FatigueEffects);
+    expect(scene.fatigueEffects).toBe(fx);
+    expect(scene.sleepDemon.fatigue).toBe(fx);
+  });
+
   it("ducks the scene's ambience as the view comes round to it: dead air", () => {
     expect(scene.sleepDemon.ambience).toBe(scene.ambience);
   });
