@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SleepDemonLogic, SLEEP_DEMON as T, closenessFor, angleToUpright } from './SleepDemonLogic.js';
+import { SleepDemonLogic, SLEEP_DEMON as T, closenessFor, angleToUpright, duckFor } from './SleepDemonLogic.js';
 import { STAMINA } from './Stamina.js';
 
 const DEG = Math.PI / 180;
@@ -446,5 +446,49 @@ describe('the stare-down, below holdBelow', () => {
     expect(logic.closingIn).toBe(0);
     run(logic, 2, 0.05);
     expect(place.mock.calls.at(-1)[0].distance).toBeCloseTo(ruled(0.05));
+  });
+});
+
+describe('duckFor: dead air', () => {
+  /** Where it showed: 40° off the centre of the view. */
+  const SHOWN_AT = 40 * DEG;
+
+  it('a mild duck where it shows', () => {
+    expect(duckFor(SHOWN_AT, SHOWN_AT)).toBeCloseTo(T.duckEdge);
+    expect(T.duckEdge).toBeLessThan(1);
+    expect(T.duckEdge).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('no deeper with the view turned further away from it', () => {
+    expect(duckFor(60 * DEG, SHOWN_AT)).toBeCloseTo(T.duckEdge);
+  });
+
+  it('deepens as the view comes round to it', () => {
+    const wide = duckFor(35 * DEG, SHOWN_AT);
+    const half = duckFor(25 * DEG, SHOWN_AT);
+    const near = duckFor(15 * DEG, SHOWN_AT);
+    expect(wide).toBeLessThan(T.duckEdge);
+    expect(half).toBeLessThan(wide);
+    expect(near).toBeLessThan(half);
+  });
+
+  it('is deepest at the look: near-silence, not a hard mute', () => {
+    expect(duckFor(T.focusAngle, SHOWN_AT)).toBeCloseTo(T.duckFloor);
+    expect(duckFor(0, SHOWN_AT)).toBeCloseTo(T.duckFloor);     // stared at, below holdBelow
+    expect(T.duckFloor).toBeGreaterThan(0);
+    expect(T.duckFloor).toBeLessThan(0.15);
+  });
+
+  it('out of view, or nowhere: no duck', () => {
+    expect(duckFor(Infinity, SHOWN_AT)).toBe(1);
+  });
+
+  it('while the terminal screen covers the view, the mild duck holds', () => {
+    expect(duckFor(null, SHOWN_AT)).toBeCloseTo(T.duckEdge);
+  });
+
+  it('showing inside the look already, it is the floor', () => {
+    expect(duckFor(8 * DEG, 10 * DEG)).toBeCloseTo(T.duckFloor);
+    expect(duckFor(20 * DEG, 10 * DEG)).toBeCloseTo(T.duckEdge);
   });
 });

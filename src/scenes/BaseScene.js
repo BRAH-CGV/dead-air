@@ -1122,6 +1122,8 @@ export class BaseScene extends Scene {
       isFrozen:        () => !!engine.debugCamera?.active,
       onFigureChanged: () => engine.shadows?.invalidate(),
       flashlight:      engine.player?.getComponent(Flashlight) ?? null,
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
     }));
   }
 

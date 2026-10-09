@@ -480,3 +480,99 @@ describe('blendLoopSeam', () => {
     expect(Array.from(data)).toEqual(Array.from(original));
   });
 });
+
+describe('Ambience ducking', () => {
+  const WIND = 'wind';
+
+  it('dips every layer by the duck: the rooms, the storm wind and the music', () => {
+    const { ambience, sounds } = build({ outside: WIND });
+    ambience.setTension(1);
+    ambience.setStorm(1);
+    run(ambience, 20);
+    const room = sounds.centre.volume;
+    const wind = sounds[WIND].volume;
+    expect(sounds[MUSIC].volume).toBeCloseTo(1);
+
+    ambience.setDuck(0.1, 'demon');
+    run(ambience, 5);
+    expect(sounds.centre.volume).toBeCloseTo(room * 0.1);
+    expect(sounds[WIND].volume).toBeCloseTo(wind * 0.1);
+    expect(sounds[MUSIC].volume).toBeCloseTo(0.1);
+  });
+
+  it('dips the wind outside too', () => {
+    const { ambience, sounds } = build({ outside: WIND, x: 40 });
+    run(ambience, 3);
+    ambience.setDuck(0.2, 'demon');
+    run(ambience, 5);
+    expect(sounds[WIND].volume).toBeCloseTo(0.2);
+  });
+
+  it('slides down rather than stepping, and quickly', () => {
+    const { ambience, sounds } = build();
+    run(ambience, 3);
+    ambience.setDuck(0.1, 'demon');
+    ambience.onUpdate(1 / 60);
+    expect(sounds.centre.volume).toBeLessThan(1);
+    expect(sounds.centre.volume).toBeGreaterThan(0.8);
+    run(ambience, 0.5);
+    expect(sounds.centre.volume).toBeLessThan(0.2);
+  });
+
+  it('eases back more slowly than it fell once let go', () => {
+    const { ambience, sounds } = build();
+    run(ambience, 3);
+    ambience.setDuck(0.1, 'demon');
+    run(ambience, 5);
+    ambience.setDuck(1, 'demon');
+    run(ambience, 0.25);
+    expect(sounds.centre.volume).toBeGreaterThan(0.1);
+    expect(sounds.centre.volume).toBeLessThan(0.55);
+    run(ambience, 6);
+    expect(sounds.centre.volume).toBeCloseTo(1);
+    expect(AMBIENCE.duckReturnRate).toBeLessThan(AMBIENCE.duckRate);
+  });
+
+  it('keeps a ducked loop running, so it carries on rather than restarting', () => {
+    const { ambience, sounds } = build();
+    run(ambience, 3);
+    ambience.setDuck(0, 'demon');
+    run(ambience, 5);
+    expect(sounds.centre.isPlaying).toBe(true);
+    expect(sounds.centre.stop).not.toHaveBeenCalled();
+    expect(sounds.centre.volume).toBeCloseTo(0);
+  });
+
+  it('follows the deepest of several sources; one letting go leaves the rest', () => {
+    const { ambience } = build();
+    expect(ambience.duck).toBe(1);
+    ambience.setDuck(0.6, 'storm-eyes');
+    ambience.setDuck(0.1, 'demon');
+    expect(ambience.duck).toBe(0.1);
+    ambience.setDuck(1, 'demon');
+    expect(ambience.duck).toBe(0.6);
+    ambience.setDuck(1, 'storm-eyes');
+    expect(ambience.duck).toBe(1);
+  });
+
+  it('drops every source at once with clearDuck, and clamps a level out of range', () => {
+    const { ambience } = build();
+    ambience.setDuck(-3, 'demon');
+    expect(ambience.duck).toBe(0);
+    ambience.setDuck(0.5, 'eyes');
+    ambience.clearDuck();
+    expect(ambience.duck).toBe(1);
+    ambience.setDuck(4, 'demon');
+    expect(ambience.duck).toBe(1);
+  });
+
+  it('leaves the music its own creep: a duck lifting does not hurry it in', () => {
+    const { ambience, sounds } = build();
+    ambience.setDuck(0.5, 'demon');
+    run(ambience, 5);
+    ambience.setTension(1);
+    ambience.setDuck(1, 'demon');
+    run(ambience, AMBIENCE.musicFadeIn / 2);
+    expect(sounds[MUSIC].volume).toBeLessThan(0.55);
+  });
+});

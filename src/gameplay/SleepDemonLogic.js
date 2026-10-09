@@ -70,6 +70,11 @@ export const SLEEP_DEMON = Object.freeze({
   /** Metres from the eye it walks in to: arm's length. Nearer than
    *  minDistance, which is the room it needs to show, not to stand. */
   stareFloor: 0.5,
+  /** Dead air (duckFor): the world's sound, as a share of its level, with
+   *  it standing where it showed … */
+  duckEdge: 0.7,
+  /** … and at the look. Near-silence, not a mute: the room dies around it. */
+  duckFloor: 0.06,
 });
 
 const clamp01 = x => Math.min(1, Math.max(0, x));
@@ -111,6 +116,26 @@ export function angleToUpright(eye, forward, feet, height) {
     if (u > lo && u < hi) best = Math.max(best, cos(u));
   }
   return Math.acos(Math.min(1, Math.max(-1, best)));
+}
+
+/**
+ * Dead air: how loud the world should be, as a share of its level (1 is
+ * untouched), with the view `angle` radians off it. Mild where it showed,
+ * `shownAt` radians off the centre of the view, falling to the floor at the
+ * look (focusAngle). Linear in level, so the drop in loudness steepens as
+ * the view closes in. Infinity (out of view): nothing. null (the terminal
+ * covers the view): it is still there, but the view is on the screen, not
+ * coming round to it, so the mild duck holds — the room neither dies nor
+ * comes back while the player works.
+ * @param {number|null} angle  lookAngle()
+ * @param {number} shownAt  radians
+ */
+export function duckFor(angle, shownAt, { focusAngle, duckEdge, duckFloor } = SLEEP_DEMON) {
+  if (angle === null) return duckEdge;
+  if (!Number.isFinite(angle)) return 1;
+  if (angle <= focusAngle) return duckFloor;
+  if (shownAt <= focusAngle) return duckEdge;
+  return lerp(duckEdge, duckFloor, clamp01((shownAt - angle) / (shownAt - focusAngle)));
 }
 
 export class SleepDemonLogic {

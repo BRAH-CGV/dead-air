@@ -26,6 +26,18 @@ import { Component } from '../core/Component.js';
 //           — and the music follows the most tense of them, creeping in and
 //           out over several seconds rather than starting and stopping.
 //
+// Over both, a duck: a share of the level, 0..1, on every loop here — the
+// rooms, the wind (a storm's too) and the music. Like the tension, each
+// system asks under a name of its own, and the deepest is heard:
+//
+//               ambience.setDuck(0.06, 'sleep-demon');  // the room dies
+//               ambience.setDuck(1, 'sleep-demon');     // lets go
+//
+// It slides: down fast, back slowly. A ducked loop keeps running, silent or
+// not, so it carries on where it was rather than restarting. Sounds outside
+// this component (the generator, the sand on the window, the dish, the
+// airlock, the Sleep Demon's breathing) are not ducked.
+//
 // Volumes are the clips' own: each was mixed to the loudest it should ever
 // be. The exception is a per-track trim in AMBIENCE.volumes, for balancing
 // one room against the others without re-exporting its clip.
@@ -80,6 +92,10 @@ export const AMBIENCE = {
   musicFadeOut: 6,
   /** Length of the crossfade over each loop's seam. */
   seamSeconds: 0.25,
+  /** Rate (per second) a duck (setDuck) slides every loop down at… */
+  duckRate: 10,
+  /** …and back up at, once let go: slower, so the world creeps back. */
+  duckReturnRate: 1,
 };
 
 /** The tension source the test key holds. */
@@ -169,6 +185,10 @@ export class Ambience extends Component {
     for (const track of this._musics) this._musicGains[track] = 0;
     /** The volume last set on each sound, by track. */
     this._applied = {};
+    /** Ducks asked for, by who asked; the deepest; and where the level is now. */
+    this._ducks = new Map();
+    this._duck = 1;
+    this._duckGain = 1;
 
     this._destroyed = false;
   }
@@ -210,6 +230,33 @@ export class Ambience extends Component {
     this._tension = 0;
   }
 
+  /** The duck every loop is heading for, 0..1: the deepest anyone asked for. */
+  get duck() {
+    return this._duck;
+  }
+
+  /**
+   * Duck every loop to a share of its level. Each system uses a `source`
+   * name of its own, so one letting go doesn't lift another's.
+   * @param {number} level  0..1 of the level; 1 lets go.
+   * @param {string} [source='default']
+   */
+  setDuck(level, source = 'default') {
+    const clamped = Math.min(Math.max(level, 0), 1);
+    if (clamped < 1) this._ducks.set(source, clamped);
+    else this._ducks.delete(source);
+
+    let deepest = 1;
+    for (const value of this._ducks.values()) deepest = Math.min(deepest, value);
+    this._duck = deepest;
+  }
+
+  /** Every duck lets go. */
+  clearDuck() {
+    this._ducks.clear();
+    this._duck = 1;
+  }
+
   /** The clips are fetched on awake, while the scene is built — it sits
    *  paused behind the main menu, and onStart only runs on the first frame
    *  of play. Fetched there, every game began with seconds of no ambience. */
@@ -240,6 +287,11 @@ export class Ambience extends Component {
   }
 
   onUpdate(dt) {
+    // ── Duck: slides down fast and creeps back, under every layer ──
+    const duckRate = this._duck < this._duckGain ? AMBIENCE.duckRate : AMBIENCE.duckReturnRate;
+    this._duckGain += (this._duck - this._duckGain) * (1 - Math.exp(-duckRate * dt));
+    if (Math.abs(this._duck - this._duckGain) < SETTLED) this._duckGain = this._duck;
+
     // ── Rooms: ease each loop toward the mix where the ears are ──
     // A storm presses the wind through the walls, and blows it harder: from
     // its calm trim up to storm.gain, whatever the trim is.
@@ -284,16 +336,18 @@ export class Ambience extends Component {
 
   // ── Internals ─────────────────────────────
 
-  /** Play `track` at `gain` times its trim; at zero, stop it. */
+  /** Play `track` at `gain` times its trim and the duck; at zero, stop it.
+   *  Not at a zero duck: a loop that is still wanted carries on, silent. */
   _drive(track, gain) {
     const sound = this.sounds?.[track];
     if (!sound) return;
     gain *= this.volumes[track] ?? 1;
     if (gain > 0) {
+      const volume = gain * this._duckGain;
       // Only on a change: a settled loop schedules nothing on the audio clock.
-      if (this._applied[track] !== gain) {
-        sound.setVolume(gain);
-        this._applied[track] = gain;
+      if (this._applied[track] !== volume) {
+        sound.setVolume(volume);
+        this._applied[track] = volume;
       }
       if (!sound.isPlaying) sound.play();
     } else if (sound.isPlaying) {

@@ -14,7 +14,7 @@ vi.mock('@dimforge/rapier3d', () => ({
 import { GameObject } from '../core/GameObject.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { Stamina } from './Stamina.js';
-import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, sightRay } from './SleepDemon.js';
+import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, SLEEP_DEMON_DUCK, sightRay } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
 
 const EYE = 1.24;
@@ -556,5 +556,142 @@ describe('sightRay', () => {
   it('with no world that can cast a ray, nothing is ever in the way', () => {
     expect(sightRay(null)(eye, ahead, 10)).toBe(Infinity);
     expect(sightRay({})(eye, ahead, 10)).toBe(Infinity);
+  });
+});
+
+describe('SleepDemon dead air', () => {
+  let camera, figure, stamina, controller, terminal, ambience, demon;
+
+  /** The duck it asks the ambience for: 1 when it has let go. */
+  const duck = () => ambience.ducks.get(SLEEP_DEMON_DUCK) ?? 1;
+
+  function run(seconds, dt = 0.1) {
+    for (let t = 0; t < seconds - 1e-9; t += dt) demon.onUpdate(dt);
+  }
+
+  /** Turn the view level, `angle` to the right of straight ahead (−Z). */
+  function turn(angle) {
+    camera.lookAt(Math.sin(angle) * 10, EYE, -Math.cos(angle) * 10);
+    camera.updateMatrixWorld(true);
+  }
+
+  /** Where it stands, off the centre of the view as it was first faced. */
+  function shownAt() {
+    const at = figure.object3d.position;
+    return Math.atan2(at.x, -at.z);
+  }
+
+  beforeEach(() => {
+    camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
+    camera.position.set(0, EYE, 0);
+    turn(0);
+    figure = new GameObject('SleepDemon');
+    figure.object3d.visible = false;
+    stamina = new Stamina();
+    controller = fakeController();
+    terminal = { state: 'idle' };
+    // Ducks by source, as Ambience keeps them: 1 lets go.
+    ambience = { ducks: new Map() };
+    ambience.setDuck = vi.fn((level, source) => {
+      if (level < 1) ambience.ducks.set(source, level);
+      else ambience.ducks.delete(source);
+    });
+    demon = new SleepDemon({
+      controller, stamina, figure, camera, terminal, ambience,
+      sounds: { breathing: fakeSound() },
+      rand: () => 0.9,                      // the right-hand side first
+    });
+    demon.onStart();
+  });
+
+  it('ducks nothing while the player is awake, nor before it shows', () => {
+    run(10);
+    stamina.value = 0.425;
+    run(3);
+    expect(figure.object3d.visible).toBe(false);
+    expect(duck()).toBe(1);
+  });
+
+  it('a mild duck when it shows, at the edge of the view', () => {
+    stamina.value = 0.425;
+    run(4);
+    expect(figure.object3d.visible).toBe(true);
+    expect(duck()).toBeCloseTo(T.duckEdge, 2);
+  });
+
+  it('deepens as the view comes round to it, near-silent at the look, and lets go as it flees', () => {
+    stamina.value = 0.425;
+    run(4);
+    const at = shownAt();
+    const levels = [];
+    for (const off of [25 * DEG, 18 * DEG, T.focusAngle + 0.5 * DEG]) {
+      turn(at - off);
+      run(0.1);
+      expect(figure.object3d.visible).toBe(true);
+      levels.push(duck());
+    }
+    expect(levels[0]).toBeLessThan(T.duckEdge);
+    expect(levels[1]).toBeLessThan(levels[0]);
+    expect(levels[2]).toBeLessThan(levels[1]);
+    expect(levels[2]).toBeCloseTo(T.duckFloor, 1);
+
+    turn(at);                               // the look: it is gone
+    run(0.1);
+    expect(figure.object3d.visible).toBe(false);
+    expect(duck()).toBe(1);
+  });
+
+  it('turned away from, out of view: no duck', () => {
+    stamina.value = 0.425;
+    run(4);
+    turn(Math.PI);
+    run(0.5);
+    expect(duck()).toBe(1);
+  });
+
+  it('while the terminal screen covers the view, the mild duck holds', () => {
+    stamina.value = 0.425;
+    run(4);
+    terminal.state = 'radar';
+    turn(shownAt());
+    run(1);
+    expect(figure.object3d.visible).toBe(true);
+    expect(duck()).toBeCloseTo(T.duckEdge);
+  });
+
+  it('lets go in the morning and behind the failed-night prompt', () => {
+    for (const state of ['morning', 'gameOver']) {
+      controller.state = 'playing';
+      stamina.value = 0.425;
+      run(8);
+      expect(duck(), state).toBeLessThan(1);
+      controller.state = state;
+      run(0.1);
+      expect(duck(), state).toBe(1);
+    }
+  });
+
+  it('lets go on a new or retried night, and when destroyed', () => {
+    stamina.value = 0.425;
+    run(4);
+    expect(duck()).toBeLessThan(1);
+    stamina.reset();
+    controller.startNight(1, { retry: true });
+    expect(duck()).toBe(1);
+
+    stamina.value = 0.425;
+    run(4);
+    expect(duck()).toBeLessThan(1);
+    demon.onDestroy();
+    expect(duck()).toBe(1);
+  });
+
+  it('runs without an ambience to duck', () => {
+    const quiet = new SleepDemon({
+      controller: fakeController(), stamina, figure: new GameObject('SleepDemon'), camera,
+    });
+    quiet.onStart();
+    stamina.value = 0.425;
+    expect(() => { for (let i = 0; i < 60; i++) quiet.onUpdate(0.1); }).not.toThrow();
   });
 });

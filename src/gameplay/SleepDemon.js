@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
 import { Component } from '../core/Component.js';
 import { packGroups, Layers } from '../core/PhysicsLayers.js';
-import { SleepDemonLogic, SLEEP_DEMON, angleToUpright } from './SleepDemonLogic.js';
+import { SleepDemonLogic, SLEEP_DEMON, angleToUpright, duckFor } from './SleepDemonLogic.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
@@ -45,9 +45,17 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // The torch betrays it: while it shows, the flashlight stutters whenever its
 // beam (the cone, and a margin) falls on any of it. The beam is wider than
 // the look that sends it away, so a sweep toward it stutters first.
+//
+// Dead air: while it stands in view, the ambience is ducked by how near the
+// view has come round to it (duckFor), down to near-silence at the look. Its
+// breathing is not part of the ambience, so it stands over the silence.
+// Hidden, out of view, outside the shift or on a new night, it lets go.
 // ─────────────────────────────────────────────
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
+
+/** The name it ducks the ambience under (Ambience.setDuck). */
+export const SLEEP_DEMON_DUCK = 'sleep-demon';
 
 /** Manifest key behind each sound. The breathing is a placeholder for the
  *  sound owner to replace (see the manifest): the key stays, the file swaps. */
@@ -144,17 +152,21 @@ export class SleepDemon extends Component {
    * @param {() => number} [opts.rand]  Which side it shows first.
    * @param {import('../components/Flashlight.js').Flashlight|null} [opts.flashlight]
    *        The player's torch: it stutters while its beam is on it.
+   * @param {{ setDuck: (level: number, source: string) => void }|null} [opts.ambience]
+   *        Ducked as the view comes round to it (dead air).
    */
   constructor({
     controller, stamina, figure, camera = null, terminal = null, rayHit = () => Infinity,
     isFrozen = () => false, onFigureChanged = null, height = SLEEP_DEMON_FIGURE.height,
     tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
+    ambience = null,
   }) {
     super();
     Object.assign(this, {
       controller, stamina, figure, camera, terminal, rayHit, isFrozen, onFigureChanged, height, tuning, sounds,
     });
     this.flashlight = flashlight;
+    this.ambience = ambience;
     this._breath = 0;
     /** It has stood somewhere since it came: there is a spot to breathe from. */
     this._placed = false;
@@ -181,6 +193,7 @@ export class SleepDemon extends Component {
     this._off?.();
     this._off = null;
     this.flashlight?.setInterference(false, 'sleep-demon');
+    this._duck(1);
     for (const sound of Object.values(this.sounds ?? {})) {
       if (sound?.isPlaying) sound.stop();
       sound?.parent?.remove(sound);
@@ -194,6 +207,7 @@ export class SleepDemon extends Component {
     this._placed = false;
     this._hide();
     this._breathe(0);
+    this._duck(1);
   }
 
   onUpdate(dt) {
@@ -201,6 +215,7 @@ export class SleepDemon extends Component {
       this._hide();
       this._breathe(0);
       this.flashlight?.setInterference(false, 'sleep-demon');
+      this._duck(1);
       return;
     }
     if (this.isFrozen()) {
@@ -215,6 +230,7 @@ export class SleepDemon extends Component {
     this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
     if (!logic.around) this._placed = false;
     this._breathe(this._placed ? lerp(BREATH.far, 1, logic.closeness) : 0);
+    this._deadAir();
   }
 
   /**
@@ -369,6 +385,22 @@ export class SleepDemon extends Component {
     } else if (breath.isPlaying) {
       breath.stop();
     }
+  }
+
+  /** Duck the ambience by how near the view has come round to it. Measured
+   *  from the share of the view's half-width it shows at for this stamina,
+   *  so it is mild wherever it first shows. A second lookAngle() after the
+   *  rules', since it may have just shown, stepped or fled this frame. */
+  _deadAir() {
+    const { logic, tuning: t } = this;
+    if (!logic.shown || !this.camera) return this._duck(1);
+    const shownAt = lerp(t.edgeFar, t.edgeNear, logic.closeness) * halfWidth(this.camera);
+    this._duck(duckFor(this.lookAngle(), shownAt, t));
+  }
+
+  /** The ambience at `level` of itself; 1 lets go. */
+  _duck(level) {
+    this.ambience?.setDuck(level, SLEEP_DEMON_DUCK);
   }
 
   /** The breathing as a looping PositionalAudio on the figure, from the
