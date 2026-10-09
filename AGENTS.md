@@ -91,6 +91,7 @@ src/
 │   ├── Fatigue.js       # What low stamina does: tunnel and heartbeat curves, yawn/blink/stutter timers (pure)
 │   ├── SleepDemonLogic.js # The Sleep Demon's rules: how near, how far off-centre, fleeing a look (pure)
 │   ├── SleepDemon.js    # Those rules on the camera, sight rays and the figure; every night
+│   ├── SleepDemonDeath.js # Its kill: pass out, black, eyes open on it, cut to black (pure)
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
@@ -236,7 +237,7 @@ The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away. Its fo
   - **Out of view** for `lostAfter` (1.5 s), turned away from or with something in the way, it finds the edge of the view again.
   - **It steps in** each time stamina crosses into a new band (8 of them, from 0.85 down), looked at or not. A ration sends it back the same way.
   - **Below `holdBelow`** (0.08) it no longer flees a look: it stands there.
-  - **At empty** it takes the player: `controller.fail(SLEEP_DEMON_KILL)`, and `[E]` retries.
+  - **At empty** it takes the player (see "Its kill" below), then `controller.fail(SLEEP_DEMON_KILL)`, and `[E]` retries.
 - **Where it stands.** On a level line from the player's eye, turned off the centre of the view by that share:
   - a sight ray stops it `wallGap` (0.45 m) short of a wall or a prop;
   - a ray down from its full height steps it in toward the player, 0.25 m at a time, until the floor under it is clear of furniture;
@@ -247,6 +248,14 @@ The Sleep Demon comes every night, 1 to 3. Stamina is what keeps it away. Its fo
 - **When it runs.** Only while `playing`. In the morning and behind the failed-night prompt it is hidden and silent, and every night start sends it away. It holds while the fly camera has frozen the player.
 - **Its breathing** (`sfx:breathing`) is a looping `PositionalAudio` on the figure from its first show, louder the nearer it comes.
 - **The figure** is a `MonsterFigure` placeholder (1.8 m tall, waiting for `sleep-demon.glb`) under a `Threats` group on the scene root. It has no physics and is in no occlusion zone. Its body casts a shadow, so every show, step and hide calls `onFigureChanged` → `engine.shadows.invalidate()`. Turning on the spot doesn't: the body is round. To use a real model, replace what `_addSleepDemon` builds.
+- **Its kill.** The player falls asleep, and wakes to it. `SleepDemonDeath` (pure) runs the beats and `SLEEP_DEMON_DEATH` holds the numbers. `scene.sleepDemon.deathPhase` names the beat, for a sound to follow.
+  - **Pass out** (`passOut`, 1 s). The `FirstPersonController` is frozen and the lids slam shut. The view drops to `slumpEye` (0.3 m) off the floor, looking up and tipped over. The listener's master volume eases down to `hush` (5 %).
+  - **Black** (`black`, 0.7 s).
+  - **Eyes open** (`loom`, 1.3 s). The lids snap open (`lidSnap`). It stands `loomDistance` (1.1 m) ahead, leaning over the player (`lean`), its eyes flared to `eyeFlare` × their size.
+  - **Cut** (`cut`, 0.7 s): `ScreenFade` to black, then the failed night.
+  - **Its lids win.** It writes the `FatigueOverlay` after `FatigueEffects` does (`onLateUpdate`), and they share one overlay so their caches agree.
+  - **It runs on the game clock**, so a pause or the fly camera holds it.
+  - **Called off.** The shift ending under it calls it off, and so does a night start (a retry or the N key). Either one, or `onDestroy` (a rebuild from the menu), gives everything back: the player, the camera's pose, the lids and the volume.
 - **Fatigue.** `Fatigue.js` holds the curves and timers, `FatigueEffects` (after the drain) plays them, and `FatigueOverlay` draws `#fatigue` in index.html.
   - **Tired** (below 0.5): the base dims through the grid's `fatigue` factor, sinking towards `FATIGUE_DIM_MIN` (0.6) at empty. The view narrows (the tunnel), and the player yawns (`sfx:yawn`) every 20–35 s.
   - **Critical** (below 0.2): a yawn every 7–12 s and a blink every 4–8 s. The lights stutter through the grid's `dread` factor (down to 0.5), and a heartbeat (`sfx:heartbeat`) rises towards empty.

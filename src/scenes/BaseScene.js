@@ -1120,6 +1120,11 @@ export class BaseScene extends Scene {
       rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
       isFrozen:        () => !!engine.debugCamera?.active,
       onFigureChanged: () => engine.shadows?.invalidate(),
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
     }));
   }
 
@@ -1130,7 +1135,7 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
       stamina:    this.stamina,
       controller: this.gameController,
-      overlay:    new FatigueOverlay(),
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
       grid:       this.power,
       isFrozen:   () => !!engine.debugCamera?.active,
     }));
