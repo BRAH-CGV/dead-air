@@ -3,6 +3,8 @@ import RAPIER from '@dimforge/rapier3d';
 import { Component } from '../core/Component.js';
 import { packGroups, Layers } from '../core/PhysicsLayers.js';
 import { SleepDemonLogic, SLEEP_DEMON, angleToUpright, duckFor } from './SleepDemonLogic.js';
+import { SleepDemonDeath, SLEEP_DEMON_DEATH } from './SleepDemonDeath.js';
+import { tunnel } from './Fatigue.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
@@ -51,6 +53,13 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // view has come round to it (duckFor), down to near-silence at the look. Its
 // breathing is not part of the ambience, so it stands over the silence.
 // Hidden, out of view, outside the shift or on a new night, it lets go.
+//
+// At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
+// slam shut as the view drops to the floor and the world's sound falls away;
+// black; the eyes flare open on it looming right over them; a cut to black,
+// and only then the failed night. Whatever it took over (the player, the
+// camera, the lids, the listener's volume) is put back by the next night
+// start, the shift ending under it, or onDestroy.
 // ─────────────────────────────────────────────
 
 export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
@@ -102,6 +111,7 @@ const _sight = new THREE.Vector3();
 const _probe = new THREE.Vector3();
 const _spot = new THREE.Vector3();
 const _look = new THREE.Vector3();
+const _slumped = new THREE.Vector3();
 const _viewProj = new THREE.Matrix4();
 const _frustum = new THREE.Frustum();
 const _sphere = new THREE.Sphere();
@@ -155,12 +165,19 @@ export class SleepDemon extends Component {
    *        The player's torch: it stutters while its beam is on it.
    * @param {{ setDuck: (level: number, source: string) => void }|null} [opts.ambience]
    *        Ducked as the view comes round to it (dead air).
+   * @param {{ enabled: boolean }|null} [opts.player]  The FirstPersonController, frozen as they pass out.
+   * @param {{ set(tunnel: number, lid: number): void, clear(): void }|null} [opts.overlay]
+   *        The FatigueOverlay FatigueEffects writes: the same one, so their caches agree.
+   * @param {{ play(onDark?: () => void): boolean }|null} [opts.fade]  The ScreenFade for the cut.
+   * @param {THREE.AudioListener|null} [opts.listener]  Whose volume falls away.
+   * @param {typeof SLEEP_DEMON_DEATH} [opts.deathTuning]
    */
   constructor({
     controller, stamina, figure, camera = null, terminal = null, rayHit = () => Infinity,
     isFrozen = () => false, onFigureChanged = null, height = SLEEP_DEMON_FIGURE.height,
     tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
     ambience = null,
+    player = null, overlay = null, fade = null, listener = null, deathTuning = SLEEP_DEMON_DEATH,
   }) {
     super();
     Object.assign(this, {
@@ -168,6 +185,17 @@ export class SleepDemon extends Component {
     });
     this.flashlight = flashlight;
     this.ambience = ambience;
+    Object.assign(this, { player, overlay, fade, listener, deathTuning });
+    /** What the death took over, to give back: the camera's pose, the drop
+     *  to the floor and which way the view tips. Null when it took nothing. */
+    this._pose = null;
+    /** The listener's volume before it fell away. Null when untouched. */
+    this._volume = null;
+    this._death = new SleepDemonDeath({
+      tuning: deathTuning,
+      onPhase: phase => this._onDeathPhase(phase),
+      onDone: () => this._died(),
+    });
     this._breath = 0;
     /** It has stood somewhere since it came: there is a spot to breathe from. */
     this._placed = false;
@@ -177,7 +205,7 @@ export class SleepDemon extends Component {
       lookAngle: () => this.lookAngle(),
       place: spot => this._place(spot),
       hide: () => this._hide(),
-      onKill: () => this.controller.fail(SLEEP_DEMON_KILL),
+      onKill: () => this._death.start(),
       approach: step => this._approach(step),
     });
     /** Metres walked since its shadow was last redrawn. */
@@ -191,6 +219,8 @@ export class SleepDemon extends Component {
   }
 
   onDestroy() {
+    // A rebuild from the menu: the camera outlives the scene.
+    this._wake();
     this._off?.();
     this._off = null;
     this.flashlight?.setInterference(false, 'sleep-demon');
@@ -204,6 +234,7 @@ export class SleepDemon extends Component {
 
   /** A new or retried night: away, silent, nothing counted. */
   reset() {
+    this._wake();
     this.logic.start();
     this._placed = false;
     this._hide();
@@ -213,6 +244,9 @@ export class SleepDemon extends Component {
 
   onUpdate(dt) {
     if (this.controller.state !== 'playing') {
+      // The shift ended under it (6 AM, another threat): called off. Once
+      // over, the freeze holds behind the failed night until the retry.
+      if (this._death.running) this._wake();
       this._hide();
       this._breathe(0);
       this.flashlight?.setInterference(false, 'sleep-demon');
@@ -225,6 +259,12 @@ export class SleepDemon extends Component {
       this.flashlight?.setInterference(false, 'sleep-demon');
       return;
     }
+    if (this._death.active) {
+      // Still on it as it looms over them: the torch in their hand stutters.
+      this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
+      this._dying(dt);
+      return;
+    }
     const logic = this.logic;
     logic.update(dt, this.stamina.value);
     if (this.figure.object3d.visible) this._facePlayer();
@@ -232,6 +272,19 @@ export class SleepDemon extends Component {
     if (!logic.around) this._placed = false;
     this._breathe(this._placed ? lerp(BREATH.far, 1, logic.closeness) : 0);
     this._deadAir();
+  }
+
+  // FatigueEffects writes the lids every frame, after this update; the
+  // death's own are written last, so they win.
+  onLateUpdate() {
+    if (!this._death.running || this.isFrozen()) return;
+    this.overlay?.set(tunnel(this.stamina.value), this._death.lid);
+  }
+
+  /** Where the death is: 'idle', then 'passOut', 'black', 'flare', 'cut' and
+   *  'over' until the night starts again. For a sound to follow. */
+  get deathPhase() {
+    return this._death.phase;
   }
 
   /**
@@ -424,5 +477,116 @@ export class SleepDemon extends Component {
     this.figure.object3d.add(audio);
     sounds.breathing = audio;
     return sounds;
+  }
+
+  // ── The death ──
+
+  _onDeathPhase(phase) {
+    if (phase === 'passOut') this._passOut();
+    else if (phase === 'flare') this._loomOver();
+    else if (phase === 'cut') this.fade?.play();
+  }
+
+  /** Frozen where they stand; the fall worked out from where the view
+   *  starts; the world's sound eased away on the audio clock. */
+  _passOut() {
+    const t = this.deathTuning;
+    if (this.player) this.player.enabled = false;
+    const camera = this.camera;
+    if (camera) {
+      camera.getWorldPosition(_slumped);
+      const floor = terrainHeightAt(_slumped.x, _slumped.z);
+      const { x: pitch, y: yaw, z: roll } = camera.rotation;
+      this._pose = {
+        y: camera.position.y, pitch, yaw, roll,
+        drop: Math.max(0, _slumped.y - (floor + t.slumpEye)),
+        side: this.logic.side,
+      };
+    }
+    const volume = this.listener?.gain?.gain;
+    const audio = this.listener?.context;
+    if (volume && audio) {
+      this._volume = volume.value;
+      const now = audio.currentTime;
+      volume.cancelScheduledValues(now);
+      volume.setTargetAtTime(this._volume * t.hush, now, t.passOut / 3);
+    }
+  }
+
+  /** A frame of it, on the game clock, so a pause or the fly camera holds it. */
+  _dying(dt) {
+    // The fly camera hands every player component back on its way out.
+    if (this.player) this.player.enabled = false;
+    const death = this._death;
+    death.update(dt);
+    if (!death.active) return;
+    this._slump(death.slump);
+    const scale = 1 + (this.deathTuning.eyeFlare - 1) * death.flare;
+    for (const eye of this.figure.eyes ?? []) eye.scale.setScalar(scale);
+  }
+
+  /** The view `s` of the way (0 … 1) from where it stood to the floor,
+   *  looking up, tipped over. At 0 it is exactly where it was. */
+  _slump(s) {
+    const p = this._pose;
+    if (!p) return;
+    const t = this.deathTuning;
+    this.camera.position.y = p.y - p.drop * s;
+    this.camera.rotation.set(lerp(p.pitch, t.slumpPitch, s), p.yaw, lerp(p.roll, p.side * t.slumpRoll, s));
+  }
+
+  /** The eyes open on it: just ahead the way they faced as they fell, its
+   *  top leaning over them so its face is in their upturned view. Bypasses
+   *  _place: nothing about the view's edge applies now. */
+  _loomOver() {
+    const camera = this.camera;
+    if (!camera) return;
+    const t = this.deathTuning;
+    camera.getWorldPosition(_eye);
+    camera.getWorldDirection(_dir);
+    _dir.y = 0;
+    if (_dir.lengthSq() < 1e-8) _dir.set(0, 0, -1);
+    _dir.normalize();
+    // Short of a wall or a prop, but never so near its face leaves the view.
+    const room = this.rayHit(_eye, _dir, t.loomDistance + this.tuning.wallGap) - this.tuning.wallGap;
+    const d = Math.max(t.loomDistance / 2, Math.min(t.loomDistance, room));
+    _spot.copy(_eye).addScaledVector(_dir, d);
+    _spot.y = terrainHeightAt(_spot.x, _spot.z);
+    const o = this.figure.object3d;
+    o.position.copy(_spot);
+    o.visible = true;
+    this._facePlayer();
+    o.rotateX(t.lean);
+    this.onFigureChanged?.();
+  }
+
+  /** Every beat has run, behind the black: the failed night, as before. */
+  _died() {
+    this._hide();
+    this._breathe(0);
+    this.controller.fail(SLEEP_DEMON_KILL);
+  }
+
+  /** Called off, or the night starts again: all it took over given back. */
+  _wake() {
+    if (!this._death.active) return;
+    this._death.cancel();
+    // While the fly camera is on it owns the view and the player, and hands
+    // them back itself.
+    if (!this.isFrozen()) {
+      this._slump(0);
+      if (this.player) this.player.enabled = true;
+    }
+    this._pose = null;
+    this.overlay?.clear();
+    const volume = this.listener?.gain?.gain;
+    if (volume && this._volume !== null) {
+      const now = this.listener.context.currentTime;
+      volume.cancelScheduledValues(now);
+      volume.setValueAtTime(this._volume, now);
+    }
+    this._volume = null;
+    for (const eye of this.figure.eyes ?? []) eye.scale.setScalar(1);
+    this._hide();
   }
 }

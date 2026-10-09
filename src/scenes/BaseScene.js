@@ -1124,6 +1124,11 @@ export class BaseScene extends Scene {
       flashlight:      engine.player?.getComponent(Flashlight) ?? null,
       // Dead air: the room dies as the view comes round to it.
       ambience:        this.ambience,
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
     }));
   }
 
@@ -1134,7 +1139,7 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
       stamina:    this.stamina,
       controller: this.gameController,
-      overlay:    new FatigueOverlay(),
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
       grid:       this.power,
       isFrozen:   () => !!engine.debugCamera?.active,
     }));
