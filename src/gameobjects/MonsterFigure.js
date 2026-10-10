@@ -6,7 +6,8 @@ import { GameObject } from '../core/GameObject.js';
 // ─────────────────────────────────────────────
 // A tall, thin, dark capsule with two small eyes that ignore the lighting,
 // so they read in the dark and through the fog, and a pale grin under them,
-// hidden until a threat shows it (`smile`). It is a placeholder: swap
+// hidden until a threat shows it (`smile`): a thin, wide, shallow curve
+// wrapped round the face, its corners turned up. It is a placeholder: swap
 // in a real model by replacing what this returns; `placeholderFor` records
 // the file it waits for.
 //
@@ -14,9 +15,9 @@ import { GameObject } from '../core/GameObject.js';
 // target, so a threat aims the figure with one call. Built hidden, with no
 // rigid body or collider: monsters are not physics.
 //
-// The body casts a shadow, and the shadow maps are frozen between redraws
-// (ShadowScheduler): whoever moves, shows or hides the figure invalidates
-// them. The geometry and materials are fresh per call, so the caller owns
+// The body casts a shadow unless asked not to (castShadow: false), and the
+// shadow maps are frozen between redraws (ShadowScheduler): whoever moves,
+// shows or hides a casting figure invalidates them. The geometry and materials are fresh per call, so the caller owns
 // them (BaseScene._ownResourcesOf).
 // ─────────────────────────────────────────────
 
@@ -29,11 +30,31 @@ import { GameObject } from '../core/GameObject.js';
  * @param {number} [opts.eyeColor]
  * @param {string|null} [opts.placeholderFor]
  * @param {number} [opts.smileColor]
+ * @param {boolean} [opts.castShadow]  false: a shade, not a body — nothing on the floor gives it away
  * @returns {GameObject & { eyes: THREE.Mesh[], smile: THREE.Mesh, placeholderFor: string|null }}
  */
+/** Half the grin's sweep round the face, radians. */
+const SMILE_SWEEP = 62 * Math.PI / 180;
+
+/** The grin's line: round a circle of `around` metres about the figure's
+ *  axis, ±SMILE_SWEEP off its front (+Z), `low` metres up in the middle and
+ *  `rise` higher at the corners: one smooth, shallow arc. */
+class SmileCurve extends THREE.Curve {
+  constructor(around, low, rise) {
+    super();
+    Object.assign(this, { around, low, rise });
+  }
+
+  getPoint(t, target = new THREE.Vector3()) {
+    const u = t * 2 - 1;                    // −1 … 1, corner to corner
+    const a = u * SMILE_SWEEP;
+    return target.set(Math.sin(a) * this.around, this.low + this.rise * u * u, Math.cos(a) * this.around);
+  }
+}
+
 export function createMonsterFigure({
   name = 'Monster', height = 2.4, radius = 0.2,
-  color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, placeholderFor = null,
+  color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, castShadow = true, placeholderFor = null,
 } = {}) {
   const go = new GameObject(name);
 
@@ -47,7 +68,7 @@ export function createMonsterFigure({
   );
   body.name = `${name}Body`;
   body.position.y = height / 2;
-  body.castShadow = true;
+  body.castShadow = castShadow;
   go.object3d.add(body);
 
   // One geometry and one material for both eyes.
@@ -61,17 +82,15 @@ export function createMonsterFigure({
     return eye;
   });
 
-  // The grin: half a thin torus, turned to a ∪, just proud of the body
-  // below the eyes. Unlit like them; hidden, and no shadow, so showing it
-  // redraws nothing.
-  const grin = radius * 0.4;
+  // The grin: a thin tube along a shallow curve wrapped round the face, just
+  // proud of the body below the eyes — lowest in the middle, its corners
+  // turned up. Unlit like them; hidden, and no shadow, so showing it redraws
+  // nothing.
   go.smile = new THREE.Mesh(
-    new THREE.TorusGeometry(grin, radius * 0.035, 4, 16, Math.PI),
+    new THREE.TubeGeometry(new SmileCurve(radius * 1.04, height - radius * 1.85, radius * 0.24), 32, radius * 0.025, 5),
     new THREE.MeshBasicMaterial({ color: smileColor, fog: false, transparent: true }),
   );
   go.smile.name = `${name}Smile`;
-  go.smile.rotation.z = Math.PI;
-  go.smile.position.set(0, height - radius * 1.45, radius * 1.04);
   go.smile.visible = false;
   go.object3d.add(go.smile);
 

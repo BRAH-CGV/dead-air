@@ -158,7 +158,7 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     }
   });
 
-  it('holds while the fly camera is out, and every show redraws the frozen shadow maps', () => {
+  it('holds while the fly camera is out; it casts no shadow, so it never redraws the frozen shadow maps', () => {
     engine.shadows = { invalidate: vi.fn() };
     engine.debugCamera = { active: true };
     scene.sleepDemon.onStart();
@@ -169,7 +169,10 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     engine.debugCamera.active = false;
     runDemon(4);
     expect(scene.sleepDemon.figure.object3d.visible).toBe(true);
-    expect(engine.shadows.invalidate).toHaveBeenCalled();
+    expect(engine.shadows.invalidate).not.toHaveBeenCalled();
+    scene.sleepDemon.figure.object3d.traverse(node => {
+      if (node.isMesh) expect(node.castShadow, node.name).toBe(false);
+    });
   });
 
   it('ends the night when stamina runs out, once the player has fallen asleep on it', () => {

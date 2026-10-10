@@ -38,15 +38,48 @@ describe('createMonsterFigure', () => {
     expect(smile.castShadow).toBe(false);
     expect(smile.material).toBeInstanceOf(THREE.MeshBasicMaterial);
     expect(smile.material.transparent).toBe(true);
-    expect(smile.position.y).toBeLessThan(figure.eyes[0].position.y);
-    expect(smile.position.y).toBeGreaterThan(2 * 0.6);
-    // In front of the body, where the eyes are.
-    expect(smile.position.z).toBeGreaterThan(0.25);
-    // A ∪, not a ∩: its middle is its lowest point.
     smile.updateMatrixWorld();
     const box = new THREE.Box3().setFromObject(smile);
-    expect(box.max.y).toBeLessThanOrEqual(smile.position.y + 0.02);
-    expect(box.min.y).toBeLessThan(smile.position.y - 0.03);
+    expect(box.max.y).toBeLessThan(figure.eyes[0].position.y);
+    expect(box.min.y).toBeGreaterThan(2 * 0.6);
+  });
+
+  it('the grin is a thin, wide, shallow curve wrapped round the face — a Verity-style smile, not a cartoon U', () => {
+    const radius = 0.25;
+    const figure = createMonsterFigure({ height: 2, radius });
+    const { smile } = figure;
+    smile.updateMatrixWorld();
+    const box = new THREE.Box3().setFromObject(smile);
+    const width = box.max.x - box.min.x;
+    const rise = box.max.y - box.min.y;
+    expect(width).toBeGreaterThan(radius * 1.4);       // most of the face across
+    expect(rise).toBeLessThan(width * 0.25);           // shallow
+    expect(rise).toBeGreaterThan(width * 0.08);        // but a curve: the corners turn up
+    // It sits on the body's surface all the way round: never inside it, never floating off.
+    const at = new THREE.Vector3();
+    const positions = smile.geometry.attributes.position;
+    let lowest = Infinity, lowestX = 0, cornerY = -Infinity;
+    for (let i = 0; i < positions.count; i++) {
+      at.fromBufferAttribute(positions, i).applyMatrix4(smile.matrixWorld);
+      const off = Math.hypot(at.x, at.z);
+      expect(off).toBeGreaterThan(radius * 0.98);
+      expect(off).toBeLessThan(radius * 1.15);
+      expect(at.z).toBeGreaterThan(0);                 // on the face, not the back
+      if (at.y < lowest) { lowest = at.y; lowestX = at.x; }
+      cornerY = Math.max(cornerY, at.y);
+    }
+    expect(Math.abs(lowestX)).toBeLessThan(width * 0.1);   // lowest in the middle: a smile
+    expect(smile.geometry.parameters?.radius ?? 0).toBeLessThan(radius * 0.05);   // thin
+  });
+
+  it('casts a shadow by default, and none when asked', () => {
+    const casting = createMonsterFigure();
+    const body = casting.object3d.children.find(c => c.name.endsWith('Body'));
+    expect(body.castShadow).toBe(true);
+    const shadowless = createMonsterFigure({ castShadow: false });
+    shadowless.object3d.traverse(node => {
+      if (node.isMesh) expect(node.castShadow).toBe(false);
+    });
   });
 
   it('records the file it stands in for', () => {

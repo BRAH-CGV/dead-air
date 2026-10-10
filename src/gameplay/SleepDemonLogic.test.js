@@ -6,7 +6,7 @@ import {
 
 const DEG = Math.PI / 180;
 /** In view and well off to one side: the corner of the eye, outside every
- *  look cone (the widest is 50°). */
+ *  look cone (the widest is 40°). */
 const CORNER = 55 * DEG;
 
 const unit = (x, y, z) => { const l = Math.hypot(x, y, z); return { x: x / l, y: y / l, z: z / l }; };
@@ -20,8 +20,8 @@ describe('SLEEP_DEMON tuning', () => {
     expect(T.nearest).toBe(0.8);
   });
 
-  it('the look that sends it away is a 50° cone at 85 % stamina, closing to 15° at 10 %', () => {
-    expect(T.focusFar).toBeCloseTo(50 * DEG);
+  it('the look that sends it away is a 40° cone at 85 % stamina, closing to 15° at 10 %', () => {
+    expect(T.focusFar).toBeCloseTo(40 * DEG);
     expect(T.focusNear).toBeCloseTo(15 * DEG);
   });
 
@@ -56,31 +56,31 @@ describe('closenessFor', () => {
 });
 
 describe('focusAngleFor', () => {
-  it('is 50° until it shows and 15° from 10 % stamina down', () => {
-    expect(focusAngleFor(1)).toBeCloseTo(50 * DEG);
-    expect(focusAngleFor(0.85)).toBeCloseTo(50 * DEG);
+  it('is 40° until it shows and 15° from 10 % stamina down', () => {
+    expect(focusAngleFor(1)).toBeCloseTo(40 * DEG);
+    expect(focusAngleFor(0.85)).toBeCloseTo(40 * DEG);
     expect(focusAngleFor(0.10)).toBeCloseTo(15 * DEG);
     expect(focusAngleFor(0)).toBeCloseTo(15 * DEG);
   });
 
   it('closes steadily in between', () => {
     expect(focusAngleFor(0.5)).toBeLessThan(focusAngleFor(0.6));
-    expect(focusAngleFor(0.475)).toBeCloseTo(32.5 * DEG);   // halfway down, halfway in
+    expect(focusAngleFor(0.475)).toBeCloseTo(27.5 * DEG);   // halfway down, halfway in
   });
 });
 
 describe('presenceFor', () => {
-  it('is faint — barely there — down to half stamina', () => {
+  it('is faint — barely there — while the player is fresh, down to 70 %', () => {
     expect(presenceFor(0.84)).toBeCloseTo(T.faintest);
-    expect(presenceFor(0.5)).toBeCloseTo(T.faintest);
+    expect(presenceFor(0.7)).toBeCloseTo(T.faintest);
     expect(T.faintest).toBeGreaterThan(0);
     expect(T.faintest).toBeLessThanOrEqual(0.35);
   });
 
-  it('grows solid below half stamina', () => {
-    expect(presenceFor(0.4)).toBeGreaterThan(T.faintest);
-    expect(presenceFor(0.4)).toBeLessThan(1);
-    expect(presenceFor(T.solidBelow)).toBe(1);
+  it('grows solid below 70 %, and is fully there by half stamina', () => {
+    expect(presenceFor(0.6)).toBeGreaterThan(T.faintest);
+    expect(presenceFor(0.6)).toBeLessThan(1);
+    expect(presenceFor(0.5)).toBe(1);
     expect(presenceFor(0)).toBe(1);
   });
 });
@@ -198,7 +198,7 @@ describe('SleepDemonLogic', () => {
   it('looked at inside the cone, it fades away, and is back later at the other side', () => {
     const { logic, place, hide } = make();
     shown(logic, 0.5);
-    angle = 30 * DEG;                       // the cone at 0.5 is ~33.7°
+    angle = 25 * DEG;                       // the cone at 0.5 is ~28.3°
     logic.update(0.1, 0.5);
     expect(hide).toHaveBeenCalledTimes(1);
     expect(logic.shown).toBe(false);
@@ -212,10 +212,10 @@ describe('SleepDemonLogic', () => {
     expect(place).toHaveBeenLastCalledWith(expect.objectContaining({ side: -1 }));
   });
 
-  it('at 85 % a glance within 50° sends it away; by 15 % that glance no longer counts', () => {
+  it('at 85 % a glance within 40° sends it away; by 15 % that glance no longer counts', () => {
     const fresh = make();
     shown(fresh.logic, 0.84);
-    angle = 45 * DEG;
+    angle = 38 * DEG;
     fresh.logic.update(0.1, 0.84);
     expect(fresh.hide).toHaveBeenCalled();
 
@@ -353,11 +353,11 @@ describe('SleepDemonLogic', () => {
     expect(logic.around).toBe(false);
   });
 
-  it('presence follows the stamina: faint until half, solid by 30 %', () => {
+  it('presence follows the stamina: faint until 70 %, solid by half', () => {
     const { logic } = make();
-    shown(logic, 0.7);
+    shown(logic, 0.75);
     expect(logic.presence).toBeCloseTo(T.faintest);
-    logic.update(0.1, 0.2);
+    logic.update(0.1, 0.45);
     expect(logic.presence).toBe(1);
   });
 

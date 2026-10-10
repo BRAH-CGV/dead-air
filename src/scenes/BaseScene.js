@@ -1103,12 +1103,13 @@ export class BaseScene extends Scene {
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
    *  SleepDemon). Its figure is a placeholder under a Threats group on the
    *  scene root, which sits at the world origin: the demon writes world
-   *  positions, and no occlusion zone ever hides it. Its shadow is redrawn
-   *  when it shows, steps or goes, not as it turns to face the player. */
+   *  positions, and no occlusion zone ever hides it. It casts no shadow — a
+   *  shade, not a body, and a solid shadow under a faint figure gave it
+   *  away — so moving it never redraws the frozen shadow maps. */
   _addSleepDemon() {
     const { engine } = this;
     const figure = createMonsterFigure({
-      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, placeholderFor: 'sleep-demon.glb',
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, castShadow: false, placeholderFor: 'sleep-demon.glb',
     });
     this._group('Threats').addChild(figure);
     this._ownResourcesOf(figure);
@@ -1120,7 +1121,6 @@ export class BaseScene extends Scene {
       terminal:        this.terminal,
       rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
       isFrozen:        () => !!engine.debugCamera?.active,
-      onFigureChanged: () => engine.shadows?.invalidate(),
       flashlight:      engine.player?.getComponent(Flashlight) ?? null,
       // Dead air: the room dies as the view comes round to it.
       ambience:        this.ambience,

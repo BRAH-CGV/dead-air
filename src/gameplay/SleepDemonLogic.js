@@ -9,8 +9,8 @@
 // footsteps are heard.
 //
 //   stamina      0.85 ──────────── 0.5 ──────────── 0.1 ──── 0.05 ── 0.01 ── 0
-//   presence     barely there (faintest) ─▶ solid by 0.3
-//   look cone    50° ────────────────────────────▶ 15° │ no longer fades
+//   presence     barely there (faintest) to 0.7 ─▶ solid by 0.5
+//   look cone    40° ────────────────────────────▶ 15° │ no longer fades
 //   seen                fades away from a look         │ stares │ walks in
 //   unseen       creeps in, very slowly at first, quicker as the player tires
 //   face                                                        smiles ─▶ the kill
@@ -55,9 +55,9 @@ export const SLEEP_DEMON = Object.freeze({
   edgeFar: 0.95,
   edgeNear: 0.5,
   showMargin: 4 * DEG,
-  /** The look cone, radians off the centre of the view: 50° at 85 %
+  /** The look cone, radians off the centre of the view: 40° at 85 %
    *  stamina, closing to 15° at `holdBelow` (10 %). */
-  focusFar: 50 * DEG,
+  focusFar: 40 * DEG,
   focusNear: 15 * DEG,
   /** Below this it no longer fades from a look: it stands, and stares. */
   holdBelow: 0.10,
@@ -75,8 +75,8 @@ export const SLEEP_DEMON = Object.freeze({
   /** How there it is (its opacity, 0 … 1): `faintest` down to `faintAbove`
    *  — elusive, barely noticeable, but there — then solid by `solidBelow`. */
   faintest: 0.25,
-  faintAbove: 0.5,
-  solidBelow: 0.3,
+  faintAbove: 0.7,
+  solidBelow: 0.5,
   /** Metres a second it creeps while unseen: when it first shows … at empty. */
   sneakFar: 0.08,
   sneakNear: 0.35,
@@ -132,7 +132,7 @@ export function closenessFor(stamina, { appearBelow } = SLEEP_DEMON) {
 }
 
 /**
- * The look cone, radians off the centre of the view: `focusFar` (50°) until
+ * The look cone, radians off the centre of the view: `focusFar` (40°) until
  * it shows, closing to `focusNear` (15°) at the hold.
  * @param {number} stamina  0 … 1
  */
@@ -141,7 +141,7 @@ export function focusAngleFor(stamina, { appearBelow, holdBelow, focusFar, focus
 }
 
 /**
- * How there it is, 0 … 1: faint down to half stamina, solid by `solidBelow`.
+ * How there it is, 0 … 1: faint down to `faintAbove`, solid by `solidBelow`.
  * @param {number} stamina  0 … 1
  */
 export function presenceFor(stamina, { faintest, faintAbove, solidBelow } = SLEEP_DEMON) {
