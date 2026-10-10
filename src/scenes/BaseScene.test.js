@@ -16,6 +16,7 @@ import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
+import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { hiddenFromRegion } from '../systems/Sightlines.js';
@@ -707,6 +708,11 @@ describe('BaseScene gameplay loop', () => {
     const light = scene.rooms.MainOffice.signalLight;
     expect(light.signalManager).toBe(scene.signalManager);
     expect(light.gameController).toBe(scene.gameController);
+  });
+
+  it('gives the signal lamp its beep', () => {
+    const light = scene.rooms.MainOffice.signalLight;
+    expect(light.getComponent(ScannerAlertSound)).toBeTruthy();
   });
 
   it('shows the real sky behind the radar grid', () => {

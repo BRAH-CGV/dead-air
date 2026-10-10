@@ -456,6 +456,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/movement-ending.mp3',
   },
+  // The beep of the signal lamp by the computer (ScannerAlertSound): once
+  // with every light-up.
+  'sfx:scanner-alert': {
+    type: 'audio',
+    url: 'assets/audio/scanner-alert.mp3',
+  },
   // A storm's sand on the office window (WindowSand), looped: louder the
   // nearer the glass you stand.
   'sfx:window-sand': {

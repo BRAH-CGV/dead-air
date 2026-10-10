@@ -696,6 +696,17 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 | **Used for** | The dish slewing (`SatelliteSound`): its drive while it moves, and the click as it settles |
 | **Modifications** | Cut into two clips: a loop of the drive and the ending; the loop is crossfaded into a seamless loop at load |
 
+### Scanner alert
+
+"Radar" (https://freesound.org/people/unfa/sounds/584179/) by unfa on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/scanner-alert.mp3` |
+| **Manifest key** | `sfx:scanner-alert` |
+| **Used for** | The signal lamp's beep, once with every light-up (`ScannerAlertSound`) |
+| **Modifications** | Cut to a single short beep; pitch and level varied slightly, at random, while the lamp flashes for the UFO |
+
 ### Base ambience (room tone loops)
 
 Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).
@@ -761,6 +772,10 @@ Not downloaded yet; kept here so the links survive. Move each into a proper
 entry when its file lands in `public/assets/`.
 
 - **Power box** — https://skfb.ly/onTVS (noted: fairly high poly)
+- **Box and drive interaction sounds** — "Switch-083"
+  (https://freesound.org/people/Moulaythami/sounds/842473/) and "Switch-090"
+  (https://freesound.org/people/Moulaythami/sounds/842480/) by Moulaythami on
+  Freesound, both Creative Commons 0
 - **Drive wiper** — link TBD
 - **Sleep demon** — https://skfb.ly/pzR9J, https://skfb.ly/pGvqH,
   https://skfb.ly/oESrR, https://skfb.ly/oWApE (noted: high poly)
