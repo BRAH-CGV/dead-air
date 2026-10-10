@@ -57,6 +57,37 @@ export class ScreenFade {
   }
 
   /**
+   * Fade to black and stay there until uncover() — a nap, however long it
+   * runs. `onDark` is called once the screen is fully black, unless
+   * uncover() came first.
+   * @param {() => void} [onDark]
+   * @returns {boolean} false if a fade was already running
+   */
+  cover(onDark) {
+    if (this.playing) return false;
+    if (!this.root) {
+      onDark?.();
+      return true;
+    }
+    this.playing = true;
+    this.root.classList.add('is-dark');
+    this._coverTimer = setTimeout(() => {
+      this._coverTimer = null;
+      onDark?.();
+    }, this.fadeMs);
+    return true;
+  }
+
+  /** Fade back in from cover(). */
+  uncover() {
+    if (!this.root || !this.playing) return;
+    clearTimeout(this._coverTimer);
+    this._coverTimer = null;
+    this.root.classList.remove('is-dark');
+    setTimeout(() => { this.playing = false; }, this.fadeMs);
+  }
+
+  /**
    * Cut to black at once, then fade up to the scene over `ms` — the way in
    * from the loading screen. The cut hides the loading screen being taken
    * away; the fade is the first thing the player sees.

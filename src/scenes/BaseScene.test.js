@@ -27,6 +27,7 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap, NAP } from '../gameplay/Nap.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -624,6 +625,36 @@ describe('BaseScene gameplay loop', () => {
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
   }
+
+  it('the bunk naps through the night, fast, and the power going out wakes you', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const nap = gameplay.getComponent(Nap);
+    expect(nap).toBe(scene.nap);
+    expect(bed.nap).toBe(nap);
+
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toMatch(/^\[E\] Nap/);
+    bed.onInteract({});
+    expect(nap.napping).toBe(true);
+    expect(engine.timeScale).toBe(NAP.timeScale);
+
+    scene.power.setOn(false);
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(engine.timeScale).toBe(1);
+    expect(nap.wokeBy).toMatch(/power/i);
+  });
+
+  it('no nap with the UFO on its way, and it wakes you when it shows on the radar', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.ufoThreat.phase = 'approaching';      // the blob is on the radar
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(nap.wokeBy).toMatch(/radar/i);
+    expect(nap.canNap).toBe(false);
+  });
 
   it('the bunk sleeps through the day to the next night, in step across NightManager, controller and HUD', () => {
     const bed = scene.rooms.LivingQuarters.bed;

@@ -59,6 +59,7 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap } from '../gameplay/Nap.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
@@ -244,6 +245,7 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addUfo();
     this._addSandstorm();
+    this._addNap();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
@@ -1322,6 +1324,36 @@ export class BaseScene extends Scene {
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
+  }
+
+  /** Naps at the bunk: the night fast-forwarded until 6 AM or until
+   *  something wakes the player — the power going out, the UFO on the
+   *  radar, eyes at the office window. No nap with the UFO on its way.
+   *  Added last, so it reads every threat after it has moved this frame. */
+  _addNap() {
+    const ufoBusy = () => {
+      const phase = this.ufoThreat?.phase;
+      return !!phase && phase !== 'waiting' && phase !== 'gone';
+    };
+    const windowEyes = () => !!this.dustEyes?.slots.some(s => s.kind === 'window' && s.phase !== 'off');
+    this.nap = new Nap({
+      controller: this.gameController,
+      engine:     this.engine,
+      fade:       this.screenFade,
+      hud:        this.hud,
+      hooks: {
+        setPlayerLocked: locked => this._setPlayerLocked(locked),
+        restless:        ufoBusy,
+      },
+      alarms: [
+        { test: () => !this.power.on, message: 'You wake in the dark — the power went out.' },
+        { test: ufoBusy,              message: 'Something on the radar woke you.' },
+        { test: windowEyes,           message: 'You wake with the feeling of being watched.' },
+      ],
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) bed.nap = this.nap;
   }
 
   /** The solid things standing in the yard, as ground-plan rectangles —
