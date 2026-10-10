@@ -508,3 +508,22 @@ describe('GameController — one twelve-hour shift', () => {
     expect(gc.canSleep).toBe(false);
   });
 });
+
+describe('GameController.refreshPrompt', () => {
+  it('puts the shift prompt back up after something else wrote over it (a nap\'s wake-up line)', () => {
+    const gc = new GameController();
+    const hud = makeHUD();
+    const quotaDock = { requiredCount: 1, collectedCount: 1, isQuotaMet() { return true; } };
+    Object.assign(gc, { nightClock: new NightClock(), hud, quotaDock, satellite: makeSatellite(), autoStart: false });
+    gc.startNight(1);
+    gc.onUpdate(0.016);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+    hud.setPrompt('The power went out.');
+    gc.onUpdate(0.016);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');   // set only on change
+    gc.refreshPrompt();
+    gc.onUpdate(0.016);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+  });
+});
+

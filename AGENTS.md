@@ -76,7 +76,7 @@ src/
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog (dusk and dawn); turns the sky, aims the moonlight
-│   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── Bed.js           # Interactable: nap during the night (Nap), sleep in the morning → next night
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
@@ -91,6 +91,7 @@ src/
 │   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
+│   ├── Nap.js           # Nap at the bunk: the night fast-forwarded (engine.timeScale) until 6 AM or something wakes you
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
 │   ├── Sandstorm.js     # Random dust storms from night 2: wind sound, fog, sky, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
@@ -208,7 +209,8 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
 Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
-- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning (`controller.canSleep`), and it runs `controller.sleep()` behind a `ScreenFade`; during the shift its label says why not. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). In the morning (`controller.canSleep`) it runs `controller.sleep()` behind a `ScreenFade`. During the shift it offers a nap.
+- **Naps** (`Nap`, on `GameplaySystems`, added last by `BaseScene._addNap`, and handed to the bed as `bed.nap`). "[E] Nap" at the bunk: the screen fades to black and stays there (`ScreenFade.cover`/`uncover`), the player is frozen, and `engine.timeScale` is set to `NAP.timeScale` (15) — every update is handed 15× the frame's time, so the whole night runs fast: the clock, signals (missed while you sleep), storms, the UFO's schedule, the dust eyes. Physics keeps real time. It ends at 6 AM (the shift ends) or when an **alarm** goes off: one whose test turns true that wasn't true when you lay down — the power going out, the UFO on the radar, eyes at the office window. Then time is real again, the screen fades in, and the HUD says what woke you for `NAP.messageSeconds` before `controller.refreshPrompt()` brings the shift's own prompt back. No nap with the UFO already on its way (`hooks.restless`). A scene torn down mid-nap puts `timeScale` back (`onDestroy`). So a player who has met the quota can sleep off the rest of the shift — usually. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
 - **Dusk and dawn.** `dawnFactor(hour, state)` is 1 at 6 PM, the shift starting in the last of the daylight, smoothsteps to 0 over the first hour, is 0 all night, smoothsteps back to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to the following — from `onAwake` too, so the main menu, over a scene that never ticks, shows the dusk:
   - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
   - the ambient and moon lights (the moon light is the morning sun).

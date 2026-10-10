@@ -3,9 +3,10 @@ import { Interactable } from './Interactable.js';
 // ─────────────────────────────────────────────
 // Bed  –  sleep through the day to the next night
 // ─────────────────────────────────────────────
-// Only the morning after a met quota (controller.canSleep): the screen
-// fades to black and the GameController moves on to the next night (or ends
-// the run after the last). During the shift the prompt says why not.
+// In the morning after a met quota (controller.canSleep): the screen fades
+// to black and the GameController moves on to the next night (or ends the
+// run after the last). During the shift it offers a nap instead (Nap.js):
+// the night fast-forwarded until 6 AM or until something wakes you.
 //
 // The room puts it on the bunk; the scene hands it the controller and the
 // fade, since rooms don't know about gameplay:
@@ -19,7 +20,9 @@ import { Interactable } from './Interactable.js';
 
 const LABEL = {
   sleep: '[E] Sleep',
+  nap:   '[E] Nap — until 6:00 AM, or until something wakes you',
   shift: "Can't sleep — the shift runs until 6:00 AM",
+  uneasy: "Can't sleep now",
 };
 
 export class Bed extends Interactable {
@@ -27,6 +30,8 @@ export class Bed extends Interactable {
   controller = null;
   /** @type {import('../ui/ScreenFade.js').ScreenFade|null} */
   fade = null;
+  /** @type {import('../gameplay/Nap.js').Nap|null} */
+  nap = null;
 
   promptLabel = '';
 
@@ -35,7 +40,10 @@ export class Bed extends Interactable {
   }
 
   onInteract() {
-    if (!this.controller?.canSleep) return;
+    if (!this.controller?.canSleep) {
+      if (this.nap?.canNap) this.nap.start();
+      return;
+    }
     // Checked again at black: a second press during the fade must not sleep
     // through a second night.
     const sleep = () => {
@@ -49,6 +57,8 @@ export class Bed extends Interactable {
     const c = this.controller;
     if (!c) return '';
     if (c.canSleep) return LABEL.sleep;
-    return c.state === 'playing' ? LABEL.shift : '';
+    if (c.state !== 'playing' || this.nap?.napping) return '';
+    if (!this.nap) return LABEL.shift;
+    return this.nap.canNap ? LABEL.nap : LABEL.uneasy;
   }
 }
