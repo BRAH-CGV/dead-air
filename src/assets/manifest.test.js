@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
+import { packGroups } from '../core/PhysicsLayers.js';
 
 /** Full spawn scale used for 'model:retro-computer' in MainOffice/OfficeScene
  *  — this model has no manifest-level `scale`, so its measured bounds (and
@@ -109,6 +110,40 @@ describe("model:retro-computer's compound collider (phase 11, AGENTS.md worked e
   it('is open on the front (+Z) at knee height, all the way to the edge', () => {
     const front = [0, 0.3, 0.35];
     for (const part of parts()) expect(pointInBox(front, part), part.kind).toBe(false);
+  });
+
+  // #76: carried items went through the desk top over the kneehole, which
+  // has no lid for the player. An items-only lid (SHELF layer, like the
+  // shelf boards) stops them there and leaves the player free to walk up
+  // and crouch under.
+  describe('items-only lid (#76)', () => {
+    const interacts = (a, b) => ((a >>> 16) & (b & 0xFFFF)) !== 0 && ((b >>> 16) & (a & 0xFFFF)) !== 0;
+    const PLAYER = packGroups(['PLAYER'], ['DEFAULT', 'PLAYER']);   // Engine.buildPlayer
+    const DRIVE  = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);     // Drive.js
+    const BOX    = packGroups(['DEFAULT'], ['DEFAULT', 'SHELF']);   // DriveBox.js
+    const lidAt = (point) => parts().filter(part => pointInBox(point, part));
+    const desktopFront = [0, 0.725, 0.25];
+
+    it('covers the desktop over the kneehole', () => {
+      expect(lidAt(desktopFront).length).toBe(1);
+    });
+
+    it('stops drives and drive boxes', () => {
+      const [lid] = lidAt(desktopFront);
+      expect(interacts(lid.collisionGroups, DRIVE)).toBe(true);
+      expect(interacts(lid.collisionGroups, BOX)).toBe(true);
+    });
+
+    it('does not stop the player', () => {
+      const [lid] = lidAt(desktopFront);
+      expect(interacts(lid.collisionGroups, PLAYER)).toBe(false);
+    });
+
+    it('is thin and sits at the desktop, clear of the crouch space below', () => {
+      const [lid] = lidAt(desktopFront);
+      expect(lid.halfExtents[1] * 2).toBeLessThan(0.05);
+      expect(lid.position[1] - lid.halfExtents[1]).toBeGreaterThan(0.68);
+    });
   });
 
   it('is closed on the back (-Z), left (-X) and right (+X) at knee height', () => {

@@ -40,6 +40,8 @@ function makePickupableGO(name = 'PickupGO', rotation = new THREE.Quaternion()) 
   go.rigidBody = {
     translation: () => ({ x: 0, y: 1, z: -2 }),
     rotation: () => ({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w }),
+    enableCcd: vi.fn(),
+    setTranslation: vi.fn(),
     linvel: () => ({ x: 0, y: 0, z: 0 }),
     setGravityScale: vi.fn(),
     setLinearDamping: vi.fn(),
@@ -422,6 +424,79 @@ describe('PickupSystem', () => {
       system.pickUp(pickupable);
       system.onLateUpdate(1 / 60);
       expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [T] Rotate');
+    });
+  });
+
+  // ── #76: no tunnelling while carried ──
+
+  describe('continuous collision while carried (#76)', () => {
+    it('turns CCD on when picked up, and off when dropped', () => {
+      const { go, pickupable } = makePickupableGO('Drive');
+      system.pickUp(pickupable);
+      expect(go.rigidBody.enableCcd).toHaveBeenLastCalledWith(true);
+      system.dropHeld();
+      expect(go.rigidBody.enableCcd).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  // ── #77: snap back to the hand when stuck ──
+
+  describe('snap back when stuck (#77)', () => {
+    const STEP = 1 / 60;
+    /** A held item whose body sits at `pos` (move it with `at.pos = …`). */
+    function heldAt(pos) {
+      const { go, pickupable } = makePickupableGO('Drive');
+      const at = { pos };
+      go.rigidBody.translation = () => ({ ...at.pos });
+      const collider = { setEnabled: vi.fn() };
+      go.colliders = [collider];
+      system.pickUp(pickupable);
+      return { go, collider, at };
+    }
+    const steps = (n) => { for (let i = 0; i < n; i++) system.onFixedUpdate(STEP); };
+    // Camera at (0, 1.6, 0) facing -Z, hold distance 1: the hand is (0, 1.6, -1).
+    const STUCK = { x: 0, y: 1.6, z: -2.5 };
+    const HAND = { x: 0, y: 1.6, z: -1 };
+
+    it('more than 1 m from the hand for half a second: teleports there, stops, drops collision', () => {
+      const { go, collider } = heldAt(STUCK);
+      steps(31);
+      const [p] = go.rigidBody.setTranslation.mock.calls.at(-1);
+      expect(p.x).toBeCloseTo(0);
+      expect(p.y).toBeCloseTo(1.6);
+      expect(p.z).toBeCloseTo(-1);
+      expect(go.rigidBody.setLinvel).toHaveBeenLastCalledWith({ x: 0, y: 0, z: 0 }, true);
+      expect(collider.setEnabled).toHaveBeenLastCalledWith(false);
+    });
+
+    it('an item still flying in from across the room is not snapped', () => {
+      const { go } = heldAt(STUCK);
+      steps(10);
+      expect(go.rigidBody.setTranslation).not.toHaveBeenCalled();
+    });
+
+    it('collision comes back after a second', () => {
+      const { collider, at } = heldAt(STUCK);
+      steps(31);
+      at.pos = HAND;
+      steps(55);
+      expect(collider.setEnabled).toHaveBeenLastCalledWith(false);
+      steps(10);
+      expect(collider.setEnabled).toHaveBeenLastCalledWith(true);
+    });
+
+    it('within 1 m it is left to the spring', () => {
+      const { go, collider } = heldAt({ x: 0, y: 1.6, z: -1.8 });
+      steps(60);
+      expect(go.rigidBody.setTranslation).not.toHaveBeenCalled();
+      expect(collider.setEnabled).not.toHaveBeenCalled();
+    });
+
+    it('dropping it mid-snap gives collision back at once (or it falls through the floor)', () => {
+      const { collider } = heldAt(STUCK);
+      steps(31);
+      system.dropHeld();
+      expect(collider.setEnabled).toHaveBeenLastCalledWith(true);
     });
   });
 });

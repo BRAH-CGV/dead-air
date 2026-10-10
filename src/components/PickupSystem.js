@@ -70,6 +70,18 @@ const ROTATE_GAIN = 12;
 /** Cap on that angular velocity (rad/s), so a big error can't whip. */
 const MAX_SPIN = 20;
 
+/** Further than this from the hand (metres) and the item is stuck behind
+ *  something: it snaps back (#77). */
+const SNAP_DISTANCE = 1;
+
+/** Seconds it has to stay that far before it counts as stuck — an item
+ *  picked up from across the room starts far away and flies in. */
+const STUCK_TIME = 0.5;
+
+/** Seconds a snapped item stays out of collision, so it can't wedge again
+ *  the moment it lands in the hand. */
+const SNAP_GHOST_TIME = 1;
+
 export class PickupSystem extends Component {
   // ── External references (set by scene wiring) ──
   /** @type {InteractionSystem|null} */
@@ -87,6 +99,12 @@ export class PickupSystem extends Component {
    *  camera × this, so it turns with the player. */
   holdRotation = new THREE.Quaternion();
 
+  /** Seconds left with the held item's collision off after a snap back. */
+  _ghostTime = 0;
+
+  /** Seconds the held item has been further than SNAP_DISTANCE from the hand. */
+  _farTime = 0;
+
   // ──────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────
@@ -99,6 +117,9 @@ export class PickupSystem extends Component {
     this.heldPickupable = null;
     pickupable.held = false;
     this._setLookLocked(false);
+    // Solid again straight away — a dropped ghost would fall through the floor.
+    this._setGhost(pickupable.gameObject, false);
+    pickupable.gameObject?.rigidBody?.enableCcd?.(false);
 
     // Restore normal physics so the object falls / sits.
     const go = pickupable.gameObject;
@@ -126,6 +147,7 @@ export class PickupSystem extends Component {
 
     pickupable.held = true;
     this.heldPickupable = pickupable;
+    this._farTime = 0;
 
     // Make the body dynamic with no gravity and high damping so it floats.
     const go = pickupable.gameObject;
@@ -135,6 +157,9 @@ export class PickupSystem extends Component {
       go.rigidBody.setAngularDamping(5.0, true);
       go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
       go.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      // Continuous collision while carried: the hold spring can whip a small
+      // item fast enough to step clean through a thin surface (#76).
+      go.rigidBody.enableCcd?.(true);
     }
 
     // Hold it at the angle it was picked up at, relative to the camera.
@@ -222,6 +247,24 @@ export class PickupSystem extends Component {
     // Displacement from current to target
     _disp.set(_target.x - t.x, _target.y - t.y, _target.z - t.z);
 
+    // Collision back on once the snap's grace second has run out.
+    if (this._ghostTime > 0) {
+      this._ghostTime -= _dt;
+      if (this._ghostTime <= 0) this._setGhost(go, false);
+    }
+
+    // Stuck behind something, too far from the hand (#77): snap it back and
+    // let it pass through things for a moment so it can't wedge again.
+    this._farTime = _disp.length() > SNAP_DISTANCE ? this._farTime + _dt : 0;
+    if (this._farTime >= STUCK_TIME) {
+      this._farTime = 0;
+      go.rigidBody.setTranslation?.({ x: _target.x, y: _target.y, z: _target.z }, true);
+      go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      go.rigidBody.resetForces(false);
+      this._setGhost(go, true);
+      return;
+    }
+
     // Spring + damping, tuned in acceleration space: F = m · (k·disp − c·v).
     // Scaling by mass lets any carried object settle identically — a fixed
     // force diverges for the light (~0.15 kg) drives, because explicit
@@ -307,6 +350,15 @@ export class PickupSystem extends Component {
     }
     const speed = Math.min(angle * ROTATE_GAIN, MAX_SPIN) / s;
     body.setAngvel({ x: _err.x * speed, y: _err.y * speed, z: _err.z * speed }, true);
+  }
+
+  /** Turn the item's collision off (a snap back) or on again. */
+  _setGhost(go, ghost) {
+    if (!ghost && this._ghostTime <= 0 && !this._ghosted) return;
+    this._ghosted = ghost;
+    this._ghostTime = ghost ? SNAP_GHOST_TIME : 0;
+    const colliders = go?.colliders ?? (go?.collider ? [go.collider] : []);
+    for (const collider of colliders) collider.setEnabled?.(!ghost);
   }
 
   /** Freeze or free the player's view while the held object is turned. */
