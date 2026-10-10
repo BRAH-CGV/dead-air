@@ -95,9 +95,10 @@ import { CameraOverlay } from '../ui/CameraOverlay.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
-// wall clock and the HUD both show. The last hour brings the dawn (Daylight
-// turns the sky, lights and fog to the Martian day). A met quota makes it
+// A night is a shift: 6:00 PM to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. It starts at sunset and the first hour is
+// the dusk; the last hour brings the dawn (Daylight turns the sky, lights and
+// fog between the night and the Martian day). A met quota makes it
 // morning, and the bunk in LivingQuarters sleeps through the day to the next
 // night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
 // night 1 after the last.
@@ -1359,6 +1360,7 @@ export class BaseScene extends Scene {
       whiteOut:    this.whiteOut,
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
@@ -1443,6 +1445,7 @@ export class BaseScene extends Scene {
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.sandstorm);
     this._addDustEyes();

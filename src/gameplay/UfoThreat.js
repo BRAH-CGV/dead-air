@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
-import { NIGHT_SECONDS } from './NightClock.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 
 // ─────────────────────────────────────────────
 // UfoThreat  –  the visitor that comes once a night
 // ─────────────────────────────────────────────
 // On its nights (UFO.nights — night 3), guaranteed, something comes for
 // the base: it flashes into the sky beside the dish, in view of the office
-// window, at a random time between 1:00 and 4:30 on the night clock. (For
+// window, at a random time between 8:00 PM and 4:30 AM on the night clock. (For
 // testing, summon() — the U key — brings it at once, on any night.)
 //
 //   waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
@@ -45,10 +45,11 @@ import { NIGHT_SECONDS } from './NightClock.js';
 export const UFO = {
   /** The nights it comes on — once each. */
   nights: [3],
-  /** When it spawns (flashes into the sky), in night-clock hours after
-   *  midnight: a random time between these. The radar warning comes
+  /** When it spawns (flashes into the sky), in night-clock hours from
+   *  midnight (8 PM is -4): a random time between these, 8:00 PM and
+   *  4:30 AM — after dark, radar warning included. The radar warning comes
    *  radarLead seconds before. */
-  spawnHours: [1, 4.5],
+  spawnHours: [-4, 4.5],
   /** Radar-only approach before the flight sound starts and it shows up. */
   radarLead: 20,
   /** Where the flight clip is loudest, if it can't be measured. */
@@ -144,14 +145,17 @@ export function ufoTimeline({
  * @param {object} opts
  * @param {number} opts.night
  * @param {number} opts.nightDuration  Real seconds in the shift.
- * @param {number} [opts.nightHours=6] Clock hours in it (12:00 → 6:00 AM).
+ * @param {number} [opts.nightHours=12] Clock hours in it (6:00 PM → 6:00 AM).
+ * @param {number} [opts.startHour=-6]  The clock hour it starts at.
  * @param {() => number} [opts.random]
  */
-export function scheduleApproach({ night, nightDuration, nightHours = 6, random = Math.random }) {
+export function scheduleApproach({
+  night, nightDuration, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
+}) {
   if (!UFO.nights.includes(night)) return Infinity;   // not one of its nights
   const [from, to] = UFO.spawnHours;
   const hour = from + random() * (to - from);
-  return Math.max(0, hour * (nightDuration / nightHours) - UFO.radarLead);
+  return Math.max(0, (hour - startHour) * (nightDuration / nightHours) - UFO.radarLead);
 }
 
 /**
@@ -233,7 +237,8 @@ export class UfoThreat extends Component {
    * @param {{ play: Function, clear: Function }} [opts.whiteOut]
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from UFO_SOUNDS when left out.
    * @param {number} [opts.nightDuration=NIGHT_SECONDS]  Real seconds in a shift.
-   * @param {number} [opts.nightHours=6]      Clock hours in it.
+   * @param {number} [opts.nightHours=12]     Clock hours in it.
+   * @param {number} [opts.startHour=-6]      The clock hour it starts at.
    * @param {number} [opts.soundArrival]  Seconds into the flight clip to arrive
    *        at. Left out, it is measured off the clip (loudestTime).
    * @param {() => number} [opts.random]
@@ -241,10 +246,10 @@ export class UfoThreat extends Component {
   constructor({
     controller, grid, ufo, hooks, hoverPoint = new THREE.Vector3(0, 35, 0), flood = null,
     signalLight = null, radar = null, terminal = null, whiteOut = null, sounds = null,
-    nightDuration = NIGHT_SECONDS, nightHours = 6, soundArrival, random = Math.random,
+    nightDuration = NIGHT_SECONDS, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, soundArrival, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, grid, ufo, hooks, flood, signalLight, radar, terminal, whiteOut, sounds, nightDuration, nightHours, random });
+    Object.assign(this, { controller, grid, ufo, hooks, flood, signalLight, radar, terminal, whiteOut, sounds, nightDuration, nightHours, startHour, random });
     this.hoverPoint = hoverPoint.clone();
     this._soundArrival = soundArrival;
 
@@ -291,7 +296,7 @@ export class UfoThreat extends Component {
   reset(night) {
     this._elapsed = 0;
     this._newVisit();
-    this._start = scheduleApproach({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, random: this.random });
+    this._start = scheduleApproach({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, startHour: this.startHour, random: this.random });
     this._stop('ringing');
 
     this.grid.repair();

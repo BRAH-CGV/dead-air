@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SignalManager, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
+import { SHIFT } from './NightClock.js';
 
 const POOL = [
   'assets/signals/signal-1.png',
@@ -187,6 +188,13 @@ describe('SignalManager signal appearance', () => {
       expect(sig.revealed).toBe(false);
       expect(sig.appearAt).toBeGreaterThan(0);   // nothing at 12:00 sharp
     }
+  });
+
+  it('holds every signal until the sky is dark — the Sun drowns them at dusk', () => {
+    const span = SHIFT.endHour - SHIFT.startHour;
+    expect(SHIFT.startHour + APPEAR_START * span).toBeGreaterThan(SHIFT.darkHour);
+    // …and leaves a couple of hours to scan the last one.
+    expect(SHIFT.startHour + APPEAR_BY * span).toBeLessThanOrEqual(4);
   });
 
   it('spreads appearances across [APPEAR_START, APPEAR_BY] with gaps between them', () => {
