@@ -1323,14 +1323,19 @@ describe('BaseScene sandstorms', () => {
     expect(valleyInView()).toBe(true);
     sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.Airlock);
     expect(valleyInView()).toBe(false);
-    // Out of every room: outside sees it; a corridor (no window) doesn't —
-    // there the storm fog only tinted the rooms seen through its doorways.
+    // Out of every room: outside sees it, and so does a corridor (#73) —
+    // the office window shows down it through the office doorway, so a
+    // corridor that dropped the storm made the window pulse clear ↔ brown
+    // on every step across that doorway. The sealed rooms seen from it keep
+    // their own fog switched off (roomFog), so nothing there takes the tint.
     const camera = engine.camera ?? (engine.camera = new THREE.PerspectiveCamera());
     const corridor = Object.values(scene.corridors).find(c => c !== scene.rooms.Airlock);
     sys.onRoomChange(null, scene.rooms.ServerRoom);
     camera.position.set(corridor.position[0], 1.2, corridor.position[2]);
     camera.updateMatrixWorld(true);
-    expect(valleyInView()).toBe(false);
+    expect(valleyInView()).toBe(true);
+    // …and the sealed rooms' fog stays off while the player is out of them.
+    for (const ref of scene._roomFog.values()) expect(ref.value).toBe(0);
     camera.position.set(0, 1.2, scene.fence.rect.maxZ - 2);
     camera.updateMatrixWorld(true);
     expect(valleyInView()).toBe(true);
