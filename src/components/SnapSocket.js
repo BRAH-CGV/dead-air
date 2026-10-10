@@ -50,6 +50,10 @@ export class SnapSocket extends Component {
   onDetached = null;
   playSounds = true;
 
+  /** Items temporarily blocked from re-snapping after a forceful ejection.
+   *  Maps item → timestamp of rejection. @type {Map<object,number>} */
+  _rejected = new Map();
+
   constructor(opts = {}) {
     super();
     if (opts.snapDistance !== undefined) this.snapDistance = opts.snapDistance;
@@ -68,6 +72,14 @@ export class SnapSocket extends Component {
     if (candidate && !this.candidates.includes(candidate)) {
       this.candidates.push(candidate);
     }
+  }
+
+  /** Temporarily block a candidate from re-snapping (e.g. after a forceful
+   *  ejection). The rejection expires after `seconds` (default 2), so the
+   *  item can be re-accepted once it has flown away. */
+  reject(item, seconds = 2) {
+    if (!item) return;
+    this._rejected.set(item, performance.now() + seconds * 1000);
   }
 
   get attachedItems() {
@@ -176,11 +188,20 @@ export class SnapSocket extends Component {
   _findCandidateForSlot(slotIndex) {
     this._getSlotWorldTransform(slotIndex, _slotWorldPos, _slotWorldQuat);
 
+    const now = performance.now();
     for (const candidate of this.candidates) {
       if (!candidate || candidate === this.attachments[slotIndex]?.item) continue;
       if (candidate._snapOwner && candidate._snapOwner !== this) continue;
       if (this.attachments.some(a => a?.item === candidate)) continue;
       if (!this.canAccept(candidate, slotIndex)) continue;
+
+      // Rejected items (forcefully ejected) can't re-snap until the
+      // rejection expires.
+      const rejectedUntil = this._rejected.get(candidate);
+      if (rejectedUntil !== undefined) {
+        if (now < rejectedUntil) continue;
+        this._rejected.delete(candidate);
+      }
 
       const pickupable = candidate.getComponent?.(Pickupable);
       if (pickupable?.held) continue;

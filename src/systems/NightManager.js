@@ -41,7 +41,6 @@ export class NightManager {
   setNight(night) {
     this._check(night);
     const previous = this.currentNight;
-    if (night === previous) return night;
     this.currentNight = night;
     for (const listener of [...this._listeners]) listener(night, previous);
     return night;

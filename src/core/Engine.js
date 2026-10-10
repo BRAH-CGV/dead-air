@@ -61,6 +61,9 @@ export class Engine {
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
   /** @type {Fullbright}   */ fullbright;
+  /** Optional post-processing pass (e.g. RedOut). When set, preRender()
+   *  redirects the scene render to a target and postRender() composites.
+   *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -145,6 +148,9 @@ export class Engine {
     // TESTING ONLY — remove before release: bring a dust eye now, with a
     // storm if none is blowing (BaseScene).
     summonEyes:  'KeyJ',
+    // TESTING ONLY — remove before release: put the evil signal in the sky
+    // (BaseScene).
+    summonEvil:  'KeyG',
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -327,6 +333,10 @@ export class Engine {
         const coming = this.activeScene.dustEyes.summon();
         console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
       }
+      if (e.code === this.keyBinds.summonEvil && this.activeScene?.evilSignal) {
+        const came = this.activeScene.evilSignal.summon();
+        console.log(came ? '[DEBUG] Evil signal summoned' : '[DEBUG] Evil signal not summoned — one is already up, or no shift is');
+      }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);
         else nights.advance();
@@ -391,6 +401,11 @@ export class Engine {
       renderer: this.renderer, scene: this.scene, camera: this.camera,
       onStage: (label, fraction) => this.loadingScreen.setStage(label, fraction),
     });
+
+    // Post-processing shaders live outside the main scene graph, so the
+    // WarmUp pass above never sees them. Compile them here while the
+    // loading screen still covers the canvas.
+    this.postProcess?.warmUp();
 
     // ── Kick off the loop — still behind the loading screen ──
     // The first frames after that are the JIT, the physics world and the
@@ -800,7 +815,9 @@ export class Engine {
     if (this.levelEditor?.enabled) this.shadows.invalidate();
     // The moving bodies too: a carried or knocked object's shadow follows it.
     this.shadows.update(this.rigidBodyMap);
+    this.postProcess?.preRender();
     this.renderer.render(this.scene, this.camera);
+    this.postProcess?.postRender();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);

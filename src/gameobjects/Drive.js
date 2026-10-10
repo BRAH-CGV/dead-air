@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
+import { Component } from '../core/Component.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { packGroups } from '../core/PhysicsLayers.js';
 
@@ -35,6 +36,23 @@ const DEFAULT_COLOR = 0x3a3a3a;
 const SAVED_EMISSIVE = 0x22cc44;
 const SAVED_EMISSIVE_INTENSITY = 1.5;
 
+/** Emissive colour when the anomalous (evil) signal is stored — red. */
+const CORRUPTED_EMISSIVE = 0xcc2222;
+
+/** Doom glow: the red drive pulses brighter as the silence timer runs
+ *  down. The curve is exponential (pow 6) so the glow stays subdued for
+ *  most of the countdown, then spikes dramatically in the final seconds.
+ *  A red PointLight fades in as a child of the drive mesh so the glow
+ *  travels with it. */
+const DOOM_BASE_INTENSITY = 1.5;
+const DOOM_PEAK_INTENSITY = 2400.0;
+const DOOM_LIGHT_COLOR = 0xff2200;
+const DOOM_LIGHT_MAX_DISTANCE = 5;
+/** Exponent for the doom curve — higher = sharper end-spike. */
+const DOOM_CURVE = 6;
+/** Seconds the doom glow takes to fade out after the drive is wiped. */
+const DOOM_FADE_SECONDS = 3;
+
 /**
  * Collision groups for the drive: member of SHELF (not DEFAULT), so it passes
  * through the shelf's player-only envelope box while still resting on the
@@ -51,6 +69,18 @@ const DRIVE_GROUPS = packGroups(['SHELF'], ['DEFAULT', 'SHELF']);
  */
 const KINEMATIC_GROUPS = packGroups(['SHELF'], ['SHELF']);
 
+/** Per-frame ticker for the doom-glow fade-out. A Component so the
+ *  engine's update pass reaches it; the fade state itself lives on the
+ *  Drive, like the Pickupable above this is pure data. */
+class DoomGlowFade extends Component {
+  _drive;
+  constructor(drive) {
+    super();
+    this._drive = drive;
+  }
+  onUpdate(dt) { this._drive._tickDoomFade(dt); }
+}
+
 export class Drive extends GameObject {
   /** @type {THREE.Mesh} */
   _mesh;
@@ -63,10 +93,26 @@ export class Drive extends GameObject {
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
 
+  /** Set while the anomalous (red) signal is stored on it — the indicator
+   *  shows red, and a red drive never counts towards the night quota
+   *  (DriveBoxDock). Deleted the same way as a green one: wipe it at the
+   *  ServerRoom console (setSaved(false)). */
+  corrupted = false;
+
   /** Set when makeKinematic() is called before _init builds a body — a
    *  socket receiver attaching the drive during scene build. _init honours
    *  it by finishing on a kinematic body seated at the attached pose. */
   _socketedAtInit = false;
+
+  // ── Doom glow state ──
+  /** Emissive intensity the doom glow last set — where the fade starts. */
+  _doomEmissive = 0;
+  /** PointLight intensity the doom glow last set. */
+  _doomLightLevel = 0;
+  /** Seconds left in the post-wipe glow fade, or null when not fading. */
+  _doomFadeRemaining = null;
+  /** Total seconds of the fade now running. */
+  _doomFadeDuration = 0;
 
   /**
    * @param {string} [name]
@@ -81,6 +127,8 @@ export class Drive extends GameObject {
     // receiver can attach the drive at build time and still swap its
     // prompt and install the detach-on-pickup hook.
     this.addComponent(new Pickupable());
+    // Ticks the doom-glow fade-out; also pure data, same reasoning.
+    this.addComponent(new DoomGlowFade(this));
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -252,11 +300,16 @@ export class Drive extends GameObject {
 
   // ── Visual ─────────────────────────────────────────────────
 
-  /** Turn the indicator green (signal saved to this drive). */
-  setSaved(saved) {
+  /** Turn the indicator on — green for a saved signal, red when that
+   *  signal was the anomalous one ({ corrupted: true }). Turning it off
+   *  clears both flags, so a wiped drive keeps no trace of the red signal. */
+  setSaved(saved, { corrupted = false } = {}) {
+    // Any state change stops a running glow fade — the new look stands.
+    this._doomFadeRemaining = null;
     this.saved = saved;
-    if (saved) {
-      this._material.emissive.setHex(SAVED_EMISSIVE);
+    this.corrupted = saved && corrupted;
+    if (this.saved) {
+      this._material.emissive.setHex(this.corrupted ? CORRUPTED_EMISSIVE : SAVED_EMISSIVE);
       this._material.emissiveIntensity = SAVED_EMISSIVE_INTENSITY;
     } else {
       this._material.emissive.setHex(0x000000);
@@ -269,8 +322,75 @@ export class Drive extends GameObject {
     this.setSaved(false);
   }
 
+  /** Ramp the red doom glow. `fraction` is 0..1 where 0 is the dim base
+   *  and 1 is the blinding peak (the silence timer is about to expire).
+   *  Creates a red PointLight as a child of the drive mesh on first call,
+   *  so the glow travels wherever the physical drive is carried. */
+  setDoomGlow(fraction) {
+    if (!this._material) return;
+    const t = Math.max(0, Math.min(1, fraction));
+    // Exponential curve: stays low for most of the countdown, then
+    // spikes sharply in the final seconds before the game ends.
+    const curved = Math.pow(t, DOOM_CURVE);
+    const intensity = DOOM_BASE_INTENSITY + curved * (DOOM_PEAK_INTENSITY - DOOM_BASE_INTENSITY);
+    this._material.emissive.setHex(CORRUPTED_EMISSIVE);
+    this._material.emissiveIntensity = intensity;
+    this._doomEmissive = intensity;  // remembered by the fade-out
+
+    // Lazily create the PointLight on first call.
+    if (!this._doomLight) {
+      this._doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
+      this._mesh.add(this._doomLight);
+    }
+    this._doomLight.intensity = curved * 40;  // 0 → 40 candela at peak
+    this._doomLightLevel = curved * 40;
+  }
+
+  /** Remove the doom glow and its PointLight. Called when the drive is
+   *  wiped, the night resets, or the game-over sequence ends. */
+  clearDoomGlow() {
+    this._doomFadeRemaining = null;
+    this._doomEmissive = 0;
+    this._doomLightLevel = 0;
+    if (this._doomLight) {
+      this._doomLight.removeFromParent();
+      this._doomLight.dispose();
+      this._doomLight = null;
+    }
+  }
+
+  /** Fade the doom glow out over `seconds` instead of cutting it — the
+   *  wiped drive keeps dying down for a few seconds. The wipe resets the
+   *  material, so the fade re-applies the red at the intensity the ramp
+   *  had reached and eases it to zero. */
+  startDoomFadeOut(seconds = DOOM_FADE_SECONDS) {
+    if (!this._material) return;
+    if (!(this._doomEmissive > 0)) { this.clearDoomGlow(); return; }
+    this._doomFadeDuration = Math.max(0.001, seconds);
+    this._doomFadeRemaining = this._doomFadeDuration;
+  }
+
+  /** Per-frame fade step (ticked by the DoomGlowFade component). */
+  _tickDoomFade(dt) {
+    if (!this._material || this._doomFadeRemaining === null) return;
+    this._doomFadeRemaining -= dt;
+    if (this._doomFadeRemaining <= 0) {
+      // Faded out: back to the unmarked look, light gone.
+      this.clearDoomGlow();
+      this._material.emissive.setHex(0x000000);
+      this._material.emissiveIntensity = 0;
+      return;
+    }
+    // Re-apply the red (the wipe darkened it) and ease it down.
+    const t = this._doomFadeRemaining / this._doomFadeDuration;  // 1 → 0
+    this._material.emissive.setHex(CORRUPTED_EMISSIVE);
+    this._material.emissiveIntensity = this._doomEmissive * t;
+    if (this._doomLight) this._doomLight.intensity = this._doomLightLevel * t;
+  }
+
   /** Free the geometry, material, and physics resources this drive built. */
   dispose() {
+    this.clearDoomGlow();
     this._mesh?.geometry?.dispose();
     this._material?.dispose();
     // Physics bodies are owned by the Rapier world — the engine frees the

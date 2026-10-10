@@ -5,7 +5,9 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 // Sits on the airlock's dock pedestal, next to the SnapSocket that receives
 // whole drive boxes. The night quota is no longer a pile of loose drives:
-// whichever box is seated here counts only its signal-bearing drives.
+// whichever box is seated here counts only its signal-bearing drives — and
+// never the corrupted (red) ones, which must be wiped at the ServerRoom
+// console like any other deleted signal.
 //
 // The count derives from the live socket on every read — no per-frame state
 // — so picking the box back out (SnapSocket detaches it) drops it to zero.
@@ -45,11 +47,14 @@ export class DriveBoxDock extends Component {
   }
 
   /** Signal-bearing drives seated in the docked box. Unsaved drives don't
-   *  count, and neither does anything outside the box. */
+   *  count, and neither does anything outside the box. Corrupted (red)
+   *  drives never count: the evil signal has to be deleted, not stored. */
   get collectedCount() {
     const box = this.depositedBox;
     if (!box) return 0;
-    return box.receiver.attachedItems.filter(drive => drive?.saved).length;
+    return box.receiver.attachedItems.filter(
+      drive => drive?.saved && !drive?.corrupted,
+    ).length;
   }
 
   /** Whether enough saved drives are docked to pass the night. */

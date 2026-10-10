@@ -30,8 +30,6 @@ export function controlsList(binds) {
         { label: 'Move cursor', keys: [k('forward'), k('left'), k('back'), k('right')].join(' ') },
         { label: 'Scan', keys: 'Enter' },
         { label: 'Exit terminal', keys: 'Q' },
-        { label: 'Save signal', keys: 'S' },
-        { label: 'Delete signal', keys: 'D' },
       ],
     },
   ];

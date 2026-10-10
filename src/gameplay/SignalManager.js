@@ -28,8 +28,8 @@ import { SignalTarget } from './SignalTarget.js';
  *  the band as the big central disc, the neighbours' rim sections cover
  *  the outer band out to the horizon — every signal lands where at least
  *  one dish can see it. */
-const PITCH_MIN = -80 * (Math.PI / 180);  // steepest up
-const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
+export const PITCH_MIN = -80 * (Math.PI / 180);  // steepest up
+export const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 
 /** Required signals per night: base + (night-1). Clamped to signalsPerNight. */
 const BASE_REQUIRED = 3;

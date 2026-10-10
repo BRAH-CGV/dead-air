@@ -17,7 +17,7 @@ import { cursorToSky } from '../gameobjects/DishRig.js';
 // cursor that the satellite dish "chases" with momentum.
 //
 // External references (set by OfficeScene during wiring):
-//   satellite, signalManager, hud, radar, reviewPanel, driveManager
+//   satellite, signalManager, hud, radar, reviewPanel, driveManager, evilSignal
 // ─────────────────────────────────────────────
 
 /** @readonly */
@@ -53,6 +53,10 @@ export class ComputerTerminal extends Component {
   reviewPanel = null;
   /** @type {import('../gameplay/DriveManager.js').DriveManager|null} */
   driveManager = null;
+  /** The red signal: hovering it scans it instantly (EvilSignal owns what
+   *  happens next — a save to the drive, or the dish pinned to it).
+   *  @type {import('../gameplay/EvilSignal.js').EvilSignal|null} */
+  evilSignal = null;
   /** @type {import('../gameplay/GameController.js').GameController|null} */
   gameController = null;
   /** @type {import('../ui/Crosshair.js').Crosshair|null} */
@@ -138,6 +142,21 @@ export class ComputerTerminal extends Component {
     if (this.satellite) {
       this.satellite.aimAll(sky.yaw, sky.pitch);
     }
+  }
+
+  /** Current cursor position in Cartesian unit-circle coords.
+   *  @returns {{x: number, y: number}} */
+  get cursorPosition() { return { x: this._cursorX, y: this._cursorY }; }
+
+  /** Set the cursor position directly (used by the evil signal's pull-in
+   *  animation). Clamps to the unit circle and aims the dish. */
+  setCursorPosition(x, y) {
+    this._cursorX = x;
+    this._cursorY = y;
+    const r = Math.sqrt(x * x + y * y);
+    if (r > 1) { this._cursorX /= r; this._cursorY /= r; }
+    const sky = this._cursorToSky();
+    if (this.satellite) this.satellite.aimAll(sky.yaw, sky.pitch);
   }
 
   /** Convert Cartesian cursor position to sky coordinates (yaw/pitch).
@@ -314,20 +333,29 @@ export class ComputerTerminal extends Component {
       const keys = engine.input.keys;
       const kb = engine.keyBinds;
 
-      // WASD moves the cursor
-      this.moveCursor({
-        left:  !!keys[kb.left],
-        right: !!keys[kb.right],
-        up:    !!keys[kb.forward] || !!keys[kb.jump],
-        down:  !!keys[kb.back]    || !!keys[kb.crouch],
-      }, dt);
+      // WASD moves the cursor — unless the evil signal has the dish held
+      // (EvilSignal.locked) or is pulling the cursor in (EvilSignal.pullingIn):
+      // the cursor, and so the array, stays frozen.
+      if (!this.evilSignal?.locked && !this.evilSignal?.pullingIn) {
+        this.moveCursor({
+          left:  !!keys[kb.left],
+          right: !!keys[kb.right],
+          up:    !!keys[kb.forward] || !!keys[kb.jump],
+          down:  !!keys[kb.back]    || !!keys[kb.crouch],
+        }, dt);
+      }
 
       // Update hover detection
       this._updateHover();
 
-      // Enter key starts scanning if hovering and a dish of the array is aimed
+      // Tell the evil signal what the cursor is on: it scans itself, then
+      // either saves to the drive (red) or pins the dish to it for a while.
+      this.evilSignal?.hover(this._hoveredSignal?.evil ? this._hoveredSignal : null);
+
+      // Enter key starts scanning if hovering and a dish of the array is
+      // aimed. The evil signal scans itself — Enter ignores it.
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
-      if (enterDown && !this._enterHeld && this._hoveredSignal && this.satellite) {
+      if (enterDown && !this._enterHeld && this._hoveredSignal && !this._hoveredSignal.evil && this.satellite) {
         // Scanning requires a drive in the reader, and the drive must not
         // already have a signal on it.
         if (this.driveManager && !this.driveManager.driveInserted) {
