@@ -373,17 +373,19 @@
         left: 8px;
         opacity: 0;
       }
-      .menu-item:hover, .menu-item:focus,
-      .menu-tab:hover, .menu-tab:focus,
-      .menu-choice:hover, .menu-choice:focus,
-      .menu-bind:hover, .menu-bind:focus {
+      /* Focus only, not :hover — MenuView moves the focus to whatever the
+         mouse points at, so there is only ever one highlighted option (#75). */
+      .menu-item:focus,
+      .menu-tab:focus,
+      .menu-choice:focus,
+      .menu-bind:focus {
         outline: none;
         color: var(--menu-bright);
         background: rgba(184, 184, 200, 0.07);
       }
       .menu-slider input:focus { outline: 1px solid var(--menu-accent); outline-offset: 2px; }
-      .menu-item:hover::before, .menu-item:focus::before { opacity: 1; }
-      .menu-item.is-danger:hover, .menu-item.is-danger:focus { color: var(--menu-danger); }
+      .menu-item:focus::before { opacity: 1; }
+      .menu-item.is-danger:focus { color: var(--menu-danger); }
       .menu-item:disabled, .menu-choice:disabled { color: var(--menu-muted); cursor: default; background: none; }
       .menu-item:disabled::before { opacity: 0; }
 
