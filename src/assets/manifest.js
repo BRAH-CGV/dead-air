@@ -182,6 +182,16 @@ const PLACED = {
         { type: 'box', size: [15.625, 45.625, 50],     position: [41.875, 23.125, 0] },      // right side wall, 0.250×0.730×0.800 m @ local (0.67, 0.37, 0)
         { type: 'box', size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0] },     // left side wall, 0.250×0.730×0.800 m @ local (-0.67, 0.37, 0)
         // Front (+Z, roughly z > -0.06 m) is deliberately open — no part — for the kneehole.
+        //
+        // Items-only lid (#76): the whole desktop, 3 cm thick, on the SHELF
+        // layer like the shelf boards. Carried drives and boxes stop on it
+        // instead of sinking through the open kneehole; the player (PLAYER
+        // layer) never touches it, so walking up and crouching under work as
+        // before. 1.590×0.030×0.800 m @ local (0, 0.72, 0).
+        {
+          type: 'box', size: [99.375, 1.875, 50], position: [0, 45, 0],
+          groups: { membership: ['SHELF'], filter: ['DEFAULT', 'SHELF'] },
+        },
       ],
     },
   },
