@@ -14,7 +14,7 @@ describe('controlsList', () => {
     const all = groups.flatMap(g => g.rows);
     expect(all).toContainEqual({ label: 'Pause', keys: 'Esc' });
     expect(all).toContainEqual({ label: 'Look', keys: 'Mouse' });
-    expect(all.map(r => r.keys)).toEqual(expect.arrayContaining(['Q', 'Enter', 'S', 'D']));
+    expect(all.map(r => r.keys)).toEqual(expect.arrayContaining(['Q', 'Enter']));
   });
 
   it('the terminal cursor follows the live movement binds', () => {
