@@ -39,6 +39,7 @@ import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -613,6 +614,12 @@ export class BaseScene extends Scene {
       signalLight.gameController = this.gameController;
     }
     this.screenFade = new ScreenFade();
+    // The previous operator's notebook (#79): tonight's entry, on paper.
+    const { journal } = this.rooms.LivingQuarters;
+    if (journal) {
+      journal.controller = this.gameController;
+      journal.panel = new JournalPanel();
+    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
@@ -1031,13 +1038,20 @@ export class BaseScene extends Scene {
     }
   }
 
-  /** Back to where the night starts: the office, facing the window. */
+  /** Back to where the night starts: beside the bunk, facing the desk. */
   _respawn() {
     this.suit?.takeOff();
+    const { position, yaw } = this._spawnPoint();
     const player = this.engine.player;
     const ctrl = player?.getComponent(FirstPersonController);
-    if (ctrl) ctrl.teleport(PLAYER_SPAWN, { yaw: 0, pitch: 0 });
-    else player?.object3d.position.set(...PLAYER_SPAWN);
+    if (ctrl) ctrl.teleport(position, { yaw, pitch: 0 });
+    else player?.object3d.position.set(...position);
+  }
+
+  /** Where the player wakes (#79): the bedroom's spawn, beside the bunk —
+   *  they sleep the day through there. The office centre if it's missing. */
+  _spawnPoint() {
+    return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
@@ -1548,7 +1562,9 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _spawnPlayer() {
     const { engine } = this;
-    engine.buildPlayer({ position: PLAYER_SPAWN });
+    const spawn = this._spawnPoint();
+    engine.buildPlayer({ position: spawn.position });
+    engine.player?.getComponent(FirstPersonController)?.teleport?.(spawn.position, { yaw: spawn.yaw, pitch: 0 });
     const transitions = new RoomTransitionSystem({
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),

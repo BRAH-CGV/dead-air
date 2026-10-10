@@ -91,6 +91,10 @@ export class Engine {
    *  them) but nothing steps or updates — the clock, the dish, the airlock
    *  and every enemy freeze without knowing why. Set through setPaused(). */
   paused = false;
+  /** How fast the game's clock runs: 1 is normal, below 1 slows everything
+   *  the simulation sees (physics, the night clock, every threat) — the
+   *  journal reads in slowed time. The frame and its input don't slow. */
+  timeScale = 1;
   /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
    *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
   devTools = true;
@@ -736,7 +740,7 @@ export class Engine {
 
     // Paused: the clock above still moves (no spike on resume), the frame
     // still renders, and nothing in between runs.
-    if (!this.paused) this._simulate(frameDt);
+    if (!this.paused) this._simulate(frameDt * this.timeScale);
 
     this._renderFrame(frameDt);
   };

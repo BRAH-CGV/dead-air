@@ -200,3 +200,18 @@ describe('Engine revealed', () => {
     expect(engine.loadingScreen.hide).toHaveBeenCalled();
   });
 });
+
+describe('Engine timeScale (#79: slowed time while reading)', () => {
+  it('defaults to 1', () => {
+    expect(new Engine().timeScale).toBe(1);
+  });
+
+  it('scales the time the simulation sees, not the frame', () => {
+    const { engine, root } = makeEngine();
+    engine.timeScale = 0.25;
+    engine._loop(1000);
+    engine._loop(1100);
+    expect(root._update.mock.calls[0][0]).toBeCloseTo(0.025);
+    expect(engine.renderer.render).toHaveBeenCalledOnce();
+  });
+});
