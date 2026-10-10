@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ImpactSound, IMPACT, IMPACT_SOUNDS, impactLevel, pickClip } from './ImpactSound.js';
+import { ImpactSound, IMPACT, IMPACT_SOUNDS, impactLevel } from './ImpactSound.js';
 import { Pickupable } from './Pickupable.js';
 import { GameObject } from '../core/GameObject.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
@@ -94,26 +94,6 @@ describe('impactLevel', () => {
 
   it('ignores what gravity or friction does in one step', () => {
     expect(IMPACT.minSpeed).toBeGreaterThan(G_STEP * 2);
-  });
-});
-
-describe('pickClip', () => {
-  it('covers every clip on the first pick', () => {
-    expect(pickClip(4, -1, 0)).toBe(0);
-    expect(pickClip(4, -1, 0.999)).toBe(3);
-  });
-
-  it('never picks the one just played', () => {
-    for (let last = 0; last < 4; last++) {
-      const seen = new Set();
-      for (let roll = 0; roll < 1; roll += 0.01) seen.add(pickClip(4, last, roll));
-      expect(seen.has(last)).toBe(false);
-      expect(seen.size).toBe(3);
-    }
-  });
-
-  it('has no choice with one clip', () => {
-    expect(pickClip(1, 0, 0.5)).toBe(0);
   });
 });
 
@@ -355,6 +335,25 @@ describe('ImpactSound', () => {
       step(voice, body);
       expect(sound.play).toHaveBeenCalledTimes(1);
       expect(sound.volume).toBeCloseTo(IMPACT.seatLevel);
+    });
+
+    it('is hushed by a receiver that makes the sound itself: no clip of its own as it is taken out', () => {
+      // A drive lifted out of a reader: the reader's own sound is the one.
+      const { voice, body, sound, held } = build();
+      step(voice, body);
+      voice.hush();
+      held.held = true;
+      step(voice, body);
+      expect(sound.play).not.toHaveBeenCalled();
+    });
+
+    it('is only hushed for the moment: the next pick-up sounds', () => {
+      const { voice, body, sound, held } = build();
+      voice.hush();
+      rest(voice, body);
+      held.held = true;
+      step(voice, body);
+      expect(sound.played).toEqual(['h']);
     });
 
     it('picks up softer than it seats, and both softer than a hard drop', () => {

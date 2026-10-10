@@ -494,6 +494,32 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/drive-impact-4.mp3',
   },
+  // A drive going into a reader and coming out of it (DriveSlot): three
+  // clips each, one picked at random. All six cut from one mix.
+  'sfx:drive-insert-1': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-1.mp3',
+  },
+  'sfx:drive-insert-2': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-2.mp3',
+  },
+  'sfx:drive-insert-3': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-3.mp3',
+  },
+  'sfx:drive-remove-1': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-1.mp3',
+  },
+  'sfx:drive-remove-2': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-2.mp3',
+  },
+  'sfx:drive-remove-3': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-3.mp3',
+  },
   // A storm's sand on the office window (WindowSand), looped: louder the
   // nearer the glass you stand.
   'sfx:window-sand': {

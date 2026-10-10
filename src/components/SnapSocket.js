@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { Pickupable } from './Pickupable.js';
 import { ImpactSound, IMPACT } from './ImpactSound.js';
+import { ClipVoice, clipSet } from './ClipVoice.js';
 
 const DEFAULT_SNAP_DISTANCE = 0.25;
 const DEFAULT_INSERT_BEEP_FREQ = 880;
@@ -50,10 +51,20 @@ export class SnapSocket extends Component {
   onAttached = null;
   onDetached = null;
   playSounds = true;
-  /** What seating an item and taking it out sound like: 'beep' — the
-   *  receiver's own, an electronic one (a reader); or 'item' — the knock of
-   *  the item itself, if it carries an ImpactSound (a box of sockets, a dock). */
+  /**
+   * What seating an item and taking it out sound like:
+   *   'item'  the knock of the item itself, if it carries an ImpactSound
+   *           (a box of sockets, a dock);
+   *   { insert, remove, volume }  clips of the receiver's own, by manifest
+   *           key, one picked at random each time (a drive reader);
+   *   'beep'  a synthesised beep, for a receiver with neither.
+   * With the last two the receiver makes the sound, and the item is hushed.
+   * @type {'beep'|'item'|{insert?: string[], remove?: string[], volume?: number}}
+   */
   sounds = 'beep';
+  /** Plays the receiver's own clips. Built on first use when left out.
+   *  @type {import('three').Audio|null|undefined} */
+  sound = undefined;
 
   constructor(opts = {}) {
     super();
@@ -67,6 +78,7 @@ export class SnapSocket extends Component {
     if (opts.onDetached) this.onDetached = opts.onDetached;
     if (opts.playSounds !== undefined) this.playSounds = opts.playSounds;
     if (opts.sounds !== undefined) this.sounds = opts.sounds;
+    if (opts.sound !== undefined) this.sound = opts.sound;
     this.attachments = new Array(this.slots.length).fill(null);
   }
 
@@ -86,6 +98,10 @@ export class SnapSocket extends Component {
 
   hasAttached() {
     return this.attachments.some(Boolean);
+  }
+
+  onDestroy() {
+    this._voice?.dispose();
   }
 
   onUpdate(_dt) {
@@ -249,8 +265,25 @@ export class SnapSocket extends Component {
   /** The sound of `item` being seated ('insert') or taken out ('eject'). */
   _playSound(type, item) {
     if (!this.playSounds) return;
-    if (this.sounds === 'item') item?.getComponent?.(ImpactSound)?.handle(IMPACT.seatLevel);
+    const itemSound = item?.getComponent?.(ImpactSound);
+    if (this.sounds === 'item') {
+      itemSound?.handle(IMPACT.seatLevel);
+      return;
+    }
+    // The receiver's sound is the one: the item's own pick-up would clash.
+    itemSound?.hush();
+    if (this.sounds && typeof this.sounds === 'object') this._playClip(type);
     else this._playBeep(type);
+  }
+
+  /** One of the receiver's own clips for `type`, from where it stands. */
+  _playClip(type) {
+    this._voice ??= new ClipVoice({ sound: this.sound });
+    this._clips ??= {
+      insert: clipSet(this.sounds.insert ?? []),
+      eject: clipSet(this.sounds.remove ?? []),
+    };
+    this._voice.play(this.gameObject, this._clips[type], this.sounds.volume ?? 1);
   }
 
   _playBeep(type) {

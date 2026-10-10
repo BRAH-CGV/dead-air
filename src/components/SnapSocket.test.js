@@ -220,6 +220,100 @@ describe('SnapSocket', () => {
       expect(impact.handle).not.toHaveBeenCalled();
     });
 
+    describe('clips of its own', () => {
+      const SOUNDS = { insert: ['sfx:in-1', 'sfx:in-2'], remove: ['sfx:out-1', 'sfx:out-2'], volume: 0.8 };
+      const LOADED = { 'sfx:in-1': 'IN1', 'sfx:in-2': 'IN2', 'sfx:out-1': 'OUT1', 'sfx:out-2': 'OUT2' };
+
+      function fakeSound() {
+        const sound = {
+          isPlaying: false,
+          volume: 1,
+          buffer: null,
+          played: [],
+          play: vi.fn(() => { sound.isPlaying = true; sound.played.push(sound.buffer); }),
+          stop: vi.fn(() => { sound.isPlaying = false; }),
+          setVolume: vi.fn((v) => { sound.volume = v; }),
+          setBuffer: vi.fn((b) => { sound.buffer = b; }),
+          disconnect: vi.fn(),
+          removeFromParent: vi.fn(),
+        };
+        return sound;
+      }
+
+      /** A socket with clips, a sound to play them on and a cache holding them. */
+      function makeReader(opts = {}) {
+        const sound = fakeSound();
+        const socket = makeSocket({ playSounds: true, sounds: SOUNDS, sound, ...opts });
+        socket.gameObject.scene.userData.engine = { assets: { has: key => key in LOADED, get: key => LOADED[key] } };
+        const beep = vi.spyOn(socket, '_playBeep').mockImplementation(() => {});
+        return { socket, sound, beep };
+      }
+
+      it('plays one of its insert clips as an item is seated, and no beep', () => {
+        const { socket, sound, beep } = makeReader();
+        socket.attach(makeItem('Drive', [0, 0, 0]));
+        expect(sound.played).toHaveLength(1);
+        expect(['IN1', 'IN2']).toContain(sound.played[0]);
+        expect(sound.volume).toBe(0.8);
+        expect(beep).not.toHaveBeenCalled();
+      });
+
+      it('plays one of its remove clips as the item is taken out', () => {
+        const { socket, sound, beep } = makeReader();
+        const item = makeItem('Drive', [0, 0, 0]);
+        socket.attach(item);
+        socket.detach(item);
+        expect(sound.played).toHaveLength(2);
+        expect(['OUT1', 'OUT2']).toContain(sound.played[1]);
+        expect(beep).not.toHaveBeenCalled();
+      });
+
+      it('picks at random, never the same clip twice running', () => {
+        const { socket, sound } = makeReader();
+        const item = makeItem('Drive', [0, 0, 0]);
+        for (let i = 0; i < 30; i++) { socket.attach(item); socket.detach(item); }
+        const ins = sound.played.filter((_, i) => i % 2 === 0);
+        const outs = sound.played.filter((_, i) => i % 2 === 1);
+        expect(new Set(ins)).toEqual(new Set(['IN1', 'IN2']));
+        expect(new Set(outs)).toEqual(new Set(['OUT1', 'OUT2']));
+        expect(ins.every((clip, i) => clip !== ins[i - 1])).toBe(true);
+        expect(outs.every((clip, i) => clip !== outs[i - 1])).toBe(true);
+      });
+
+      it("hushes the item's own sound, so being lifted out is one sound", () => {
+        const { socket } = makeReader();
+        const { item, impact } = makeLoudItem('Drive', [0, 0, 0]);
+        impact.hush = vi.fn();
+        socket.attach(item);
+        expect(impact.hush).toHaveBeenCalledTimes(1);
+        socket.detach(item);
+        expect(impact.hush).toHaveBeenCalledTimes(2);
+        expect(impact.handle).not.toHaveBeenCalled();
+      });
+
+      it('stays quiet for a silent detach, and with sounds off', () => {
+        const { socket, sound } = makeReader();
+        const item = makeItem('Drive', [0, 0, 0]);
+        socket.attach(item);
+        socket.detach(item, { playSound: false });
+        expect(sound.played).toHaveLength(1);
+
+        const mute = makeReader({ playSounds: false });
+        mute.socket.attach(item);
+        mute.socket.detach(item);
+        expect(mute.sound.play).not.toHaveBeenCalled();
+      });
+
+      it('falls silent and unhooks when the scene is torn down', () => {
+        const { socket, sound } = makeReader();
+        socket.attach(makeItem('Drive', [0, 0, 0]));
+        socket.onDestroy();
+        expect(sound.isPlaying).toBe(false);
+        expect(sound.disconnect).toHaveBeenCalled();
+        expect(() => makeSocket().onDestroy()).not.toThrow();
+      });
+    });
+
     it("carries on in 'item' mode with an item that has no knock", () => {
       const socket = makeSocket({ playSounds: true, sounds: 'item' });
       const item = makeItem('Drive', [0, 0, 0]);

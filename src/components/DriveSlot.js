@@ -3,6 +3,15 @@ import { SnapSocket } from './SnapSocket.js';
 const DEFAULT_SNAP_DISTANCE = 0.25;
 const DEFAULT_SNAP_OFFSET = { y: 0.025 };
 
+/** A drive going into a reader and coming out of it: three clips each, one
+ *  picked at random, and a trim on their level (0.6 is about −4.5 dB: at
+ *  their own level they were a little loud beside the knocks). */
+export const READER_SOUNDS = {
+  insert: ['sfx:drive-insert-1', 'sfx:drive-insert-2', 'sfx:drive-insert-3'],
+  remove: ['sfx:drive-remove-1', 'sfx:drive-remove-2', 'sfx:drive-remove-3'],
+  volume: 0.6,
+};
+
 /**
  * DriveSlot – drive-specific single-socket wrapper over SnapSocket.
  *
@@ -27,6 +36,7 @@ export class DriveSlot extends SnapSocket {
       snapDistance: opts.snapDistance ?? DEFAULT_SNAP_DISTANCE,
       snapOffset: { ...DEFAULT_SNAP_OFFSET, ...(opts.snapOffset ?? {}) },
       attachedPromptLabel: null,
+      sounds: READER_SOUNDS,
       onBeforeAttach: drive => {
         if (!this.driveManager) return true;
         return this.driveManager.insertDrive(drive);

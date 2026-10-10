@@ -1,6 +1,6 @@
-import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { Pickupable } from './Pickupable.js';
+import { ClipVoice, clipSet } from './ClipVoice.js';
 
 // ─────────────────────────────────────────────
 // ImpactSound  –  the knock of a loose prop hitting something
@@ -16,7 +16,7 @@ import { Pickupable } from './Pickupable.js';
 // hits — a wall, a shelf, another prop — counts.
 //
 //   level = impactLevel(change in velocity)   // 0 below minSpeed
-//   clip  = pickClip(...)                     // never the one just played
+//   clip  = one of its own, at random         // ClipVoice: never the one just played
 //
 // Its velocity says nothing when it isn't the world doing the knocking:
 //   • in the hand — the hold's spring throws the body about;
@@ -30,15 +30,16 @@ import { Pickupable } from './Pickupable.js';
 //   • seated in a socket or taken out of one — the socket says so, with
 //     handle(IMPACT.seatLevel) (a SnapSocket with `sounds: 'item'`).
 // Taken out of a socket *and* into the hand is both at once; the cooldown
-// makes it one sound.
+// makes it one sound. A socket with a sound of its own (a drive reader)
+// calls hush() instead, and the prop keeps quiet through that moment.
 //
 // A prop may keep clips apart for handling (`handling`): the drive box has
 // two for landing on things and one of its own for being lifted and set
 // in the dock. Left out, handling uses the knocks.
 //
 // Like the signal lamp's beep, the sound is placed in the world, on the
-// prop. It is only built the first time the prop is knocked, so a drive
-// that sits in its box all night costs nothing.
+// prop (a ClipVoice). It is only built the first time the prop makes a
+// sound, so a drive that sits in its box all night costs nothing.
 // ─────────────────────────────────────────────
 
 /** Tuning shared by every prop. Metres a second unless stated. */
@@ -86,25 +87,6 @@ export function impactLevel(speed) {
   return minLevel + (1 - minLevel) * t;
 }
 
-/**
- * Which of `count` clips to play: any but `last`, the one just played, each
- * as likely as the others. `roll` is 0..1.
- * @param {number} count
- * @param {number} last  Index of the clip just played; -1 for none.
- * @param {number} roll
- */
-export function pickClip(count, last, roll) {
-  if (count <= 1) return 0;
-  const repeatable = last < 0 || last >= count;
-  const choices = repeatable ? count : count - 1;
-  const pick = Math.min(Math.floor(roll * choices), choices - 1);
-  return !repeatable && pick >= last ? pick + 1 : pick;
-}
-
-/** A set of clips to pick from: their manifest keys, their buffers once
- *  read from the asset cache, and the one last played. */
-const clipSet = (keys, buffers) => ({ keys, buffers, last: -1 });
-
 export class ImpactSound extends Component {
   /**
    * @param {object} [opts]
@@ -115,7 +97,7 @@ export class ImpactSound extends Component {
    * @param {AudioBuffer[]} [opts.buffers]  The knocks. Read from the asset
    *        cache by `clips` when left out.
    * @param {AudioBuffer[]} [opts.handlingBuffers]  Likewise, for `handling`.
-   * @param {THREE.Audio|null} [opts.sound]  Built the first time it is
+   * @param {import('three').Audio|null} [opts.sound]  Built the first time it is
    *        wanted when left out. Null: silent.
    * @param {() => number} [opts.random]  0..1, for the choice of clip.
    */
@@ -124,8 +106,7 @@ export class ImpactSound extends Component {
     this.clips = clips;
     this.handling = handling ?? clips;
     this.volume = volume;
-    this.sound = sound;
-    this.random = random;
+    this._voice = new ClipVoice({ sound, random, refDistance: IMPACT.refDistance, rolloff: IMPACT.rolloff });
 
     this._knocks = clipSet(clips, buffers);
     this._handling = handling || handlingBuffers ? clipSet(this.handling, handlingBuffers) : this._knocks;
@@ -173,11 +154,13 @@ export class ImpactSound extends Component {
   }
 
   onDestroy() {
-    const sound = this.sound;
-    if (!sound) return;
-    if (sound.isPlaying) sound.stop();
-    try { sound.disconnect?.(); } catch (_) { /* never connected */ }
-    sound.removeFromParent?.();
+    this._voice.dispose();
+  }
+
+  /** The prop's sound: undefined until it first makes one, null if it
+   *  can't. @returns {import('three').Audio|null|undefined} */
+  get sound() {
+    return this._voice.sound;
   }
 
   /** One of the prop's knocks, at `level` (0..1) of its volume. */
@@ -190,56 +173,18 @@ export class ImpactSound extends Component {
     this._play(this._handling, level);
   }
 
-  // ── Internals ─────────────────────────────
-
-  /**
-   * A clip from `set`, picked at random. Nothing within the cooldown of
-   * the last sound, nor while the browser is still holding audio back: a
-   * clip started then would sound when the audio woke, long after the
-   * moment.
-   */
-  _play(set, level) {
-    if (this._cooldown > 0) return;
-    const sound = this._voice();
-    if (!sound || sound.context?.state === 'suspended') return;
-    const buffers = set.buffers;
-    if (!buffers?.length) return;
-
-    set.last = pickClip(buffers.length, set.last, this.random());
-    if (sound.isPlaying) sound.stop();
-    sound.setBuffer(buffers[set.last]);
-    sound.setVolume(this.volume * level);
-    sound.play();
+  /** Say nothing for a moment: whatever is handling the prop is making
+   *  the sound itself (a reader, as a drive is lifted out of it). */
+  hush() {
     this._cooldown = IMPACT.cooldown;
   }
 
-  /** The prop's sound, with its clips read, built the first time they are
-   *  wanted. Asked before the scene has an engine (a drive seated in its
-   *  box as the room is built), nothing is built and nothing given up on. */
-  _voice() {
-    const sets = [this._knocks, this._handling];
-    if (this.sound !== undefined && sets.every(set => set.buffers)) return this.sound;
-    const engine = this.gameObject?.scene?.userData?.engine;
-    if (!engine) return this.sound ?? null;
-    for (const set of sets) set.buffers ??= this._readBuffers(engine, set.keys);
-    if (this.sound === undefined) this.sound = this._buildSound(engine);
-    return this.sound;
-  }
+  // ── Internals ─────────────────────────────
 
-  /** Clips from the asset cache; any not loaded are left out. */
-  _readBuffers(engine, keys) {
-    const assets = engine.assets;
-    if (!assets?.has) return [];
-    return keys.filter(key => assets.has(key)).map(key => assets.get(key));
-  }
-
-  /** A point source on the prop. Null without audio. */
-  _buildSound(engine) {
-    if (!engine.audioListener) return null;
-    const audio = new THREE.PositionalAudio(engine.audioListener);
-    audio.setRefDistance(IMPACT.refDistance);
-    audio.setRolloffFactor(IMPACT.rolloff);
-    this.gameObject.object3d.add(audio);
-    return audio;
+  /** A clip from `set`, picked at random. Nothing within the cooldown of
+   *  the last sound. */
+  _play(set, level) {
+    if (this._cooldown > 0) return;
+    if (this._voice.play(this.gameObject, set, this.volume * level)) this._cooldown = IMPACT.cooldown;
   }
 }
