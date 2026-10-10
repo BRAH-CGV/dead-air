@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { UFO } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 
 // ─────────────────────────────────────────────
@@ -50,9 +51,9 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 export const SANDSTORM = {
   /** The first night storms can come on. */
   fromNight: 1,
-  /** When it starts, in night-clock hours after midnight: a random time
-   *  between these… */
-  startHours: [0.5, 4.2],
+  /** When it starts, in night-clock hours from midnight (7:30 PM is -4.5):
+   *  a random time between these, 7:30 PM and 4:12 AM — after dark… */
+  startHours: [-4.5, 4.2],
   /** …and how long it blows, in clock hours — about an hour and a half.
    *  Over by 5:54 at the latest. */
   durationHours: [1.3, 1.7],
@@ -95,19 +96,22 @@ export const WIND_DIRECTION = WIND_DUST.direction;
  * @param {object} opts
  * @param {number} opts.night
  * @param {number} opts.nightDuration  Real seconds in the shift.
- * @param {number} [opts.nightHours=6] Clock hours in it.
+ * @param {number} [opts.nightHours=12] Clock hours in it.
+ * @param {number} [opts.startHour=-6]  The clock hour it starts at.
  * @param {() => number} [opts.random]
  * @returns {{ start: number, duration: number }|null}  null only on a UFO
  *          night (the storm follows the UFO there instead).
  */
-export function scheduleStorm({ night, nightDuration, nightHours = 6, random = Math.random }) {
+export function scheduleStorm({
+  night, nightDuration, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
+}) {
   if (night < SANDSTORM.fromNight) return null;
   if (UFO.nights.includes(night)) return null;   // it comes after the UFO instead
   const hour = nightDuration / nightHours;
   const [s0, s1] = SANDSTORM.startHours;
   const [d0, d1] = SANDSTORM.durationHours;
   return {
-    start:    (s0 + random() * (s1 - s0)) * hour,
+    start:    (s0 + random() * (s1 - s0) - startHour) * hour,
     duration: (d0 + random() * (d1 - d0)) * hour,
   };
 }
@@ -159,16 +163,17 @@ export class Sandstorm extends Component {
    *        WindDustMotion: one storm level drives the clouds too.
    * @param {{ setStorm: (k: number) => void }} [opts.ambience]  The scene's
    *        Ambience: the storm's wind is its outside loop, blown harder.
-   * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
-   * @param {number} [opts.nightHours=6]      Clock hours in it.
+   * @param {number} [opts.nightDuration=600]  Real seconds in a shift.
+   * @param {number} [opts.nightHours=12]     Clock hours in it.
+   * @param {number} [opts.startHour=-6]      The clock hour it starts at.
    * @param {() => number} [opts.random]
    */
   constructor({
     controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, ambience = null,
-    nightDuration = 300, nightHours = 6, random = Math.random,
+    nightDuration = NIGHT_SECONDS, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, random });
+    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, startHour, random });
 
     this._elapsed = 0;       // seconds of 'playing' this night
     this._storm = null;      // { start, duration } in _elapsed, or null
@@ -202,7 +207,7 @@ export class Sandstorm extends Component {
     this._elapsed = 0;
     this.level = 0;
     this.held = false;
-    this._storm = scheduleStorm({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, random: this.random });
+    this._storm = scheduleStorm({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, startHour: this.startHour, random: this.random });
     if (this._storm) { this.stormId++; this._pickWind(); }
     this._afterUfo = night >= SANDSTORM.fromNight && UFO.nights.includes(night);
     this._afterUfoAt = null;

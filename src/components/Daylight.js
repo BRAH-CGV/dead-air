@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
+import { SHIFT } from '../gameplay/NightClock.js';
 
 // ─────────────────────────────────────────────
-// Daylight  –  turns the night into the Martian day at the end of a shift
+// Daylight  –  dusk at the start of a shift, the Martian day at its end
 // ─────────────────────────────────────────────
-// Reads the hour and how far into the dawn it is from the GameController
+// A shift starts at sunset, 6 PM, in the last of the daylight, which fades
+// to night over its first hour; the Sun comes back up over its last hour.
+// Reads the hour and how far into the day it is from the GameController
 // (its clock and state) and applies them to everything that should change
 // with them: the sky shader's uDawn uniform, the ambient and sun lights, and
 // the fog follow the dawn; the sky's turn follows the hour.
@@ -22,6 +25,14 @@ import { Component } from '../core/Component.js';
 // wherever Phobos is as the sky turns, swinging through the dawn to the
 // Sun's bearing, `sunElevation` up. It keeps the distance the scene put it
 // at, so its shadow camera still spans what it was sized for.
+//
+// Phobos rises at about 10:30 PM. Until then the moonlight comes from its
+// bearing but never lower than MOONLIGHT.minElevation (never from under the
+// ground), and dimmed to MOONLIGHT.downLevel: the early evening is the
+// darkest part of the night, and it brightens as Phobos comes up.
+//
+// It lights the scene as soon as it is built (onAwake), so the main menu,
+// over a scene that never ticks, shows the dusk the first night starts in.
 //
 // Nothing is allocated per frame. Through the night the hour moves, so the
 // sky and the light are rewritten every frame; in the morning the clock has
@@ -44,26 +55,42 @@ const DEFAULT_DAY = {
   sunElevation:     30,
 };
 
+/** The moonlight while Phobos is down. */
+export const MOONLIGHT = {
+  /** Degrees: the light never comes from lower than this. */
+  minElevation: 20,
+  /** Its night intensity, as a fraction, with Phobos below the horizon. */
+  downLevel:    0.35,
+  /** Degrees of Phobos's elevation over which it brightens to full. */
+  rise:         [-10, 10],
+};
+
 const _day   = new THREE.Vector3();
 const _light = new THREE.Vector3();
 
 /**
  * How far into the day it is: 0 at night, 1 in daylight.
  *
- * The Sun comes up over the last hour of the shift — 0 until an hour before
- * the end, easing to 1 at the end — and it stays up all morning, until sleep
- * starts the next night.
+ * The shift starts at sunset in daylight (1), which fades to night (0) over
+ * its first hour. The Sun comes up over the last hour — 0 until an hour
+ * before the end, easing to 1 at the end — and it stays up all morning,
+ * until sleep starts the next night.
  *
  * @param {number} hour   The clock's current in-game hour.
  * @param {string} state  GameController state.
- * @param {{ endHour?: number }} [opts]  When the shift ends (6 AM).
+ * @param {{ startHour?: number, endHour?: number }} [opts]  When the shift
+ *        starts (6 PM, -6) and ends (6 AM).
  * @returns {number} 0 … 1
  */
-export function dawnFactor(hour, state, { endHour = 6 } = {}) {
+export function dawnFactor(hour, state, { startHour = SHIFT.startHour, endHour = SHIFT.endHour } = {}) {
   if (state === 'morning' || state === 'finished') return 1;
-  const t = THREE.MathUtils.clamp(hour - (endHour - 1), 0, 1);
-  // Smoothstep, so the light eases in and out of the change rather than
-  // starting and stopping on a hard edge.
+  const dawn = THREE.MathUtils.clamp(hour - (endHour - 1), 0, 1);
+  const dusk = THREE.MathUtils.clamp(startHour + 1 - hour, 0, 1);
+  return smoothstep(Math.max(dawn, dusk));
+}
+
+/** Eases in and out of a change rather than starting and stopping on a hard edge. */
+function smoothstep(t) {
   return t * t * (3 - 2 * t);
 }
 
@@ -108,12 +135,17 @@ export class Daylight extends Component {
     };
   }
 
+  /** Light the scene for the hour it was built at — the main menu shows it. */
+  onAwake() {
+    this.onUpdate();
+  }
+
   onUpdate() {
     const clock = this.controller?.nightClock;
     if (!clock) return;
 
     const hour   = clock.currentTime;
-    const factor = dawnFactor(hour, this.controller.state, { endHour: clock.endHour });
+    const factor = dawnFactor(hour, this.controller.state, { startHour: clock.startHour, endHour: clock.endHour });
     if (factor === this.factor && hour === this.hour) return;
     this.apply(factor, hour);
   }
@@ -129,11 +161,15 @@ export class Daylight extends Component {
     const uDawn = this.sky?.skyUniforms?.uDawn;
     if (uDawn) uDawn.value = factor;
 
+    // How much of the moonlight there is: dimmed while Phobos is down.
+    const moon = this._aim ? moonLevel(this.sky.directions.phobos.y) : 1;
+
     for (const light of this._lights) {
       light.target.color.lerpColors(light.night.color, light.day.color, factor);
+      const night = light === this._sun ? light.night.intensity * moon : light.night.intensity;
       // MathUtils.lerp lands exactly on either end, so a light comes back to
       // precisely its night intensity.
-      light.target.intensity = THREE.MathUtils.lerp(light.night.intensity, light.day.intensity, factor);
+      light.target.intensity = THREE.MathUtils.lerp(night, light.day.intensity, factor);
     }
 
     if (this._fog) this._fog.color.lerpColors(this._fog.night, this._fog.day, factor);
@@ -141,17 +177,36 @@ export class Daylight extends Component {
     if (this._aim) this._aimSun(factor);
   }
 
-  /** Night: along Phobos. Day: the Sun's bearing, lifted to sunElevation.
-   *  In between, the direction swings from one to the other. */
+  /** Night: along Phobos, never lower than MOONLIGHT.minElevation. Day: the
+   *  Sun's bearing, lifted to sunElevation. In between, the direction swings
+   *  from one to the other. */
   _aimSun(factor) {
     const { light, distance, elevation } = this._aim;
     const { sun, phobos } = this.sky.directions;
 
     _day.set(sun.x, 0, sun.z).normalize().multiplyScalar(Math.cos(elevation));
     _day.y = Math.sin(elevation);
-    _light.copy(phobos).lerp(_day, factor).normalize();
+    if (phobos.y < MIN_MOON_Y) {
+      _light.set(phobos.x, 0, phobos.z).normalize().multiplyScalar(MIN_MOON_XZ);
+      _light.y = MIN_MOON_Y;
+    } else {
+      _light.copy(phobos);
+    }
+    _light.lerp(_day, factor).normalize();
     light.position.copy(light.target.position).addScaledVector(_light, distance);
   }
+}
+
+const MIN_MOON_Y  = Math.sin(THREE.MathUtils.degToRad(MOONLIGHT.minElevation));
+const MIN_MOON_XZ = Math.cos(THREE.MathUtils.degToRad(MOONLIGHT.minElevation));
+const RISE_FROM   = Math.sin(THREE.MathUtils.degToRad(MOONLIGHT.rise[0]));
+const RISE_TO     = Math.sin(THREE.MathUtils.degToRad(MOONLIGHT.rise[1]));
+
+/** The moonlight's share of its night intensity for Phobos `y` up (the sine
+ *  of its elevation): MOONLIGHT.downLevel below the horizon, full once up. */
+function moonLevel(y) {
+  const t = THREE.MathUtils.clamp((y - RISE_FROM) / (RISE_TO - RISE_FROM), 0, 1);
+  return THREE.MathUtils.lerp(MOONLIGHT.downLevel, 1, smoothstep(t));
 }
 
 /** A light's night (as it is now) and day ends, with preallocated colours. */

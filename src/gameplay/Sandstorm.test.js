@@ -3,13 +3,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { Sandstorm, SANDSTORM, scheduleStorm, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm — random dust storms from night 2; faint indoors
 // ─────────────────────────────────────────────
 
-const NIGHT = 300;   // real seconds in a shift
-const HOUR = NIGHT / 6;
+const NIGHT = NIGHT_SECONDS;   // real seconds in a shift
+const HOUR = NIGHT / (SHIFT.endHour - SHIFT.startHour);
+/** The night-clock hour `seconds` into the shift. */
+const clockHour = seconds => SHIFT.startHour + seconds / HOUR;
 
 describe('scheduleStorm', () => {
   it('comes every night — night 1 included — whatever the dice say', () => {
@@ -23,10 +26,24 @@ describe('scheduleStorm', () => {
   it('starts inside the night and is over before 6 AM', () => {
     for (const r of [0, 0.25, 0.5]) {
       const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => r });
-      expect(s.start).toBeGreaterThanOrEqual(SANDSTORM.startHours[0] * HOUR - 1e-9);
+      expect(clockHour(s.start)).toBeGreaterThanOrEqual(SANDSTORM.startHours[0] - 1e-9);
       expect(s.start + s.duration).toBeLessThanOrEqual(NIGHT);
       expect(s.duration).toBeGreaterThanOrEqual(SANDSTORM.durationHours[0] * HOUR - 1e-9);
     }
+  });
+});
+
+describe('scheduleStorm after dark', () => {
+  it('never blows at dusk: the earliest storm starts after dark', () => {
+    expect(SANDSTORM.startHours[0]).toBeGreaterThan(SHIFT.darkHour);
+    const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    expect(clockHour(s.start)).toBeCloseTo(SANDSTORM.startHours[0]);
+  });
+
+  it('can start any time from early evening to the small hours', () => {
+    const late = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0.999 });
+    expect(clockHour(late.start)).toBeGreaterThan(3);
+    expect(SANDSTORM.startHours[0]).toBeLessThan(-4);
   });
 });
 

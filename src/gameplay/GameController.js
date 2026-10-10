@@ -94,7 +94,7 @@ export class GameController extends Component {
       this.quotaDock?.collectedCount ?? 0,
       this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
     );
-    this.hud?.setTime(this.nightClock?.timeString ?? '12:00 AM');
+    this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
 
@@ -251,7 +251,7 @@ export class GameController extends Component {
 
   _updateHUD() {
     if (!this.hud) return;
-    this.hud.setTime(this.nightClock?.timeString ?? '12:00 AM');
+    this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
 
     // Quota progress comes from the drive box dock (saved drives in the
     // docked box), falling back to the signal manager's required count

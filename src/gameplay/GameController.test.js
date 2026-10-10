@@ -23,7 +23,7 @@ describe('GameController', () => {
 
   beforeEach(() => {
     gc   = new GameController();
-    clock = new NightClock({ nightDuration: 300 });
+    clock = new NightClock({ startHour: 0, nightDuration: 300 });
     mgr  = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
     hud  = makeHUD();
     sat  = makeSatellite();

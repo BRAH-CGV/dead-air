@@ -7,7 +7,7 @@ import { SignalTarget } from './SignalTarget.js';
 // from a pool, and tracks save/delete state. The required signal count
 // scales with night number.
 //
-// Signals are not all visible at 12:00: each one carries an appearAt shift
+// Signals are not all visible at the start of the shift: each one carries an appearAt shift
 // fraction spread across [APPEAR_START, APPEAR_BY], and pops in for a
 // short window once the night reaches it — fade in over
 // SIGNAL_FADE_SECONDS, hold VISIBLE_SECONDS, fade back out. The sky is
@@ -34,13 +34,14 @@ const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 /** Required signals per night: base + (night-1). Clamped to signalsPerNight. */
 const BASE_REQUIRED = 3;
 
-/** Shift fraction at which the first signal may appear — the sky stays
- *  empty for the first minutes of the night. */
-export const APPEAR_START = 0.05;
+/** Shift fraction at which the first signal may appear: ~7:25 PM, once
+ *  the dusk has gone — the Sun drowns the faint signals — and the sky has
+ *  stayed empty a little longer. */
+export const APPEAR_START = 0.12;
 
-/** Shift fraction by which every signal has appeared, leaving enough
- *  night left to scan the quota. */
-export const APPEAR_BY = 0.75;
+/** Shift fraction by which every signal has appeared (~3:35 AM), leaving
+ *  enough night left to scan the quota. */
+export const APPEAR_BY = 0.8;
 
 /** Real seconds a signal's radar dot takes to fade fully in (and out). */
 export const SIGNAL_FADE_SECONDS = 3;
