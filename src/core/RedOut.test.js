@@ -109,7 +109,7 @@ describe('RedOut', () => {
     ro.attach(engine);
     ro.setIntensity(0.3);
 
-    // First preRender creates the target (falls back to 1024x768 in Node).
+    // First preRender creates the target at half resolution (falls back to 1024x768 in Node → 512x384).
     ro.preRender();
     const rt = ro._renderTarget;
     const origW = rt.width, origH = rt.height;
@@ -117,10 +117,12 @@ describe('RedOut', () => {
 
     // Simulate a window resize by patching the global window object.
     const prevWindow = globalThis.window;
-    globalThis.window = { innerWidth: origW + 100, innerHeight: origH + 100 };
+    const newWindowW = 1200, newWindowH = 900;
+    globalThis.window = { innerWidth: newWindowW, innerHeight: newWindowH };
 
     ro.preRender();
-    expect(rt.setSize).toHaveBeenCalledWith(origW + 100, origH + 100);
+    // Render target should resize to half the new window dimensions.
+    expect(rt.setSize).toHaveBeenCalledWith(Math.floor(newWindowW / 2), Math.floor(newWindowH / 2));
 
     globalThis.window = prevWindow;
     ro.dispose();
@@ -132,9 +134,10 @@ describe('RedOut', () => {
     ro.attach(engine);
 
     ro.warmUp();
-    // Two setRenderTarget calls: one to the render target, one back to null.
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledTimes(2);
-    expect(engine.renderer.setRenderTarget).toHaveBeenLastCalledWith(null);
+    // Renders to the screen (null target), not the render target — avoids a
+    // feedback dependency that stalls lower-end GPUs during warm-up.
+    expect(engine.renderer.setRenderTarget).toHaveBeenCalledTimes(1);
+    expect(engine.renderer.setRenderTarget).toHaveBeenCalledWith(null);
     expect(engine.renderer.render).toHaveBeenCalledWith(ro._scene, ro._camera);
     ro.dispose();
   });

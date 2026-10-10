@@ -36,11 +36,11 @@ const FRAG = /* glsl */ `
     // Luminance-preserving red extraction with cell-shaded bands:
     // quantise brightness into discrete steps, each a distinct red shade.
     float lum = dot(tex.rgb, vec3(0.2126, 0.7152, 0.0722));
-    float bands = 4.0;
+    float bands = 3.0;
     float quantised = floor(lum * bands + 0.5) / bands;
     // Each band gets a progressively brighter red; the flat offsets keep
     // even the darkest band visible.
-    vec3 redTint = vec3(quantised * 3.6 + 0.15, quantised * 0.15 + 0.02, lum * 0.05);
+    vec3 redTint = vec3(quantised * 3.6 + 0.15, quantised * 0.15 + 0.02, 0.0);
     vec3 col = mix(tex.rgb, redTint, uIntensity);
     gl_FragColor = vec4(col, 1.0);
   }
@@ -89,14 +89,19 @@ export class RedOut {
   /** Pre-compile the composite shader by doing a dummy render. Called by
    *  the Engine right after the main WarmUp pass, while the loading screen
    *  still covers the canvas. Without this the first activation compiles
-   *  the shader on the spot — a visible hitch. */
+   *  the shader on the spot — a visible hitch.
+   *
+   *  Render to the screen (null target), not to the render target itself:
+   *  the quad samples tDiffuse, so rendering to the same target creates a
+   *  feedback dependency that can stall the GPU or defer compilation on
+   *  lower-end hardware. */
   warmUp() {
     if (!this._renderer || !this._renderTarget) return;
     this._material.uniforms.tDiffuse.value = this._renderTarget.texture;
     this._material.uniforms.uIntensity.value = 0;
-    this._renderer.setRenderTarget(this._renderTarget);
-    this._renderer.render(this._scene, this._camera);
+    // Render to the default framebuffer (screen), not the render target.
     this._renderer.setRenderTarget(null);
+    this._renderer.render(this._scene, this._camera);
   }
 
   /** Set the effect strength 0..1. 0 = no effect, 1 = full red. */
@@ -152,17 +157,21 @@ export class RedOut {
   }
 
   /** Create the render target on first use, or resize it if the window
-   *  has changed. */
+   *  has changed. Uses half resolution — the red-tint effect doesn't need
+   *  pixel-perfect detail, and half-res cuts the render cost by 4×. */
   _ensureRenderTarget() {
     const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const h = typeof window !== 'undefined' ? window.innerHeight : 768;
+    // Half resolution for performance — the fullscreen quad stretches it back.
+    const halfW = Math.max(1, Math.floor(w / 2));
+    const halfH = Math.max(1, Math.floor(h / 2));
     if (this._renderTarget) {
-      if (this._renderTarget.width !== w || this._renderTarget.height !== h) {
-        this._renderTarget.setSize(w, h);
+      if (this._renderTarget.width !== halfW || this._renderTarget.height !== halfH) {
+        this._renderTarget.setSize(halfW, halfH);
       }
       return;
     }
-    this._renderTarget = new THREE.WebGLRenderTarget(w, h, {
+    this._renderTarget = new THREE.WebGLRenderTarget(halfW, halfH, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
     });
