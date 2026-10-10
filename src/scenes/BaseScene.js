@@ -1253,15 +1253,17 @@ export class BaseScene extends Scene {
       hooks: {
         listenerPosition: out => engine.camera.getWorldPosition(out),
         isOutside:        p => this._isOutside(p),
-        // Outside, the office (its window) and the airlock (its hatch is on
-        // the yard, and from it the office window shows through the inner
-        // door — a window seen clear from there used to pop to storm on the
-        // step into the office). Not the corridors: no window, and the storm
-        // fog there only tinted the sealed rooms seen through their doorways.
-        // Not the sealed mood rooms.
-        valleyInView:     () => (this._currentRoom
-          ? this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY
-          : this._isOutside(engine.camera.getWorldPosition(_valleyEye))),
+        // Outside, the office (its window), the airlock (its hatch is on the
+        // yard, and from it the office window shows through the inner door)
+        // and the corridors (#73): the office window shows down them through
+        // the office doorway, so a corridor that dropped the storm made the
+        // window pulse clear ↔ brown on every step across that doorway. The
+        // sealed rooms seen from a corridor don't take its brown: their fog
+        // is switched off while the player is out of them (roomFog). Only
+        // inside a sealed mood room, which has no sightline out, is the
+        // valley out of view.
+        valleyInView:     () => !this._currentRoom
+          || this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY,
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
@@ -1639,7 +1641,6 @@ const ROOM_FOG_FRAGMENT = /* glsl */`
   gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor * roomFog );
 #endif
 `;
-const _valleyEye = new THREE.Vector3();
 const _airlockEar = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
