@@ -101,13 +101,13 @@ describe('GameController', () => {
     expect(hud.setPrompt).toHaveBeenCalledWith('Night failed. [E] to retry');
   });
 
-  it('meeting the quota early keeps the shift running until 3 AM', () => {
+  it('meeting the quota early keeps the shift running until 6 AM', () => {
     gc.startNight(1);  // required = 3
     meetQuota();
 
     expect(gc.state).toBe('playing');
     expect(clock.paused).toBe(false);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until the shift ends at 3:00 AM');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
 
     gc.onUpdate(50);
     expect(clock.currentTime).toBeCloseTo(1.0);
@@ -456,10 +456,10 @@ describe('GameController', () => {
 });
 
 // ─────────────────────────────────────────────
-// Overtime: the shift ends at 3 AM, the night at 6 AM
+// One twelve-hour shift: 6 PM to 6 AM, no overtime
 // ─────────────────────────────────────────────
 
-describe('GameController overtime', () => {
+describe('GameController — one twelve-hour shift', () => {
   let gc, clock, hud, quotaDock, nights;
   const perHour = NIGHT_SECONDS / (SHIFT.endHour - SHIFT.startHour);
   /** Run the clock on to `hour` (clock hours from midnight). */
@@ -467,7 +467,7 @@ describe('GameController overtime', () => {
 
   beforeEach(() => {
     gc = new GameController();
-    clock = new NightClock();                          // 6 PM → 6 AM, out at 3 AM
+    clock = new NightClock();                          // 6 PM → 6 AM
     hud = makeHUD();
     quotaDock = {
       requiredCount: 3,
@@ -479,61 +479,32 @@ describe('GameController overtime', () => {
     gc.bindNights(nights);
   });
 
-  it('keeps the bed shut until the shift is over, quota or not', () => {
+  it('a quota met early keeps the shift running all night — no bed before 6 AM', () => {
     quotaDock.collectedCount = 3;
-    runTo(2.9);
-    expect(gc.overtime).toBe(false);
-    expect(gc.canSleep).toBe(false);
-    expect(gc.sleep()).toBe(false);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/3:00 AM/));
+    gc.onSignalSaved();
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/6:00 AM/));
+    for (const hour of [0, 3, 5.9]) {
+      runTo(hour);
+      expect(gc.state, `at ${hour}`).toBe('playing');
+      expect(gc.canSleep).toBe(false);
+      expect(gc.sleep()).toBe(false);
+    }
+    expect(gc.overtime).toBeUndefined();
   });
 
-  it('with the quota met, lets the player go to bed from 3 AM — the next night starts at dusk', () => {
-    quotaDock.collectedCount = 3;
-    runTo(3);
-    expect(gc.state).toBe('playing');
-    expect(gc.overtime).toBe(true);
-    expect(gc.canSleep).toBe(true);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/sleep/i));
-
-    expect(gc.sleep()).toBe(true);
-    expect(nights.currentNight).toBe(2);
-    expect(gc.state).toBe('playing');
-    expect(clock.timeString).toBe('6:00 PM');
-    expect(gc.overtime).toBe(false);
-  });
-
-  it('without it, runs on into overtime: no bed, but the quota can still be met', () => {
-    runTo(3.5);
-    expect(gc.state).toBe('playing');
-    expect(gc.overtime).toBe(true);
-    expect(gc.canSleep).toBe(false);
-    expect(gc.sleep()).toBe(false);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/overtime/i));
-
-    quotaDock.collectedCount = 3;                      // caught up
-    gc.onUpdate(0.016);
-    expect(gc.canSleep).toBe(true);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/sleep/i));
-  });
-
-  it('fails the night at 6 AM if overtime wasn\'t enough', () => {
-    runTo(6);
-    expect(gc.state).toBe('gameOver');
-  });
-
-  it('a player who stays up to 6 AM with the quota met still gets the morning', () => {
+  it('makes it morning at 6 AM with the quota met, and the bed takes the player to the next dusk', () => {
     quotaDock.collectedCount = 3;
     runTo(6);
     expect(gc.state).toBe('morning');
     expect(gc.canSleep).toBe(true);
+    expect(gc.sleep()).toBe(true);
+    expect(nights.currentNight).toBe(2);
+    expect(clock.timeString).toBe('6:00 PM');
   });
 
-  it('going to bed early on the last night ends the run', () => {
-    nights.setNight(3);
-    quotaDock.collectedCount = 3;
-    runTo(4);
-    expect(gc.sleep()).toBe(true);
-    expect(gc.state).toBe('finished');
+  it('fails the night at 6 AM with the quota missed', () => {
+    runTo(6);
+    expect(gc.state).toBe('gameOver');
+    expect(gc.canSleep).toBe(false);
   });
 });

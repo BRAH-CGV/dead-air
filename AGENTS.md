@@ -76,7 +76,7 @@ src/
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog (dusk and dawn); turns the sky, aims the moonlight
-│   ├── Bed.js           # Interactable: sleep once clocked out (3 AM, quota met) → next night
+│   ├── Bed.js           # Interactable: sleep in the morning → next night
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
@@ -87,8 +87,8 @@ src/
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
-│   ├── NightClock.js    # 6:00 PM → 6:00 AM over one night: the shift to 3 AM, then overtime (SHIFT, NIGHT_SECONDS)
-│   ├── GameController.js # playing → (3 AM, quota met) sleep → next night; overtime to 6 AM; fail() for threats
+│   ├── NightClock.js    # 6:00 PM → 6:00 AM: one twelve-hour shift (SHIFT, NIGHT_SECONDS)
+│   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
@@ -193,25 +193,22 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
 
 ### Shift and day
 
-A night: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD and on the office's `WallClock`. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `shiftEndHour` 3, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
+A night is one twelve-hour shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD and on the office's `WallClock`. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
 
-**The shift is 6 PM to 3 AM** (nine hours); **3 AM to 6 AM is overtime** (`clock.overtime`, `controller.overtime`). With the quota met the player may go to bed from 3 AM (`controller.canSleep`); without it they work on, and can still make it up before 6 AM — signals keep coming into overtime. `GameController` owns the state:
+`GameController` owns the state:
 
 ```
-playing ──3 AM on, quota met: sleep()──▶ playing (next night)
-   │                                └──on the last night──▶ finished
-   ├──6 AM, quota met──▶ morning ──sleep()──▶ (the same)
+playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
+   │                            └──sleep() on the last night──▶ finished
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
-The HUD prompt follows where the shift stands, set on change: quota met before 3 AM ("hold out until the shift ends at 3:00 AM"), clocked out ("get some sleep, or keep working"), or overtime without it ("meet the quota before 6:00 AM").
-
 **Rates, not counts.** Things happen as often per real minute as on the old five-minute night, so the longer night has more of them: `SIGNALS_PER_NIGHT` 10 (was 5) over the same share of the night, two storms (`SANDSTORM.perNight`, was one). The quota is 1.5× the old 3, 4, 5: 5, 6, 8 (`QUOTA_SCALE`); night 3's 8 fills a drive box. The UFO still comes once, on night 3.
 
-Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until the shift ends". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
-- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live whenever `controller.canSleep` (overtime with the quota met, or the morning), and it runs `controller.sleep()` behind a `ScreenFade`; otherwise its label says why not (the shift runs until 3 AM / overtime: meet the quota). Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning (`controller.canSleep`), and it runs `controller.sleep()` behind a `ScreenFade`; during the shift its label says why not. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
 - **Dusk and dawn.** `dawnFactor(hour, state)` is 1 at 6 PM, the shift starting in the last of the daylight, smoothsteps to 0 over the first hour, is 0 all night, smoothsteps back to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to the following — from `onAwake` too, so the main menu, over a scene that never ticks, shows the dusk:
   - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
   - the ambient and moon lights (the moon light is the morning sun).
@@ -255,7 +252,7 @@ The generator outside is the base's one power switch. It stands in the far corne
   - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`, 1 %).
   - **The clips** are cut at MPEG frame boundaries from one 3-minute recording, so only about 22 s of audio is decoded.
 
-`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 8:00 PM and 2:00 AM on the night clock (`UFO.spawnHours`, -4 … 2 — gone before the shift ends at 3 AM, so going to bed then never skips it; via `scheduleApproach`, which follows the clock's own length and start), with the radar warning `radarLead` seconds before. For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:
+`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 8:00 PM and 4:30 AM on the night clock (`UFO.spawnHours`, -4 … 4.5, via `scheduleApproach`, which follows the clock's own length and start), with the radar warning `radarLead` seconds before. For testing, `summon()` (the **U** key, to go before release) brings it at once, on any night:
 
 ```
 waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone

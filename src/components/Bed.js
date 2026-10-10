@@ -3,9 +3,9 @@ import { Interactable } from './Interactable.js';
 // ─────────────────────────────────────────────
 // Bed  –  sleep through the day to the next night
 // ─────────────────────────────────────────────
-// Once the shift is over (3 AM) with the quota met, or in the morning: the
-// screen fades to black and the GameController moves on to the next night
-// (or ends the run after the last). Otherwise the prompt says why not.
+// Only the morning after a met quota (controller.canSleep): the screen
+// fades to black and the GameController moves on to the next night (or ends
+// the run after the last). During the shift the prompt says why not.
 //
 // The room puts it on the bunk; the scene hands it the controller and the
 // fade, since rooms don't know about gameplay:
@@ -18,9 +18,8 @@ import { Interactable } from './Interactable.js';
 // ─────────────────────────────────────────────
 
 const LABEL = {
-  sleep:    '[E] Sleep',
-  shift:    "Can't sleep — the shift runs until 3:00 AM",
-  overtime: "Can't sleep — overtime: meet the quota first",
+  sleep: '[E] Sleep',
+  shift: "Can't sleep — the shift runs until 6:00 AM",
 };
 
 export class Bed extends Interactable {
@@ -50,7 +49,6 @@ export class Bed extends Interactable {
     const c = this.controller;
     if (!c) return '';
     if (c.canSleep) return LABEL.sleep;
-    if (c.state !== 'playing') return '';
-    return c.overtime ? LABEL.overtime : LABEL.shift;
+    return c.state === 'playing' ? LABEL.shift : '';
   }
 }

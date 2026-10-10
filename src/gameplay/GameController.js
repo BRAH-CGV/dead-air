@@ -6,17 +6,13 @@ import { Component } from '../core/Component.js';
 // Orchestrates the signal-collection gameplay loop. Drives the night
 // clock, updates the HUD, and runs the day around the shift:
 //
-//   playing ──3 AM on, quota met: sleep()──▶ playing (next night)
-//      │                                   └──on the last night──▶ finished
-//      ├──6 AM, quota met──▶ morning ──sleep()──▶ (the same)
+//   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
+//      │                            └──sleep() on the last night──▶ finished
 //      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
 //      └──fail() (a threat got the player)──▶ gameOver
 //
-// The shift runs 6 PM to 3 AM (the clock's shiftEndHour); from then until
-// 6 AM is overtime. With the quota met the player may go to bed from 3 AM;
-// without it they work on, and can still make it up before 6 AM. Meeting the
-// quota early doesn't end the shift: the player still has to hold out until
-// 3 AM. The day is for sleeping — the Sun drowns the faint
+// One twelve-hour shift, 6 PM to 6 AM. Meeting the quota early doesn't end
+// it: the player still has to hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
 // signals and heats up the dust storms — so nothing happens in the morning
 // until the player goes to bed.
 //
@@ -28,9 +24,7 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 
 const PROMPT = {
-  quotaMet:   'Quota met — hold out until the shift ends at 3:00 AM',
-  clockedOut: 'Shift over — get some sleep (bedroom), or keep working',
-  overtime:   'Overtime — meet the quota before 6:00 AM',
+  quotaMet: 'Quota met — hold out until 6:00 AM',
   morning:  'Shift over — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
   finished: 'You made it through every shift.',
@@ -158,16 +152,9 @@ export class GameController extends Component {
     return () => this._stateListeners.delete(listener);
   }
 
-  /** Past the end of the shift (3 AM) and still working. */
-  get overtime() {
-    return this.state === 'playing' && !!this.nightClock?.overtime;
-  }
-
-  /** Whether the bed takes the player: in the morning, or in overtime with
-   *  the quota met. */
+  /** Whether the bed takes the player: the morning after a met quota. */
   get canSleep() {
-    if (this.state === 'morning') return true;
-    return this.overtime && !!this.quotaDock?.isQuotaMet();
+    return this.state === 'morning';
   }
 
   /** Called when a signal is saved by the terminal. Scanning no longer
@@ -189,7 +176,7 @@ export class GameController extends Component {
     this.startNight(this.nightNumber, { retry: true });
   }
 
-  /** Go to bed (canSleep: the morning, or overtime with the quota met):
+  /** Go to bed. Only the morning after a successful shift (canSleep):
    *  moves to the next night, or ends the run after the last one.
    *  @returns {boolean} whether the player slept */
   sleep() {
@@ -270,13 +257,10 @@ export class GameController extends Component {
     return !!engine.input?.pressed?.[engine.keyBinds?.interact];
   }
 
-  /** The prompt for where the shift stands, set only when that changes:
-   *  quota met before 3 AM, clocked out, or in overtime without it. */
+  /** The prompt for where the shift stands — the quota met, or not yet —
+   *  set only when that changes. */
   _updateShiftPrompt() {
-    const met = !!this.quotaDock?.isQuotaMet();
-    const key = this.nightClock?.overtime
-      ? (met ? 'clockedOut' : 'overtime')
-      : (met ? 'quotaMet' : null);
+    const key = this.quotaDock?.isQuotaMet() ? 'quotaMet' : null;
     if (key === this._shiftPrompt) return;
     this._shiftPrompt = key;
     this.hud?.setPrompt(key ? PROMPT[key] : '');

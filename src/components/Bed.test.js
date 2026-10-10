@@ -7,8 +7,8 @@ describe('Bed', () => {
 
   beforeEach(() => {
     controller = {
-      state: 'playing', overtime: false, quotaMet: false,
-      get canSleep() { return this.state === 'morning' || (this.overtime && this.quotaMet); },
+      state: 'playing',
+      get canSleep() { return this.state === 'morning'; },
       sleep: vi.fn(() => controller.canSleep),
     };
     // A fade that goes black at once.
@@ -33,23 +33,8 @@ describe('Bed', () => {
   });
 
   it('says why not while the shift is running', () => {
-    expect(label('playing')).toMatch(/3:00 AM/);
+    expect(label('playing')).toMatch(/6:00 AM/);
     expect(label('playing')).not.toMatch(/\[E\]/);
-  });
-
-  it('offers sleep in overtime once the quota is met', () => {
-    controller.overtime = true;
-    controller.quotaMet = true;
-    expect(label('playing')).toBe('[E] Sleep');
-    bed.onInteract();
-    expect(controller.sleep).toHaveBeenCalledOnce();
-  });
-
-  it('in overtime without the quota, says what is missing', () => {
-    controller.overtime = true;
-    expect(label('playing')).toMatch(/quota/i);
-    bed.onInteract();
-    expect(controller.sleep).not.toHaveBeenCalled();
   });
 
   it('offers nothing after a failed night or the last shift', () => {

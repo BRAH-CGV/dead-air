@@ -51,23 +51,17 @@ describe('scheduleApproach', () => {
     }
   });
 
-  it('spawns at a random time between 8:00 PM and 2:00 AM on the night clock, the radar warning ahead of it', () => {
-    expect(UFO.spawnHours).toEqual([-4, 2]);
+  it('spawns at a random time between 8:00 PM and 4:30 AM on the night clock, the radar warning ahead of it', () => {
+    expect(UFO.spawnHours).toEqual([-4, 4.5]);
     for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
       const start = scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => r });
       const spawn = start + UFO.radarLead;   // the flash, as the sound starts
       expect(hourAt(spawn)).toBeGreaterThanOrEqual(-4 - 1e-9);
-      expect(hourAt(spawn)).toBeLessThanOrEqual(2 + 1e-9);
+      expect(hourAt(spawn)).toBeLessThanOrEqual(4.5 + 1e-9);
       expect(start).toBeGreaterThan(0);
     }
     expect(hourAt(scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 0 }) + UFO.radarLead)).toBeCloseTo(-4);
-    expect(hourAt(scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 1 }) + UFO.radarLead)).toBeCloseTo(2);
-  });
-
-  it('is gone before the shift ends, so going to bed at 3 AM never skips it', () => {
-    const tl = ufoTimeline({ soundArrival: 23 });
-    const start = scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 1 });
-    expect(hourAt(start + tl.departure)).toBeLessThan(SHIFT.shiftEndHour);
+    expect(hourAt(scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 1 }) + UFO.radarLead)).toBeCloseTo(4.5);
   });
 
   it('never shows on the radar before dark', () => {

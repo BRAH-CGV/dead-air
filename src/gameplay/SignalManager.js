@@ -45,9 +45,8 @@ export const SIGNALS_PER_NIGHT = 10;
  *  stayed empty a little longer. */
 export const APPEAR_START = 0.12;
 
-/** Shift fraction by which every signal has appeared (~4:12 AM): they keep
- *  coming into overtime (from 3 AM), so a missed quota can be made up, and
- *  leave time before 6 AM to scan the last. */
+/** Shift fraction by which every signal has appeared (~4:12 AM), leaving
+ *  time before 6 AM to scan the last. */
 export const APPEAR_BY = 0.85;
 
 /** Real seconds a signal's radar dot takes to fade fully in (and out). */

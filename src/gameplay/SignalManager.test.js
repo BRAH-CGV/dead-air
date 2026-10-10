@@ -83,11 +83,6 @@ describe('SignalManager', () => {
     expect(every / oldEvery).toBeLessThan(1.1);
   });
 
-  it('keeps signals coming into overtime, so a missed quota can be made up', () => {
-    const span = SHIFT.endHour - SHIFT.startHour;
-    expect(SHIFT.startHour + APPEAR_BY * span).toBeGreaterThan(SHIFT.shiftEndHour + 1);
-  });
-
   it('clamps required to signalsPerNight', () => {
     const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
     mgr.startNight(5);  // would want 7, but only 3 available

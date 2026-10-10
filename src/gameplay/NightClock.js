@@ -2,7 +2,7 @@
 // NightClock  –  In-game time progression
 // ─────────────────────────────────────────────
 // Tracks the passage of a single night. Real seconds are mapped to in-game
-// hours: a shift (SHIFT) runs from sunset, 6:00 PM, to sunrise, 6:00 AM, over
+// hours: the shift (SHIFT) runs from sunset, 6:00 PM, to sunrise, 6:00 AM, over
 // NIGHT_SECONDS (600) real seconds → 50 s per hour.
 //
 // Hours are on a 24-hour clock that runs through midnight as 0: 6 PM is -6,
@@ -19,12 +19,11 @@
 /** Real seconds in one shift, 6:00 PM → 6:00 AM: ten minutes. */
 export const NIGHT_SECONDS = 600;
 
-/** The night on the clock, in hours from midnight (6 PM is -6).
- *  `darkHour` is when dusk has gone: the Sun set at the start of the night,
- *  and an hour later the sky is dark enough for the faint signals — and the
- *  things that come with the dark. The shift proper ends at `shiftEndHour`
- *  (3 AM); from then until `endHour` (6 AM, sunrise) is overtime. */
-export const SHIFT = Object.freeze({ startHour: -6, darkHour: -5, shiftEndHour: 3, endHour: 6 });
+/** The shift on the clock, in hours from midnight (6 PM is -6): one
+ *  twelve-hour shift, sunset to sunrise. `darkHour` is when dusk has gone:
+ *  the Sun set at the start of the shift, and an hour later the sky is dark
+ *  enough for the faint signals — and the things that come with the dark. */
+export const SHIFT = Object.freeze({ startHour: -6, darkHour: -5, endHour: 6 });
 
 export class NightClock {
   /** Real seconds elapsed this night. */
@@ -46,18 +45,12 @@ export class NightClock {
   /** @type {(() => void)|null} */
   onNightEnd = null;
 
-  /** @param {{ startHour?: number, shiftEndHour?: number, endHour?: number, nightDuration?: number }} opts */
-  constructor({ startHour = SHIFT.startHour, shiftEndHour = SHIFT.shiftEndHour, endHour = SHIFT.endHour, nightDuration = NIGHT_SECONDS } = {}) {
+  /** @param {{ startHour?: number, endHour?: number, nightDuration?: number }} opts */
+  constructor({ startHour = SHIFT.startHour, endHour = SHIFT.endHour, nightDuration = NIGHT_SECONDS } = {}) {
     this.startHour = startHour;
-    this.shiftEndHour = shiftEndHour;
     this.endHour = endHour;
     this.nightDuration = nightDuration;
     this.currentTime = startHour;
-  }
-
-  /** True from the end of the shift (3 AM) on: overtime, until 6 AM. */
-  get overtime() {
-    return this.currentTime >= this.shiftEndHour;
   }
 
   /** Formatted wall-clock string for the current in-game hour. */
