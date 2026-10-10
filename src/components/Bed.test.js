@@ -6,7 +6,11 @@ describe('Bed', () => {
   let controller, fade, bed;
 
   beforeEach(() => {
-    controller = { state: 'playing', sleep: vi.fn(() => controller.state === 'morning') };
+    controller = {
+      state: 'playing',
+      get canSleep() { return this.state === 'morning'; },
+      sleep: vi.fn(() => controller.canSleep),
+    };
     // A fade that goes black at once.
     fade = { play: vi.fn(onDark => { onDark(); return true; }) };
     bed = new Bed();
@@ -76,5 +80,34 @@ describe('Bed', () => {
     const loose = new Bed();
     expect(() => { loose.onUpdate(0.016); loose.onInteract(); }).not.toThrow();
     expect(loose.promptLabel).toBe('');
+  });
+
+  describe('naps', () => {
+    let nap;
+    beforeEach(() => {
+      nap = { canNap: true, napping: false, start: vi.fn(() => true) };
+      bed.nap = nap;
+    });
+
+    it('offers a nap during the shift', () => {
+      expect(label('playing')).toMatch(/^\[E\] Nap/);
+      bed.onInteract();
+      expect(nap.start).toHaveBeenCalledOnce();
+      expect(controller.sleep).not.toHaveBeenCalled();
+    });
+
+    it('says why not when a nap isn\'t possible', () => {
+      nap.canNap = false;
+      expect(label('playing')).toMatch(/can't sleep/i);
+      bed.onInteract();
+      expect(nap.start).not.toHaveBeenCalled();
+    });
+
+    it('in the morning it is the night\'s sleep, not a nap', () => {
+      expect(label('morning')).toBe('[E] Sleep');
+      bed.onInteract();
+      expect(controller.sleep).toHaveBeenCalledOnce();
+      expect(nap.start).not.toHaveBeenCalled();
+    });
   });
 });
