@@ -200,8 +200,10 @@ export class App {
     this._offController = null;
     engine.loadScene(engine.activeScene.constructor);
     // The camera outlives the scene, and nothing ticks under the menu to
-    // turn it back: face the way a fresh player does.
-    engine.camera?.rotation?.set(0, 0, 0);
+    // turn it back: face the way the fresh player does (beside the bunk,
+    // looking at the desk — not world forward).
+    const ctrl = engine.playerController;
+    engine.camera?.rotation?.set(ctrl?.pitch ?? 0, ctrl?.yaw ?? 0, 0);
     this.flow.markClean();
   }
 

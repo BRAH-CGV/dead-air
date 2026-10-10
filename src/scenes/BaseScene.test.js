@@ -179,9 +179,18 @@ describe('BaseScene', () => {
     }
   });
 
-  it('spawns the player inside the main office', () => {
+  it('wakes the player in the bedroom, beside the bunk (#79)', () => {
     expect(engine.buildPlayer).toHaveBeenCalledTimes(1);
-    expect(scene.rooms.MainOffice.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(scene.rooms.LivingQuarters.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(engine.buildPlayer).toHaveBeenCalledWith(expect.objectContaining({
+      position: scene.rooms.LivingQuarters.spawn.position,
+    }));
+  });
+
+  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
+    const { journal } = scene.rooms.LivingQuarters;
+    expect(journal.controller).toBe(scene.gameController);
+    expect(journal.panel).toBeTruthy();
   });
 
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
