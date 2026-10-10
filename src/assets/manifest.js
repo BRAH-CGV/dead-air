@@ -478,7 +478,8 @@ const PLACED = {
   // ration dropping from the office dispenser (BaseScene._addStamina).
   //
   // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
-  // final audio. Swapping one in means dropping the file into
+  // final audio — all but the yawn, which is a real recording (Mixkit, see
+  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
   // public/assets/audio/, named after its key (any format: footsteps.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
@@ -493,7 +494,7 @@ const PLACED = {
   },
   'sfx:yawn': {
     type: 'audio',
-    url: 'assets/audio/yawn.wav',
+    url: 'assets/audio/yawn.mp3',
   },
   'sfx:ration': {
     type: 'audio',

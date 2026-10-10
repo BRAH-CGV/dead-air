@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
 
@@ -7,6 +9,9 @@ import { resolveShape } from '../core/ColliderSpec.js';
  *  any hand-written shape) are in the .glb's native (~100-wide) space and
  *  only become world metres once this is applied. */
 const DESK_SPAWN_SCALE = 0.016;
+
+/** The repository root, for files the manifest points at. */
+const ROOT = resolve(__dirname, '../..');
 
 /** Is `point` (world metres, desk-local origin) inside an axis-aligned cuboid part? */
 function pointInBox(point, part) {
@@ -80,6 +85,14 @@ describe('manifest', () => {
       expect(ASSETS[key].url, key).toMatch(/^assets\/audio\//);
       expect(PRELOAD, key).toContain(key);
     }
+  });
+
+  it('the yawn is a real recording (Mixkit), on disk and credited — not the synthesised placeholder', () => {
+    const { url } = ASSETS['sfx:yawn'];
+    expect(url).toBe('assets/audio/yawn.mp3');
+    expect(existsSync(resolve(ROOT, 'public', url))).toBe(true);
+    const credits = readFileSync(resolve(ROOT, 'ATTRIBUTIONS.md'), 'utf8');
+    expect(credits).toMatch(/Young tired male yawns[\s\S]*?`sfx:yawn`/);
   });
 
   it('has no validation problems', () => {

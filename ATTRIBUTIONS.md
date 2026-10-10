@@ -663,6 +663,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | A dust eye catching the player (`DustEyes`) |
 | **Modifications** | Renamed |
 
+### Young tired male yawns
+
+"Young tired male yawns" (https://mixkit.co/free-sound-effects/yawn/) from Mixkit is used under the Mixkit Sound Effects Free License (https://mixkit.co/license/#sfxFree) — free to use in a game, attribution not required, credited here anyway. Downloaded as `mixkit-young-tired-male-yawns-2278.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/yawn.mp3` |
+| **Manifest key** | `sfx:yawn` |
+| **Used for** | The tired player's yawns (`FatigueEffects`) |
+| **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
+
 ### Pressure release
 
 One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Air Compressor Releasing Pressure" by j_soundeffects (https://freesound.org/people/j_soundeffects/sounds/847748/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "Air (or steam) pressure release" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/457294/), Creative Commons 0 — free to use, attribution not required, credited here anyway.

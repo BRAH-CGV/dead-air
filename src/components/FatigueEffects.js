@@ -29,7 +29,7 @@ import { FatigueLogic, tunnel, heartbeat } from '../gameplay/Fatigue.js';
  *  is the player's own, under the walk-down's dread. */
 export const FATIGUE_SOUNDS = { heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn', breathing: 'sfx:breathing' };
 
-const YAWN_VOLUME = 0.7;
+const YAWN_VOLUME = 0.6;
 const HEARTBEAT_VOLUME = 0.9;
 /** How much faster the heart beats at empty than when it is first heard. */
 const HEARTBEAT_QUICKEN = 0.35;
