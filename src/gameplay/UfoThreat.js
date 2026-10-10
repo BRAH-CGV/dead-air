@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
+import { NIGHT_SECONDS } from './NightClock.js';
 
 // ─────────────────────────────────────────────
 // UfoThreat  –  the visitor that comes once a night
@@ -231,7 +232,7 @@ export class UfoThreat extends Component {
    * @param {{ exit: () => void }} [opts.terminal]
    * @param {{ play: Function, clear: Function }} [opts.whiteOut]
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from UFO_SOUNDS when left out.
-   * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
+   * @param {number} [opts.nightDuration=NIGHT_SECONDS]  Real seconds in a shift.
    * @param {number} [opts.nightHours=6]      Clock hours in it.
    * @param {number} [opts.soundArrival]  Seconds into the flight clip to arrive
    *        at. Left out, it is measured off the clip (loudestTime).
@@ -240,7 +241,7 @@ export class UfoThreat extends Component {
   constructor({
     controller, grid, ufo, hooks, hoverPoint = new THREE.Vector3(0, 35, 0), flood = null,
     signalLight = null, radar = null, terminal = null, whiteOut = null, sounds = null,
-    nightDuration = 300, nightHours = 6, soundArrival, random = Math.random,
+    nightDuration = NIGHT_SECONDS, nightHours = 6, soundArrival, random = Math.random,
   }) {
     super();
     Object.assign(this, { controller, grid, ufo, hooks, flood, signalLight, radar, terminal, whiteOut, sounds, nightDuration, nightHours, random });
