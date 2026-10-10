@@ -10,6 +10,7 @@ import { loopable } from './GeneratorSound.js';
 //   loop     the drive, for as long as the dish is moving. It fades in as a
 //            movement starts and out as it ends, 30 ms each way — long
 //            enough not to click, short enough to still start and stop.
+//            Played a few semitones down (loopDetune), so it is deeper.
 //   ending   once after each movement: the dish settling on its mount.
 //
 // "Moving" is read off the dish's own angular velocity, either axis. It
@@ -35,8 +36,12 @@ export const SATELLITE_SOUND = {
   loop:   'sfx:dish-main-loop-distant',
   ending: 'sfx:movement-ending',
   /** Of each clip's own level. */
-  loopVolume: 0.4,
+  loopVolume: 0.3,
   endingVolume: 1,
+  /** Cents the drive is played below the recording's own pitch (100 to a
+   *  semitone). At its own pitch it whines; a dish this size is a deeper,
+   *  slower machine. It runs that much slower too: 0.79× at −400. */
+  loopDetune: -400,
   /** The loop's fade in and out. */
   fade: 0.03,
   /** Angular speed (rad/s, either axis) above which a movement has begun,
@@ -66,6 +71,7 @@ export class SatelliteSound extends Component {
   onStart() {
     this.satellite ??= this.gameObject;
     this.sounds ??= this._buildSounds();
+    this.sounds.loop?.setDetune?.(SATELLITE_SOUND.loopDetune);
     const engine = this.gameObject?.scene?.userData?.engine;
     this._offPause ??= engine?.onPauseChange?.(paused => this._onPause(paused)) ?? null;
   }

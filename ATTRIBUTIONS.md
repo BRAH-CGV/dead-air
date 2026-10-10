@@ -696,6 +696,50 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 | **Used for** | The dish slewing (`SatelliteSound`): its drive while it moves, and the click as it settles |
 | **Modifications** | Cut into two clips: a loop of the drive and the ending; the loop is crossfaded into a seamless loop at load |
 
+### Scanner alert
+
+One beep, mixed by us from three Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "Radar" by unfa (https://freesound.org/people/unfa/sounds/584179/), and "Switch-083" (https://freesound.org/people/Moulaythami/sounds/842473/) and "Switch-090" (https://freesound.org/people/Moulaythami/sounds/842480/) by Moulaythami.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/scanner-alert.mp3` |
+| **Manifest key** | `sfx:scanner-alert` |
+| **Used for** | The signal lamp's beep, once with every light-up (`ScannerAlertSound`) |
+| **Modifications** | The three recordings cut, layered and mixed down into one short beep; pitch and level varied slightly, at random, while the lamp flashes for the UFO |
+
+### Drive box knocks
+
+Three clips, cut by us from two Freesound recordings, both Creative Commons 0 — free to use, attribution not required, credited here anyway: "Cardboard Box Table.wav" by FlirtFM (https://freesound.org/people/FlirtFM/sounds/491094/) and "boxes small cardboard of junk and parts grab slide pickup put down on wood shelves rattle.wav" by kyles (https://freesound.org/people/kyles/sounds/452569/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/box-impact-1.mp3`, `box-impact-2.mp3`, `box-handle.mp3` |
+| **Manifest key** | `sfx:box-impact-1`, `sfx:box-impact-2`, `sfx:box-handle` |
+| **Used for** | A drive box put down or dropped, one of two picked at random; and a third for it being picked up, docked and undocked (`ImpactSound`) |
+| **Modifications** | Cut into three short clips |
+
+### Drive knocks
+
+"Box Lifted and Put Down.wav" (https://freesound.org/people/180156/sounds/445498/) by 180156 on Freesound is used under Creative Commons Attribution 3.0 (https://creativecommons.org/licenses/by/3.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/drive-impact-1.mp3`, `drive-impact-2.mp3`, `drive-impact-3.mp3`, `drive-impact-4.mp3` |
+| **Manifest key** | `sfx:drive-impact-1`, `sfx:drive-impact-2`, `sfx:drive-impact-3`, `sfx:drive-impact-4` |
+| **Used for** | A drive dropped, knocked against something, picked up, or seated in a drive box or taken out of one (`ImpactSound`), one picked at random |
+| **Modifications** | Cut into four short clips |
+
+### Drive reader
+
+Six clips, mixed by us from three Freesound recordings: "Opening Closing Tape Deck Inserting Ejecting Audio Cassette" by WeenyBeany (https://freesound.org/people/WeenyBeany/sounds/769362/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "floppy_insert.ogg" by asiekierka (https://freesound.org/people/asiekierka/sounds/628244/) and "sd card sounds.mp3" by Tairblenn (https://freesound.org/people/Tairblenn/sounds/535956/), both Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/drive-insert-1.mp3`, `drive-insert-2.mp3`, `drive-insert-3.mp3`, `drive-remove-1.mp3`, `drive-remove-2.mp3`, `drive-remove-3.mp3` |
+| **Manifest key** | `sfx:drive-insert-1`, `sfx:drive-insert-2`, `sfx:drive-insert-3`, `sfx:drive-remove-1`, `sfx:drive-remove-2`, `sfx:drive-remove-3` |
+| **Used for** | A drive going into a reader and coming out of it (`DriveSlot`), one of three picked at random each way |
+| **Modifications** | The recordings cut, layered and mixed down; split into three insert clips and three remove clips |
+
 ### Base ambience (room tone loops)
 
 Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).

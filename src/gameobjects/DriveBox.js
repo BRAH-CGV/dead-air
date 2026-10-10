@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { SnapSocket } from '../components/SnapSocket.js';
 import { packGroups } from '../core/PhysicsLayers.js';
 
@@ -54,6 +55,8 @@ export class DriveBox extends GameObject {
       snapDistance: this.snapDistance,
       slots: this._buildSlots(opts),
       attachedPromptLabel: opts.attachedPromptLabel ?? '[E] Take drive',
+      // A drive going in or coming out knocks; the box has nothing to beep.
+      sounds: 'item',
       canAccept: item => item?.isDrive === true,
     }));
 
@@ -62,6 +65,8 @@ export class DriveBox extends GameObject {
     this.pickupable = this.addComponent(new Pickupable());
     this.pickupable.promptLabel = opts.promptLabel ?? '[E] Pick up drive box';
     this.pickupable.holdDistance = opts.holdDistance ?? 1.2;
+    // Its thud when it is put down or dropped.
+    this.addComponent(new ImpactSound(IMPACT_SOUNDS.box));
   }
 
   /** The socket grid on the lid: rows × columns of drives standing on end

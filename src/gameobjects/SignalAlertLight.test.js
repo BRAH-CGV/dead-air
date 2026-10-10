@@ -115,6 +115,57 @@ describe('SignalAlertLight', () => {
     });
   });
 
+  describe('lit', () => {
+    it('is true through the bright half of a blink and false through the dim half', () => {
+      const light = new SignalAlertLight();
+      light.signalManager = mgr([sig()]);
+      expect(light.lit).toBe(false);          // before anything has ticked
+
+      light._update(0);
+      expect(light.lit).toBe(true);
+      light._update(light.period * 0.25);
+      expect(light.lit).toBe(true);
+      light._update(light.period * 0.25);
+      expect(light.lit).toBe(false);
+      light._update(light.period * 0.5);
+      expect(light.lit).toBe(true);
+    });
+
+    it('is false with nothing to scan', () => {
+      const light = new SignalAlertLight();
+      const signals = [sig()];
+      light.signalManager = mgr(signals);
+      light._update(0);
+      signals[0].scanned = true;
+      light._update(0.01);
+      expect(light.lit).toBe(false);
+    });
+
+    it('is false with no power, mid-blink or frantic', () => {
+      const light = new SignalAlertLight();
+      light.signalManager = mgr([sig()]);
+      light._update(0);
+      expect(light.lit).toBe(true);
+      light.powerLevel = 0;
+      light._update(0.01);
+      expect(light.lit).toBe(false);
+      light.frantic = true;
+      for (let i = 0; i < 30; i++) {
+        light._update(1 / 60);
+        expect(light.lit).toBe(false);
+      }
+    });
+
+    it('follows the frantic bursts', () => {
+      const light = new SignalAlertLight();
+      light.frantic = true;
+      for (let i = 0; i < 60; i++) {
+        light._update(1 / 60);
+        expect(light.lit).toBe(bulb(light).material.emissiveIntensity > light.offIntensity);
+      }
+    });
+  });
+
   describe('power and the UFO', () => {
     it('goes frantic — fast, irregular flashing — with nothing to scan', () => {
       const light = new SignalAlertLight();
