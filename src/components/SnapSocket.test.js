@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { SnapSocket } from './SnapSocket.js';
 import { Pickupable } from './Pickupable.js';
+import { ImpactSound, IMPACT } from './ImpactSound.js';
 
 function makeItem(name = 'Item', position = [0, 0, 0], held = false) {
   const pickupable = new Pickupable();
@@ -167,5 +168,62 @@ describe('SnapSocket', () => {
 
     socket.detach(item);
     expect(item._pickupable.promptLabel).toBe('[E] Pick up');
+  });
+
+  describe('sounds', () => {
+    /** An item that carries its own knock. */
+    function makeLoudItem(name, position) {
+      const item = makeItem(name, position);
+      const impact = new ImpactSound();
+      impact.handle = vi.fn();
+      item.components.push(impact);
+      return { item, impact };
+    }
+
+    it('beeps by default, and leaves the item quiet', () => {
+      const socket = makeSocket({ playSounds: true });
+      const beep = vi.spyOn(socket, '_playBeep').mockImplementation(() => {});
+      const { item, impact } = makeLoudItem('Drive', [0, 0, 0]);
+
+      socket.attach(item);
+      socket.detach(item);
+
+      expect(beep.mock.calls).toEqual([['insert'], ['eject']]);
+      expect(impact.handle).not.toHaveBeenCalled();
+    });
+
+    it("plays the item's own knock instead, seating it and taking it out, when set to 'item'", () => {
+      const socket = makeSocket({ playSounds: true, sounds: 'item' });
+      const beep = vi.spyOn(socket, '_playBeep').mockImplementation(() => {});
+      const { item, impact } = makeLoudItem('Drive', [0, 0, 0]);
+
+      socket.attach(item);
+      expect(impact.handle).toHaveBeenCalledTimes(1);
+      expect(impact.handle).toHaveBeenLastCalledWith(IMPACT.seatLevel);
+
+      socket.detach(item);
+      expect(impact.handle).toHaveBeenCalledTimes(2);
+      expect(beep).not.toHaveBeenCalled();
+    });
+
+    it("stays quiet for a silent detach, and with sounds off, in 'item' mode too", () => {
+      const socket = makeSocket({ playSounds: true, sounds: 'item' });
+      const { item, impact } = makeLoudItem('Drive', [0, 0, 0]);
+      socket.attach(item);
+      impact.handle.mockClear();
+      socket.detach(item, { playSound: false });
+      expect(impact.handle).not.toHaveBeenCalled();
+
+      const mute = makeSocket({ playSounds: false, sounds: 'item' });
+      mute.attach(item);
+      mute.detach(item);
+      expect(impact.handle).not.toHaveBeenCalled();
+    });
+
+    it("carries on in 'item' mode with an item that has no knock", () => {
+      const socket = makeSocket({ playSounds: true, sounds: 'item' });
+      const item = makeItem('Drive', [0, 0, 0]);
+      expect(() => { socket.attach(item); socket.detach(item); }).not.toThrow();
+    });
   });
 });

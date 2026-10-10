@@ -465,6 +465,8 @@ describe('Airlock', () => {
     expect(socket.canAccept({ isDriveBox: true })).toBe(true);
     expect(socket.canAccept({ isDriveBox: false })).toBe(false);
     expect(socket.canAccept({ isDrive: true })).toBe(false);
+    // A box seated here lands with its own knock, not a beep
+    expect(socket.sounds).toBe('item');
 
     const dock = airlock.quotaDock;
     expect(dock).not.toBeNull();

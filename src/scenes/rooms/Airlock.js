@@ -234,6 +234,7 @@ export class Airlock extends Corridor {
       snapDistance: 0.35,
       slots: [{ offset: { y: dockSize[1] / 2 + 0.06 } }],
       attachedPromptLabel: '[E] Take drive box',
+      sounds: 'item',   // the box's own knock as it lands in the dock
       canAccept: item => item?.isDriveBox === true,
     }));
 

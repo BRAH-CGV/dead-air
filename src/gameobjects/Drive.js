@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { packGroups } from '../core/PhysicsLayers.js';
 
 // ─────────────────────────────────────────────
@@ -15,7 +16,7 @@ import { packGroups } from '../core/PhysicsLayers.js';
 // lifecycle hook). Before _init it is a plain visual with a Pickupable
 // marker; after _init it has a rigid body and collider. Gravity is on from
 // the start: the drive rests on the floor (or desk) until picked up, and
-// falls when dropped.
+// falls when dropped — with a clatter (ImpactSound), one of four at random.
 //
 //   const drive = new Drive('Drive_1');
 //   drive.object3d.position.set(1.2, 0.02, -2.0);
@@ -81,6 +82,8 @@ export class Drive extends GameObject {
     // receiver can attach the drive at build time and still swap its
     // prompt and install the detach-on-pickup hook.
     this.addComponent(new Pickupable());
+    // Its clatter when it is dropped or knocked.
+    this.addComponent(new ImpactSound(IMPACT_SOUNDS.drive));
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
