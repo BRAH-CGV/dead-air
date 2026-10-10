@@ -31,21 +31,24 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // starts (a new one, a retry, the N key) sends it away. It holds while the
 // debug fly camera has frozen the player.
 //
-// It is silent but for its footsteps (FOOTSTEP): a step as it shows, steps
-// in or slips round out of sight (see _place), and one now and then while it
-// stands there — brisker once it is walking in, quicker still as it sneaks
-// out of sight. Everything else about it is stillness: no breathing, no growl.
+// It is silent but for its footsteps (FOOTSTEP), and those only while it
+// moves: creeping in unseen, or walking in below walkBelow. Showing up is
+// silent — it fades in. Everything else about it is stillness: no
+// breathing, no growl.
 //
 // The figure is a hidden, body-less GameObject the scene builds and owns,
 // under a group at the world origin, so its position is a world position.
 // Its body casts a shadow and the shadow maps are frozen between redraws,
 // so every show, step or hide calls onFigureChanged — turning on the spot
-// doesn't (the body is round). It fades rather than popping: a look fades
-// it away where it stood (FIGURE_FADE.out), and it fades back in
-// (FIGURE_FADE.in) wherever it next shows; only a night start, the shift
-// ending or the death take it away at once.
+// doesn't (the body is round). It never pops: wherever it shows it fades in
+// from nothing over the rules' fadeIn, up to their presence (faint while the
+// player is fresh, solid once they are tired), and a look fades it away
+// where it stood (fadeOut); only a night start, the shift ending or the
+// death take it away at once. In the periphery it shows just outside the
+// look cone (showMargin past it), so it appears where the eye isn't quite
+// looking. From smileBelow it smiles (the figure's `smile`), through the kill.
 //
-// The stare-down (below holdBelow, while seen) walks it in along the line
+// The walk-in (below walkBelow, while seen) walks it in along the line
 // from the eye, each step checked like a new spot: nothing at eye height in
 // the way, the floor clear, in view. A step that fails, it holds. It follows
 // a player who backs away — but only half as fast as they retreat, so they
@@ -95,18 +98,14 @@ export const SLEEP_DEMON_FIGURE = Object.freeze({ height: 1.8, radius: 0.26 });
 
 /** The footsteps: its volume right beside the player, the share of that
  *  when it first shows, the distance it is that loud at, and the seconds
- *  between steps while it only stands there … walking in … sneaking out of
- *  sight, which is brisker still — the hurry in the dark is all you get. */
-const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, every: [2.5, 7], walk: [1.4, 2.4], sneak: [0.6, 1.1] };
+ *  between steps while it walks in, seen … creeps in, unseen: slow, careful
+ *  steps. Standing still it makes no sound. */
+const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
 
 /** The walk-down's grip: the share of the player's speed it leaves them
  *  while it walks in on them. The breathing and the heartbeat floor come
  *  with it (FatigueEffects.setDread). */
 export const SLEEP_DEMON_DREAD = Object.freeze({ slow: 0.6 });
-
-/** The figure's fade, seconds: away where it stood on a look, back in where
- *  it next shows. */
-const FIGURE_FADE = { in: 0.4, out: 0.35 };
 
 /** What blocks sight: walls, props, the floor, shelves and what is on them.
  *  Not the player's capsule. The interaction ray's groups. */
@@ -243,9 +242,12 @@ export class SleepDemon extends Component {
      *  going: +1 in, −1 out, 0 settled. */
     this._opacity = 0;
     this._fadeDir = 0;
+    this._fadeFrom = 0;
     /** Its materials, and the opacity each was built at, collected on the
      *  first fade so the fade scales what a model came with. */
     this._fadeMaterials = null;
+    /** Radians off the centre of the view it last showed at (dead air). */
+    this._shownAt = 0;
     this._off = null;
     this.logic = new SleepDemonLogic({
       tuning, rand,
@@ -285,6 +287,7 @@ export class SleepDemon extends Component {
     this._wake();
     this.logic.start();
     this._hide();
+    this._smile(false);
     this._hushStep();
     this._release();
     this._hasEye = false;
@@ -296,6 +299,8 @@ export class SleepDemon extends Component {
       // The shift ended under it (6 AM, another threat): called off. Once
       // over, the freeze holds behind the failed night until the retry.
       if (this._death.running) this._wake();
+      // Its rules start over too: hidden, it must not go on thinking it stands.
+      if (this.logic.around) this.logic.start();
       this._hide();
       this._hushStep();
       this.flashlight?.setInterference(false, 'sleep-demon');
@@ -313,6 +318,7 @@ export class SleepDemon extends Component {
       return;
     }
     if (this._death.active) {
+      this._smile(true);                    // it kept its smile for this
       // Still on it as it looms over them: the torch in their hand stutters.
       this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
       this._release();
@@ -323,6 +329,7 @@ export class SleepDemon extends Component {
     this._trackAway();
     logic.update(dt, this.stamina.value);
     this._tickFade(dt);
+    this._smile(logic.smiling);
     if (this.figure.object3d.visible) this._facePlayer();
     this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
     this._footsteps(dt);
@@ -387,10 +394,11 @@ export class SleepDemon extends Component {
     return !!state && state !== 'idle';
   }
 
-  /** Stand it `distance` out from the eye, `edge` of the way out to the
-   *  `side` (+1 right, −1 left) of the view; an ambush may land out of
-   *  view. False: no room there. */
-  _place({ distance, side, edge, ambush = false }) {
+  /** Fade it in `distance` out from the eye, `edge` of the way out to the
+   *  `side` (+1 right, −1 left) of the view — but never inside the look
+   *  cone (`focus`, plus showMargin); an ambush may land out of view.
+   *  False: no room there. Silent: it fades in, it doesn't step in. */
+  _place({ distance, side, edge, focus = 0, ambush = false }) {
     const camera = this.camera;
     if (!camera) return false;
     camera.getWorldPosition(_eye);
@@ -399,9 +407,10 @@ export class SleepDemon extends Component {
     if (_dir.lengthSq() < 1e-8) _dir.set(0, 0, -1);
     // Level, then turned off the centre: a turn about +Y goes left, so the
     // right side is a negative turn.
-    _dir.normalize().applyAxisAngle(UP, -side * edge * halfWidth(camera));
-
     const t = this.tuning;
+    const off = ambush ? edge * halfWidth(camera) : Math.max(edge * halfWidth(camera), focus + t.showMargin);
+    _dir.normalize().applyAxisAngle(UP, -side * off);
+
     let d = Math.min(distance, this.rayHit(_eye, _dir, distance + t.wallGap) - t.wallGap);
     while (d >= t.minDistance && this._occupied(_eye.x + _dir.x * d, _eye.z + _dir.z * d)) d -= STEP;
     if (d < t.minDistance) return false;
@@ -413,10 +422,11 @@ export class SleepDemon extends Component {
     const o = this.figure.object3d;
     o.position.copy(_spot);
     o.visible = true;
-    if (this._opacity < 1 || this._fadeDir < 0) this._fadeDir = 1;   // a return
+    this._applyOpacity(0);                  // a new spot: in from nothing, never a pop
+    this._fadeDir = 1;
+    this._shownAt = off;
     this._facePlayer();
     this.onFigureChanged?.();
-    this._playStep();                       // a step with every move it takes
     return true;
   }
 
@@ -454,28 +464,39 @@ export class SleepDemon extends Component {
    *  casting) until the fade is done: _tickFade hides it then. */
   _fadeAway() {
     this._fadeDir = this.figure.object3d.visible ? -1 : 0;
+    this._fadeFrom = this._opacity;         // out over fadeOut, however there it was
   }
 
-  /** A frame of the fade: in over FIGURE_FADE.in, out over FIGURE_FADE.out.
-   *  Out done, it is gone, and the frozen shadow maps are told. */
+  /** A frame of the fade. In: from nothing up to the rules' presence over
+   *  fadeIn; settled, it follows the presence as stamina moves it. Out: to
+   *  nothing over fadeOut, and then it is gone and the frozen shadow maps
+   *  are told. */
   _tickFade(dt) {
-    if (!this._fadeDir) return;
     const o = this.figure.object3d;
-    const seconds = this._fadeDir > 0 ? FIGURE_FADE.in : FIGURE_FADE.out;
-    const x = this._opacity + this._fadeDir * (dt / seconds);
-    if (x >= 1) {
-      this._fadeDir = 0;
-      this._applyOpacity(1);
-    } else if (x <= 0) {
+    if (!o.visible) return;
+    const t = this.tuning;
+    if (this._fadeDir < 0) {
+      const x = this._opacity - dt * Math.max(this._fadeFrom, 0.05) / t.fadeOut;
+      if (x > 0) return this._applyOpacity(x);
       this._fadeDir = 0;
       this._applyOpacity(0);
-      if (o.visible) {
-        o.visible = false;
-        this.onFigureChanged?.();
-      }
-    } else {
-      this._applyOpacity(x);
+      o.visible = false;
+      this.onFigureChanged?.();
+      return;
     }
+    const target = this.logic.presence;
+    const rate = Math.max(target, 0.05) / t.fadeIn;
+    const x = this._opacity < target
+      ? Math.min(target, this._opacity + rate * dt)
+      : Math.max(target, this._opacity - rate * dt);
+    if (x === target) this._fadeDir = 0;
+    if (x !== this._opacity) this._applyOpacity(x);
+  }
+
+  /** Its grin, on or off. The figure's own: a placeholder without one shows none. */
+  _smile(on) {
+    const smile = this.figure.smile;
+    if (smile && smile.visible !== on) smile.visible = on;
   }
 
   /** How there it is, 0 … 1: every material the figure was built with,
@@ -576,26 +597,22 @@ export class SleepDemon extends Component {
     sound.play();
   }
 
-  /** How long to the next step: a slow shuffle while it only stands there,
-   *  quicker while it is walking in, brisker still as it sneaks. */
+  /** How long to the next step: walking in, seen, or creeping, unseen. */
   _stepEvery() {
-    const logic = this.logic;
-    const [lo, hi] = logic.walking ? FOOTSTEP.walk
-      : logic.sneaking ? FOOTSTEP.sneak : FOOTSTEP.every;
+    const [lo, hi] = this.logic.walking ? FOOTSTEP.walk : FOOTSTEP.sneak;
     return lo + (hi - lo) * this.rand();
   }
 
-  /** The occasional step while it is there. Starting to walk in or to sneak
-   *  re-times the next one, so the new cadence begins at once, not after an
-   *  old gap. Gone: nothing, and no step from nowhere. */
+  /** Steps only while it moves: the first as it sets off, then at the
+   *  cadence. Standing still, fading in or gone: nothing. */
   _footsteps(dt) {
     const logic = this.logic;
-    if (!logic.shown) {
+    const mode = !logic.shown ? 0 : logic.walking ? 2 : logic.sneaking ? 1 : 0;
+    if (!mode) {
       this._stepIn = 0;
       this._stepMode = 0;
       return;
     }
-    const mode = logic.walking ? 2 : logic.sneaking ? 1 : 0;
     if (mode !== this._stepMode) {
       this._stepMode = mode;
       this._stepIn = Math.min(this._stepIn, this._stepEvery());
@@ -618,14 +635,13 @@ export class SleepDemon extends Component {
   }
 
   /** Duck the ambience by how near the view has come round to it. Measured
-   *  from the share of the view's half-width it shows at for this stamina,
-   *  so it is mild wherever it first shows. A second lookAngle() after the
+   *  from where it last showed (_shownAt), so it is mild wherever it first
+   *  shows. A second lookAngle() after the
    *  rules', since it may have just shown, stepped or fled this frame. */
   _deadAir() {
-    const { logic, tuning: t } = this;
+    const logic = this.logic;
     if (!logic.shown || !this.camera) return this._duck(1);
-    const shownAt = lerp(t.edgeFar, t.edgeNear, logic.closeness) * halfWidth(this.camera);
-    this._duck(duckFor(this.lookAngle(), shownAt, logic.focus));
+    this._duck(duckFor(this.lookAngle(), this._shownAt, logic.focus));
   }
 
   /** The ambience at `level` of itself; 1 lets go. */
@@ -763,6 +779,7 @@ export class SleepDemon extends Component {
     }
     this._volume = null;
     for (const eye of this.figure.eyes ?? []) eye.scale.setScalar(1);
+    this._smile(false);
     this._hide();
   }
 }

@@ -1,136 +1,123 @@
 // ─────────────────────────────────────────────
 // SleepDemonLogic  –  the Sleep Demon's rules, with no scene attached
 // ─────────────────────────────────────────────
-// It lives in the corner of the player's eye. Once stamina drops below
-// `appearBelow` it is about: a few seconds later it shows at the edge of
-// the view, and the tireder the player, the nearer it stands and the nearer
-// the middle of the view:
+// It lives in the corner of the player's eye, and it never teleports. Once
+// stamina drops below `appearBelow` it is about: a few seconds later it
+// fades in (slowly — the scene's fadeIn) in the periphery, or, by the roll
+// (behindChance), behind the player. Where it showed it stays. It moves
+// only while nobody looks at it, and slowly: then, and only then, its
+// footsteps are heard.
 //
-//   stamina      0.85 ─────────────────────────────────▶ 0
-//   distance     10 m                                    0.8 m, right beside them
-//   from centre  at the very edge of the view            just inside the tunnel's clear middle
-//   gone for     6 s after a look                        half a second
+//   stamina      0.85 ──────────── 0.5 ──────────── 0.1 ──── 0.05 ── 0.01 ── 0
+//   presence     barely there (faintest) ─▶ solid by 0.3
+//   look cone    50° ────────────────────────────▶ 15° │ no longer fades
+//   seen                fades away from a look         │ stares │ walks in
+//   unseen       creeps in, very slowly at first, quicker as the player tires
+//   face                                                        smiles ─▶ the kill
 //
-// Looked at it is gone at once, and shows again `goneFor` later at the other
-// edge of the view. The look that counts starts wide (focusFar, 40°: it
-// lives in the periphery) and closes in as stamina falls (focusAngleFor,
-// down to focusNear, 5°), so the tireder the player, the closer to the
-// centre it can creep. Out of view for `lostAfter` (turned away from, or
-// something in the way) it finds the edge of the view again. Every eighth
-// of the way down it steps in to a new spot, looked at or not, and a ration
-// sends it back the same way. Below `holdBelow`, more than about half asleep,
-// it no longer flees a look: it stands there. At empty it takes the player.
+// Looked at — any of it within the frame's look cone of the centre of the
+// view (focusAngleFor) — it fades away where it stood, and fades in again
+// `goneFor` later on the other side. It always shows outside the cone, so
+// it only ever appears where the eye isn't quite looking. Below `holdBelow`
+// it no longer fades from a look; below `walkBelow` it walks in on the
+// player, seen or not. At `smileBelow` it smiles, and keeps it through the
+// kill. At empty it takes the player.
 //
-// With the stare-down on (see the tuning), "stands there" is a slow walk in
-// on the player for as long as it is seen, down to arm's length. It follows
-// a player who backs away (playerDrift), taking up half their retreat — they
-// gain ground, they never lose it — and while it is walking, `walking` tells
-// the scene to slow the player down.
+// Unseen — turned away from, out of the frustum, or the terminal's screen
+// up — it creeps (sneakSpeedFor), no nearer than creepFloorFor(stamina):
+// while the player is fresh it keeps its distance. A banishing look gives
+// the ground it crept back. Shut out (a wall between them, the player gone
+// to another room) for `stuckAfter`, it fades in somewhere new, near them.
 //
-// Out of sight completely — turned away from, or something in between — it
-// sneaks (sneakSpeed): the whole time nobody looks its way it comes in, and
-// the scene hurries its footsteps with it (sneaking). The next showing is
-// nearer than the last; only a look that banishes it, the hold coming back,
-// or a night start gives the ground back.
-//
-// A showing may also land out of sight by the roll (behindChance): beside or
-// behind the player, as near as the terminal's ambush lets it stand, and it
-// creeps from there — where no edge of the view would ever let it show.
-//
-// While the view is covered (the terminal's screen) it neither flees nor
-// wanders. It slips round out of sight, beside or behind the player — much
-// nearer than the edge of the view would ever allow (ambushDistanceFar/Near)
-// — and steps in there band by band, so closing the screen may find it
-// looming right behind them. Then the usual rules take over.
+// While the view is covered (the terminal) a figure standing in view slips
+// round out of sight, beside or behind the player, at the ambush's nearer
+// distances (ambushDistanceFar/Near) — closing the screen may find it right
+// behind them.
 //
 // The scene is injected: lookAngle() says where the view is from it,
-// place() puts it at the edge of the view, hide() takes it away. SleepDemon
-// (the component) maps them onto the camera, the physics and the figure.
+// place() fades it in at a spot, approach() steps it in, hide() fades it
+// away. SleepDemon (the component) maps them onto the camera, the physics
+// and the figure.
 // ─────────────────────────────────────────────
+
+const DEG = Math.PI / 180;
 
 export const SLEEP_DEMON = Object.freeze({
   /** It is about once stamina is below this. */
   appearBelow: 0.85,
-  /** Metres from the player's eye when it first shows … */
+  /** Metres from the player's eye it first shows … */
   farthest: 10,
   /** … and at empty. */
   nearest: 0.8,
-  /** How far out from the centre of the view it stands, as a share of the
-   *  view's half-width: at the very edge at first, and at empty just inside
-   *  the clear middle of the fatigue tunnel, where it can still be seen. */
-  edgeFar: 0.85,
-  edgeNear: 0.45,
-  /** Looked at: within this angle (radians) of the centre of the view.
-   *  Wide while the player is only starting to tire (focusFar: 40°), so it
-   *  lives in the periphery: a glance that far off sends it away before it
-   *  can ever be centred. The tireder the player, the closer to the centre
-   *  a look must be to count (focusAngleFor), down to focusNear (5°) at the
-   *  hold — from there it no longer flees a look at all. It shows further
-   *  out than the look reaches while it can still flee (edgeFar/edgeNear),
-   *  so it only ever pops out at the edge. */
-  focusFar: 40 * Math.PI / 180,
-  focusNear: 5 * Math.PI / 180,
+  /** How far out from the centre of the view it shows, as a share of the
+   *  view's half-width — but always at least `showMargin` outside the look
+   *  cone, so it never fades in where the eye is already looking. */
+  edgeFar: 0.95,
+  edgeNear: 0.5,
+  showMargin: 4 * DEG,
+  /** The look cone, radians off the centre of the view: 50° at 85 %
+   *  stamina, closing to 15° at `holdBelow` (10 %). */
+  focusFar: 50 * DEG,
+  focusNear: 15 * DEG,
+  /** Below this it no longer fades from a look: it stands, and stares. */
+  holdBelow: 0.10,
+  /** Below this it walks in on the player, seen or not. */
+  walkBelow: 0.05,
+  /** At or below this it smiles, and keeps it through the kill. */
+  smileBelow: 0.01,
   /** Seconds it stays gone after a look: when it first shows, and at empty. */
   goneFar: 6,
-  goneNear: 0.5,
-  /** Seconds out of view before it finds the edge of the view again. */
-  lostAfter: 1.5,
-  /** It steps in (or back) each time stamina crosses into a new band. */
-  bands: 8,
-  /** Below this stamina it no longer flees a look: from about half the
-   *  shift's fatigue on, it can stay, and stare back. */
-  holdBelow: 0.45,
+  goneNear: 1,
+  /** Seconds to fade in wherever it shows, and to fade away from a look
+   *  (SleepDemon reads them). */
+  fadeIn: 2.5,
+  fadeOut: 0.6,
+  /** How there it is (its opacity, 0 … 1): `faintest` down to `faintAbove`
+   *  — elusive, barely noticeable, but there — then solid by `solidBelow`. */
+  faintest: 0.25,
+  faintAbove: 0.5,
+  solidBelow: 0.3,
+  /** Metres a second it creeps while unseen: when it first shows … at empty. */
+  sneakFar: 0.08,
+  sneakNear: 0.35,
+  /** The nearest it creeps unseen, metres from the eye: when it first
+   *  shows … at empty (stareFloor). */
+  creepFloorFar: 5,
+  /** Shut out — unseen and unable to step in — this many seconds, it fades
+   *  in somewhere new. */
+  stuckAfter: 5,
   /** Seconds before it tries again when neither side had room. */
   retryAfter: 0.25,
   /** Metres it keeps clear of a wall or a prop in the way (SleepDemon). */
   wallGap: 0.45,
   /** Less room than this and it doesn't show on that side (SleepDemon). */
   minDistance: 0.6,
-  /** The stare-down. Below holdBelow, while it is in view, it walks in on the
-   *  player along the line it is seen along, and a look away no longer sends
-   *  it back out. On, it is a predator that closes in for the kill; off (or a
-   *  stareSpeed of 0) it is a presence that only stands there, as before.
-   *  Which it should be is still open: flip this to A/B the two. */
+  /** It moves on its own at all: the creep, and the walk-in below
+   *  walkBelow. Off, it only shows, stands and fades. */
   stareDown: true,
-  /** Metres a second it walks in. 0.05 brings it from where it stood when
-   *  the hold began (about 6.5 m, the band spot) to arm's length in the last
-   *  seconds of the shift, the band step-ins helping it along. Faster, it is
-   *  there early and waits; slower, the kill comes before it arrives. */
-  stareSpeed: 0.05,
-  /** Metres from the eye it walks in to: arm's length. Nearer than
-   *  minDistance, which is the room it needs to show, not to stand. */
+  /** Metres a second it walks in, seen, below walkBelow. */
+  stareSpeed: 0.12,
+  /** Metres from the eye it walks in to: arm's length. */
   stareFloor: 0.5,
-  /** The share of the player's retreat the walk-in takes up: at 1 it would
-   *  match a backing player step for step, so backing off would buy nothing.
-   *  At 0.5 it walks after them but they still gain ground: it follows, it
-   *  doesn't stick. */
+  /** The share of the player's retreat a step takes up: it follows a
+   *  backing player, but they gain ground. */
   stareFollow: 0.5,
-  /** Metres a second it comes in while it is out of sight completely (the
-   *  sneak): turned away from, or something in between, it closes the whole
-   *  time nobody looks, down to arm's length. Quicker than the creep — a
-   *  look away is repaid within a couple of seconds — and the footsteps
-   *  hurry with it. 0 turns the sneak off. */
-  sneakSpeed: 0.9,
   /** Dead air (duckFor): the world's sound, as a share of its level, with
    *  it standing where it showed … */
   duckEdge: 0.7,
-  /** … and at the look. Near-silence, not a mute: the room dies around it. */
+  /** … and at the look. Near-silence, not a mute. */
   duckFloor: 0.06,
-  /** While the view is covered it stands this far round instead, as a share
-   *  of the view's half-width: past 1 is out of view. Beside the player when
-   *  it first shows (86° off the centre of the default view), behind them at
-   *  empty (150°). */
+  /** Out of sight it stands this far round, as a share of the view's
+   *  half-width (past 1 is out of view): beside the player when it first
+   *  shows, behind them at empty. */
   ambushEdgeFar: 1.6,
   ambushEdgeNear: 2.8,
-  /** …and this near, metres: nobody is watching the room, so it may loom.
-   *  Closing the terminal then finds it much nearer than standing in view
-   *  would ever allow — beside or behind the player, right there. */
-  ambushDistanceFar: 3.5,
+  /** … and this near, metres. */
+  ambushDistanceFar: 6,
   ambushDistanceNear: 1.2,
-  /** The share of showings that land out of sight the same way — the roll,
-   *  so once in a while it appears behind the player's back, not at the
-   *  edge of the view, and creeps in from there. */
-  behindChance: 0.3,
+  /** The share of showings that land behind the player rather than in the
+   *  periphery. */
+  behindChance: 0.35,
 });
 
 const clamp01 = x => Math.min(1, Math.max(0, x));
@@ -145,14 +132,36 @@ export function closenessFor(stamina, { appearBelow } = SLEEP_DEMON) {
 }
 
 /**
- * How wide a look at it counts as looking at it, radians: `focusFar` while
- * the player is only starting to tire, closing to `focusNear` by the hold.
- * The tireder the player, the closer to the centre of the view it can creep
- * before a look sends it away — until below the hold it stops fleeing.
+ * The look cone, radians off the centre of the view: `focusFar` (50°) until
+ * it shows, closing to `focusNear` (15°) at the hold.
  * @param {number} stamina  0 … 1
  */
 export function focusAngleFor(stamina, { appearBelow, holdBelow, focusFar, focusNear } = SLEEP_DEMON) {
   return lerp(focusFar, focusNear, clamp01((appearBelow - stamina) / (appearBelow - holdBelow)));
+}
+
+/**
+ * How there it is, 0 … 1: faint down to half stamina, solid by `solidBelow`.
+ * @param {number} stamina  0 … 1
+ */
+export function presenceFor(stamina, { faintest, faintAbove, solidBelow } = SLEEP_DEMON) {
+  return lerp(faintest, 1, clamp01((faintAbove - stamina) / (faintAbove - solidBelow)));
+}
+
+/**
+ * Metres a second it creeps while unseen.
+ * @param {number} stamina  0 … 1
+ */
+export function sneakSpeedFor(stamina, t = SLEEP_DEMON) {
+  return lerp(t.sneakFar, t.sneakNear, closenessFor(stamina, t));
+}
+
+/**
+ * The nearest it creeps unseen, metres from the eye.
+ * @param {number} stamina  0 … 1
+ */
+export function creepFloorFor(stamina, t = SLEEP_DEMON) {
+  return lerp(t.creepFloorFar, t.stareFloor, closenessFor(stamina, t));
 }
 
 /**
@@ -207,25 +216,28 @@ export function duckFor(angle, shownAt, focusAngle, { duckEdge, duckFloor } = SL
 }
 
 export class SleepDemonLogic {
-  /** Stamina is low enough for it to be about: it breathes. */
+  /** Stamina is low enough for it to be about. */
   around = false;
-  /** Standing in view. */
+  /** Placed: fading in, or standing there. */
   shown = false;
   /** 0 when it first shows … 1 at empty. */
   closeness = 0;
+  /** How there it is, 0 … 1 (presenceFor): the scene's opacity. */
+  presence = 0;
+  /** Smiling: from smileBelow, through the kill. */
+  smiling = false;
   /** Where it shows next: +1 right of the view, −1 left. */
   side = 1;
-  /** Metres from the player's eye it stands, as last placed or walked in. */
+  /** Metres from the player's eye it stands, as last placed or stepped in. */
   distance = Infinity;
-  /** 0 until the stare-down walks it in … 1 at arm's length. For a sound. */
+  /** 0 until the walk-in starts … 1 at arm's length. For a sound. */
   closingIn = 0;
-  /** Stepping in this frame: the stare-down's creep, or following a player
-   *  who backed away. The scene slows the player down while it is on. */
+  /** Walking in, seen, this frame (below walkBelow): the scene slows the
+   *  player down. */
   walking = false;
-  /** Stepping in while out of sight this frame, the sneak. The scene hurries
-   *  the footsteps with it; it is not the walk-down: nothing slows down. */
+  /** Creeping in unseen this frame: the scene plays its footsteps. */
   sneaking = false;
-  /** Standing out of sight, where it went while the view was covered. */
+  /** Standing out of sight: behind the player, or round the terminal. */
   ambush = false;
   /** This frame's look cone, radians (focusAngleFor). */
   focus = SLEEP_DEMON.focusFar;
@@ -234,18 +246,17 @@ export class SleepDemonLogic {
    * @param {object} [opts]
    * @param {() => number|null} [opts.lookAngle]  radians from the centre of the
    *        view; Infinity out of view, null while the view is covered
-   * @param {(spot: {distance: number, side: number, edge: number, ambush?: boolean}) => boolean} [opts.place]
-   *        puts it at the edge of the view (ambush: past it, out of sight); false: no room there
-   * @param {() => void} [opts.hide]
+   * @param {(spot: {distance: number, side: number, edge: number, focus: number, ambush?: boolean}) => boolean} [opts.place]
+   *        fades it in at a spot (ambush: out of sight); false: no room there
+   * @param {() => void} [opts.hide]  fades it away
    * @param {() => void} [opts.onKill]
    * @param {() => number} [opts.rand]
    * @param {typeof SLEEP_DEMON} [opts.tuning]
-   * @param {(step: number, unseen?: boolean) => number|false} [opts.approach]  the walk-in and
-   *        the sneak: walks it `step` metres in toward the eye; the metres it
-   *        then stands off, or false when it couldn't step there. unseen (the
-   *        sneak): the spot need not be in view.
+   * @param {(step: number, unseen?: boolean) => number|false} [opts.approach]  steps it
+   *        `step` metres in toward the eye; the metres it then stands off, or
+   *        false when it couldn't step there. unseen: the spot need not be in view.
    * @param {() => number} [opts.playerDrift]  metres the player's eye has
-   *        backed away this frame, along the line to it: the walk-in follows
+   *        backed away this frame, along the line to it
    */
   constructor({
     lookAngle = () => Infinity, place = () => true, hide = () => {}, onKill = () => {},
@@ -263,15 +274,16 @@ export class SleepDemonLogic {
     this.around = false;
     this.shown = false;
     this.closeness = 0;
+    this.presence = 0;
+    this.smiling = false;
     this.side = this._anySide();
     this.ambush = false;
-    this._band = -1;
-    this._held = false;
     this._gone = 0;
-    this._lost = 0;
+    this._stuck = 0;
+    this._crept = false;
     this._killed = false;
     this.distance = Infinity;
-    this._endStare();
+    this._endWalk();
   }
 
   /** @param {number} dt @param {number} stamina  0 … 1 */
@@ -279,21 +291,20 @@ export class SleepDemonLogic {
     if (this._killed) return;
     this.walking = false;
     this.sneaking = false;
+    const t = this.tuning;
     if (stamina <= 0) {
       this._killed = true;
+      this.smiling = true;
       this.onKill();
       return;
     }
-    const t = this.tuning;
-    // Back above the hold: the walk-down — the creep, and the ground the
-    // sneak took — is given up.
-    const held = stamina < t.holdBelow;
-    if (this._held && !held) this._endStare();
-    this._held = held;
+    this.smiling = stamina <= t.smileBelow;
+    if (stamina >= t.walkBelow) this._endWalk();
     if (stamina >= t.appearBelow) {
       this._vanish();
       this.around = false;
       this.closeness = 0;
+      this.presence = 0;
       return;
     }
     if (!this.around) {
@@ -302,41 +313,45 @@ export class SleepDemonLogic {
     }
     this.closeness = closenessFor(stamina, t);
     this.focus = focusAngleFor(stamina, t);
-    const band = Math.min(t.bands - 1, Math.floor(this.closeness * t.bands));
+    this.presence = presenceFor(stamina, t);
 
     if (this.shown) {
       const angle = this.lookAngle();
-      if (angle !== null) {
+      if (Number.isFinite(angle)) {
+        // Seen.
+        this._stuck = 0;
         if (angle < this.focus && stamina >= t.holdBelow) {
           this._vanish();
           this.side = -this.side;
           this._gone = this._goneFor(stamina);
           return;
         }
-        this._lost = Number.isFinite(angle) ? 0 : this._lost + dt;
-      }
-      if (this._lost >= t.lostAfter) this.side = this._anySide();
-      // Somewhere new, now: it moves straight there. The view just covered,
-      // it slips out of sight.
-      if (this._lost >= t.lostAfter || band !== this._band || (angle === null && !this.ambush)) {
+        if (stamina < t.walkBelow) this._walkIn(dt);
+      } else if (angle === null && !this.ambush) {
+        // The view just covered: it slips round out of sight, now.
         this.shown = false;
         this._gone = 0;
+      } else {
+        // Unseen: it creeps. Shut out for long enough, it finds them anew.
+        if (this._creep(dt, stamina) === false) this._stuck += dt;
+        else this._stuck = 0;
+        if (this._stuck >= t.stuckAfter) {
+          this._stuck = 0;
+          this.shown = false;
+          this._gone = 0;
+        }
       }
-      if (this.shown && Number.isFinite(angle) && stamina < t.holdBelow) this._walkIn(dt);
-      else if (this.shown && angle === Infinity) this._sneakIn(dt);
     }
-    if (!this.shown && (this._gone -= dt) <= 0) this._show(band);
+    if (!this.shown && (this._gone -= dt) <= 0) this._show();
   }
 
   // ── Private ──
 
-  _show(band) {
+  _show() {
     const { closeness: c, tuning: t } = this;
-    const spot = { distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c) };
+    const spot = { distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c), focus: this.focus };
     // Nobody is watching that way — the screen covers the view, or the roll
-    // sends it round behind the player — so it may stand anywhere: much
-    // nearer than the edge of the view allows, where turning round will
-    // find it looming.
+    // sends it round behind the player.
     const covered = this.lookAngle() === null;
     const ambush = covered || this.rand() < t.behindChance;
     if (ambush) Object.assign(spot, {
@@ -344,17 +359,17 @@ export class SleepDemonLogic {
       edge: lerp(t.ambushEdgeFar, t.ambushEdgeNear, c),
       ambush,
     });
-    // A glance away doesn't undo a stare-down — nor a sneak what it crept
-    // while unlooked-at: it shows again no farther than it had come.
-    if (this._walkFrom !== null || this._crept) spot.distance = Math.min(spot.distance, Math.max(t.minDistance, this.distance));
+    // What it crept unseen, or walked in, it keeps.
+    if (this._crept || this._walkFrom !== null) {
+      spot.distance = Math.min(spot.distance, Math.max(t.minDistance, this.distance));
+    }
     for (const side of [this.side, -this.side]) {
       if (!this.place({ ...spot, side })) continue;
       this.distance = spot.distance;
       this.side = side;
       this.shown = true;
       this.ambush = ambush;
-      this._band = band;
-      this._lost = 0;
+      this._stuck = 0;
       return;
     }
     this.ambush = false;
@@ -379,47 +394,46 @@ export class SleepDemonLogic {
     return this.rand() < 0.5 ? -1 : 1;
   }
 
-  /** The stare-down's step: its creep, plus (with stareFollow) the share of
-   *  whatever ground the player has just backed off — metres this frame,
-   *  along the line between them. A step of 0 still asks, so a player who
-   *  backed off is walked after again rather than left at a stale distance. */
+  /** One frame's step in toward the eye, `speed` metres a second plus the
+   *  share of the player's retreat, no nearer than `floor`. The approach's
+   *  answer: the metres it stands off, or false. */
+  _step(dt, speed, floor, unseen) {
+    const t = this.tuning;
+    const drift = Math.max(0, this.playerDrift()) * t.stareFollow;
+    const room = this.distance + drift - floor;
+    const step = Math.max(0, Math.min(speed * dt + drift, room));
+    const at = this.approach(step, unseen);
+    if (at !== false) this.distance = at;
+    return at === false ? false : step;
+  }
+
+  /** Seen, below walkBelow: it walks in on the player, down to arm's length. */
   _walkIn(dt) {
     const t = this.tuning;
     if (!t.stareDown || !(t.stareSpeed > 0)) return;
     this._walkFrom ??= this.distance;
-    const drift = Math.max(0, this.playerDrift()) * t.stareFollow;
-    const room = this.distance + drift - t.stareFloor;
-    const step = Math.max(0, Math.min(t.stareSpeed * dt + drift, room));
-    const at = this.approach(step, false);
-    if (at !== false) this.distance = at;
-    this.walking = at !== false && step > 1e-9;
+    const step = this._step(dt, t.stareSpeed, t.stareFloor, false);
+    this.walking = step !== false && step > 1e-9;
     const span = this._walkFrom - t.stareFloor;
     this.closingIn = span > 0 ? clamp01((this._walkFrom - this.distance) / span) : 1;
   }
 
-  /** The sneak: out of sight completely — turned away from, or something in
-   *  between — it comes in at `sneakSpeed`, no nearer than arm's length,
-   *  for as long as nobody looks. `sneaking` is up while a step is taken
-   *  (the scene hurries the footsteps); `_crept` keeps what it gained
-   *  across the next showing, until a look that banishes it or the hold
-   *  coming back gives the ground away. */
-  _sneakIn(dt) {
+  /** Unseen: it creeps in, no nearer than the creep floor. False when the
+   *  step was refused (something in the way); otherwise the metres stepped. */
+  _creep(dt, stamina) {
     const t = this.tuning;
-    if (!t.stareDown || !(t.sneakSpeed > 0)) return;
-    const drift = Math.max(0, this.playerDrift()) * t.stareFollow;
-    const room = this.distance + drift - t.stareFloor;
-    const step = Math.max(0, Math.min(t.sneakSpeed * dt + drift, room));
-    const at = this.approach(step, true);
-    if (at !== false) this.distance = at;
-    this.sneaking = at !== false && step > 1e-9;
-    if (this.sneaking) this._crept = true;  // nearer than its spot from now on: _show keeps it
+    if (!t.stareDown) return 0;
+    const speed = sneakSpeedFor(stamina, t);
+    if (!(speed > 0)) return 0;
+    const step = this._step(dt, speed, creepFloorFor(stamina, t), true);
+    this.sneaking = step !== false && step > 1e-9;
+    if (this.sneaking) this._crept = true;
+    return step;
   }
 
-  _endStare() {
+  _endWalk() {
     this._walkFrom = null;
-    this._crept = false;
     this.closingIn = 0;
     this.walking = false;
-    this.sneaking = false;
   }
 }

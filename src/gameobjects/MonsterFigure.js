@@ -5,7 +5,8 @@ import { GameObject } from '../core/GameObject.js';
 // MonsterFigure  –  procedural stand-in for a monster model
 // ─────────────────────────────────────────────
 // A tall, thin, dark capsule with two small eyes that ignore the lighting,
-// so they read in the dark and through the fog. It is a placeholder: swap
+// so they read in the dark and through the fog, and a pale grin under them,
+// hidden until a threat shows it (`smile`). It is a placeholder: swap
 // in a real model by replacing what this returns; `placeholderFor` records
 // the file it waits for.
 //
@@ -27,11 +28,12 @@ import { GameObject } from '../core/GameObject.js';
  * @param {number} [opts.color]    body colour
  * @param {number} [opts.eyeColor]
  * @param {string|null} [opts.placeholderFor]
- * @returns {GameObject & { eyes: THREE.Mesh[], placeholderFor: string|null }}
+ * @param {number} [opts.smileColor]
+ * @returns {GameObject & { eyes: THREE.Mesh[], smile: THREE.Mesh, placeholderFor: string|null }}
  */
 export function createMonsterFigure({
   name = 'Monster', height = 2.4, radius = 0.2,
-  color = 0x0b0a0c, eyeColor = 0xff3a22, placeholderFor = null,
+  color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, placeholderFor = null,
 } = {}) {
   const go = new GameObject(name);
 
@@ -58,6 +60,20 @@ export function createMonsterFigure({
     go.object3d.add(eye);
     return eye;
   });
+
+  // The grin: half a thin torus, turned to a ∪, just proud of the body
+  // below the eyes. Unlit like them; hidden, and no shadow, so showing it
+  // redraws nothing.
+  const grin = radius * 0.4;
+  go.smile = new THREE.Mesh(
+    new THREE.TorusGeometry(grin, radius * 0.035, 4, 16, Math.PI),
+    new THREE.MeshBasicMaterial({ color: smileColor, fog: false, transparent: true }),
+  );
+  go.smile.name = `${name}Smile`;
+  go.smile.rotation.z = Math.PI;
+  go.smile.position.set(0, height - radius * 1.45, radius * 1.04);
+  go.smile.visible = false;
+  go.object3d.add(go.smile);
 
   go.placeholderFor = placeholderFor;
   go.object3d.visible = false;
