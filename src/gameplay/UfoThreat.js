@@ -7,7 +7,7 @@ import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 // ─────────────────────────────────────────────
 // On its nights (UFO.nights — night 3), guaranteed, something comes for
 // the base: it flashes into the sky beside the dish, in view of the office
-// window, at a random time between 8:00 PM and 4:30 AM on the night clock. (For
+// window, at a random time between 8:00 PM and 2:00 AM on the night clock. (For
 // testing, summon() — the U key — brings it at once, on any night.)
 //
 //   waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
@@ -47,9 +47,10 @@ export const UFO = {
   nights: [3],
   /** When it spawns (flashes into the sky), in night-clock hours from
    *  midnight (8 PM is -4): a random time between these, 8:00 PM and
-   *  4:30 AM — after dark, radar warning included. The radar warning comes
-   *  radarLead seconds before. */
-  spawnHours: [-4, 4.5],
+   *  2:00 AM — after dark, radar warning included, and gone before the
+   *  shift ends at 3 AM, so going to bed then never skips it. The radar
+   *  warning comes radarLead seconds before. */
+  spawnHours: [-4, 2],
   /** Radar-only approach before the flight sound starts and it shows up. */
   radarLead: 20,
   /** Where the flight clip is loudest, if it can't be measured. */

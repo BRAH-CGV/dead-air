@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, it, expect, vi } from 'vitest';
-import { Sandstorm, SANDSTORM, scheduleStorm, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
+import { Sandstorm, SANDSTORM, scheduleStorms, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
 import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
@@ -14,36 +14,44 @@ const HOUR = NIGHT / (SHIFT.endHour - SHIFT.startHour);
 /** The night-clock hour `seconds` into the shift. */
 const clockHour = seconds => SHIFT.startHour + seconds / HOUR;
 
-describe('scheduleStorm', () => {
+describe('scheduleStorms', () => {
   it('comes every night — night 1 included — whatever the dice say', () => {
     for (const night of [1, 2, 4]) {
       for (const r of [0, 0.5, 0.999]) {
-        expect(scheduleStorm({ night, nightDuration: NIGHT, random: () => r }), `night ${night}`).not.toBeNull();
+        expect(scheduleStorms({ night, nightDuration: NIGHT, random: () => r }), `night ${night}`).toHaveLength(SANDSTORM.perNight);
       }
     }
   });
 
-  it('starts inside the night and is over before 6 AM', () => {
-    for (const r of [0, 0.25, 0.5]) {
-      const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => r });
-      expect(clockHour(s.start)).toBeGreaterThanOrEqual(SANDSTORM.startHours[0] - 1e-9);
-      expect(s.start + s.duration).toBeLessThanOrEqual(NIGHT);
-      expect(s.duration).toBeGreaterThanOrEqual(SANDSTORM.durationHours[0] * HOUR - 1e-9);
+  it('two a night: as often as the old six-hour night had one', () => {
+    expect(SANDSTORM.perNight).toBe(2);
+    // The old night: one storm blowing somewhere in 0:30 … 5:54, 5.4 hours.
+    const [from, to] = SANDSTORM.stormHours;
+    expect((to - from) / SANDSTORM.perNight).toBeCloseTo(5.4, 0);
+  });
+
+  it('blows after dark, in order, never overlapping, and is over before 6 AM', () => {
+    for (const r of [0, 0.25, 0.5, 0.999]) {
+      const storms = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r });
+      let lastEnd = -Infinity;
+      for (const s of storms) {
+        expect(clockHour(s.start)).toBeGreaterThan(SHIFT.darkHour);
+        expect(s.start).toBeGreaterThanOrEqual(lastEnd);
+        expect(clockHour(s.start + s.duration)).toBeLessThanOrEqual(SANDSTORM.stormHours[1] + 1e-9);
+        expect(s.duration).toBeGreaterThanOrEqual(SANDSTORM.durationHours[0] * HOUR - 1e-9);
+        lastEnd = s.start + s.duration;
+      }
+      expect(lastEnd).toBeLessThanOrEqual(NIGHT);
     }
   });
-});
 
-describe('scheduleStorm after dark', () => {
-  it('never blows at dusk: the earliest storm starts after dark', () => {
-    expect(SANDSTORM.startHours[0]).toBeGreaterThan(SHIFT.darkHour);
-    const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0 });
-    expect(clockHour(s.start)).toBeCloseTo(SANDSTORM.startHours[0]);
-  });
-
-  it('can start any time from early evening to the small hours', () => {
-    const late = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0.999 });
-    expect(clockHour(late.start)).toBeGreaterThan(3);
-    expect(SANDSTORM.startHours[0]).toBeLessThan(-4);
+  it('one in each half of the night: the evening and the small hours', () => {
+    const early = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    const late  = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0.999 });
+    expect(clockHour(early[0].start)).toBeCloseTo(SANDSTORM.stormHours[0]);
+    expect(clockHour(late[0].start)).toBeLessThan(0.7);
+    expect(clockHour(early[1].start)).toBeGreaterThanOrEqual(0.7 - 1e-9);
+    expect(clockHour(late[1].start)).toBeGreaterThan(3);
   });
 });
 
@@ -90,7 +98,7 @@ const run = (storm, seconds, step = 0.1) => {
 describe('Sandstorm', () => {
   it('blows on night 1 too, at its time', () => {
     const { storm } = makeRig({ night: 1, random: () => 0.999 });
-    const s = scheduleStorm({ night: 1, nightDuration: NIGHT, random: () => 0.999 });
+    const s = scheduleStorms({ night: 1, nightDuration: NIGHT, random: () => 0.999 })[0];
     run(storm, s.start + SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(1);
   });
@@ -121,7 +129,7 @@ describe('Sandstorm', () => {
 
   it('comes at its scheduled time on a storm night', () => {
     const { storm } = makeRig({ night: 2, random: () => 0 });
-    const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 })[0];
     run(storm, s.start - 1);
     expect(storm.level).toBe(0);
     run(storm, SANDSTORM.rampSeconds + 2);
@@ -241,7 +249,7 @@ describe('Sandstorm', () => {
 
   it('blows for about an hour and a half of clock time', () => {
     for (const r of [0, 0.5, 0.999]) {
-      const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => r * 0.5 });
+      const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r * 0.5 })[0];
       expect(s.duration / HOUR).toBeGreaterThan(1.25);
       expect(s.duration / HOUR).toBeLessThan(1.75);
     }
@@ -332,7 +340,7 @@ describe('Sandstorm — held, and the UFO', () => {
 
   it('is never scheduled at random on a UFO night', () => {
     for (const night of UFO.nights) {
-      expect(scheduleStorm({ night, nightDuration: NIGHT, random: () => 0 })).toBeNull();
+      expect(scheduleStorms({ night, nightDuration: NIGHT, random: () => 0 })).toEqual([]);
     }
   });
 
@@ -357,6 +365,33 @@ describe('Sandstorm — always after the UFO', () => {
     const { storm } = makeRig({ night: UFO.nights[0], ufo, random: () => 0.999 });
     run(storm, SANDSTORM.afterUfoDelay[1] + SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(1);
+  });
+});
+
+describe('Sandstorm — two storms a night', () => {
+  it('blows the first, falls calm, then blows the second, each its own storm', () => {
+    const { storm } = makeRig({ night: 2, random: () => 0 });
+    const [a, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    run(storm, a.start + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);
+    const first = storm.stormId;
+
+    run(storm, a.duration);                  // blown over
+    expect(storm.level).toBe(0);
+    run(storm, b.start - storm._elapsed + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);
+    expect(storm.stormId).toBe(first + 1);
+    expect(storm.stormProgress).toBeGreaterThan(0);
+  });
+
+  it('summon() stands in for the next storm that hasn\'t started, not the one after', () => {
+    const { storm } = makeRig({ night: 2, random: () => 0 });
+    const [, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    storm.summon();
+    run(storm, SANDSTORM.durationHours[1] * HOUR + 1);
+    expect(storm.level).toBe(0);              // the first scheduled one isn't also coming
+    run(storm, b.start - storm._elapsed + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);              // the second still is
   });
 });
 

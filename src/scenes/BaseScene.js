@@ -448,7 +448,7 @@ export class BaseScene extends Scene {
     const payloadPool = Array.from({ length: 8 }, (_, i) =>
       `assets/signals/signal-${i + 1}.png`,
     );
-    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+    this.signalManager = new SignalManager({ payloadPool });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();

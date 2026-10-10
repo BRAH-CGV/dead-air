@@ -204,3 +204,23 @@ describe('the shift runs from dusk to dawn', () => {
     expect(hours).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
   });
 });
+
+describe('the shift and its overtime', () => {
+  it('clocks out at 3:00 AM: a nine-hour shift, then three hours of overtime to 6:00 AM', () => {
+    expect(SHIFT.shiftEndHour).toBe(3);
+    expect(SHIFT.shiftEndHour - SHIFT.startHour).toBe(9);
+    expect(SHIFT.endHour - SHIFT.shiftEndHour).toBe(3);
+  });
+
+  it('is in overtime from the end of the shift until 6 AM', () => {
+    const clock = new NightClock();
+    expect(clock.shiftEndHour).toBe(SHIFT.shiftEndHour);
+    const perHour = NIGHT_SECONDS / (SHIFT.endHour - SHIFT.startHour);
+    clock.update((SHIFT.shiftEndHour - SHIFT.startHour) * perHour - 1);
+    expect(clock.overtime).toBe(false);
+    clock.update(1);
+    expect(clock.timeString).toBe('3:00 AM');
+    expect(clock.overtime).toBe(true);
+    expect(clock.finished).toBe(false);
+  });
+});

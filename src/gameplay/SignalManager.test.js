@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
-import { SHIFT } from './NightClock.js';
+import { SignalManager, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
+import { SHIFT, NIGHT_SECONDS } from './NightClock.js';
 
 const POOL = [
   'assets/signals/signal-1.png',
@@ -61,17 +61,31 @@ describe('SignalManager', () => {
     expect(closestToZenith).toBeLessThan(-76 * (Math.PI / 180));       // well past the old -70° bound
   });
 
-  it('sets required count scaling with night number', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+  it('sets required count scaling with night number — 1.5× the old 3, 4, 5', () => {
+    const mgr = new SignalManager({ signalsPerNight: 10, payloadPool: POOL });
 
     mgr.startNight(1);
-    expect(mgr.required).toBe(3);
+    expect(mgr.required).toBe(5);
 
     mgr.startNight(2);
-    expect(mgr.required).toBe(4);
+    expect(mgr.required).toBe(6);
 
     mgr.startNight(3);
-    expect(mgr.required).toBe(5);
+    expect(mgr.required).toBe(8);   // a full drive box
+  });
+
+  it('has as many signals as the old night had per minute: twice as many over twice the night', () => {
+    expect(new SignalManager().signalsPerNight).toBe(SIGNALS_PER_NIGHT);
+    // The old night: 5 signals over 0.05 … 0.75 of a 300 s shift, one every 42 s.
+    const oldEvery = (0.75 - 0.05) * 300 / 5;
+    const every = (APPEAR_BY - APPEAR_START) * NIGHT_SECONDS / SIGNALS_PER_NIGHT;
+    expect(every / oldEvery).toBeGreaterThan(0.95);
+    expect(every / oldEvery).toBeLessThan(1.1);
+  });
+
+  it('keeps signals coming into overtime, so a missed quota can be made up', () => {
+    const span = SHIFT.endHour - SHIFT.startHour;
+    expect(SHIFT.startHour + APPEAR_BY * span).toBeGreaterThan(SHIFT.shiftEndHour + 1);
   });
 
   it('clamps required to signalsPerNight', () => {
@@ -113,10 +127,10 @@ describe('SignalManager', () => {
 
   it('getProgress returns the required count', () => {
     const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
-    mgr.startNight(1);  // required = 3
+    mgr.startNight(1);  // required = 5
 
     const p = mgr.getProgress();
-    expect(p.required).toBe(3);
+    expect(p.required).toBe(5);
   });
 
   it('assigns payload URLs from pool without repeats until exhausted', () => {
@@ -193,8 +207,8 @@ describe('SignalManager signal appearance', () => {
   it('holds every signal until the sky is dark — the Sun drowns them at dusk', () => {
     const span = SHIFT.endHour - SHIFT.startHour;
     expect(SHIFT.startHour + APPEAR_START * span).toBeGreaterThan(SHIFT.darkHour);
-    // …and leaves a couple of hours to scan the last one.
-    expect(SHIFT.startHour + APPEAR_BY * span).toBeLessThanOrEqual(4);
+    // …and leaves time before 6 AM to scan the last one.
+    expect(SHIFT.startHour + APPEAR_BY * span).toBeLessThanOrEqual(4.5);
   });
 
   it('spreads appearances across [APPEAR_START, APPEAR_BY] with gaps between them', () => {
