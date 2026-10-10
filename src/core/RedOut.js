@@ -104,6 +104,19 @@ export class RedOut {
     this._renderer.render(this._scene, this._camera);
   }
 
+  /** Pre-compile the render-target shader variants. Three.js compiles
+   *  separate shader programs for render-target output (no tone mapping,
+   *  linear colour space). Without this the first preRender recompiles
+   *  every lit material — a multi-second stall on lower-end hardware.
+   *  Called by Engine after warmUp, while the loading screen still shows.
+   *  @param {THREE.Scene} scene  @param {THREE.Camera} camera */
+  async preCompile(scene, camera) {
+    if (!this._renderer || !this._renderTarget) return;
+    this._renderer.setRenderTarget(this._renderTarget);
+    await this._renderer.compileAsync(scene, camera);
+    this._renderer.setRenderTarget(null);
+  }
+
   /** Set the effect strength 0..1. 0 = no effect, 1 = full red. */
   setIntensity(v) {
     this._intensity = Math.max(0, Math.min(1, v));
@@ -157,21 +170,17 @@ export class RedOut {
   }
 
   /** Create the render target on first use, or resize it if the window
-   *  has changed. Uses half resolution — the red-tint effect doesn't need
-   *  pixel-perfect detail, and half-res cuts the render cost by 4×. */
+   *  has changed. */
   _ensureRenderTarget() {
     const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
     const h = typeof window !== 'undefined' ? window.innerHeight : 768;
-    // Half resolution for performance — the fullscreen quad stretches it back.
-    const halfW = Math.max(1, Math.floor(w / 2));
-    const halfH = Math.max(1, Math.floor(h / 2));
     if (this._renderTarget) {
-      if (this._renderTarget.width !== halfW || this._renderTarget.height !== halfH) {
-        this._renderTarget.setSize(halfW, halfH);
+      if (this._renderTarget.width !== w || this._renderTarget.height !== h) {
+        this._renderTarget.setSize(w, h);
       }
       return;
     }
-    this._renderTarget = new THREE.WebGLRenderTarget(halfW, halfH, {
+    this._renderTarget = new THREE.WebGLRenderTarget(w, h, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
     });

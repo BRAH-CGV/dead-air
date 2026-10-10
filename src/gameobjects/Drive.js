@@ -42,16 +42,17 @@ const CORRUPTED_EMISSIVE = 0xcc2222;
 /** Doom glow: the red drive pulses brighter as the silence timer runs
  *  down. The curve is exponential (pow 6) so the glow stays subdued for
  *  most of the countdown, then spikes dramatically in the final seconds.
- *  A red PointLight fades in as a child of the drive mesh so the glow
- *  travels with it. */
+ *  The PointLight is a single shared light on GameplaySystems — created
+ *  once at scene build so the light count never changes (adding/removing
+ *  lights recompiles every lit shader). Drive only computes the level. */
 const DOOM_BASE_INTENSITY = 1.5;
 const DOOM_PEAK_INTENSITY = 2400.0;
-const DOOM_LIGHT_COLOR = 0xff2200;
-const DOOM_LIGHT_MAX_DISTANCE = 5;
+export const DOOM_LIGHT_COLOR = 0xff2200;
+export const DOOM_LIGHT_MAX_DISTANCE = 5;
 /** Exponent for the doom curve — higher = sharper end-spike. */
 const DOOM_CURVE = 6;
 /** Seconds the doom glow takes to fade out after the drive is wiped. */
-const DOOM_FADE_SECONDS = 3;
+export const DOOM_FADE_SECONDS = 3;
 
 /**
  * Collision groups for the drive: member of SHELF (not DEFAULT), so it passes
@@ -107,8 +108,10 @@ export class Drive extends GameObject {
   // ── Doom glow state ──
   /** Emissive intensity the doom glow last set — where the fade starts. */
   _doomEmissive = 0;
-  /** PointLight intensity the doom glow last set. */
+  /** PointLight intensity the doom glow last set (for the shared light). */
   _doomLightLevel = 0;
+  /** Peak light level at fade start — the fade scales this by t each frame. */
+  _doomLightPeak = 0;
   /** Seconds left in the post-wipe glow fade, or null when not fading. */
   _doomFadeRemaining = null;
   /** Total seconds of the fade now running. */
@@ -324,8 +327,9 @@ export class Drive extends GameObject {
 
   /** Ramp the red doom glow. `fraction` is 0..1 where 0 is the dim base
    *  and 1 is the blinding peak (the silence timer is about to expire).
-   *  Creates a red PointLight as a child of the drive mesh on first call,
-   *  so the glow travels wherever the physical drive is carried. */
+   *  Computes the PointLight intensity but does NOT create a light — a
+   *  single shared light on GameplaySystems is managed by EvilSignal,
+   *  so the scene's light count stays fixed (no shader recompiles). */
   setDoomGlow(fraction) {
     if (!this._material) return;
     const t = Math.max(0, Math.min(1, fraction));
@@ -337,26 +341,18 @@ export class Drive extends GameObject {
     this._material.emissiveIntensity = intensity;
     this._doomEmissive = intensity;  // remembered by the fade-out
 
-    // Lazily create the PointLight on first call.
-    if (!this._doomLight) {
-      this._doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
-      this._mesh.add(this._doomLight);
-    }
-    this._doomLight.intensity = curved * 40;  // 0 → 40 candela at peak
-    this._doomLightLevel = curved * 40;
+    // Light level for the shared light (EvilSignal reads this each frame).
+    this._doomLightLevel = curved * 40;  // 0 → 40 candela at peak
+    this._doomLightPeak = this._doomLightLevel;
   }
 
-  /** Remove the doom glow and its PointLight. Called when the drive is
-   *  wiped, the night resets, or the game-over sequence ends. */
+  /** Remove the doom glow. Called when the night resets or the game-over
+   *  sequence ends. The shared PointLight is managed by EvilSignal — this
+   *  only resets the material and the stored levels. */
   clearDoomGlow() {
     this._doomFadeRemaining = null;
     this._doomEmissive = 0;
     this._doomLightLevel = 0;
-    if (this._doomLight) {
-      this._doomLight.removeFromParent();
-      this._doomLight.dispose();
-      this._doomLight = null;
-    }
   }
 
   /** Fade the doom glow out over `seconds` instead of cutting it — the
@@ -368,6 +364,7 @@ export class Drive extends GameObject {
     if (!(this._doomEmissive > 0)) { this.clearDoomGlow(); return; }
     this._doomFadeDuration = Math.max(0.001, seconds);
     this._doomFadeRemaining = this._doomFadeDuration;
+    this._doomLightPeak = this._doomLightLevel;  // capture for the fade curve
   }
 
   /** Per-frame fade step (ticked by the DoomGlowFade component). */
@@ -375,7 +372,7 @@ export class Drive extends GameObject {
     if (!this._material || this._doomFadeRemaining === null) return;
     this._doomFadeRemaining -= dt;
     if (this._doomFadeRemaining <= 0) {
-      // Faded out: back to the unmarked look, light gone.
+      // Faded out: back to the unmarked look, light level zero.
       this.clearDoomGlow();
       this._material.emissive.setHex(0x000000);
       this._material.emissiveIntensity = 0;
@@ -385,7 +382,9 @@ export class Drive extends GameObject {
     const t = this._doomFadeRemaining / this._doomFadeDuration;  // 1 → 0
     this._material.emissive.setHex(CORRUPTED_EMISSIVE);
     this._material.emissiveIntensity = this._doomEmissive * t;
-    if (this._doomLight) this._doomLight.intensity = this._doomLightLevel * t;
+    // Scale the stored light level down — EvilSignal reads it each frame
+    // and applies it to the shared doom light.
+    this._doomLightLevel = this._doomLightPeak * t;
   }
 
   /** Free the geometry, material, and physics resources this drive built. */

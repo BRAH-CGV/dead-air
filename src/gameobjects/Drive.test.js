@@ -388,42 +388,41 @@ describe('Drive', () => {
   });
 
   describe('doom glow', () => {
-    it('setDoomGlow ramps emissive intensity exponentially and creates a PointLight', () => {
+    it('setDoomGlow ramps emissive intensity exponentially and stores light level', () => {
       const drive = new Drive('DoomDrive');
-      expect(drive._doomLight).toBeUndefined();
+      expect(drive._doomLightLevel).toBe(0);
 
       drive.setDoomGlow(0);
       expect(drive._material.emissiveIntensity).toBe(1.5);  // DOOM_BASE
-      expect(drive._doomLight).toBeTruthy();
-      expect(drive._doomLight.intensity).toBe(0);
+      expect(drive._doomLightLevel).toBe(0);
 
       // Exponential curve (pow 6): at t=0.5 the curve is only ~1.6%.
       drive.setDoomGlow(0.5);
       expect(drive._material.emissiveIntensity).toBeCloseTo(38.97, 0);
-      expect(drive._doomLight.intensity).toBeCloseTo(0.625, 2);
+      expect(drive._doomLightLevel).toBeCloseTo(0.625, 2);
 
       // At the peak (t=1) the glow is 100× the old linear peak.
       drive.setDoomGlow(1);
       expect(drive._material.emissiveIntensity).toBe(2400.0);
-      expect(drive._doomLight.intensity).toBeCloseTo(40);
+      expect(drive._doomLightLevel).toBeCloseTo(40);
     });
 
-    it('clearDoomGlow removes the PointLight', () => {
+    it('clearDoomGlow resets the stored light level', () => {
       const drive = new Drive('DoomDrive');
       drive.setDoomGlow(0.5);
-      expect(drive._doomLight).toBeTruthy();
+      expect(drive._doomLightLevel).toBeGreaterThan(0);
 
       drive.clearDoomGlow();
-      expect(drive._doomLight).toBeNull();
+      expect(drive._doomLightLevel).toBe(0);
     });
 
     it('dispose clears the doom glow', () => {
       const drive = new Drive('DoomDrive');
       drive.setDoomGlow(1);
-      expect(drive._doomLight).toBeTruthy();
+      expect(drive._doomLightLevel).toBeGreaterThan(0);
 
       drive.dispose();
-      expect(drive._doomLight).toBeNull();
+      expect(drive._doomLightLevel).toBe(0);
     });
 
     it('startDoomFadeOut eases the glow down over the duration, then clears', () => {
@@ -435,12 +434,12 @@ describe('Drive', () => {
       drive._tickDoomFade(1.5);
       expect(drive._material.emissive.getHex()).toBe(0xcc2222);
       expect(drive._material.emissiveIntensity).toBeCloseTo(1200, 0);
-      expect(drive._doomLight.intensity).toBeCloseTo(20, 0);
+      expect(drive._doomLightLevel).toBeCloseTo(20, 0);
 
-      // Past the end the glow is gone entirely: light removed, material
+      // Past the end the glow is gone entirely: light level zero, material
       // back to the unmarked look.
       drive._tickDoomFade(1.6);
-      expect(drive._doomLight).toBeNull();
+      expect(drive._doomLightLevel).toBe(0);
       expect(drive._material.emissive.getHex()).toBe(0x000000);
       expect(drive._material.emissiveIntensity).toBe(0);
     });
@@ -450,7 +449,7 @@ describe('Drive', () => {
       drive.setDoomGlow(0.5);
       drive.clearDoomGlow();
       drive.startDoomFadeOut(3);  // no stored glow — just clears
-      expect(drive._doomLight).toBeNull();
+      expect(drive._doomLightLevel).toBe(0);
     });
 
     it('the wipe re-applies the glow through the fade instead of going dark at once', () => {

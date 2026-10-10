@@ -3,6 +3,7 @@ import { SignalTarget } from './SignalTarget.js';
 import { VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 import { DriveSparks, SPARKS } from './DriveSparks.js';
+import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
@@ -150,6 +151,16 @@ export class EvilSignal extends Component {
   /** Sparks flying from the corrupted drive while the silence timer runs.
    *  @type {import('./DriveSparks.js').DriveSparks|null} */
   _sparks = null;
+  /** Shared doom PointLight — created once at scene build on
+   *  GameplaySystems, moved to the corrupted drive each frame. Never
+   *  added/removed so the scene's light count stays fixed. */
+  doomLight = null;
+  /** Seconds left in the post-wipe doom-light fade. */
+  _doomLightFadeRemaining = null;
+  /** Total duration of the running doom-light fade. */
+  _doomLightFadeDuration = 0;
+  /** Light intensity at the start of the doom-light fade. */
+  _doomLightFadeLevel = 0;
 
   /**
    * @param {object} [opts]
@@ -293,8 +304,12 @@ export class EvilSignal extends Component {
         this._driveHopTimer = null;
         this.deleteWarning?.hide();
         // The doom glow fades out on the drive over a few seconds rather
-        // than cutting — the drive owns the fade now.
+        // than cutting — the drive owns the emissive fade now.
+        // Capture the light level for the shared light's own fade.
+        this._doomLightFadeLevel = this._lastCorruptedDrive?._doomLightLevel ?? 0;
         this._lastCorruptedDrive?.startDoomFadeOut?.();
+        this._doomLightFadeDuration = DOOM_FADE_SECONDS;
+        this._doomLightFadeRemaining = this._doomLightFadeDuration;
         this._lastCorruptedDrive = null;
       } else {
         this._silenceTimer -= dt;
@@ -304,14 +319,23 @@ export class EvilSignal extends Component {
         corrupted.setDoomGlow?.(doomFraction);
         this._lastCorruptedDrive = corrupted;
 
+        // Position the shared doom light at the corrupted drive and set
+        // its intensity from the drive's computed level. The light is
+        // never added/removed — only moved and dimmed — so the scene's
+        // light count stays fixed (no shader recompiles).
+        if (this.doomLight) {
+          corrupted.object3d.getWorldPosition(this.doomLight.position);
+          this.doomLight.intensity = corrupted._doomLightLevel ?? 0;
+        }
+
         // Sparks: fly out of the corrupted drive, rate scaling with doom.
         this._sparks?.tick(dt, corrupted, doomFraction);
 
-        // Red filter: fades in over the last 0.5 s before the player dies.
+        // Red filter: fades in over the last 0.2 s before the player dies.
         if (this.redOut) {
-          const REDOUT_WINDOW = 0.5;
+          const REDOUT_WINDOW = 0.2;
           const lastWindow = this._silenceTimer < REDOUT_WINDOW
-            ? 1 - this._silenceTimer / REDOUT_WINDOW   // 0 → 1 over the final 0.5 s
+            ? 1 - this._silenceTimer / REDOUT_WINDOW   // 0 → 1 over the final 0.2 s
             : 0;
           this.redOut.setIntensity(lastWindow);
         }
@@ -349,6 +373,20 @@ export class EvilSignal extends Component {
             `ANOMALOUS SIGNAL ON DRIVE — wipe in ${Math.ceil(this._silenceTimer)} s`,
           );
         }
+      }
+    }
+
+    // Tick the doom-light fade (runs after the drive is wiped — the
+    // emissive fade lives on the Drive, the light fade lives here because
+    // the light is shared, not per-drive).
+    if (this._doomLightFadeRemaining !== null && this.doomLight) {
+      this._doomLightFadeRemaining -= dt;
+      if (this._doomLightFadeRemaining <= 0) {
+        this.doomLight.intensity = 0;
+        this._doomLightFadeRemaining = null;
+      } else {
+        const t = this._doomLightFadeRemaining / this._doomLightFadeDuration;
+        this.doomLight.intensity = this._doomLightFadeLevel * t;
       }
     }
 
@@ -540,6 +578,9 @@ export class EvilSignal extends Component {
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;
+    // Reset the shared doom light.
+    if (this.doomLight) this.doomLight.intensity = 0;
+    this._doomLightFadeRemaining = null;
     if (this._caught) {
       this._caught = false;
       this.hooks?.setPlayerLocked?.(false);

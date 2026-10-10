@@ -659,7 +659,7 @@ describe('EvilSignal redOut — last-moment red filter', () => {
     expect(redOut.setIntensity).toHaveBeenCalledWith(0);
   });
 
-  it('redOut intensity ramps during the last 0.5 s', () => {
+  it('redOut intensity ramps during the last 0.2 s', () => {
     const drive = makeDrive();
     const { evil, signalManager, redOut } = makeRig({ drive });
     evil.summon();
@@ -668,10 +668,10 @@ describe('EvilSignal redOut — last-moment red filter', () => {
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
-    // Tick past most of the timer so ~0.25 s remains (half of the 0.5 s window).
-    evil.onUpdate(EVIL.silenceSeconds - 0.25);
-    expect(evil._silenceTimer).toBeCloseTo(0.25, 2);
-    // The intensity is 1 - (0.25 / 0.5) = 0.5, allow for float imprecision.
+    // Tick past most of the timer so ~0.1 s remains (half of the 0.2 s window).
+    evil.onUpdate(EVIL.silenceSeconds - 0.1);
+    expect(evil._silenceTimer).toBeCloseTo(0.1, 2);
+    // The intensity is 1 - (0.1 / 0.2) = 0.5, allow for float imprecision.
     const lastCall = redOut.setIntensity.mock.calls.at(-1)[0];
     expect(lastCall).toBeCloseTo(0.5, 3);
   });

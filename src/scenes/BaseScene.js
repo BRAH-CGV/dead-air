@@ -52,6 +52,7 @@ import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { EvilSignal } from '../gameplay/EvilSignal.js';
+import { DOOM_LIGHT_COLOR, DOOM_LIGHT_MAX_DISTANCE } from '../gameobjects/Drive.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
@@ -513,6 +514,14 @@ export class BaseScene extends Scene {
     });
     gameplayGO.addComponent(this.evilSignal);
     this.terminal.evilSignal = this.evilSignal;
+
+    // Shared doom PointLight — created once at scene build, moved to the
+    // corrupted drive each frame by EvilSignal. Never added/removed so the
+    // scene's light count stays fixed (no shader recompiles).
+    const doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
+    doomLight.name = 'DoomLight';
+    gameplayGO.object3d.add(doomLight);
+    this.evilSignal.doomLight = doomLight;
 
     // Wire the drive manager to the office's drive reader slot.
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);

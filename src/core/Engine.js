@@ -407,6 +407,12 @@ export class Engine {
     // loading screen still covers the canvas.
     this.postProcess?.warmUp();
 
+    // Pre-compile the render-target shader variants. Three.js needs
+    // separate programs for render-target output (no tone mapping, linear
+    // colour space). Without this the first preRender recompiles every lit
+    // material — a multi-second stall on lower-end hardware.
+    await this.postProcess?.preCompile?.(this.scene, this.camera);
+
     // ── Kick off the loop — still behind the loading screen ──
     // The first frames after that are the JIT, the physics world and the
     // gameplay systems finding their feet. The loop runs under the overlay

@@ -109,7 +109,7 @@ describe('RedOut', () => {
     ro.attach(engine);
     ro.setIntensity(0.3);
 
-    // First preRender creates the target at half resolution (falls back to 1024x768 in Node → 512x384).
+    // First preRender creates the target (falls back to 1024x768 in Node).
     ro.preRender();
     const rt = ro._renderTarget;
     const origW = rt.width, origH = rt.height;
@@ -117,12 +117,10 @@ describe('RedOut', () => {
 
     // Simulate a window resize by patching the global window object.
     const prevWindow = globalThis.window;
-    const newWindowW = 1200, newWindowH = 900;
-    globalThis.window = { innerWidth: newWindowW, innerHeight: newWindowH };
+    globalThis.window = { innerWidth: origW + 100, innerHeight: origH + 100 };
 
     ro.preRender();
-    // Render target should resize to half the new window dimensions.
-    expect(rt.setSize).toHaveBeenCalledWith(Math.floor(newWindowW / 2), Math.floor(newWindowH / 2));
+    expect(rt.setSize).toHaveBeenCalledWith(origW + 100, origH + 100);
 
     globalThis.window = prevWindow;
     ro.dispose();
