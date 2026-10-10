@@ -43,14 +43,15 @@ const ORDER = 'abcdefg';
  * The four digits of a 12-hour clock face for a float hour (the NightClock's
  * `currentTime`): tens of hours, hours, tens of minutes, minutes. The tens
  * of hours is null when there is nothing to show there (no leading zero).
- * Rounded to the nearest minute, as the HUD's clock is (NightClock.formatTime),
- * so the two never disagree; the whole time is rounded, not the minutes on
- * their own, so the display never reads :60.
+ * Floored to the minute gone, as the HUD's clock is (NightClock.formatTime),
+ * so the two never disagree. The whole time is floored, not the minutes on
+ * their own, so the display never reads :60; the epsilon keeps float error
+ * (0.1 + 0.2) on its exact minute, as the HUD does.
  * @param {number} hour  e.g. 4.5 for 4:30
  * @returns {(number|null)[]}
  */
 export function clockDigits(hour) {
-  const total = Math.round((((hour % 24) + 24) % 24) * 60);   // minutes since midnight
+  const total = Math.floor((((hour % 24) + 24) % 24) * 60 + 1e-6) % (24 * 60);   // minutes since midnight
   const h12 = Math.floor(total / 60) % 12 || 12;
   const minutes = total % 60;
   return [h12 >= 10 ? 1 : null, h12 % 10, Math.floor(minutes / 10), minutes % 10];
