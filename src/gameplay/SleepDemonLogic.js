@@ -1,15 +1,16 @@
 // ─────────────────────────────────────────────
 // SleepDemonLogic  –  the Sleep Demon's rules, with no scene attached
 // ─────────────────────────────────────────────
-// It lives in the corner of the player's eye, and it never teleports. Once
-// stamina drops below `appearBelow` it is about: a few seconds later it
+// It lives in the corner of the player's eye, and it never teleports. It is
+// the tired mind seeing things, so it belongs to the last half of stamina
+// only. Once stamina drops below `appearBelow` (0.5) it is about: a few seconds later it
 // fades in (slowly — the scene's fadeIn) in the periphery, or, by the roll
 // (behindChance), behind the player. Where it showed it stays. It moves
 // only while nobody looks at it, and slowly: then, and only then, its
 // footsteps are heard.
 //
-//   stamina      0.85 ──────────── 0.5 ──────────── 0.1 ──── 0.05 ── 0.01 ── 0
-//   presence     barely there (faintest) to 0.7 ─▶ solid by 0.5
+//   stamina      0.5 ───── 0.4 ───── 0.3 ──────────── 0.1 ──── 0.05 ── 0.01 ── 0
+//   presence     barely there ─▶ firming ─▶ solid
 //   look cone    40° ────────────────────────────▶ 15° │ no longer fades
 //   seen                fades away from a look         │ stares │ walks in
 //   unseen       creeps in, very slowly at first, quicker as the player tires
@@ -43,8 +44,9 @@
 const DEG = Math.PI / 180;
 
 export const SLEEP_DEMON = Object.freeze({
-  /** It is about once stamina is below this. */
-  appearBelow: 0.85,
+  /** It is about once stamina is below this: the last half, when a tired
+   *  player starts imagining things in the corner of their eye. */
+  appearBelow: 0.5,
   /** Metres from the player's eye it first shows … */
   farthest: 10,
   /** … and at empty. */
@@ -55,7 +57,7 @@ export const SLEEP_DEMON = Object.freeze({
   edgeFar: 0.95,
   edgeNear: 0.5,
   showMargin: 4 * DEG,
-  /** The look cone, radians off the centre of the view: 40° at 85 %
+  /** The look cone, radians off the centre of the view: 40° at 50 %
    *  stamina, closing to 15° at `holdBelow` (10 %). */
   focusFar: 40 * DEG,
   focusNear: 15 * DEG,
@@ -75,8 +77,8 @@ export const SLEEP_DEMON = Object.freeze({
   /** How there it is (its opacity, 0 … 1): `faintest` down to `faintAbove`
    *  — elusive, barely noticeable, but there — then solid by `solidBelow`. */
   faintest: 0.25,
-  faintAbove: 0.7,
-  solidBelow: 0.5,
+  faintAbove: 0.4,
+  solidBelow: 0.3,
   /** Metres a second it creeps while unseen: when it first shows … at empty. */
   sneakFar: 0.08,
   sneakNear: 0.35,

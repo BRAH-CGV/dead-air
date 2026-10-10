@@ -4,8 +4,10 @@ import { GameObject } from '../core/GameObject.js';
 // ─────────────────────────────────────────────
 // MonsterFigure  –  procedural stand-in for a monster model
 // ─────────────────────────────────────────────
-// A tall, thin, dark capsule with two small eyes that ignore the lighting,
-// so they read in the dark and through the fog, and a pale grin under them,
+// A tall, thin, dark capsule — or, as a shade, a pitch-black silhouette no
+// light shows (createShadeMaterial) — with two small eyes that ignore the
+// lighting, so they read in the dark and through the fog, and a pale grin
+// under them,
 // hidden until a threat shows it (`smile`): a thin, wide, shallow curve
 // wrapped round the face, its corners turned up. It is a placeholder: swap
 // in a real model by replacing what this returns; `placeholderFor` records
@@ -17,22 +19,63 @@ import { GameObject } from '../core/GameObject.js';
 //
 // The body casts a shadow unless asked not to (castShadow: false), and the
 // shadow maps are frozen between redraws (ShadowScheduler): whoever moves,
-// shows or hides a casting figure invalidates them. The geometry and materials are fresh per call, so the caller owns
-// them (BaseScene._ownResourcesOf).
+// shows or hides a casting figure invalidates them. The geometry and
+// materials are fresh per call, so the caller owns them
+// (BaseScene._ownResourcesOf).
 // ─────────────────────────────────────────────
 
+/** How far in from its outline a shade is fully black: the share of the way
+ *  from edge-on (0) to facing the eye (1). Past it, pitch black. */
+const SHADE_EDGE = 0.55;
+
+const SHADE_VERTEX = /* glsl */ `
+  varying vec3 vNormalView;
+  varying vec3 vToEye;
+  void main() {
+    vec4 view = modelViewMatrix * vec4(position, 1.0);
+    vNormalView = normalize(normalMatrix * normal);
+    vToEye = -view.xyz;
+    gl_Position = projectionMatrix * view;
+  }
+`;
+
+// Black, always: no lights, no fog, nothing for a torch to show. Only how
+// much it hides changes — `opacity` (the fade), and how square-on the eye
+// meets the surface, so the outline thins to nothing and the middle is a
+// hole in the room.
+const SHADE_FRAGMENT = /* glsl */ `
+  uniform float opacity;
+  uniform float uEdge;
+  varying vec3 vNormalView;
+  varying vec3 vToEye;
+  void main() {
+    float facing = abs(dot(normalize(vNormalView), normalize(vToEye)));
+    gl_FragColor = vec4(vec3(0.0), opacity * smoothstep(0.0, uEdge, facing));
+  }
+`;
+
 /**
- * @param {object} [opts]
- * @param {string} [opts.name]
- * @param {number} [opts.height]   metres, floor to crown
- * @param {number} [opts.radius]   metres
- * @param {number} [opts.color]    body colour
- * @param {number} [opts.eyeColor]
- * @param {string|null} [opts.placeholderFor]
- * @param {number} [opts.smileColor]
- * @param {boolean} [opts.castShadow]  false: a shade, not a body — nothing on the floor gives it away
- * @returns {GameObject & { eyes: THREE.Mesh[], smile: THREE.Mesh, placeholderFor: string|null }}
+ * A shadow in itself: pitch black whatever light falls on it, its edges
+ * soft. Transparent from the start, and its `opacity` is the shader's, so a
+ * fade (the Sleep Demon's _applyOpacity) works on it as on any material.
  */
+export function createShadeMaterial({ edge = SHADE_EDGE } = {}) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: { opacity: { value: 1 }, uEdge: { value: edge } },
+    vertexShader: SHADE_VERTEX,
+    fragmentShader: SHADE_FRAGMENT,
+    transparent: true,
+    lights: false,
+    fog: false,
+  });
+  Object.defineProperty(material, 'opacity', {
+    get: () => material.uniforms.opacity.value,
+    set: value => { material.uniforms.opacity.value = value; },
+    configurable: true,
+  });
+  return material;
+}
+
 /** Half the grin's sweep round the face, radians. */
 const SMILE_SWEEP = 62 * Math.PI / 180;
 
@@ -52,9 +95,23 @@ class SmileCurve extends THREE.Curve {
   }
 }
 
+/**
+ * @param {object} [opts]
+ * @param {string} [opts.name]
+ * @param {number} [opts.height]   metres, floor to crown
+ * @param {number} [opts.radius]   metres
+ * @param {number} [opts.color]    body colour
+ * @param {number} [opts.eyeColor]
+ * @param {string|null} [opts.placeholderFor]
+ * @param {number} [opts.smileColor]
+ * @param {boolean} [opts.castShadow]  false: nothing on the floor gives it away
+ * @param {boolean} [opts.shade]  a shadow in itself: a pitch-black, unlit body
+ *        whose edges thin out to nothing (createShadeMaterial), not a solid one
+ * @returns {GameObject & { eyes: THREE.Mesh[], smile: THREE.Mesh, placeholderFor: string|null }}
+ */
 export function createMonsterFigure({
   name = 'Monster', height = 2.4, radius = 0.2,
-  color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, castShadow = true, placeholderFor = null,
+  color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, castShadow = true, shade = false, placeholderFor = null,
 } = {}) {
   const go = new GameObject(name);
 
@@ -64,7 +121,8 @@ export function createMonsterFigure({
   // never swaps a shader state mid-game.
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(radius, height - radius * 2, 4, 10),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, transparent: true }),
+    shade ? createShadeMaterial()
+      : new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, transparent: true }),
   );
   body.name = `${name}Body`;
   body.position.y = height / 2;

@@ -152,7 +152,7 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
       if (night > 1) scene.nights.advance();
       expect(scene.gameController.nightNumber).toBe(night);
       expect(scene.sleepDemon.figure.object3d.visible).toBe(false);
-      scene.stamina.value = 0.425;
+      scene.stamina.value = 0.25;
       runDemon(4);
       expect(scene.sleepDemon.figure.object3d.visible, `night ${night}`).toBe(true);
     }
@@ -162,7 +162,7 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     engine.shadows = { invalidate: vi.fn() };
     engine.debugCamera = { active: true };
     scene.sleepDemon.onStart();
-    scene.stamina.value = 0.425;
+    scene.stamina.value = 0.25;
     runDemon(4);
     expect(scene.sleepDemon.figure.object3d.visible).toBe(false);
     expect(engine.shadows.invalidate).not.toHaveBeenCalled();
@@ -173,6 +173,10 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     scene.sleepDemon.figure.object3d.traverse(node => {
       if (node.isMesh) expect(node.castShadow, node.name).toBe(false);
     });
+    // A shadow in itself: pitch black, whatever light is on it.
+    const body = scene.sleepDemon.figure.object3d.children.find(c => c.name.endsWith('Body'));
+    expect(body.material.isShaderMaterial).toBe(true);
+    expect(body.material.lights).toBe(false);
   });
 
   it('ends the night when stamina runs out, once the player has fallen asleep on it', () => {

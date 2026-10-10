@@ -109,7 +109,7 @@ describe('SleepDemon', () => {
 
   it('fades in, silently, in the corner of the eye: just outside the look cone, on the floor, facing the player', () => {
     const asked = vi.spyOn(demon.logic, 'place');
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(visible()).toBe(true);
     const [{ distance, edge, side, focus }] = asked.mock.calls[0];
@@ -128,7 +128,7 @@ describe('SleepDemon', () => {
   });
 
   it('fades in slowly from nothing, and while the player is fresh no further than faint', () => {
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(5.8);                               // shows 5.7 s in
     expect(visible()).toBe(true);
     expect(opacity()).toBeLessThan(0.02);
@@ -137,13 +137,13 @@ describe('SleepDemon', () => {
     expect(opacity()).toBeLessThan(T.faintest);
     run(T.fadeIn);
     expect(opacity()).toBeCloseTo(T.faintest, 5);   // barely there
-    stamina.value = 0.2;                    // tired: solid now, in place
+    stamina.value = 0.1176;                    // tired: solid now, in place
     run(T.fadeIn + 0.2);
     expect(opacity()).toBe(1);
   });
 
   it('looked at, it fades away where it stood, and fades back in at the other edge of the view', () => {
-    stamina.value = 0.3;                    // solid: presence 1
+    stamina.value = 0.1765;                    // solid: presence 1
     run(2.9);                               // shown at 2.76 s
     run(T.fadeIn + 0.1);                    // the fade in done
     expect(visible()).toBe(true);
@@ -170,11 +170,11 @@ describe('SleepDemon', () => {
   });
 
   it('never teleports: as stamina falls it stays where it stood, silent while seen', () => {
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(seen().distance).toBeGreaterThan(9);
     const spot = figure.object3d.position.clone();
-    for (let s = 0.8; s > 0.15; s -= 0.01) {
+    for (let s = 0.47; s > 0.12; s -= 0.01) {
       stamina.value = s;
       run(0.1);
     }
@@ -184,7 +184,7 @@ describe('SleepDemon', () => {
   });
 
   it('the tireder the player, the nearer it shows, and the nearer the middle of the view', () => {
-    stamina.value = 0.15;
+    stamina.value = 0.088;
     run(2);                                 // shows 1.88 s in
     expect(visible()).toBe(true);
     const { distance, angle } = seen();
@@ -195,7 +195,7 @@ describe('SleepDemon', () => {
 
   it('never stands in a wall: something in the way brings it in front of it', () => {
     wall = 3;
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(visible()).toBe(true);
     expect(seen().distance).toBeCloseTo(3 - T.wallGap, 5);
@@ -212,7 +212,7 @@ describe('SleepDemon', () => {
       expect(from.y).toBeCloseTo(SLEEP_DEMON_FIGURE.height);   // down from its full height
       return onDesk(from) ? from.y - 0.75 : Infinity;
     });
-    stamina.value = 0.425;                  // 5.4 m: on the desk
+    stamina.value = 0.25;                  // 5.4 m: on the desk
     run(4);
     expect(visible()).toBe(true);
     expect(seen().distance).toBeLessThan(4);
@@ -221,7 +221,7 @@ describe('SleepDemon', () => {
 
   it('with no room either side it waits out of sight, and shows once there is room', () => {
     wall = 0.5;
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(visible()).toBe(false);
     wall = Infinity;
@@ -230,7 +230,7 @@ describe('SleepDemon', () => {
   });
 
   it('turned away from, it stays where it stood and creeps in slowly along the same line, footsteps as it goes', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     const spot = figure.object3d.position.clone();
     face(0, EYE, 10);                       // turn round
@@ -253,7 +253,7 @@ describe('SleepDemon', () => {
       rand: () => 0.1,                      // inside behindChance: the roll fires
     });
     demon.onStart();
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(3.6);                               // shows at 3.5 s, behind the player
     expect(visible()).toBe(true);
     const { distance, angle } = seen();
@@ -272,7 +272,7 @@ describe('SleepDemon', () => {
       rand: () => 0,                        // shows behind by the roll, then paces at the ticks
     });
     demon.onStart();
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);                                 // shows at 3.5 s and creeps from there
     expect(demon.logic.sneaking).toBe(true);
     const heard = footsteps.play.mock.calls.length;
@@ -282,7 +282,7 @@ describe('SleepDemon', () => {
   });
 
   it('shut out by something in between, it fades in again in front of it', () => {
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     wall = 2;                               // between the player and where it stands
     run(T.stuckAfter + 0.2);
@@ -292,7 +292,7 @@ describe('SleepDemon', () => {
   });
 
   it('the terminal screen covers the view: looked at through it, it stays, creeping slowly', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     terminal.state = 'radar';
     const at = figure.object3d.position.clone();
@@ -308,7 +308,7 @@ describe('SleepDemon', () => {
 
   it('with the terminal screen up it stands out of sight: beside the player at first, behind them near empty', () => {
     terminal.state = 'radar';
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(visible()).toBe(true);
     let at = seen();
@@ -319,7 +319,7 @@ describe('SleepDemon', () => {
 
     stamina.reset();
     controller.startNight(1);
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.3);
     at = seen();
     expect(at.distance).toBeLessThan(1.6);
@@ -331,22 +331,22 @@ describe('SleepDemon', () => {
   it('out of sight it still keeps clear of walls, and with no room either side it waits', () => {
     terminal.state = 'radar';
     wall = 3;
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(5.8);                               // just shown: it has barely begun to creep
     expect(visible()).toBe(true);
     expect(seen().distance).toBeCloseTo(3 - T.wallGap, 1);
-    expect(seen().distance).toBeLessThanOrEqual(3 - T.wallGap);
+    expect(seen().distance).toBeLessThanOrEqual(3 - T.wallGap + 1e-9);
 
     stamina.reset();
     controller.startNight(1);
     wall = 0.5;
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     expect(visible()).toBe(false);
   });
 
   it('the screen closed, it comes after the player: turning round to look at it sends it away', () => {
-    stamina.value = 0.5;
+    stamina.value = 0.2941;
     run(4);
     terminal.state = 'radar';
     run(0.1);
@@ -365,7 +365,7 @@ describe('SleepDemon', () => {
   });
 
   it('below walkBelow, stared at, it walks in on the player along the line it is seen along, to arm\'s length', () => {
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.3);
     expect(visible()).toBe(true);
     const at = figure.object3d.position.clone();
@@ -384,7 +384,7 @@ describe('SleepDemon', () => {
 
   it('between 10 % and 5 % it no longer fades from a look, but only stares', () => {
     stamina.value = 0.08;
-    run(1.6);                               // shows 1.53 s in
+    run(1.9);                               // shows 1.8 s in
     const at = figure.object3d.position.clone();
     face(at.x, EYE, at.z);
     run(3);
@@ -398,7 +398,7 @@ describe('SleepDemon', () => {
       if (dir.y > -0.5) return wall;
       return Math.hypot(from.x, from.z) < 0.9 ? from.y - 0.75 : Infinity;
     });
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.3);
     const at = figure.object3d.position;
     face(at.x, EYE, at.z);
@@ -409,7 +409,7 @@ describe('SleepDemon', () => {
   });
 
   it('tells the scene as it walks, a centimetre at a time, and not once it stands still', () => {
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.3);
     onFigureChanged.mockClear();
     run(1.6, 1 / 60);                       // 19 cm in 96 frames
@@ -428,7 +428,7 @@ describe('SleepDemon', () => {
       sounds: { footstep: fakeSound() }, rand: () => 0.9, tuning: { ...T, stareDown: false },
     });
     demon.onStart();
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.3);
     const at = figure.object3d.position.clone();
     face(at.x, EYE, at.z);
@@ -448,7 +448,7 @@ describe('SleepDemon', () => {
   });
 
   it('is hidden and harmless outside the shift: the morning, or a failed night', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     expect(visible()).toBe(true);
     controller.state = 'morning';
@@ -459,7 +459,7 @@ describe('SleepDemon', () => {
   });
 
   it('a new or retried night starts it away', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     controller.state = 'gameOver';
     run(0.1);
@@ -476,7 +476,7 @@ describe('SleepDemon', () => {
       stamina.reset();
       controller.startNight(night);
       expect(visible()).toBe(false);
-      stamina.value = 0.425;
+      stamina.value = 0.25;
       run(4);
       expect(visible(), `night ${night}`).toBe(true);
     }
@@ -492,7 +492,7 @@ describe('SleepDemon', () => {
 
   it('tells the scene each time the figure moves, shows or hides (the frozen shadow maps)', () => {
     onFigureChanged.mockClear();
-    stamina.value = 0.5;
+    stamina.value = 0.2941;
     run(4);
     expect(onFigureChanged).toHaveBeenCalledTimes(1);     // shows
     run(1);
@@ -513,7 +513,7 @@ describe('SleepDemon', () => {
   });
 
   it('smiles from 1 % stamina, keeps the smile through the death, and a new night wipes it', () => {
-    stamina.value = 0.3;
+    stamina.value = 0.1765;
     run(3);
     expect(figure.smile.visible).toBe(false);
     stamina.value = 0.02;
@@ -582,7 +582,7 @@ describe('SleepDemon and the flashlight', () => {
       flashlight: torch,
     });
     demon.onStart();
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);                                 // showing, at the very edge of the view
   });
 
@@ -639,7 +639,7 @@ describe('SleepDemon and the flashlight', () => {
     expect(stuttering()).toBe(false);
 
     controller.state = 'playing';
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(7);
     aimOff(20 * DEG);
     run(0.1);
@@ -680,7 +680,7 @@ describe('SleepDemon sound', () => {
     run(1);
     expect(plays()).toBe(0);
 
-    stamina.value = 0.8;
+    stamina.value = 0.4706;
     run(1);                                 // about, but nowhere yet: no step from nowhere
     expect(plays()).toBe(0);
     run(6);                                 // shows at 5.7 s: silently, it fades in
@@ -695,11 +695,11 @@ describe('SleepDemon sound', () => {
     const far = footsteps.volume;
     expect(far).toBeGreaterThan(0);
 
-    stamina.value = 0.04;                   // near empty: nearer, louder
+    stamina.value = 0.0235;                   // near empty: nearer, louder
     run(3);
     expect(footsteps.volume).toBeGreaterThan(far);
 
-    stamina.value = 0.5;                    // a ration: it flees a look again
+    stamina.value = 0.2941;                    // a ration: it flees a look again
     const at = figure.object3d.position;
     look(at.x, at.z);
     run(0.1);
@@ -733,7 +733,7 @@ describe('SleepDemon sound', () => {
       figure: new GameObject('SleepDemon'),
     });
     demon.onStart();
-    stamina.value = 0.3;
+    stamina.value = 0.1765;
     expect(() => { for (let i = 0; i < 100; i++) demon.onUpdate(0.1); }).not.toThrow();
   });
 });
@@ -772,7 +772,7 @@ describe('SleepDemon dread: it walks you down', () => {
   });
 
   it('while it walks in the player is slowed and the dread is on them; let go the moment it is not', () => {
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.5);                               // shown at 1.24 s, walking since
     expect(demon.logic.walking).toBe(true);
     expect(player.speedScale).toBeCloseTo(SLEEP_DEMON_DREAD.slow, 10);
@@ -791,7 +791,7 @@ describe('SleepDemon dread: it walks you down', () => {
     expect(player.speedScale).toBe(1);
     expect(fatigue.setDread).toHaveBeenLastCalledWith(0);
 
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(30);                                // walked home: at arm's length, nothing left to give
     expect(gap()).toBeCloseTo(T.stareFloor, 2);
     expect(demon.logic.walking).toBe(false);
@@ -800,7 +800,7 @@ describe('SleepDemon dread: it walks you down', () => {
   });
 
   it('a player who backs away is walked after — half the retreat, no more: they gain ground', () => {
-    stamina.value = 0.04;
+    stamina.value = 0.0235;
     run(1.5);                               // shown at 1.24 s, walking since
     expect(demon.logic.walking).toBe(true);
     const at = figure.object3d.position.clone();
@@ -897,14 +897,14 @@ describe('SleepDemon dead air', () => {
 
   it('ducks nothing while the player is awake, nor before it shows', () => {
     run(10);
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(3);
     expect(figure.object3d.visible).toBe(false);
     expect(duck()).toBe(1);
   });
 
   it('a mild duck when it shows, at the edge of the view', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     expect(figure.object3d.visible).toBe(true);
     expect(duck()).toBeCloseTo(T.duckEdge, 2);
@@ -912,7 +912,7 @@ describe('SleepDemon dead air', () => {
 
   it('deepens as the view comes round to it, near-silent at the look, and lets go as it flees', () => {
     stamina.value = 0.12;                   // the cone has closed to ~16°
-    run(2);
+    run(2.4);                               // shows 2.2 s in
     const at = shownAt();
     expect(at).toBeGreaterThan(demon.logic.focus);   // it shows outside the look: the periphery
     const levels = [];
@@ -934,7 +934,7 @@ describe('SleepDemon dead air', () => {
   });
 
   it('turned away from, out of view: no duck', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     turn(Math.PI);
     run(0.5);
@@ -942,7 +942,7 @@ describe('SleepDemon dead air', () => {
   });
 
   it('while the terminal screen covers the view, the mild duck holds', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     terminal.state = 'radar';
     turn(shownAt());
@@ -954,7 +954,7 @@ describe('SleepDemon dead air', () => {
   it('lets go in the morning and behind the failed-night prompt', () => {
     for (const state of ['morning', 'gameOver']) {
       controller.state = 'playing';
-      stamina.value = 0.425;
+      stamina.value = 0.25;
       run(8);
       expect(duck(), state).toBeLessThan(1);
       controller.state = state;
@@ -964,14 +964,14 @@ describe('SleepDemon dead air', () => {
   });
 
   it('lets go on a new or retried night, and when destroyed', () => {
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     expect(duck()).toBeLessThan(1);
     stamina.reset();
     controller.startNight(1, { retry: true });
     expect(duck()).toBe(1);
 
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     run(4);
     expect(duck()).toBeLessThan(1);
     demon.onDestroy();
@@ -983,7 +983,7 @@ describe('SleepDemon dead air', () => {
       controller: fakeController(), stamina, figure: new GameObject('SleepDemon'), camera,
     });
     quiet.onStart();
-    stamina.value = 0.425;
+    stamina.value = 0.25;
     expect(() => { for (let i = 0; i < 60; i++) quiet.onUpdate(0.1); }).not.toThrow();
   });
 });

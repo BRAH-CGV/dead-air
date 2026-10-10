@@ -1103,13 +1103,14 @@ export class BaseScene extends Scene {
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
    *  SleepDemon). Its figure is a placeholder under a Threats group on the
    *  scene root, which sits at the world origin: the demon writes world
-   *  positions, and no occlusion zone ever hides it. It casts no shadow — a
-   *  shade, not a body, and a solid shadow under a faint figure gave it
-   *  away — so moving it never redraws the frozen shadow maps. */
+   *  positions, and no occlusion zone ever hides it. It is a shadow in
+   *  itself: a pitch-black shade no light shows, and it casts none — a solid
+   *  shadow under a faint figure gave it away — so moving it never redraws
+   *  the frozen shadow maps. */
   _addSleepDemon() {
     const { engine } = this;
     const figure = createMonsterFigure({
-      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, castShadow: false, placeholderFor: 'sleep-demon.glb',
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb',
     });
     this._group('Threats').addChild(figure);
     this._ownResourcesOf(figure);

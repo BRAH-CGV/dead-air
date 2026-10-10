@@ -11,8 +11,9 @@
 
 export const STAMINA = Object.freeze({
   /** Empty after 240 s: 4:48 AM of a 300 s shift, with no food. The Sleep
-   *  Demon is about from 12:45 AM (SLEEP_DEMON.appearBelow), faint until
-   *  half stamina, and creeps nearer the tireder the player gets. */
+   *  Demon is about from half stamina (SLEEP_DEMON.appearBelow), 2:24 AM
+   *  with no food, faint at first, and creeps nearer the tireder the
+   *  player gets. */
   drainPerSecond: 1 / 240,
   /** What one ration gives back. */
   ration: 0.35,

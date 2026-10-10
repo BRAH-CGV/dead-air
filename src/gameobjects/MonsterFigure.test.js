@@ -72,6 +72,34 @@ describe('createMonsterFigure', () => {
     expect(smile.geometry.parameters?.radius ?? 0).toBeLessThan(radius * 0.05);   // thin
   });
 
+  it('as a shade, its body is a pitch-black, unlit silhouette: no light or fog reaches it', () => {
+    const figure = createMonsterFigure({ shade: true, castShadow: false });
+    const body = figure.object3d.children.find(c => c.name.endsWith('Body'));
+    const material = body.material;
+    expect(material).toBeInstanceOf(THREE.ShaderMaterial);
+    expect(material.lights).toBe(false);
+    expect(material.fog).toBe(false);
+    expect(material.transparent).toBe(true);
+    expect(material.fragmentShader).toMatch(/vec4\(\s*vec3\(\s*0\.0\s*\)/);   // black, always
+    // Its edges thin out to nothing: a shadow, not a solid thing.
+    expect(material.uniforms.uEdge.value).toBeGreaterThan(0);
+    expect(material.fragmentShader).toMatch(/uEdge/);
+  });
+
+  it("a shade fades by its material's opacity, like any other", () => {
+    const figure = createMonsterFigure({ shade: true });
+    const body = figure.object3d.children.find(c => c.name.endsWith('Body'));
+    expect(body.material.opacity).toBe(1);
+    body.material.opacity = 0.3;
+    expect(body.material.uniforms.opacity.value).toBeCloseTo(0.3);
+  });
+
+  it('is a solid, lit body unless asked to be a shade', () => {
+    const figure = createMonsterFigure();
+    const body = figure.object3d.children.find(c => c.name.endsWith('Body'));
+    expect(body.material).toBeInstanceOf(THREE.MeshStandardMaterial);
+  });
+
   it('casts a shadow by default, and none when asked', () => {
     const casting = createMonsterFigure();
     const body = casting.object3d.children.find(c => c.name.endsWith('Body'));
