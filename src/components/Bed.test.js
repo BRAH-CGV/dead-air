@@ -6,7 +6,11 @@ describe('Bed', () => {
   let controller, fade, bed;
 
   beforeEach(() => {
-    controller = { state: 'playing', sleep: vi.fn(() => controller.state === 'morning') };
+    controller = {
+      state: 'playing',
+      get canSleep() { return this.state === 'morning'; },
+      sleep: vi.fn(() => controller.canSleep),
+    };
     // A fade that goes black at once.
     fade = { play: vi.fn(onDark => { onDark(); return true; }) };
     bed = new Bed();

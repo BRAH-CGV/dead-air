@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { UFO } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
 // ─────────────────────────────────────────────
-// Every night brings one storm, at a random hour (night 1 too — the dust
-// eyes stay away until night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
+// Every night brings two storms (SANDSTORM.perNight), one in each half of
+// the night, at random hours (night 1 too — the dust eyes stay away until
+// night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
 // down again. While it blows:
 //
 //   sound   none of its own. The wind outside is the Ambience's loop; the
@@ -50,11 +52,14 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 export const SANDSTORM = {
   /** The first night storms can come on. */
   fromNight: 1,
-  /** When it starts, in night-clock hours after midnight: a random time
-   *  between these… */
-  startHours: [0.5, 4.2],
-  /** …and how long it blows, in clock hours — about an hour and a half.
-   *  Over by 5:54 at the latest. */
+  /** The stretch of night the storms blow in, in night-clock hours from
+   *  midnight (7:30 PM is -4.5): 7:30 PM, after dark, to 5:54 AM. */
+  stormHours: [-4.5, 5.9],
+  /** Storms a night. The stretch is split into this many equal parts, one
+   *  storm somewhere wholly inside each: 5.2 hours apiece, as often as the
+   *  old six-hour night had its one (in 0:30 … 5:54). */
+  perNight: 2,
+  /** How long each blows, in clock hours — about an hour and a half. */
   durationHours: [1.3, 1.7],
   /** On a UFO night a storm always follows it, this long after it has gone
    *  (real seconds). */
@@ -90,26 +95,34 @@ export const WIND_DIRECTION = WIND_DUST.direction;
 // ── Pure helpers ──────────────────────────────────────────
 
 /**
- * Tonight's storm: when it starts and how long it blows, in real seconds
- * from the start of the shift. Every night has one.
+ * Tonight's storms, in order: when each starts and how long it blows, in
+ * real seconds from the start of the shift. SANDSTORM.perNight of them, one
+ * inside each equal part of SANDSTORM.stormHours, so they never overlap.
  * @param {object} opts
  * @param {number} opts.night
  * @param {number} opts.nightDuration  Real seconds in the shift.
- * @param {number} [opts.nightHours=6] Clock hours in it.
+ * @param {number} [opts.nightHours=12] Clock hours in it.
+ * @param {number} [opts.startHour=-6]  The clock hour it starts at.
  * @param {() => number} [opts.random]
- * @returns {{ start: number, duration: number }|null}  null only on a UFO
- *          night (the storm follows the UFO there instead).
+ * @returns {{ start: number, duration: number }[]}  none on a UFO night
+ *          (a storm follows the UFO there instead).
  */
-export function scheduleStorm({ night, nightDuration, nightHours = 6, random = Math.random }) {
-  if (night < SANDSTORM.fromNight) return null;
-  if (UFO.nights.includes(night)) return null;   // it comes after the UFO instead
+export function scheduleStorms({
+  night, nightDuration, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
+}) {
+  if (night < SANDSTORM.fromNight) return [];
+  if (UFO.nights.includes(night)) return [];   // it comes after the UFO instead
   const hour = nightDuration / nightHours;
-  const [s0, s1] = SANDSTORM.startHours;
+  const [h0, h1] = SANDSTORM.stormHours;
   const [d0, d1] = SANDSTORM.durationHours;
-  return {
-    start:    (s0 + random() * (s1 - s0)) * hour,
-    duration: (d0 + random() * (d1 - d0)) * hour,
-  };
+  const part = (h1 - h0) / SANDSTORM.perNight;
+  const storms = [];
+  for (let i = 0; i < SANDSTORM.perNight; i++) {
+    const duration = d0 + random() * (d1 - d0);
+    const start = h0 + i * part + random() * (part - duration);
+    storms.push({ start: (start - startHour) * hour, duration: duration * hour });
+  }
+  return storms;
 }
 
 /**
@@ -131,7 +144,7 @@ export class Sandstorm extends Component {
   level = 0;
   /** While true, a storm that is blowing doesn't die down (a chase). */
   held = false;
-  /** Counts the storms: a new number each time one is scheduled or
+  /** Counts the storms: a new number each time one comes up next or is
    *  summoned, so others can tell one storm from the next. */
   stormId = 0;
 
@@ -159,19 +172,21 @@ export class Sandstorm extends Component {
    *        WindDustMotion: one storm level drives the clouds too.
    * @param {{ setStorm: (k: number) => void }} [opts.ambience]  The scene's
    *        Ambience: the storm's wind is its outside loop, blown harder.
-   * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
-   * @param {number} [opts.nightHours=6]      Clock hours in it.
+   * @param {number} [opts.nightDuration=600]  Real seconds in a shift.
+   * @param {number} [opts.nightHours=12]     Clock hours in it.
+   * @param {number} [opts.startHour=-6]      The clock hour it starts at.
    * @param {() => number} [opts.random]
    */
   constructor({
     controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, ambience = null,
-    nightDuration = 300, nightHours = 6, random = Math.random,
+    nightDuration = NIGHT_SECONDS, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, random });
+    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, startHour, random });
 
     this._elapsed = 0;       // seconds of 'playing' this night
-    this._storm = null;      // { start, duration } in _elapsed, or null
+    this._storm = null;      // { start, duration } in _elapsed, or null: the current or next storm
+    this._queue = [];        // tonight's storms after that one
     this._view = null;       // eased 1 with the valley in view … 0, for the fog and dust
     this._out = null;        // eased 1 outside … 0 inside, for how close the fog is
     this._afterUfo = false;  // a UFO night with a storm to follow it
@@ -197,13 +212,14 @@ export class Sandstorm extends Component {
     this.ambience?.setStorm?.(0);
   }
 
-  /** A fresh night: calm, with tonight's storm (if any) scheduled. */
+  /** A fresh night: calm, with tonight's storms (if any) scheduled. */
   reset(night) {
     this._elapsed = 0;
     this.level = 0;
     this.held = false;
-    this._storm = scheduleStorm({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, random: this.random });
-    if (this._storm) { this.stormId++; this._pickWind(); }
+    this._queue = scheduleStorms({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, startHour: this.startHour, random: this.random });
+    this._storm = null;
+    this._next();
     this._afterUfo = night >= SANDSTORM.fromNight && UFO.nights.includes(night);
     this._afterUfoAt = null;
   }
@@ -216,8 +232,28 @@ export class Sandstorm extends Component {
   summon() {
     if (this.controller.state !== 'playing') return false;
     if (this.level > 0 || this._ufoBusy()) return false;
+    // It stands in for the next storm that hasn't started: the current one
+    // if it is still to come, else the first in the queue.
+    if (this._blownOver()) this._queue.shift();
     this._startNow();
     return true;
+  }
+
+  /** The current storm has been and gone. */
+  _blownOver() {
+    const s = this._storm;
+    return !!s && this._elapsed >= s.start + s.duration;
+  }
+
+  /** Bring up tonight's next storm, if there is one. One delayed past its
+   *  time (a held storm ran long) starts now. */
+  _next() {
+    const s = this._queue.shift();
+    if (!s) return;
+    s.start = Math.max(s.start, this._elapsed);
+    this._storm = s;
+    this.stormId++;
+    this._pickWind();
   }
 
   /** A storm from this moment, of a random length. */
@@ -249,6 +285,7 @@ export class Sandstorm extends Component {
     if (this.controller.state === 'playing') {
       this._elapsed += dt;
       this._followUfo();
+      if (this._blownOver() && !this.held && this._queue.length) this._next();
       const s = this._storm;
       // Due during a UFO visit (the U key, on another night): it waits.
       if (s && this._ufoBusy() && this.level === 0 && this._elapsed >= s.start) s.start = this._elapsed;

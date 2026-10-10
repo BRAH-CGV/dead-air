@@ -640,7 +640,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(2);
     expect(scene.gameController.state).toBe('playing');
     expect(setNight).toHaveBeenLastCalledWith(2);
-    expect(scene.nightClock.timeString).toBe('12:00 AM');
+    expect(scene.nightClock.timeString).toBe('6:00 PM');
   });
 
   it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
@@ -727,11 +727,17 @@ describe('BaseScene gameplay loop', () => {
       .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
 
     const uDawn = scene.sky.skyUniforms.uDawn;
-    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
-                    fog: engine.scene.fog.color.getHex() };
 
+    // Built at 6 PM: the dusk is on as soon as the engine wakes the scene
+    // (loadScene's _init), before anything ticks — the main menu shows it.
+    gameplay._init(engine.scene, engine.world);
+    expect(uDawn.value).toBe(1);
+
+    scene.nightClock.currentTime = 0;     // midnight: full night
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(0);
+    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
+                    fog: engine.scene.fog.color.getHex() };
 
     workTheShift();
     daylight.onUpdate(0.016);
@@ -741,6 +747,9 @@ describe('BaseScene gameplay loop', () => {
     expect(engine.scene.fog.color.getHex()).not.toBe(night.fog);
 
     scene.rooms.LivingQuarters.bed.onInteract({});
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(1);          // the next shift starts at dusk
+    scene.nightClock.currentTime = 0;
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(0);
     expect(scene.ambientLight.intensity).toBe(night.ambient);

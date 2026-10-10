@@ -7,7 +7,7 @@ import { SignalTarget } from './SignalTarget.js';
 // from a pool, and tracks save/delete state. The required signal count
 // scales with night number.
 //
-// Signals are not all visible at 12:00: each one carries an appearAt shift
+// Signals are not all visible at the start of the shift: each one carries an appearAt shift
 // fraction spread across [APPEAR_START, APPEAR_BY], and pops in for a
 // short window once the night reaches it — fade in over
 // SIGNAL_FADE_SECONDS, hold VISIBLE_SECONDS, fade back out. The sky is
@@ -31,16 +31,23 @@ import { SignalTarget } from './SignalTarget.js';
 const PITCH_MIN = -80 * (Math.PI / 180);  // steepest up
 const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 
-/** Required signals per night: base + (night-1). Clamped to signalsPerNight. */
+/** Required signals per night: QUOTA_SCALE × (base + night − 1), rounded —
+ *  5, 6, 8 — clamped to signalsPerNight. Night 3's 8 fills a drive box. */
 const BASE_REQUIRED = 3;
+const QUOTA_SCALE = 1.5;
 
-/** Shift fraction at which the first signal may appear — the sky stays
- *  empty for the first minutes of the night. */
-export const APPEAR_START = 0.05;
+/** Signals in a night: at the rate the old five-minute night had them (one
+ *  every ~42 s of their window), over the longer night. */
+export const SIGNALS_PER_NIGHT = 10;
 
-/** Shift fraction by which every signal has appeared, leaving enough
- *  night left to scan the quota. */
-export const APPEAR_BY = 0.75;
+/** Shift fraction at which the first signal may appear: ~7:25 PM, once
+ *  the dusk has gone — the Sun drowns the faint signals — and the sky has
+ *  stayed empty a little longer. */
+export const APPEAR_START = 0.12;
+
+/** Shift fraction by which every signal has appeared (~4:12 AM), leaving
+ *  time before 6 AM to scan the last. */
+export const APPEAR_BY = 0.85;
 
 /** Real seconds a signal's radar dot takes to fade fully in (and out). */
 export const SIGNAL_FADE_SECONDS = 3;
@@ -66,10 +73,10 @@ export class SignalManager {
 
   /**
    * @param {Object} opts
-   * @param {number} [opts.signalsPerNight=5]
+   * @param {number} [opts.signalsPerNight=SIGNALS_PER_NIGHT]
    * @param {string[]} [opts.payloadPool=[]]
    */
-  constructor({ signalsPerNight = 5, payloadPool = [] } = {}) {
+  constructor({ signalsPerNight = SIGNALS_PER_NIGHT, payloadPool = [] } = {}) {
     this.signalsPerNight = signalsPerNight;
     this.payloadPool = payloadPool;
   }
@@ -79,7 +86,7 @@ export class SignalManager {
     this.signals = [];
     this.required = Math.min(
       this.signalsPerNight,
-      BASE_REQUIRED + (nightNumber - 1),
+      Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
     );
 
     // Shuffle the pool for non-repeating assignment.

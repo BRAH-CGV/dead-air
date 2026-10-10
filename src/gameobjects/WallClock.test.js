@@ -73,7 +73,7 @@ describe('WallClock', () => {
 
   it('follows the NightClock it is given, frame by frame', () => {
     const clock = new WallClock();
-    const night = new NightClock({ nightDuration: 300 });
+    const night = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.clock = night;
 
     night.update(150);           // 3:00 AM
