@@ -335,6 +335,12 @@ describe('ComputerTerminal', () => {
   it('hover ignores resolved signals', () => {
     term.enter();
     const sig = mgr.signals[0];
+    // Hide the other signals so only the resolved one could be hovered —
+    // their random positions occasionally land close enough to matter.
+    for (let i = 1; i < mgr.signals.length; i++) {
+      mgr.signals[i].appeared = false;
+      mgr.signals[i].fadeElapsed = 0;
+    }
     mgr.saveSignal(sig.id);  // mark as resolved
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
