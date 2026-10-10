@@ -438,7 +438,7 @@ export class BaseScene extends Scene {
    *  Built after the rooms, the outside area and the player, because it
    *  reaches into all three. */
   _addGameplaySystems() {
-    this.nightClock = new NightClock({ nightDuration: 300 });
+    this.nightClock = new NightClock();
 
     // Payload URLs are direct paths to the placeholder images, not manifest
     // keys — they are displayed through an HTML <img>, not a Three.js

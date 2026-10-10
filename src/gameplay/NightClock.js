@@ -2,7 +2,7 @@
 // NightClock  –  In-game time progression
 // ─────────────────────────────────────────────
 // Tracks the passage of a single night. Real seconds are mapped to in-game
-// hours (e.g. 300 real seconds = 6 in-game hours → 50 s per hour).
+// hours (NIGHT_SECONDS = 600 real seconds for 6 in-game hours → 100 s per hour).
 //
 // Standalone class — not a Component. Driven by GameController.update(dt).
 //
@@ -11,6 +11,9 @@
 //   onHourChange(hour)    – when an integer hour boundary is crossed
 //   onNightEnd()          – once, when finished becomes true
 // ─────────────────────────────────────────────
+
+/** Real seconds in one shift, 12:00 → 6:00 AM: ten minutes. */
+export const NIGHT_SECONDS = 600;
 
 export class NightClock {
   /** Real seconds elapsed this night. */
@@ -33,7 +36,7 @@ export class NightClock {
   onNightEnd = null;
 
   /** @param {{ startHour?: number, endHour?: number, nightDuration?: number }} opts */
-  constructor({ startHour = 0, endHour = 6, nightDuration = 300 } = {}) {
+  constructor({ startHour = 0, endHour = 6, nightDuration = NIGHT_SECONDS } = {}) {
     this.startHour = startHour;
     this.endHour = endHour;
     this.nightDuration = nightDuration;

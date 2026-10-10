@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { NightClock } from './NightClock.js';
+import { NightClock, NIGHT_SECONDS } from './NightClock.js';
 
 describe('NightClock', () => {
   it('starts at startHour with zero elapsed', () => {
@@ -165,5 +165,12 @@ describe('NightClock', () => {
 
     clock.update(75);  // 1.5 hours → 1:30 AM
     expect(clock.timeString).toBe('1:30 AM');
+  });
+});
+
+describe('shift length', () => {
+  it('is ten real minutes by default (NIGHT_SECONDS)', () => {
+    expect(NIGHT_SECONDS).toBe(600);
+    expect(new NightClock().nightDuration).toBe(NIGHT_SECONDS);
   });
 });

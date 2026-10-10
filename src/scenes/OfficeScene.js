@@ -105,7 +105,7 @@ export class OfficeScene extends Scene {
   // ──────────────────────────────────────────
   _addGameplaySystems() {
     // ── Night clock ──
-    this.nightClock = new NightClock({ nightDuration: 300 });
+    this.nightClock = new NightClock();
 
     // ── Signal manager ──
     // Payload URLs are direct paths to the placeholder images, not
