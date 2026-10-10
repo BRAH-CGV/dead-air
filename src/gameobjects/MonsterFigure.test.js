@@ -36,7 +36,6 @@ describe('createMonsterFigure', () => {
     expect(smile.parent).toBe(figure.object3d);
     expect(smile.visible).toBe(false);
     expect(smile.castShadow).toBe(false);
-    expect(smile.material).toBeInstanceOf(THREE.MeshBasicMaterial);
     expect(smile.material.transparent).toBe(true);
     smile.updateMatrixWorld();
     const box = new THREE.Box3().setFromObject(smile);
@@ -44,32 +43,39 @@ describe('createMonsterFigure', () => {
     expect(box.min.y).toBeGreaterThan(2 * 0.6);
   });
 
-  it('the grin is a thin, wide, shallow curve wrapped round the face — a Verity-style smile, not a cartoon U', () => {
+  it('the grin is a wide crescent of teeth, wrapped round the face: a band on the body drawn by its own shader', () => {
     const radius = 0.25;
     const figure = createMonsterFigure({ height: 2, radius });
     const { smile } = figure;
     smile.updateMatrixWorld();
     const box = new THREE.Box3().setFromObject(smile);
-    const width = box.max.x - box.min.x;
-    const rise = box.max.y - box.min.y;
-    expect(width).toBeGreaterThan(radius * 1.4);       // most of the face across
-    expect(rise).toBeLessThan(width * 0.25);           // shallow
-    expect(rise).toBeGreaterThan(width * 0.08);        // but a curve: the corners turn up
+    expect(box.max.x - box.min.x).toBeGreaterThan(radius * 1.4);   // most of the face across
     // It sits on the body's surface all the way round: never inside it, never floating off.
     const at = new THREE.Vector3();
     const positions = smile.geometry.attributes.position;
-    let lowest = Infinity, lowestX = 0, cornerY = -Infinity;
     for (let i = 0; i < positions.count; i++) {
       at.fromBufferAttribute(positions, i).applyMatrix4(smile.matrixWorld);
-      const off = Math.hypot(at.x, at.z);
-      expect(off).toBeGreaterThan(radius * 0.98);
-      expect(off).toBeLessThan(radius * 1.15);
+      expect(Math.hypot(at.x, at.z)).toBeGreaterThan(radius * 0.98);
+      expect(Math.hypot(at.x, at.z)).toBeLessThan(radius * 1.15);
       expect(at.z).toBeGreaterThan(0);                 // on the face, not the back
-      if (at.y < lowest) { lowest = at.y; lowestX = at.x; }
-      cornerY = Math.max(cornerY, at.y);
     }
-    expect(Math.abs(lowestX)).toBeLessThan(width * 0.1);   // lowest in the middle: a smile
-    expect(smile.geometry.parameters?.radius ?? 0).toBeLessThan(radius * 0.05);   // thin
+    expect(smile.geometry.attributes.uv).toBeDefined();
+    // The teeth are the shader's: unlit, never fogged, bone-pale, a row above
+    // and a row below, many of them.
+    const material = smile.material;
+    expect(material).toBeInstanceOf(THREE.ShaderMaterial);
+    expect(material.lights).toBe(false);
+    expect(material.fog).toBe(false);
+    expect(material.transparent).toBe(true);
+    expect(material.uniforms.uTeeth.value).toBeGreaterThanOrEqual(10);
+    expect(material.fragmentShader).toMatch(/discard/);   // outside the crescent: nothing
+  });
+
+  it('the grin fades by its opacity, like the rest of the figure', () => {
+    const { smile } = createMonsterFigure();
+    expect(smile.material.opacity).toBe(1);
+    smile.material.opacity = 0.4;
+    expect(smile.material.uniforms.opacity.value).toBeCloseTo(0.4);
   });
 
   it('as a shade, its body is a pitch-black, unlit silhouette: no light or fog reaches it', () => {

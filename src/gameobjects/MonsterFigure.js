@@ -8,8 +8,8 @@ import { GameObject } from '../core/GameObject.js';
 // light shows (createShadeMaterial) — with two small eyes that ignore the
 // lighting, so they read in the dark and through the fog, and a pale grin
 // under them,
-// hidden until a threat shows it (`smile`): a thin, wide, shallow curve
-// wrapped round the face, its corners turned up. It is a placeholder: swap
+// hidden until a threat shows it (`smile`): a wide crescent of
+// interlocking teeth wrapped round the face. It is a placeholder: swap
 // in a real model by replacing what this returns; `placeholderFor` records
 // the file it waits for.
 //
@@ -68,6 +68,60 @@ export function createShadeMaterial({ edge = SHADE_EDGE } = {}) {
     lights: false,
     fog: false,
   });
+  return opacityFromUniform(material);
+}
+
+/** The grin: how far round the face it reaches, either side of the front,
+ *  radians; and how many teeth fit across it, upper and lower rows offset
+ *  by half a tooth so they interlock. */
+const GRIN_SWEEP = 60 * Math.PI / 180;
+const GRIN_TEETH = 12;
+
+const GRIN_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// The band it is drawn on wraps the face; this cuts the crescent out of it
+// and fills it with teeth. x runs corner to corner (−1 … 1), y up the band.
+// The lower edge dips deep in the middle and the upper one shallow, both
+// rising to meet in a point at each corner. Inside, a row of teeth hangs
+// from the top and a row stands from the bottom, half a tooth apart; where
+// they meet is a zigzag, so each point bites between two of the other row.
+// Dark gaps part the teeth, and they dim a little toward the edges.
+const GRIN_FRAGMENT = /* glsl */ `
+  uniform float opacity;
+  uniform float uTeeth;
+  uniform vec3 uColor;
+  varying vec2 vUv;
+  void main() {
+    float x = vUv.x * 2.0 - 1.0;
+    float xx = x * x;
+    float bottom = 0.95 * xx;
+    float top = 0.6 + 0.4 * xx;
+    float y = vUv.y;
+    if (y <= bottom || y >= top) discard;
+    float t = (y - bottom) / (top - bottom);          // 0 lower edge … 1 upper edge
+    float k = vUv.x * uTeeth;
+    float zig = abs(fract(k) - 0.5) * 2.0;            // 0 mid-tooth … 1 between teeth
+    float meet = 0.5 + (zig - 0.5) * 0.2;             // where the rows bite together
+    float upper = step(meet, t);
+    float f = fract(k + 0.5 * (1.0 - upper));
+    float gap = min(f, 1.0 - f);                      // 0 on a gap between teeth
+    float tooth = smoothstep(0.07, 0.13, gap) * smoothstep(0.035, 0.075, abs(t - meet));
+    float shade = mix(0.7, 1.0, smoothstep(0.0, 0.35, min(t, 1.0 - t)));
+    float edge = smoothstep(0.0, 0.03, y - bottom) * smoothstep(0.0, 0.03, top - y);
+    gl_FragColor = vec4(uColor * tooth * shade, opacity * edge);
+    #include <colorspace_fragment>
+  }
+`;
+
+/** A material's `opacity` read and written through its shader's own uniform,
+ *  so a fade (the Sleep Demon's _applyOpacity) works on it as on any other. */
+function opacityFromUniform(material) {
   Object.defineProperty(material, 'opacity', {
     get: () => material.uniforms.opacity.value,
     set: value => { material.uniforms.opacity.value = value; },
@@ -76,23 +130,49 @@ export function createShadeMaterial({ edge = SHADE_EDGE } = {}) {
   return material;
 }
 
-/** Half the grin's sweep round the face, radians. */
-const SMILE_SWEEP = 62 * Math.PI / 180;
-
-/** The grin's line: round a circle of `around` metres about the figure's
- *  axis, ±SMILE_SWEEP off its front (+Z), `low` metres up in the middle and
- *  `rise` higher at the corners: one smooth, shallow arc. */
-class SmileCurve extends THREE.Curve {
-  constructor(around, low, rise) {
-    super();
-    Object.assign(this, { around, low, rise });
+/**
+ * The grin's band: `segments` strips round a circle of `around` metres about
+ * the figure's axis, ±GRIN_SWEEP off its front (+Z), from `low` to `low +
+ * tall` metres up. uv runs corner to corner (u) and up the band (v).
+ */
+function grinBand(around, low, tall, segments = 32) {
+  const positions = [];
+  const uvs = [];
+  const index = [];
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments;
+    const a = (u * 2 - 1) * GRIN_SWEEP;
+    for (const v of [0, 1]) {
+      positions.push(Math.sin(a) * around, low + v * tall, Math.cos(a) * around);
+      uvs.push(u, v);
+    }
+    if (i < segments) {
+      const n = i * 2;
+      index.push(n, n + 2, n + 1, n + 1, n + 2, n + 3);
+    }
   }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(index);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
 
-  getPoint(t, target = new THREE.Vector3()) {
-    const u = t * 2 - 1;                    // −1 … 1, corner to corner
-    const a = u * SMILE_SWEEP;
-    return target.set(Math.sin(a) * this.around, this.low + this.rise * u * u, Math.cos(a) * this.around);
-  }
+/** The grin's look: bone-pale teeth, unlit, never fogged. */
+function createGrinMaterial(color) {
+  return opacityFromUniform(new THREE.ShaderMaterial({
+    uniforms: {
+      opacity: { value: 1 },
+      uTeeth: { value: GRIN_TEETH },
+      uColor: { value: new THREE.Color(color) },
+    },
+    vertexShader: GRIN_VERTEX,
+    fragmentShader: GRIN_FRAGMENT,
+    transparent: true,
+    lights: false,
+    fog: false,
+  }));
 }
 
 /**
@@ -140,13 +220,12 @@ export function createMonsterFigure({
     return eye;
   });
 
-  // The grin: a thin tube along a shallow curve wrapped round the face, just
-  // proud of the body below the eyes — lowest in the middle, its corners
-  // turned up. Unlit like them; hidden, and no shadow, so showing it redraws
-  // nothing.
+  // The grin: a crescent of teeth on a band wrapped round the face, just
+  // proud of the body below the eyes (see GRIN_FRAGMENT). Unlit like them;
+  // hidden, and no shadow, so showing it redraws nothing.
   go.smile = new THREE.Mesh(
-    new THREE.TubeGeometry(new SmileCurve(radius * 1.04, height - radius * 1.85, radius * 0.24), 32, radius * 0.025, 5),
-    new THREE.MeshBasicMaterial({ color: smileColor, fog: false, transparent: true }),
+    grinBand(radius * 1.03, height - radius * 1.95, radius * 0.65),
+    createGrinMaterial(smileColor),
   );
   go.smile.name = `${name}Smile`;
   go.smile.visible = false;
