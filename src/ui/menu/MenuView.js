@@ -56,6 +56,13 @@ export class MenuView {
     this.screen = null;
 
     if (!this.panel) return;
+    // One highlight at a time (#75): pointing at an option focuses it, and
+    // the stylesheet highlights focus only — so the mouse and the arrow keys
+    // drive the same single cursor instead of lighting up one each.
+    this.panel.addEventListener('mouseover', (e) => {
+      const el = e.target.closest?.('button:not([disabled]), a[href]');
+      if (el && this.panel.contains(el) && document.activeElement !== el) el.focus();
+    });
     this.panel.addEventListener('click', (e) => {
       const el = e.target.closest('[data-action]');
       if (!el || el.disabled || !this.panel.contains(el)) return;
