@@ -144,6 +144,64 @@
         letter-spacing: 0.1em;
       }
 
+      #hud-stamina {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #8898a8;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      #hud-stamina-track {
+        width: 120px;
+        height: 5px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #hud-stamina-fill {
+        width: 100%;
+        height: 100%;
+        background: #6ecf9a;
+        transition: background 0.4s ease;
+      }
+      #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
+      #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
+
+      /* ── Fatigue (FatigueOverlay.js) ──────────────────────
+         The tunnel sits under the HUD so the stamina bar stays readable;
+         the lids close over the HUD and the panels, but under the
+         white-out, the menus and the screen fade. */
+      #fatigue-tunnel {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 80;
+        background: radial-gradient(ellipse at center,
+          transparent 24%, rgba(0,0,0,0.55) 50%, #000 80%);
+      }
+      #fatigue-lids {
+        --lid: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+      #fatigue-lids::before,
+      #fatigue-lids::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 52%;
+        background: #000;
+      }
+      #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
+      #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
+
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
         position: fixed;
@@ -548,6 +606,13 @@
       <div id="hud-scan-bar"></div>
       <div id="hud-prompt"></div>
       <div id="hud-suit">EVA suit on</div>
+      <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
+    </div>
+
+    <!-- Fatigue: the tunnel vignette and the eyelids (FatigueOverlay.js) -->
+    <div id="fatigue">
+      <div id="fatigue-tunnel"></div>
+      <div id="fatigue-lids"></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->

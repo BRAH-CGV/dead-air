@@ -24,7 +24,7 @@ vi.mock('@dimforge/rapier3d', () => {
   };
 });
 
-import { MainOffice } from './MainOffice.js';
+import { MainOffice, RationDispenser } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
@@ -371,6 +371,15 @@ describe('MainOffice', () => {
     expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
+  it('makes the dispenser usable: it is the room\'s RationDispenser', () => {
+    const use = room.root.find('VendingMachine').getComponent(Interactable);
+    expect(use).toBeInstanceOf(RationDispenser);
+    expect(use).toBe(room.rationDispenser);
+    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
+    expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to feed
+    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
+  });
+
   it('keeps the furniture inside the room and out of every doorway', () => {
     const inX = room.width / 2 - room.wallThick / 2;
     const inZ = room.depth / 2 - room.wallThick / 2;
@@ -664,6 +673,53 @@ describe('MainOffice window frame', () => {
       const mesh = go.object3d.children.find(c => c.isMesh);
       expect(mesh.position.equals(new THREE.Vector3()), go.name).toBe(true);
     }
+  });
+});
+
+describe('MainOffice ration dispenser (night 1)', () => {
+  function make() {
+    const dispenser = new RationDispenser();
+    dispenser.stamina = { value: 0.3, restore(a) { this.value = Math.min(1, this.value + a); } };
+    return dispenser;
+  }
+
+  it('a ration gives back 0.35 stamina', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(0.65);
+  });
+
+  it('refills for 40 s after each ration, and says so', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
+
+    dispenser.onInteract({});                                   // nothing while refilling
+    expect(dispenser.stamina.value).toBeCloseTo(0.65);
+
+    dispenser.onUpdate(39.9);
+    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
+    dispenser.onUpdate(0.2);
+    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(1);
+  });
+
+  it('tells the scene when the player eats', () => {
+    const dispenser = make();
+    dispenser.onEat = vi.fn();
+    dispenser.onInteract({});
+    dispenser.onInteract({});
+    expect(dispenser.onEat).toHaveBeenCalledTimes(1);
+  });
+
+  it('reset() has a ration ready for a new or retried night', () => {
+    const dispenser = make();
+    dispenser.onInteract({});
+    dispenser.reset();
+    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
+    dispenser.onInteract({});
+    expect(dispenser.stamina.value).toBeCloseTo(1);
   });
 });
 

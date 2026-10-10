@@ -48,6 +48,7 @@ import { PLAYER_BODY } from '../components/PlayerBody.js';
 import { Component } from '../core/Component.js';
 import { LEDStrip } from '../components/LEDStrip.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
@@ -62,6 +63,12 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
+import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -210,6 +217,13 @@ export class BaseScene extends Scene {
    *  @type {PowerGrid|null} */
   power = null;
 
+  /** How awake the player is: drained through the shift, topped up by a
+   *  ration. The Sleep Demon and the fatigue effects read it.
+   *  @type {Stamina|null} */
+  stamina = null;
+  /** The thing in the corner of the eye, every night. @type {SleepDemon|null} */
+  sleepDemon = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
   /** Sounds the scene itself plays (the breaker panel's click). */
@@ -241,6 +255,9 @@ export class BaseScene extends Scene {
     this._keepFogOutside();
     this._addPower();
     this._addGameplaySystems();
+    this._addStamina();
+    this._addFatigue();
+    this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
     this._buildOcclusion();
@@ -249,7 +266,7 @@ export class BaseScene extends Scene {
     this._logBuildStats();
   }
 
-  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+  /** Budget check (see docs/PERFORMANCE-PLAN.md): how many
    *  physics bodies and Object3Ds one BaseScene build produces. */
   _logBuildStats() {
     const { engine } = this;
@@ -1053,6 +1070,83 @@ export class BaseScene extends Scene {
   _isOutside(p) {
     this._insideBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
     return !this._insideBoxes.some(box => box.containsPoint(p));
+  }
+
+  // ──────────────────────────────────────────
+  // Stamina and the Sleep Demon (every night)
+  // ──────────────────────────────────────────
+  /** Stamina drains through the shift and the office's ration dispenser
+   *  tops it up. The drain ticks on GameplaySystems after the controller,
+   *  and before the demon and the fatigue effects, so within a frame both
+   *  read this frame's stamina. */
+  _addStamina() {
+    this.stamina = new Stamina();
+    const dispenser = this.rooms.MainOffice.rationDispenser;
+    if (dispenser) {
+      dispenser.stamina = this.stamina;
+      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
+      dispenser.onEat = () => {
+        if (!crunch) return;
+        if (crunch.isPlaying) crunch.stop();
+        crunch.play();
+      };
+    }
+    this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      grid:         this.power,
+      onNightStart: () => dispenser?.reset(),
+    }));
+  }
+
+  /** The Sleep Demon, in the corner of the player's eye once they tire (see
+   *  SleepDemon). Its figure is a placeholder under a Threats group on the
+   *  scene root, which sits at the world origin: the demon writes world
+   *  positions, and no occlusion zone ever hides it. It is a shadow in
+   *  itself: a pitch-black shade no light shows, and it casts none — a solid
+   *  shadow under a faint figure gave it away — so moving it never redraws
+   *  the frozen shadow maps. */
+  _addSleepDemon() {
+    const { engine } = this;
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb',
+    });
+    this._group('Threats').addChild(figure);
+    this._ownResourcesOf(figure);
+    this.sleepDemon = this._sceneRoot.find('GameplaySystems').addComponent(new SleepDemon({
+      controller:      this.gameController,
+      stamina:         this.stamina,
+      figure,
+      camera:          engine.camera ?? null,
+      terminal:        this.terminal,
+      rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
+      isFrozen:        () => !!engine.debugCamera?.active,
+      flashlight:      engine.player?.getComponent(Flashlight) ?? null,
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
+      // Walking them down: the breath and the heart carry the dread.
+      fatigue:         this.fatigueEffects,
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
+    }));
+  }
+
+  /** What low stamina does to the player: the tunnel and the eyelids, the
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns.
+   *  Built before the demon, which tells it how hard the walk-down grips. */
+  _addFatigue() {
+    const { engine } = this;
+    this.fatigueEffects = this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
+      grid:       this.power,
+      isFrozen:   () => !!engine.debugCamera?.active,
+    }));
   }
 
   // ──────────────────────────────────────────

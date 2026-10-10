@@ -2,6 +2,8 @@
 
 A 3D browser game built with Three.js for the Wits Computer Graphics & Visualisation course (COMS3006A / COMS3025A).
 
+The story and gameplay design live in [docs/STORY.md](docs/STORY.md), the official canon for the game.
+
 ## Getting Started
 
 ### Prerequisites

@@ -472,6 +472,38 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/monster-bite.mp3',
   },
+  // Stamina and the Sleep Demon, from the first minute of night 1: the
+  // demon's footsteps on its figure (SleepDemon); the heartbeat, looped, the
+  // yawn and the player's own breathing of a tired one (FatigueEffects); a
+  // ration dropping from the office dispenser (BaseScene._addStamina).
+  //
+  // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
+  // final audio — all but the yawn, which is a real recording (Mixkit, see
+  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // public/assets/audio/, named after its key (any format: footsteps.mp3 is
+  // fine), and changing its `url` below. The key stays, so nothing else
+  // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
+  // sound owner".
+  'sfx:breathing': {
+    type: 'audio',
+    url: 'assets/audio/breathing.wav',
+  },
+  'sfx:heartbeat': {
+    type: 'audio',
+    url: 'assets/audio/heartbeat.wav',
+  },
+  'sfx:yawn': {
+    type: 'audio',
+    url: 'assets/audio/yawn.mp3',
+  },
+  'sfx:ration': {
+    type: 'audio',
+    url: 'assets/audio/ration.wav',
+  },
+  'sfx:footsteps': {
+    type: 'audio',
+    url: 'assets/audio/footsteps.wav',
+  },
 };
 
 /**

@@ -11,14 +11,9 @@ Dead Air is a 3D browser-based survival horror game built for the Wits Computer 
 
 ## Game Concept
 
-- **Setting:** Office with desk, computer, huge window, server rack, radar terminal, power box, drive wiper...
+**The story is canon: [`docs/STORY.md`](docs/STORY.md).** It sets the premise, what each night adds, the threats, the locations and the upgrade ideas. It overrides every other doc. Don't invent lore beside it, and where a design decision here disagrees with it, follow STORY.md. The sections below describe the code as it is, not the design to aim for.
+
 - **Core loop:** Collect signals at night → meet minimum quota → survive until morning → upgrade → repeat.
-- **Enemy concepts/ideas (introduced one per night):**
-  1. Sleep Demon — punishes fatigue
-  2. Window entities — hide under desk
-  3. Camera entity
-  4. Evil signal — must be deleted
-  5. UFO — must cut power to hide
 - **Requirement:** 3 genuinely distinct levels/stages, each introducing a new mechanic, environment, story element, or challenge type.
 
 ## Tech Stack
@@ -65,8 +60,8 @@ src/
 │   ├── keyNames.js      # keyName(code), reserved keys, rebind() with swap
 │   └── controlsList.js  # The fixed keys listed on the CONTROLS tab
 ├── components/
-│   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller
-│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera
+│   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller; speedScale for a threat's slow
+│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera; stutters under interference
 │   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
 │   ├── AirlockSound.js  # The pressure release as the airlock seals and cycles
 │   ├── SatelliteSound.js # The dish's drive while it slews, and the click as it settles
@@ -77,6 +72,8 @@ src/
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── StaminaDrain.js  # Ticks Stamina through the shift; a tired player sees the base dim
+│   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns, the walk-down's breath (setDread)
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
@@ -85,10 +82,16 @@ src/
 │   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
+│   ├── MonsterFigure.js # Procedural monster stand-in: hidden, no body, eyes that glow; a pitch-black shade shader
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
 │   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
+│   ├── Stamina.js       # How awake the player is, 1 → 0 over a shift (pure)
+│   ├── Fatigue.js       # What low stamina does: tunnel and heartbeat curves, yawn/blink/stutter timers (pure)
+│   ├── SleepDemonLogic.js # The Sleep Demon's rules: fading in, fading from a look, creeping in unseen, walking you down, the smile (pure)
+│   ├── SleepDemon.js    # Those rules on the camera, sight rays, the figure and its footsteps; every night
+│   ├── SleepDemonDeath.js # Its kill: pass out, black, eyes open on it, cut to black (pure)
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
@@ -110,6 +113,7 @@ src/
 │   ├── LoadingScreen.js # Preload progress overlay (markup lives in index.html)
 │   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
+│   ├── FatigueOverlay.js # A tired player's tunnel vignette and eyelids (#fatigue)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
 │   └── menu/
@@ -154,7 +158,7 @@ LivingQuarters ── corridor ── MainOffice ── corridor ── ServerRo
                                Outside (generator, dish)
 ```
 
-Every interior door is open from night 1; nights bring threats, not keys, and `NightManager` only counts them. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
+In the current build every interior door is open from night 1 and `NightManager` only counts nights. STORY.md opens the server room on night 2 and the outside on night 3, so this will change. The one door that stays shut is the airlock hatch (`rooms.Airlock.hatch`). It opens for the `EVASuit` on the player: `Airlock.bindSuit(suit)` keeps the hatch lock, the suit locker's prompt and the hatch beacon in step with `suit.worn`, and `HUD.setSuit` shows it.
 
 The airlock is an interlock — its two doors are never open together. `BaseScene` hands it the office's front door with `Airlock.bindInnerDoor(door)`, and `Airlock.state` runs `pressurised` (inner door open, hatch shut, red beacon) → `depressurising` (both shut, amber) → `depressurised` (hatch open, inner door shut, green) → `pressurising` → back. The door you are leaving shuts the moment the suit changes; the one ahead opens after `cycleTime` (3.1 s, as long as the pressure release that plays through it is audible). Changing your mind mid-cycle runs back only the time already run. The cycle is ticked by a component on the airlock's own root, so nothing else has to call `Airlock.update`. The suit locker does nothing while the airlock cycles ("Airlock cycling…") and answers again once a door has opened — one suit change per cycle, so mashing E while running in from something can't flip the suit back and forth. The suit locker only works from inside the chamber, clear of both doorways by the player's radius — never from the office through the open inner door, and never where a door would shut on the player; elsewhere its label reads "Step into the airlock…".
 
@@ -164,7 +168,7 @@ An Interactable whose `promptLabel` changes while you look at it (the locker's P
 
 Every prop has a job:
 
-- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. The window is glazed: `Room` fills every window opening (a `sill` above the floor) with a solid, undrawn pane (`BackWindow`), so nothing gets out over the sill. What is seen of the glass is `WindowGlass` (`rooms.MainOffice.windowGlass`): a faint film of dust and smears, so the pane reads as glass without reflections. It is unlit and baked — one texture read per pixel — and shows by the lights it is handed (`addLight`: the ceiling light, the scene's ambient light, the UFO's window flood), read live at each draw, so a power cut darkens it. `WINDOW_GLASS.opacity` is the one number for more or less dirt. It never writes depth; the desk's transparent materials do, so they stay in front of it. A food-ration dispenser on the left wall (`VendingMachine`, procedural) has an `Interactable` stub waiting on the stamina system. There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
+- **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. The window is glazed: `Room` fills every window opening (a `sill` above the floor) with a solid, undrawn pane (`BackWindow`), so nothing gets out over the sill. What is seen of the glass is `WindowGlass` (`rooms.MainOffice.windowGlass`): a faint film of dust and smears, so the pane reads as glass without reflections. It is unlit and baked — one texture read per pixel — and shows by the lights it is handed (`addLight`: the ceiling light, the scene's ambient light, the UFO's window flood), read live at each draw, so a power cut darkens it. `WINDOW_GLASS.opacity` is the one number for more or less dirt. It never writes depth; the desk's transparent materials do, so they stay in front of it. A food-ration dispenser on the left wall (`VendingMachine`, procedural) is `rationDispenser`, a `RationDispenser`: a ration restores 0.35 stamina, then it takes 40 s to refill (see "Stamina and the Sleep Demon"). There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
 - **LivingQuarters** — the bedroom. The bunk you sleep through the day in, with lockers, a desk and a chair. The furniture keeps to the left half so the metre inside the right wall stays clear, wherever `doorOffset` slides the doorway.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
@@ -185,6 +189,7 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
 - **The dish** (`SatelliteSound`, on the Satellite). `sfx:dish-main-loop-distant` loops for as long as the dish is moving, fading in and out over 30 ms (`fade`) as a movement starts and ends; then `sfx:movement-ending` plays once, the dish settling. Moving is read off the dish's angular velocity on either axis, with separate start and stop speeds so a creeping dish doesn't chatter. The fades are gain ramps on the audio clock, since 30 ms is only two frames; between movements the loop runs on at zero rather than being stopped. Paused, it is muted: the game stops but the audio clock doesn't, so it listens to `engine.onPauseChange`, fades the loop out and cuts a click still sounding, and fades the loop back in on resume if the dish is still mid-movement. Levels are `SATELLITE_SOUND`.
 - **Tension music.** One loop that follows a tension level, 0..1. A threat raises it under a name of its own: `scene.ambience.setTension(1, 'window-entity')`, and `setTension(0, 'window-entity')` when it has gone. The music follows the highest level anyone holds, and creeps in and out over `musicFadeIn` / `musicFadeOut` (4 s / 6 s). `clearTension()` drops every source. **Testing only — remove before release:** the `testKeys` in `_addAmbience` each swing a track fully in, and back out on the next press: `M` the spooky music, `,` the ambient music. Pressing the other key crossfades between them. The keys exist in dev builds only.
 - **A second music track.** `AMBIENCE.ambientMusic` (`sfx:interior-base-ambient-music`) is a calmer track: the main menu's music (`MenuMusic`, see App flow). In game nothing raises it except its test key; `setTension` always drives `AMBIENCE.music`. Its file is much hotter than the rest, so it carries a 0.07 trim in `AMBIENCE.volumes`. It also fades out at its end, so it dips to silence where it loops.
+- **Ducking.** `setDuck(level, source)` turns every loop here down to a share of its level: the rooms, the wind (a storm's too) and the music. Each system asks under a name of its own, as with the tension, and the deepest duck is heard. `setDuck(1, source)` lets go, and `clearDuck()` drops every source. The duck slides: down at `duckRate` (10 per second), back up at `duckReturnRate` (1 per second), so the world creeps back. A ducked loop keeps running, even at 0, so it carries on where it was. Only `Ambience`'s own loops are ducked. The generator, the sand on the window, the dish, the airlock's pressure release, the storm outage's buzz and the fatigue sounds play outside it and are left alone. The Sleep Demon is the one caller so far (see "Stamina and the Sleep Demon").
 - **Volumes are the clips' own**, each mixed to the loudest it should be. `AMBIENCE.volumes` is a per-track trim on top (a multiplier, by manifest key; left out is 1), for balancing one against the others: the office loop is at 1.2, about +1.6 dB, and the calm wind at 0.5, −6 dB. The spooky music has no trim — its file level is its ceiling.
 - **A loop at zero is stopped**, and starts from its top the next time it is wanted.
 - **Loading.** The six clips are in the manifest's `AMBIENT` group, not `PRELOAD`: `Ambience` fetches them as the scene is built (on awake, so they load behind the main menu) and each fades in once the game is playing, so 10 MB of mp3 never holds the loading screen.
@@ -201,7 +206,7 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
-Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning".
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
 - **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
@@ -220,6 +225,51 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
     - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
   - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
+
+### Stamina and the Sleep Demon
+
+The Sleep Demon comes every night, 1 to 3 — silent and mysterious but for the odd footstep: no breathing, no growl. Stamina is what keeps it away. Four clips around it (footsteps, breathing, heartbeat, ration) are placeholders, and the yawn is a real recording (Mixkit): see "Note for the sound owner" — `sfx:breathing` is the player's own, under the walk-down.
+
+- **Stamina** (`Stamina`, pure) runs 1 → 0. `StaminaDrain` (on `GameplaySystems`, after the controller) drains it while the shift is played: empty after 240 s, 4:48 AM with no food. It holds in the morning and behind the failed-night prompt. Every night start (the next night or a retry) fills it and readies the dispenser. The HUD shows it as a bar (`HUD.setStamina`, `#hud-stamina`).
+- **Food.** The office's `RationDispenser` restores 0.35 per ration and plays `sfx:ration`, then reads "refilling" for 40 s. `BaseScene._addStamina` hands it the stamina, since rooms don't know about gameplay.
+- **The Sleep Demon** (`SleepDemon`, on `GameplaySystems` after the drain; the rules are pure, in `SleepDemonLogic`) lives in the corner of the player's eye:
+  - **Only in the last half of stamina.** It is the tired mind seeing things in the corner of the eye, so nothing of it happens above `appearBelow` (0.5): 2:24 AM with no food. Every curve below runs from there to empty.
+  - **It never teleports.** It shows a few seconds after stamina falls below `appearBelow`, fading in from nothing over `fadeIn` (2.5 s) — silently — and where it showed it stays. It moves only while nobody looks at it, and slowly. In the periphery it shows just outside the look cone (`showMargin`, 4°, past it) or at its share of the view's half-width (`edgeFar` 0.95 → `edgeNear` 0.5), whichever is wider; 10 m off at first, 0.8 m at empty. About one showing in three (`behindChance`, 0.35) lands behind the player instead, at the ambush's distances (6 m closing to 1.2 m).
+  - **Faint at first.** How there it is (`presenceFor`, its opacity) is `faintest` (0.25) down to `faintAbove` (0.4): elusive, barely noticeable, but there. Below that it firms up, solid by `solidBelow` (0.3). `logic.presence` is this frame's; the figure fades toward it.
+  - **Looked at** — any of its upright body within the frame's look cone of the centre of the view — it fades away where it stood (`fadeOut`, 0.6 s), and fades in again on the other side `goneFor` later (6 s at first, 1 s near empty). The cone closes as the player tires: `focusAngleFor(stamina)` runs from `focusFar` (40°) at 0.5 stamina to `focusNear` (15°) at 0.10. `logic.focus` is this frame's cone.
+  - **Below `holdBelow`** (0.10) it no longer fades from a look: it stands there, and stares back.
+  - **Unseen, it creeps.** Turned away from, out of the frustum, something in between, or behind the terminal's screen: it steps in along the line to the eye at `sneakSpeedFor(stamina)` (`sneakFar` 0.08 m/s → `sneakNear` 0.35 m/s), plus `stareFollow` (0.5) of whatever ground the player backs off, no nearer than `creepFloorFor(stamina)` (`creepFloorFar` 5 m → `stareFloor` 0.5 m): while the player is fresh it keeps its distance. `logic.sneaking` is up while a step is taken, and that is when its footsteps are heard. The ground it crept is kept across a re-showing; a look that banishes it gives it back. Shut out — unseen and unable to step (a wall between, the player gone to another room) — for `stuckAfter` (5 s), it fades in somewhere new.
+  - **Below `walkBelow`** (0.05) it walks in on the player, seen or not: seen at `stareSpeed` (0.12 m/s), unseen at its creep, down to `stareFloor` (0.5 m, arm's length). Each step is checked like a new spot (nothing in the way at eye height, the floor clear, in view); a step that fails, it holds. While a seen step is taken (`logic.walking`) the player is slowed to `SLEEP_DEMON_DREAD.slow` (60 %) and `FatigueEffects.setDread(1)` brings their breath in under the heart (see Fatigue, below). `stareDown: false` turns all its moving off. `logic.distance`, `logic.closingIn` and `logic.walking` are there for a sound to follow.
+  - **At `smileBelow`** (0.01) it smiles — the figure's `smile`, a wide crescent of interlocking bone-white teeth wrapped round the face under its eyes, cut out and drawn by its own shader (`GRIN_FRAGMENT`, `GRIN_TEETH`) — and keeps it through the kill. A night start wipes it.
+  - **At empty** it takes the player (see "Its kill" below), then `controller.fail(SLEEP_DEMON_KILL)`, and `[E]` retries.
+  - **The torch betrays it.** While it shows and the flashlight is on, the torch stutters whenever its beam falls on any of its upright body: within the light's cone (`angle`, 0.45 rad, ~26°) plus `SLEEP_DEMON_BEAM.margin` (0.05 rad) of the centre of the view. While the look cone is wider than the beam (above about 0.3 stamina), a stutter nearly always means a look would already have banished it; below, the beam reaches wider than the look, so the torch gives it away where the eyes wouldn't — and it gives away the stare it no longer flees (below `holdBelow`) and the ambush nobody is watching.
+  - **The stutter** is the flashlight's own: `Flashlight.setInterference(on, source)`, the demon's source being `'sleep-demon'`. Irregular dips down to `FLASHLIGHT_STUTTER.floor` (15 %), each held 0.03–0.12 s, and about three dropouts a second (`dropoutsPerSecond`), each fully off for only 0.03–0.08 s. It opens with a dip, so a quick sweep shows. When the last source stops it is back at exactly `intensity`; switched off, it stays off. Intensity only, never `visible`. The demon lets go of it outside the shift and while the fly camera is out.
+- **Where it stands.** On a level line from the player's eye, turned off the centre of the view by that share:
+  - a sight ray stops it `wallGap` (0.45 m) short of a wall or a prop;
+  - a ray down from its full height steps it in toward the player, 0.25 m at a time, until the floor under it is clear of furniture;
+  - the spot must be inside the camera's frustum, unless the terminal's screen is up (the terminal ambush, below).
+
+  With less than `minDistance` (0.6 m) of room it tries the other side. If neither side has room it tries again after `retryAfter` (0.25 s).
+- **In view** means inside the frustum, with nothing solid between the eye and its face (85 % of its height). The sight rays hit walls, props, the floor and shelves, never the player's capsule. While the terminal's radar or review screen is up the player is looking at that, so the demon neither flees nor counts as lost.
+- **The terminal ambush.** While that screen is up nobody watches the room: a demon standing in view slips round out of sight at once, beside or behind the player, and a first showing lands there. `ambushDistanceFar` (6 m) closing to `ambushDistanceNear` (1.2 m) as stamina falls; how far round is `ambushEdgeFar` (1.6) to `ambushEdgeNear` (2.8), shares of the view's half-width: 86° off the centre of the default view at first, 150° at empty. The frustum check is waived there; the wall, furniture and `minDistance` checks still hold. Behind the screen it creeps like any unseen demon, so closing it may find it nearer. `logic.ambush` is true while it stands out of sight.
+- **When it runs.** Only while `playing`. In the morning and behind the failed-night prompt it is hidden and silent, and every night start sends it away. It holds while the fly camera has frozen the player.
+- **Its footsteps.** The demon is otherwise silent — no breathing, no growl — and it shows without a sound: it fades in. `sfx:footsteps` (a placeholder: see "Note for the sound owner") is a one-shot `PositionalAudio` on the figure, heard only while it moves: the first step as it sets off, then every `FOOTSTEP.sneak` (0.9–1.6 s) while it creeps unseen, or `FOOTSTEP.walk` (1.1–1.8 s) while it walks in, seen. Standing still it makes no sound. Its level is `FOOTSTEP.volume` (0.6) beside the player and `FOOTSTEP.far` (35 %) of that when it first shows, louder the nearer it comes (`refDistance` 1.5 m). Off shift, and on a night start, a step still sounding is cut (`_hushStep`).
+- **Dead air.** While it stands in view, the world's sound dims the closer the view comes to it. `duckFor(angle, shownAt, focusAngle)` (pure, in `SleepDemonLogic`) gives the share of the level, and the demon hands it to `scene.ambience.setDuck(…, 'sleep-demon')`. Where it showed, the ambience is at `duckEdge` (0.7). Turning toward it takes that down, linearly, to `duckFloor` (0.06) at the frame's look cone (`logic.focus`, the closing 40° → 15° above): near-silence, not a mute. "Where it showed" is the angle it was last placed at, so the first duck is mild however near the middle it stands. The look sends it away, and the duck lets go and creeps back. Below `holdBelow` it doesn't flee, so staring at it holds the floor. Out of view, hidden, outside the shift and on every night start there is no duck. While the terminal's screen covers the view it holds at `duckEdge`: it is still there, but the view is on the screen. Its footsteps are no part of the ambience, so each one lands in the hush.
+- **The figure** is a `MonsterFigure` placeholder (1.8 m tall, waiting for `sleep-demon.glb`) under a `Threats` group on the scene root. It is a shadow in itself (`shade: true`): its body is `createShadeMaterial`, a custom shader that is pitch black whatever light is on it (no lights, no fog — the torch shows nothing), its outline thinning to nothing (`uEdge`) so it reads as a shadow, not a solid thing. Only its eyes and grin show. It has no physics and is in no occlusion zone. Its materials are laid down `transparent` at build, so a fade never swaps a shader state mid-game; `_applyOpacity` scales each from the opacity it came with. It casts no shadow (`createMonsterFigure({ castShadow: false })`): a shadow map ignores opacity, so a faint figure laid a solid shadow on the floor, and a shade has none. So `_addSleepDemon` passes no `onFigureChanged`, and moving it never redraws the frozen shadow maps; the hook stays for a figure that does cast. Only a night start, the shift ending and the death take it away at once; a look fades it. Its grin (`figure.smile`) is a hidden, unlit, non-casting mesh, so showing it redraws nothing. To use a real model, replace what `_addSleepDemon` builds.
+- **Its kill.** The player falls asleep, and wakes to it. `SleepDemonDeath` (pure) runs the beats and `SLEEP_DEMON_DEATH` holds the numbers. `scene.sleepDemon.deathPhase` names the beat, for a sound to follow.
+  - **Pass out** (`passOut`, 1 s). The `FirstPersonController` is frozen and the lids slam shut. The view drops to `slumpEye` (0.3 m) off the floor, looking up and tipped over. The listener's master volume eases down to `hush` (5 %).
+  - **Black** (`black`, 0.7 s).
+  - **Eyes open** (`loom`, 1.3 s). The lids snap open (`lidSnap`). It stands `loomDistance` (1.1 m) ahead, leaning over the player (`lean`), its eyes flared to `eyeFlare` × their size.
+  - **Cut** (`cut`, 0.7 s): `ScreenFade` to black, then the failed night.
+  - **Its lids win.** It writes the `FatigueOverlay` after `FatigueEffects` does (`onLateUpdate`), and they share one overlay so their caches agree.
+  - **It runs on the game clock**, so a pause or the fly camera holds it.
+  - **Called off.** The shift ending under it calls it off, and so does a night start (a retry or the N key). Either one, or `onDestroy` (a rebuild from the menu), gives everything back: the player, the camera's pose, the lids and the volume.
+- **Fatigue.** `Fatigue.js` holds the curves and timers, `FatigueEffects` (after the drain) plays them, and `FatigueOverlay` draws `#fatigue` in index.html.
+  - **Tired** (below 0.5): the base dims through the grid's `fatigue` factor, sinking towards `FATIGUE_DIM_MIN` (0.6) at empty. The view narrows (the tunnel), and the player yawns (`sfx:yawn`) every 20–35 s.
+  - **Critical** (below 0.2): a yawn every 7–12 s and a blink every 4–8 s. The lights stutter through the grid's `dread` factor (down to 0.5), and a heartbeat (`sfx:heartbeat`) rises towards empty.
+  - **Below 0.08** the player nods off: the lids stay shut for a moment every 9–15 s.
+  - **The walk-down's dread** (the Sleep Demon, above): while it walks in, `FatigueEffects.setDread(1)` floors the heart at `FATIGUE_DREAD.heart` (0.8 — it pounds even before stamina alone would have it) and raises the player's own breathing (`sfx:breathing`) to `FATIGUE_DREAD.breath` (0.5) of its file level, both eased over `FATIGUE_DREAD.ease` (0.6 s in, 0.6 s out). Let go, they ease back out; off shift the dread drops with everything else.
+  - **Outside `playing`** it all settles: eyes open, lights steady, the heart quiet. The fly camera sees the scene clear.
 
 ### Power and the UFO
 
@@ -240,6 +290,7 @@ The generator outside is the base's one power switch. It stands in the far corne
   - **The mouse:** `BaseScene._usePanel` releases the pointer lock while the panel is open and freezes the player.
 - **Unbreakable lamps.** These follow the switch but survive a blow-out: the dish pad's floods (`collect(pad, { breakable: false })`) and the terminal screen's faint green `ScreenGlow` in the office (`userData.unbreakable`), which shows that the computer still works in a dark office.
 - **Off the grid.** `collect()` skips any subtree whose object3d has `userData.offGrid`. The airlock beacon is on its own battery, so the interlock always works. `LEDStrip` and `SignalAlertLight` animate their own glow, so they mark their meshes `offGrid` and are added as consumers instead; the grid hands them `powerLevel` to scale by. A new self-animating light should do the same, or the grid and the component fight over one material.
+- **Dim factors.** `grid.setFactor(key, value)` is a named dimmer, owned by one system: StaminaDrain's `fatigue` and FatigueEffects' `dread`. Every lamp and fitting on the grid, the unbreakable ones included, shows its built value × the level × the product of the factors. So a tired player and a power cut compose instead of fighting over one number. The factors are what the player sees, not what the wires carry: `level` and the consumers ignore them.
 - **Never hidden.** Lights are zeroed, never hidden (see Performance). The UFO's lights follow the same rule.
 - **The generator's sound** (`GeneratorSound`, on the generator):
   - **Switching on** plays the start-up clip, which crossfades into a looping hum.
@@ -392,6 +443,10 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 - A volume slider is one `SCHEMA` entry, e.g. `volume: { tab: 'game', type: 'number', label: 'Volume', min: 0, max: 1, step: 0.05, default: 0.8, format }`, plus `engine.audioListener.setMasterVolume(s.volume)` in `applySettings`.
 - To silence sound while paused, suspend and resume the `AudioContext` where App calls `engine.setPaused(true/false)`, or watch `app.flow.onChange`.
+- **Placeholder sounds.** `sfx:footsteps` (the demon's own), `sfx:breathing` (the player's, under the walk-down), `sfx:heartbeat` and `sfx:ration` (stamina, fatigue and the Sleep Demon) are short synthesised stand-ins, not final audio. `sfx:yawn` is already real: "Young tired male yawns" from Mixkit (`yawn.mp3`, credited in ATTRIBUTIONS.md), its trailing silence cut.
+  - **Swapping one in:** drop the file into `public/assets/audio/` named after its key, in any format, and change its `url` in the manifest. The key stays, so no code changes. The breathing and the heartbeat are looped as they are, with no seam crossfade, so give them a clean loop point; the footsteps are one-shots — a clean dry step, not a loop.
+  - **Their levels:** `FOOTSTEP` in `SleepDemon.js` (0.6 beside the player, 35 % of that when it first shows, louder the nearer it comes; steps only while it moves: 0.9–1.6 s creeping in unseen, 1.1–1.8 s walking in). The player's breathing rides the walk-down's grip, up to `FATIGUE_DREAD.breath` (0.5 of its file level) in `FatigueEffects.js`, where `HEARTBEAT_VOLUME` (0.9), `YAWN_VOLUME` (0.6) and `HEARTBEAT_QUICKEN` (0.35) live too — the quicken speeds the heartbeat up towards empty through its playback rate, which raises its pitch too (0 leaves a recording as it is). The ration's 0.8 is in `BaseScene._addStamina`.
+  - **The state they follow**, to hang your own on: `scene.sleepDemon.logic` has `around` (stamina low enough for it to be about), `shown` (in view), `ambush` (out of sight and near: the terminal is up, or the roll showed it behind) and `closeness` (0 when it first shows, 1 at empty); `logic.walking` is up while a step is being taken (the player slowed), `logic.sneaking` while it comes in unseen (brisker steps, and nothing else), and `logic.closingIn` runs 0 → 1 over the walk-in. `heartbeat(stamina)` in `Fatigue.js` is the heartbeat's level, 0 until critical and 1 at empty. `FatigueLogic` calls `onYawn` on each yawn, and `RationDispenser` calls `onEat` on each ration.
 
 **Dev tools gate.** `engine.devTools` gates every debug key (`` ` `` F2 V B I N F4 U), and they are also off while paused. It isn't a setting, because the dev tools go before release: App sets it from the build, on in `npm run dev` and off in the production bundle, so graders never open the level editor by accident. Show FPS (Settings → GAME) works either way.
 
@@ -416,7 +471,7 @@ All edge-triggered and free while off. Every key here is gated by **dev tools** 
 | `` ` `` | `PhysicsDebug` | Rapier collider wireframes over the scene |
 | `V` | `DebugCamera` | Free-fly noclip camera |
 | `B` | `Fullbright` | Unlit lighting — everything at albedo brightness |
-| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. Interior doors are open every night — nights bring threats, not keys |
+| `N` | `NightManager` (BaseScene) | Advance to the next night; wraps back to night 1 after the last. |
 | `I` | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures. Also shown by Settings → GAME → Show FPS, in any build |
 | `F2` | `LevelEditor` | Visual object placement. Opening it drops the pointer lock without pausing the game |
 | `F4` | Engine | Model debug logging, and reload the scene |
@@ -526,7 +581,7 @@ Press **`` ` ``** in game to overlay every collider Rapier knows about. Authorin
 
 ### Worked example: the under-desk gap
 
-`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and hiding under the desk is a listed mechanic (window entities, night 2). `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `PlayerBody.js`).
+`model:retro-computer` (the office's `ComputerDesk`) is a downloaded model with no `UCX_` proxies, so tier 1's auto box was a solid 1.6 × 1.1 × 0.8 m block covering its whole footprint, monitor included. That's fine for bumping into, but it meant **you could not crawl under it** — and the player needs to be able to crawl into the kneehole. `FirstPersonController`'s crouch height (0.65 m) was already sized to clear a 0.72 m gap in anticipation of this fix (see `PlayerBody.js`).
 
 Fixed with tier 3, in the manifest (`src/assets/manifest.js`) — after two guesses from the raw mesh data got it wrong (first left 3 of the model's 4 sides open, since it isn't a table on legs; then a U-shaped compound with a full-footprint top slab, which still blocked *walking up to* the desk while standing, since the lid covered the opening too). Third time, measured instead of guessed: box primitives placed in the level editor (F2) against the rendered model, positions/sizes read off their transform panel. That gave three boxes — a solid back region and two solid side walls, all about 0.73 m tall, **no separate top lid** — with the front (the kneehole) having no ceiling at all, so a standing player can walk up to the opening and only needs to crouch further in, toward the back.
 

@@ -4,7 +4,7 @@
 // Three classes wrapping DOM elements defined in index.html:
 //
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
-//                      EVA suit indicator
+//                      stamina bar, EVA suit indicator
 //   RadarOverlay     – 2D canvas radar display with signal blips
 //   SignalReviewPanel– modal for viewing a scanned signal's payload
 //
@@ -33,6 +33,10 @@ export class HUD {
     this._scanBar   = root?.querySelector('#hud-scan-bar')  ?? null;
     this._prompt    = root?.querySelector('#hud-prompt')    ?? null;
     this._suit      = root?.querySelector('#hud-suit')      ?? null;
+    this._stamina     = root?.querySelector('#hud-stamina')      ?? null;
+    this._staminaFill = root?.querySelector('#hud-stamina-fill') ?? null;
+    this._staminaShown = -1;
+    this._staminaLevel = null;
   }
 
   show() { if (this.root) this.root.style.display = 'block'; }
@@ -70,6 +74,22 @@ export class HUD {
     if (!this._suit) return;
     this._suit.textContent = 'EVA suit on';
     this._suit.style.display = worn ? 'block' : 'none';
+  }
+
+  /** The stamina bar: its fill, and its colour by level ('ok' | 'tired' |
+   *  'critical'). Called every frame, so it writes the DOM only when the
+   *  percent or the level changes. */
+  setStamina(value, level = 'ok') {
+    if (!this._staminaFill) return;
+    const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
+    if (percent !== this._staminaShown) {
+      this._staminaShown = percent;
+      this._staminaFill.style.width = `${percent}%`;
+    }
+    if (level !== this._staminaLevel && this._stamina) {
+      this._staminaLevel = level;
+      this._stamina.dataset.level = level;
+    }
   }
 }
 

@@ -67,7 +67,48 @@ const DRIVE_BOX_LAYOUT = [
 // gameplay. Same for the red signal lamp above the computer desk: the room
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
+//
+// The food-ration dispenser on the left wall is `rationDispenser`, a
+// RationDispenser; the scene hands it the stamina a ration restores.
 // ─────────────────────────────────────────────
+
+const RATION_READY = '[E] Take a food ration';
+const RATION_REFILLING = 'Dispenser refilling…';
+
+/** The dispenser's use: a ration restores stamina, then it refills for
+ *  `cooldown` seconds. The prompt is a data field, so InteractionSystem
+ *  re-shows it when it changes under the crosshair. */
+export class RationDispenser extends Interactable {
+  promptLabel = RATION_READY;
+  /** Set by the scene. @type {{restore(amount: number): void}|null} */
+  stamina = null;
+  /** Stamina per ration. */
+  amount = 0.35;
+  /** Seconds before the next ration. */
+  cooldown = 40;
+  /** Seconds left until it is ready again. */
+  refill = 0;
+  /** Called after each ration (the sound). */
+  onEat = null;
+
+  onUpdate(dt) {
+    if (this.refill > 0 && (this.refill -= dt) <= 0) this.reset();
+  }
+
+  onInteract() {
+    if (!this.stamina || this.refill > 0) return;
+    this.stamina.restore(this.amount);
+    this.refill = this.cooldown;
+    this.promptLabel = RATION_REFILLING;
+    this.onEat?.();
+  }
+
+  /** Ready again: a new or retried night. */
+  reset() {
+    this.refill = 0;
+    this.promptLabel = RATION_READY;
+  }
+}
 
 /** The bars across the window: mullions at ±x, the crossbar's height, and
  *  the mullions' width. The frame is built from them and the glass is cut
@@ -102,6 +143,9 @@ export class MainOffice extends Room {
 
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
+
+  /** On the VendingMachine, from buildProps(). @type {RationDispenser|null} */
+  rationDispenser = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -265,13 +309,7 @@ export class MainOffice extends Room {
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 
-    go.addComponent(new class extends Interactable {
-      promptLabel = '[E] Take a food ration';
-      onInteract() {
-        // TODO: coordinate with Hayden's stamina system.
-        console.log('[MainOffice] food ration eaten');
-      }
-    }());
+    this.rationDispenser = go.addComponent(new RationDispenser());
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small
