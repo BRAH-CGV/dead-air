@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Bed } from '../../components/Bed.js';
+import { Journal } from '../../components/Journal.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -21,8 +22,12 @@ import { Bed } from '../../components/Bed.js';
 //   storage   back right: three rows of shelves running front to back
 //             (the last against the right wall), with aisles between
 //   office    front: the desk end-on to the front wall with its chair and a
-//             lamp, shelves along the wall, and a row of shelves out from
+//             lit lamp, the previous operator's notebook (the Journal,
+//             #79), shelves along the wall, and a row of shelves out from
 //             the left wall parting it from the bedroom
+//
+// The player wakes here (`spawn`): beside the bunk, facing the desk, so
+// the journal is the first thing in reach each night.
 //
 // The main paths stay open: in at the door and across the middle of the
 // room, and from there round the end of the divider into the bedroom.
@@ -37,6 +42,11 @@ import { Bed } from '../../components/Bed.js';
 export class LivingQuarters extends Room {
   /** On the bunk, from buildProps(). @type {Bed|null} */
   bed = null;
+  /** On the desk's notebook, from buildProps(). @type {Journal|null} */
+  journal = null;
+  /** Where the player wakes: world position (capsule centre) and yaw.
+   *  @type {{ position: [number, number, number], yaw: number }|null} */
+  spawn = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -126,6 +136,8 @@ export class LivingQuarters extends Room {
     this._spawnProp('model:desk', { name: 'Desk', position: [-0.2, 0, 2.68], rotationY: -Math.PI / 2 });
     this._spawnProp('model:metal-chair', { name: 'DeskChair', position: [-1.45, 0, 2.67], rotationY: 1.3 });
     this._buildDeskLamp([-0.05, 0.745, 2.2]);
+    this._buildNotebook([-0.25, 0.755, 2.75]);
+    this._placeSpawn([-1.3, -2.4], [-0.2, 2.68]);
 
     // Shelves along the front wall, behind the desk's end.
     [-1.3, -0.26].forEach((x, i) => {
@@ -133,9 +145,8 @@ export class LivingQuarters extends Room {
     });
   }
 
-  /** A lamp on the desk: base, stem and a glowing shade. A glow, not a
-   *  light — the light count is compiled into every lit shader — and drawn
-   *  only, with no collider. `position` is on the desk top (0.745 m). */
+  /** A lamp on the desk: base, stem, a glowing shade and a small light,
+   *  drawn only, with no collider. `position` is on the desk top (0.745 m). */
   _buildDeskLamp(position) {
     const go = this._addGroup('DeskLamp');
     go.object3d.position.set(...position);
@@ -149,5 +160,34 @@ export class LivingQuarters extends Room {
     const top = new THREE.Mesh(this._own(new THREE.CylinderGeometry(0.07, 0.12, 0.12, 16)), shade);
     top.position.y = 0.36;
     go.object3d.add(base, stem, top);
+
+    // Lit (#79): a small warm pool over the desk to read the journal by.
+    // No shadow, and built with the room, so the one-off shader compile
+    // happens under the loading screen. Under the room, so the power grid
+    // collects it with the other lamps and a cut takes it out too.
+    const light = new THREE.PointLight(0xffb070, 1.6, 3.5, 2);
+    light.castShadow = false;
+    light.position.y = 0.32;
+    go.object3d.add(light);
+  }
+
+  /** The previous operator's notebook, closed, on the desk top: a solid
+   *  box with its own collider (the interaction ray needs one) and its own
+   *  material, which the Journal pulses while tonight's entry is unread. */
+  _buildNotebook(position) {
+    const cover = this._own(new THREE.MeshStandardMaterial({
+      color: 0x5a3b26, roughness: 0.9, emissive: 0xffc070, emissiveIntensity: 0,
+    }));
+    const notebook = this._addStaticBox('Notebook', position, [0.2, 0.02, 0.28], cover);
+    this.journal = notebook.addComponent(new Journal());
+    this.journal.material = cover;
+  }
+
+  /** Where the player wakes: `at` room-local [x, z], turned to face `look`. */
+  _placeSpawn([x, z], [lx, lz]) {
+    const [ox, oy, oz] = this.position;
+    // Forward at yaw is (-sin, -cos) in x/z.
+    const yaw = Math.atan2(-(lx - x), -(lz - z));
+    this.spawn = { position: [x + ox, oy + 1, z + oz], yaw };
   }
 }

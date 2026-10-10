@@ -758,6 +758,19 @@ describe('App', () => {
       expect(engine.camera.rotation).toMatchObject({ x: 0, y: 0, z: 0 });
     });
 
+    it('a rebuild faces the camera the way the new player faces, not world forward', async () => {
+      engine.camera.rotation = { x: 0.4, y: 1.2, z: 0, set: vi.fn(function (x, y, z) { this.x = x; this.y = y; this.z = z; }) };
+      engine.loadScene.mockImplementationOnce(() => {
+        engine.activeScene = makeScene();
+        engine.playerController = { ...makeController(), yaw: 2.5, pitch: 0 };
+      });
+      await startGame();
+      lock.lose();
+      await click('quit');
+      await click('confirm');
+      expect(engine.camera.rotation).toMatchObject({ x: 0, y: 2.5, z: 0 });
+    });
+
     it('credits name the team by name only, with no Discord handles', async () => {
       await click('credits');
       const text = document.getElementById('menu-panel').textContent;

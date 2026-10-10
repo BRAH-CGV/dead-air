@@ -210,7 +210,8 @@ describe('LivingQuarters', () => {
     expect(new THREE.Vector3(0, 0, 1).applyEuler(chair.rotation).x).toBeGreaterThan(0.8);   // facing it
     for (const name of ['OfficeShelf_1', 'OfficeShelf_2']) expect(at(name).z1, name).toBeGreaterThan(3.85);
 
-    // The lamp is a glow, not a light: render-only, and no new PointLight.
+    // The lamp is drawn only (no collider), and lit (#79): one small light
+    // of its own beside the ceiling lamp, to read the journal by.
     const lamp = room.root.find('DeskLamp');
     expect(lamp.rigidBody).toBeNull();
     const { x, y, z } = lamp.object3d.position;
@@ -220,7 +221,7 @@ describe('LivingQuarters', () => {
     const glows = [];
     lamp.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
     expect(glows.length).toBeGreaterThan(0);
-    expect(pointLights(room).length).toBe(1);
+    expect(pointLights(room).length).toBe(2);
   });
 
   it('a side table by the bunk, with the floor beside the bed left free to sleep from', () => {
@@ -257,5 +258,50 @@ describe('LivingQuarters', () => {
     expect(engine._bodyToGO.get(room.bed.gameObject.rigidBody.handle)).toBe(room.bed.gameObject);
     room.dispose();
     expect(engine.world.bodies.len()).toBe(0);
+  });
+
+  describe('the journal desk (#79)', () => {
+    it('puts a notebook on the desk top, with the Journal on it', () => {
+      const notebook = room.root.find('Notebook');
+      expect(notebook).toBeTruthy();
+      const desk = footprint(room.root.find('Desk'));
+      const { x, y, z } = notebook.object3d.position;
+      expect(x).toBeGreaterThan(desk.x0);
+      expect(x).toBeLessThan(desk.x1);
+      expect(z).toBeGreaterThan(desk.z0);
+      expect(z).toBeLessThan(desk.z1);
+      expect(y).toBeGreaterThan(0.74);
+      expect(y).toBeLessThan(0.8);
+      expect(room.journal).toBeTruthy();
+      expect(notebook.getComponent(Interactable)).toBe(room.journal);
+      expect(notebook.collider).toBeTruthy();       // the interaction ray needs one
+    });
+
+    it('lights the desk lamp: a real light, no shadow, under the room (so the grid switches it)', () => {
+      const lamp = room.root.find('DeskLamp');
+      const lights = [];
+      lamp.object3d.traverse(o => { if (o.isPointLight) lights.push(o); });
+      expect(lights.length).toBe(1);
+      expect(lights[0].castShadow).toBe(false);
+      expect(lights[0].intensity).toBeGreaterThan(0);
+    });
+
+    it('wakes the player beside the bunk, on clear floor, facing the desk', () => {
+      const { position: [wx, , wz], yaw } = room.spawn;
+      const [ox, , oz] = room.position;
+      const p = { x: wx - ox, z: wz - oz };
+      const r = 0.3;                                            // the player's radius
+      const me = { x0: p.x - r, x1: p.x + r, z0: p.z - r, z1: p.z + r };
+      for (const name of FURNITURE) {
+        expect(overlaps(me, footprint(room.root.find(name))), name).toBe(false);
+      }
+      const bunk = footprint(room.root.find('Bunk'));
+      const gap = Math.max(bunk.x0 - p.x, p.x - bunk.x1, bunk.z0 - p.z, p.z - bunk.z1);
+      expect(gap).toBeLessThan(1.2);
+      // Looking along yaw (forward is (-sin, -cos)) points at the desk.
+      const desk = room.root.find('Desk').object3d.position;
+      const to = new THREE.Vector2(desk.x - p.x, desk.z - p.z).normalize();
+      expect(to.dot(new THREE.Vector2(-Math.sin(yaw), -Math.cos(yaw)))).toBeGreaterThan(0.95);
+    });
   });
 });
