@@ -31,6 +31,7 @@ function fakeSound() {
     play: vi.fn(() => { sound.isPlaying = true; }),
     stop: vi.fn(() => { sound.isPlaying = false; }),
     setVolume: vi.fn((v) => { sound.volume = v; }),
+    setDetune: vi.fn(),
     disconnect: vi.fn(),
   };
   return sound;
@@ -231,6 +232,13 @@ describe('SatelliteSound', () => {
       const voice = dish.addComponent(new SatelliteSound({ sounds }));
       expect(() => { voice.onStart(); voice.onDestroy(); }).not.toThrow();
     });
+  });
+
+  it('plays the drive pitched down, for the weight of a big machine, and leaves the click alone', () => {
+    const { loop, ending } = build();
+    expect(SATELLITE_SOUND.loopDetune).toBeLessThan(0);
+    expect(loop.setDetune).toHaveBeenCalledWith(SATELLITE_SOUND.loopDetune);
+    expect(ending.setDetune).not.toHaveBeenCalled();
   });
 
   it('carries on with no clips', () => {

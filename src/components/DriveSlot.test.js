@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { DriveSlot } from './DriveSlot.js';
+import { DriveSlot, READER_SOUNDS } from './DriveSlot.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { Pickupable } from './Pickupable.js';
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -68,6 +69,17 @@ function makeSlotWithContext(opts = {}) {
 // ── Tests ────────────────────────────────────────────────────
 
 describe('DriveSlot', () => {
+  it('sounds like a reader: three clips for a drive going in, three for one coming out', () => {
+    const slot = makeSlotWithContext();
+    expect(slot.sounds).toBe(READER_SOUNDS);
+    expect(READER_SOUNDS.insert).toEqual(['sfx:drive-insert-1', 'sfx:drive-insert-2', 'sfx:drive-insert-3']);
+    expect(READER_SOUNDS.remove).toEqual(['sfx:drive-remove-1', 'sfx:drive-remove-2', 'sfx:drive-remove-3']);
+    for (const key of [...READER_SOUNDS.insert, ...READER_SOUNDS.remove]) {
+      expect(ASSETS[key], key).toMatchObject({ type: 'audio', url: `assets/audio/${key.slice('sfx:'.length)}.mp3` });
+      expect(PRELOAD, key).toContain(key);
+    }
+  });
+
   it('starts with no inserted drive', () => {
     const slot = makeSlotWithContext();
     expect(slot.hasDrive).toBe(false);

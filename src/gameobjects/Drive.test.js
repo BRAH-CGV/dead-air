@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { Drive } from './Drive.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { packGroups } from '../core/PhysicsLayers.js';
 
 // ── Fake Rapier setup for Drive physics tests ──
@@ -124,6 +125,12 @@ describe('Drive', () => {
     expect(mesh).toBeDefined();
     expect(mesh).toBeInstanceOf(THREE.Mesh);
     expect(mesh.geometry).toBeInstanceOf(THREE.BoxGeometry);
+  });
+
+  it('carries the drive clips for when it is dropped or knocked', () => {
+    const impact = new Drive().getComponent(ImpactSound);
+    expect(impact).toBeTruthy();
+    expect(impact.clips).toEqual(IMPACT_SOUNDS.drive.clips);
   });
 
   it('starts in the default (unsaved) state', () => {

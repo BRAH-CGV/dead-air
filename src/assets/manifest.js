@@ -456,6 +456,70 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/movement-ending.mp3',
   },
+  // The beep of the signal lamp by the computer (ScannerAlertSound): once
+  // with every light-up.
+  'sfx:scanner-alert': {
+    type: 'audio',
+    url: 'assets/audio/scanner-alert.mp3',
+  },
+  // A loose prop knocked against something (ImpactSound): one of its clips,
+  // picked at random. Two for a drive box put down or dropped, and one of
+  // its own for being picked up, docked and undocked; four for a drive,
+  // knocked or handled. All seven cut from one mix.
+  'sfx:box-impact-1': {
+    type: 'audio',
+    url: 'assets/audio/box-impact-1.mp3',
+  },
+  'sfx:box-impact-2': {
+    type: 'audio',
+    url: 'assets/audio/box-impact-2.mp3',
+  },
+  'sfx:box-handle': {
+    type: 'audio',
+    url: 'assets/audio/box-handle.mp3',
+  },
+  'sfx:drive-impact-1': {
+    type: 'audio',
+    url: 'assets/audio/drive-impact-1.mp3',
+  },
+  'sfx:drive-impact-2': {
+    type: 'audio',
+    url: 'assets/audio/drive-impact-2.mp3',
+  },
+  'sfx:drive-impact-3': {
+    type: 'audio',
+    url: 'assets/audio/drive-impact-3.mp3',
+  },
+  'sfx:drive-impact-4': {
+    type: 'audio',
+    url: 'assets/audio/drive-impact-4.mp3',
+  },
+  // A drive going into a reader and coming out of it (DriveSlot): three
+  // clips each, one picked at random. All six cut from one mix.
+  'sfx:drive-insert-1': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-1.mp3',
+  },
+  'sfx:drive-insert-2': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-2.mp3',
+  },
+  'sfx:drive-insert-3': {
+    type: 'audio',
+    url: 'assets/audio/drive-insert-3.mp3',
+  },
+  'sfx:drive-remove-1': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-1.mp3',
+  },
+  'sfx:drive-remove-2': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-2.mp3',
+  },
+  'sfx:drive-remove-3': {
+    type: 'audio',
+    url: 'assets/audio/drive-remove-3.mp3',
+  },
   // A storm's sand on the office window (WindowSand), looped: louder the
   // nearer the glass you stand.
   'sfx:window-sand': {

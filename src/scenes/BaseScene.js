@@ -58,6 +58,7 @@ import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -636,6 +637,8 @@ export class BaseScene extends Scene {
     if (signalLight) {
       signalLight.signalManager  = this.signalManager;
       signalLight.gameController = this.gameController;
+      // Its beep, with every light-up.
+      signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
     const { bed } = this.rooms.LivingQuarters;
