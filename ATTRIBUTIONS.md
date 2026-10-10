@@ -698,14 +698,14 @@ One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Ai
 
 ### Scanner alert
 
-"Radar" (https://freesound.org/people/unfa/sounds/584179/) by unfa on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+One beep, mixed by us from three Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "Radar" by unfa (https://freesound.org/people/unfa/sounds/584179/), and "Switch-083" (https://freesound.org/people/Moulaythami/sounds/842473/) and "Switch-090" (https://freesound.org/people/Moulaythami/sounds/842480/) by Moulaythami.
 
 | | |
 |---|---|
 | **File** | `public/assets/audio/scanner-alert.mp3` |
 | **Manifest key** | `sfx:scanner-alert` |
 | **Used for** | The signal lamp's beep, once with every light-up (`ScannerAlertSound`) |
-| **Modifications** | Cut to a single short beep; pitch and level varied slightly, at random, while the lamp flashes for the UFO |
+| **Modifications** | The three recordings cut, layered and mixed down into one short beep; pitch and level varied slightly, at random, while the lamp flashes for the UFO |
 
 ### Base ambience (room tone loops)
 
@@ -772,10 +772,6 @@ Not downloaded yet; kept here so the links survive. Move each into a proper
 entry when its file lands in `public/assets/`.
 
 - **Power box** — https://skfb.ly/onTVS (noted: fairly high poly)
-- **Box and drive interaction sounds** — "Switch-083"
-  (https://freesound.org/people/Moulaythami/sounds/842473/) and "Switch-090"
-  (https://freesound.org/people/Moulaythami/sounds/842480/) by Moulaythami on
-  Freesound, both Creative Commons 0
 - **Drive wiper** — link TBD
 - **Sleep demon** — https://skfb.ly/pzR9J, https://skfb.ly/pGvqH,
   https://skfb.ly/oESrR, https://skfb.ly/oWApE (noted: high poly)
