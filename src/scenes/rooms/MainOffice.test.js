@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
+import { ConvexHull } from 'three/examples/jsm/math/ConvexHull.js';
 
 // Recording Rapier fake — see Room.test.js.
 vi.mock('@dimforge/rapier3d', () => {
@@ -17,6 +18,10 @@ vi.mock('@dimforge/rapier3d', () => {
       ColliderDesc: {
         cuboid: (x, y, z) => {
           const d = { half: { x, y, z }, sensor: false, setSensor(s) { d.sensor = s; return d; } };
+          return d;
+        },
+        convexHull: points => {
+          const d = { points, sensor: false, setSensor(s) { d.sensor = s; return d; } };
           return d;
         },
       },
@@ -52,7 +57,10 @@ class FakeWorld {
   }
   createCollider(desc) {
     let sensor = desc.sensor;
-    return { halfExtents: () => ({ ...desc.half }), isSensor: () => sensor, setSensor: s => { sensor = s; } };
+    return {
+      halfExtents: () => ({ ...desc.half }), points: desc.points,
+      isSensor: () => sensor, setSensor: s => { sensor = s; },
+    };
   }
   removeRigidBody(body) { this._bodies.delete(body); }
 }
@@ -212,16 +220,33 @@ describe('MainOffice', () => {
     }
   });
 
-  it('the wings are solid: a turned box under each top, and a back that closes the wedge beside the desk', () => {
-    for (const side of ['Left', 'Right']) {
-      const solid = room.root.find(`DeskWingSolid_${side}`);
-      expect(solid.rigidBody.isFixed(), side).toBe(true);
-      expect(Math.abs(solid.object3d.rotation.y), side).toBeCloseTo(Math.PI / 4);
-      expect(solid.object3d.children.some(c => c.isMesh), side).toBe(false);   // the wing mesh is what is drawn
-      const half = solid.collider.halfExtents();
-      expect(half.x * 2, side).toBeCloseTo(0.85);
-      expect(half.y * 2, side).toBeCloseTo(0.864);
-      expect(room.root.find(`DeskWingBack_${side}`).rigidBody.isFixed(), side).toBe(true);
+  // Things set down on a wing fell through the wedge between it and the
+  // desk's side: the solid was a square turned 45° under the wing's top,
+  // which left the wedge (A, B, E in DeskWing.js) hollow under its top.
+  it('the wings are solid under all of their top, the wedge beside the desk included', () => {
+    for (const [label, side] of [['Left', -1], ['Right', 1]]) {
+      const solid = room.root.find(`DeskWingSolid_${label}`);
+      expect(solid.rigidBody.isFixed(), label).toBe(true);
+      expect(solid.object3d.children.some(c => c.isMesh), label).toBe(false);   // the wing mesh is what is drawn
+
+      const { x, y, z } = solid.rigidBody.translation();
+      const points = [];
+      for (let i = 0; i < solid.collider.points.length; i += 3) {
+        const [px, py, pz] = solid.collider.points.subarray(i, i + 3);
+        points.push(new THREE.Vector3(px + x, py + y, pz + z));
+      }
+      const hull = new ConvexHull().setFromPoints(points);
+      const tops = points.map(p => p.y);
+      expect(Math.max(...tops), label).toBeCloseTo(0.864);         // level with the desk top: the globe stands on it
+      expect(Math.min(...tops), label).toBeCloseTo(0);
+
+      const [[ax, az], [bx, bz], , , [ex, ez]] = deskWingOutline(side, { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95 }).body;
+      const wedge = [(ax + bx + ex) / 3, (az + bz + ez) / 3];       // the middle of the wedge beside the desk
+      for (const h of [0.1, 0.5, 0.85]) {
+        expect(hull.containsPoint(new THREE.Vector3(wedge[0], h, wedge[1])), `${label} wedge at ${h}`).toBe(true);
+        expect(hull.containsPoint(new THREE.Vector3(side * 1.401, h, -2.15)), `${label} centre at ${h}`).toBe(true);
+      }
+      expect(hull.containsPoint(new THREE.Vector3(wedge[0], 0.9, wedge[1])), `${label} above the top`).toBe(false);
     }
   });
 

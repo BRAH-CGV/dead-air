@@ -68,6 +68,12 @@ export function rapierModule() {
           };
           return d;
         },
+        // A solid no box fits (the office's desk wings). Keeps its points, so
+        // a test can rebuild the hull it describes.
+        convexHull: points => {
+          const d = { points, sensor: false, setSensor(v) { d.sensor = v; return d; } };
+          return d;
+        },
       },
     },
   };
@@ -110,6 +116,7 @@ export class FakeWorld {
       halfExtents: () => ({ ...desc.half }),
       translation: () => ({ ...desc.t }),
       heightfield: desc.heightfield,
+      points: desc.points,
       isSensor: () => sensor,
       setSensor: s => { sensor = s; },
     };
