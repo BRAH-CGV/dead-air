@@ -212,6 +212,13 @@ export class UfoThreat extends Component {
   /** @type {'waiting'|'approaching'|'expanding'|'lethal'|'gone'|'caught'} */
   phase = 'waiting';
 
+  /** True from the moment its flight sound starts, for the rest of the
+   *  visit — before that it is only a blob on the office radar. What wakes
+   *  a sleeper (Nap). */
+  get audible() {
+    return this._flightStartedAt !== null && this.phase !== 'waiting' && this.phase !== 'gone';
+  }
+
   /**
    * @param {object} opts
    * @param {import('./GameController.js').GameController} opts.controller

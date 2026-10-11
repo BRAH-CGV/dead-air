@@ -1501,16 +1501,17 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
   }
 
-  /** Naps at the bunk: the night fast-forwarded until 6 AM or until
-   *  something wakes the player — the power going out, the UFO on the
-   *  radar, eyes at the office window. No nap with the UFO on its way.
-   *  Added last, so it reads every threat after it has moved this frame. */
+  /** Naps at the bunk: the night fast-forwarded until 6 AM, until the
+   *  player presses E, or until something loud enough to wake a sleeper —
+   *  the lamps buzzing before a storm outage, the UFO's roar. Silent things
+   *  (the power simply going, the radar blob, eyes at the window) don't.
+   *  No nap with the UFO on its way. Added last, so it reads every threat
+   *  after it has moved this frame. */
   _addNap() {
     const ufoBusy = () => {
       const phase = this.ufoThreat?.phase;
       return !!phase && phase !== 'waiting' && phase !== 'gone';
     };
-    const windowEyes = () => !!this.dustEyes?.slots.some(s => s.kind === 'window' && s.phase !== 'off');
     this.nap = new Nap({
       controller: this.gameController,
       engine:     this.engine,
@@ -1521,9 +1522,8 @@ export class BaseScene extends Scene {
         restless:        ufoBusy,
       },
       alarms: [
-        { test: () => !this.power.on, message: 'You wake in the dark — the power went out.' },
-        { test: ufoBusy,              message: 'Something on the radar woke you.' },
-        { test: windowEyes,           message: 'You wake with the feeling of being watched.' },
+        { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },
+        { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.' },
       ],
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.nap);

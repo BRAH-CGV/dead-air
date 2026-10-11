@@ -585,7 +585,7 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
   }
 
-  it('the bunk naps through the night, fast, and the power going out wakes you', () => {
+  it('the bunk naps through the night, fast, and a storm outage\'s buzz wakes you', () => {
     const bed = scene.rooms.LivingQuarters.bed;
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const nap = gameplay.getComponent(Nap);
@@ -598,20 +598,32 @@ describe('BaseScene gameplay loop', () => {
     expect(nap.napping).toBe(true);
     expect(engine.timeScale).toBe(NAP.timeScale);
 
-    scene.power.setOn(false);
+    scene.stormOutage._flickering = 0;          // the lamps start to buzz
     nap.onUpdate(0.016);
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
-    expect(nap.wokeBy).toMatch(/power/i);
+    expect(nap.wokeBy).toMatch(/buzz/i);
   });
 
-  it('no nap with the UFO on its way, and it wakes you when it shows on the radar', () => {
+  it('sleeps through a silent power cut — nothing you could hear from the bunk', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.power.setOn(false);
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    nap.wake();
+  });
+
+  it('the UFO wakes you when you can hear it, not while it is only on the radar — and no nap while it is coming', () => {
     const nap = scene.nap;
     nap.start();
     scene.ufoThreat.phase = 'approaching';      // the blob is on the radar
     nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    scene.ufoThreat._flightStartedAt = 0;       // the roar starts
+    nap.onUpdate(0.016);
     expect(nap.napping).toBe(false);
-    expect(nap.wokeBy).toMatch(/radar/i);
+    expect(nap.wokeBy).toMatch(/roar/i);
     expect(nap.canNap).toBe(false);
   });
 

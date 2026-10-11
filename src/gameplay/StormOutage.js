@@ -48,6 +48,12 @@ export class StormOutage extends Component {
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from STORM_OUTAGE_SOUNDS when left out.
    * @param {() => number} [opts.random]
    */
+  /** True while the lamps gutter and buzz, before the power goes — loud
+   *  enough to wake a sleeper (Nap). */
+  get flickering() {
+    return this._flickering !== null;
+  }
+
   constructor({ controller, sandstorm, grid, cutPower, sounds = null, random = Math.random }) {
     super();
     Object.assign(this, { controller, sandstorm, grid, cutPower, sounds, random });

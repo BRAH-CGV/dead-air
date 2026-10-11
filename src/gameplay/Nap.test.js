@@ -11,7 +11,15 @@ function makeRig({ alarms = {} } = {}) {
     state: 'playing',
     refreshPrompt: vi.fn(),
   };
-  const engine = { timeScale: 1 };
+  const engine = {
+    timeScale: 1,
+    held: false,
+    consumed: false,
+    isAction(action) { return action === 'interact' && this.held && !this.consumed; },
+    consumeAction(action) { if (action === 'interact') this.consumed = true; },
+  };
+  /** Press E (a fresh press: the last one was let go). */
+  engine.press = () => { engine.held = true; engine.consumed = false; };
   const fade = { cover: vi.fn(onDark => { onDark(); return true; }), uncover: vi.fn() };
   const hud = { setPrompt: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
@@ -120,5 +128,22 @@ describe('Nap', () => {
     const { nap, fade } = rig;
     nap.wake();
     expect(fade.uncover).not.toHaveBeenCalled();
+  });
+
+  it('pressing E wakes you yourself — not the press that lay you down', () => {
+    const { nap, engine, fade, hud } = rig;
+    engine.press();                               // E at the bunk
+    nap.start();
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);               // still the same press
+    engine.held = false;                          // let go
+    nap.onUpdate(0.016);
+    engine.press();                               // pressed again
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(engine.timeScale).toBe(1);
+    expect(fade.uncover).toHaveBeenCalledOnce();
+    expect(hud.setPrompt).not.toHaveBeenCalled(); // you know why you're up
+    expect(engine.consumed).toBe(true);           // the bunk doesn't take it as a new nap
   });
 });

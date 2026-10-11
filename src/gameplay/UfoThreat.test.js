@@ -222,6 +222,16 @@ const toLethal = LEAD + timeline.lethal;
 const HOVER = new THREE.Vector3(0, 35, 0);
 
 describe('UfoThreat', () => {
+  it('is audible from the moment its flight sound starts — not while only on the radar', () => {
+    const { threat } = makeRig();
+    expect(threat.audible).toBe(false);
+    run(threat, 0.5);
+    expect(threat.phase).toBe('approaching');
+    expect(threat.audible).toBe(false);          // only the radar blob so far
+    run(threat, timeline.soundStart);
+    expect(threat.audible).toBe(true);
+  });
+
   it('waits for its random time in the night, then shows up on the radar', () => {
     const { threat, radar, signalLight } = makeRig({ summon: false });
     expect(threat._start).toBeGreaterThan(20);

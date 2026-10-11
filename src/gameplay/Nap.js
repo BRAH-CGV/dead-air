@@ -9,11 +9,13 @@ import { Component } from '../core/Component.js';
 // the storms, the UFO's schedule, the dust eyes. Nothing is skipped, only
 // fast-forwarded, so signals that come while you sleep are missed.
 //
-// It ends at 6 AM (the shift ends) or when something happens: an alarm
-// whose test turns true that wasn't true when you lay down — the power
-// going out, the UFO on the radar, eyes at the window. Then time runs
-// normally again, the screen fades in, and the HUD says what woke you for
-// NAP.messageSeconds before the shift's own prompt comes back.
+// It ends at 6 AM (the shift ends), when the player presses E, or when
+// something happens that would really wake a sleeper — something loud: an
+// alarm whose test turns true that wasn't true when you lay down (the
+// lamps buzzing before a storm outage, the UFO's roar). Silent things — a
+// blob on the office radar, eyes at the office window — don't. Then time
+// runs normally again, the screen fades in, and the HUD says what woke you
+// for NAP.messageSeconds before the shift's own prompt comes back.
 //
 // `hooks.restless()` refuses a nap outright (the UFO already on its way).
 //
@@ -67,6 +69,8 @@ export class Nap extends Component {
     // Only a change wakes you: an alarm already true now is ignored.
     this._armed = this.alarms.map(a => !a.test());
     this.hooks.setPlayerLocked?.(true);
+    // The press that lay you down isn't the one that wakes you.
+    this.engine.consumeAction?.('interact');
     const fastForward = () => { if (this.napping) this.engine.timeScale = NAP.timeScale; };
     if (!this.fade?.cover(fastForward)) fastForward();
     return true;
@@ -89,6 +93,11 @@ export class Nap extends Component {
   onUpdate(dt) {
     if (this.napping) {
       if (this.controller.state !== 'playing') return this.wake();
+      if (this.engine.isAction?.('interact')) {
+        // Used up, so the bunk doesn't read it as a new nap.
+        this.engine.consumeAction?.('interact');
+        return this.wake();
+      }
       for (let i = 0; i < this.alarms.length; i++) {
         if (this._armed[i] && this.alarms[i].test()) return this.wake(this.alarms[i].message);
       }
