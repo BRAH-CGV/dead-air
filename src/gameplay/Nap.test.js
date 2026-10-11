@@ -10,6 +10,7 @@ function makeRig({ alarms = {} } = {}) {
   const controller = {
     state: 'playing',
     refreshPrompt: vi.fn(),
+    nightClock: { currentTime: 0, endHour: 6 },
   };
   const engine = {
     timeScale: 1,
@@ -145,5 +146,44 @@ describe('Nap', () => {
     expect(fade.uncover).toHaveBeenCalledOnce();
     expect(hud.setPrompt).not.toHaveBeenCalled(); // you know why you're up
     expect(engine.consumed).toBe(true);           // the bunk doesn't take it as a new nap
+  });
+
+  describe('the alarm', () => {
+    it('offers a set of lengths, in clock hours, ending with "until 6 AM" (null)', () => {
+      expect(NAP.lengths).toEqual([0.5, 1, 2, 3, null]);
+    });
+
+    it('wakes you when the clock has run on by the length you set', () => {
+      const { nap, controller, hud, engine } = rig;
+      controller.nightClock.currentTime = 1;      // 1:00 AM
+      nap.start(2);
+      expect(nap.wakeAt).toBe(3);
+      controller.nightClock.currentTime = 2.9;
+      nap.onUpdate(1);
+      expect(nap.napping).toBe(true);
+      controller.nightClock.currentTime = 3;
+      nap.onUpdate(1);
+      expect(nap.napping).toBe(false);
+      expect(engine.timeScale).toBe(1);
+      expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/alarm/i));
+    });
+
+    it('with no length, sleeps on to 6 AM', () => {
+      const { nap, controller } = rig;
+      nap.start();
+      expect(nap.wakeAt).toBeNull();
+      controller.nightClock.currentTime = 5.99;
+      nap.onUpdate(1);
+      expect(nap.napping).toBe(true);
+    });
+
+    it('anything that would wake you still does before the alarm', () => {
+      const { nap, state, hud } = rig;
+      nap.start(3);
+      state.power = true;
+      nap.onUpdate(1);
+      expect(nap.napping).toBe(false);
+      expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');
+    });
   });
 });

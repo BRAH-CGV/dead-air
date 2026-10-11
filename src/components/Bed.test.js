@@ -83,17 +83,57 @@ describe('Bed', () => {
   });
 
   describe('naps', () => {
-    let nap;
+    let nap, engine;
     beforeEach(() => {
       nap = { canNap: true, napping: false, start: vi.fn(() => true) };
       bed.nap = nap;
+      controller.nightClock = { currentTime: 1.25, endHour: 6 };   // 1:15 AM
+      engine = {
+        keyBinds: { rotateHeld: 'KeyR' },
+        held: false, consumed: false,
+        isAction(a) { return a === 'rotateHeld' && this.held && !this.consumed; },
+        consumeAction(a) { if (a === 'rotateHeld') this.consumed = true; },
+      };
+      bed.engine = engine;
     });
 
-    it('offers a nap during the shift', () => {
-      expect(label('playing')).toMatch(/^\[E\] Nap/);
+    /** Press R while looking at the bunk, and let go. */
+    const pressR = () => {
+      engine.held = true; engine.consumed = false;
+      bed.onHover({});
+      engine.held = false;
+      bed.onHover({});
+    };
+
+    it('offers a nap during the shift, an hour by default, saying when you will wake', () => {
+      expect(label('playing')).toBe('[E] Nap 1 h (until 2:15 AM) · [R] change');
       bed.onInteract();
-      expect(nap.start).toHaveBeenCalledOnce();
+      expect(nap.start).toHaveBeenCalledWith(1);
       expect(controller.sleep).not.toHaveBeenCalled();
+    });
+
+    it('R steps through the lengths, round to the start', () => {
+      pressR();
+      expect(label('playing')).toBe('[E] Nap 2 h (until 3:15 AM) · [R] change');
+      pressR();
+      expect(label('playing')).toBe('[E] Nap 3 h (until 4:15 AM) · [R] change');
+      pressR();
+      expect(label('playing')).toBe('[E] Nap until 6:00 AM · [R] change');
+      bed.onInteract();
+      expect(nap.start).toHaveBeenLastCalledWith(null);
+      pressR();
+      expect(label('playing')).toBe('[E] Nap 30 min (until 1:45 AM) · [R] change');
+    });
+
+    it('holding R steps once, not every frame', () => {
+      engine.held = true;
+      bed.onHover({}); bed.onHover({}); bed.onHover({});
+      expect(label('playing')).toMatch(/Nap 2 h/);
+    });
+
+    it('a nap that would run past 6 AM just says until 6:00 AM', () => {
+      controller.nightClock.currentTime = 5.5;
+      expect(label('playing')).toBe('[E] Nap until 6:00 AM · [R] change');
     });
 
     it('says why not when a nap isn\'t possible', () => {
