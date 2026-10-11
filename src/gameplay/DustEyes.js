@@ -632,7 +632,7 @@ export class DustEyes extends Component {
   /**
    * Bring one now — the dev console's `eyes`, which always brings one to the yard,
    * wherever the player is. `kind` 'window' brings one to the window instead
-   * (cooldown ignored). With no storm up, starts one (the K key's summon) and
+   * (cooldown ignored). With no storm up, starts one (the console's `storm`) and
    * the eye comes as soon as it is strong enough.
    * @param {'both'|'fence'|'window'} [kind='both']
    * @returns {boolean} whether one is coming

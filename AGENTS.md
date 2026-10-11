@@ -343,7 +343,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 `Sandstorm` (on `GameplaySystems`, after `Daylight`) brings a dust storm every night, night 1 included (the dust eyes stay away until night 2). It starts at a random hour (`startHours`, 0:30–4:12) and blows for about an hour and a half of clock time (`durationHours`, 1.3–1.7), building up and dying down over `rampSeconds` (`stormLevel`). The schedule follows the clock's own length (`scheduleStorm`). For testing, `summon()` (the console's `storm`) starts one at once, on any night. `sandstorm.level` (0 … 1) is what the dust eyes read.
 
-- **Never with the UFO.** On a UFO night (`UFO.nights`) nothing is scheduled at random; instead a storm always follows the UFO, `afterUfoDelay` (10–30 s) after it has gone. Neither a scheduled storm nor K starts one while a visit is under way (`_ufoBusy`); a storm due then waits.
+- **Never with the UFO.** On a UFO night (`UFO.nights`) nothing is scheduled at random; instead a storm always follows the UFO, `afterUfoDelay` (10–30 s) after it has gone. Neither a scheduled storm nor the console's `storm` starts one while a visit is under way (`_ufoBusy`); a storm due then waits.
 - **Held.** While `sandstorm.held` is set (`DustEyes`, through a chase) the end keeps being pushed back past the die-down, so the storm stays at full until the player is away.
 
 - **Sound.** None of its own. The wind outside is the `Ambience`'s loop; the storm passes it its level every frame (`Ambience.setStorm`), and the Ambience blows the wind harder and lets a hiss of it into the rooms (see Ambience).

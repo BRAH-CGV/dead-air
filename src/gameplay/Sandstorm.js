@@ -238,7 +238,7 @@ export class Sandstorm extends Component {
       this._elapsed += dt;
       this._followUfo();
       const s = this._storm;
-      // Due during a UFO visit (the U key, on another night): it waits.
+      // Due during a UFO visit (the console's `ufo`, on another night): it waits.
       if (s && this._ufoBusy() && this.level === 0 && this._elapsed >= s.start) s.start = this._elapsed;
       // Held: the end is pushed back so it never gets inside the die-down.
       if (s && this.held && this.level > 0) {
