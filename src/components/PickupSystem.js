@@ -20,8 +20,10 @@ import { keyName } from '../app/keyNames.js';
 //
 // The held object is a real physics body — it can bump into things, be pushed
 // by the player walking, and falls when dropped. It is held as far along the
-// view as it was when picked up (within the Pickupable's reach), and mouse
-// wheel scrolling adjusts that distance while carrying.
+// view as it was when picked up (within the Pickupable's reach). With a mouse
+// wheel (engine.input.hasWheel, from the first scroll on) the wheel moves it
+// in and out from there. Without one — a laptop's touchpad — it eases to the
+// Pickupable's restHoldDistance (1 m) while nothing is in the way.
 //
 // Prompt coordination with InteractionSystem:
 //   - While carrying, the carried body is excluded from InteractionSystem's
@@ -49,6 +51,13 @@ const SPRING_DAMPING = 25;
 /** Mouse wheel step size in metres per tick. */
 const SCROLL_STEP = 0.1;
 
+/** How fast (m/s) a carried item eases to its rest distance. */
+const SETTLE_SPEED = 1;
+
+/** Lagging further than this behind the hand (m), the item is held up by
+ *  something — the easing waits rather than push the hand into it. */
+const SETTLE_LAG = 0.25;
+
 // Pre-allocated scratch vectors to avoid per-frame allocations.
 const _target = new THREE.Vector3();
 const _disp   = new THREE.Vector3();
@@ -73,7 +82,7 @@ const MAX_SPIN = 20;
 
 /** Further than this from the hand (metres) and the item is stuck behind
  *  something: it snaps back (#77). */
-const SNAP_DISTANCE = 2;
+const SNAP_DISTANCE = 1.5;
 
 /** Seconds it has to stay that far before it counts as stuck — an item
  *  picked up from across the room starts far away and flies in. */
@@ -257,6 +266,15 @@ export class PickupSystem extends Component {
 
     // Displacement from current to target
     _disp.set(_target.x - t.x, _target.y - t.y, _target.z - t.z);
+
+    // No wheel to move it with: ease the hand to the rest distance, while
+    // the item keeps up with it.
+    const held = this.heldPickupable;
+    if (!engine.input?.hasWheel && _disp.length() < SETTLE_LAG) {
+      const step = SETTLE_SPEED * _dt;
+      const off = held.restHoldDistance - held.holdDistance;
+      held.holdDistance += THREE.MathUtils.clamp(off, -step, step);
+    }
 
     // Collision back on once the snap's grace second has run out.
     if (this._ghostTime > 0) {
