@@ -1095,6 +1095,19 @@ describe('BaseScene power and the UFO', () => {
     expect(flood.castShadow).toBe(true);
   });
 
+  // A passage's lamp without a shadow lit the yard and the rooms beyond its
+  // walls (#87). Each shadowed light is a texture unit in every lit shader,
+  // of the sixteen WebGL guarantees, so the count is kept in sight too.
+  it('every passage light keeps to its passage, and the shadowed lights stay within budget', () => {
+    for (const passage of [...Object.values(scene.corridors), scene.rooms.Airlock]) {
+      const lamp = passage.root.find('CorridorLight').object3d.children.find(o => o.isPointLight);
+      expect(lamp.castShadow, passage.name).toBe(true);
+    }
+    let shadowed = 0;
+    engine.scene.traverse(o => { if (o.isLight && o.castShadow) shadowed++; });
+    expect(shadowed).toBeLessThanOrEqual(8);
+  });
+
   it('a blow-out spares the dish pad floods and the desk screen glow, once power is back', () => {
     const flood = scene.dishPad.object3d.getObjectByName('DishFlood_0');
     const screen = scene.rooms.MainOffice.screenGlow;
