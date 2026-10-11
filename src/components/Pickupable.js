@@ -14,8 +14,9 @@ import { Component } from '../core/Component.js';
 //   // Now the player can pick up this drive when looking at it and pressing E.
 //
 // The PickupSystem reads holdDistance to position the object in front of the
-// camera while carried. Mouse wheel scrolling adjusts this distance within
-// the [minHoldDistance, maxHoldDistance] range.
+// camera while carried. Picking it up sets it to how far along the view the
+// object already is, and mouse wheel scrolling adjusts it, both within the
+// [minHoldDistance, maxHoldDistance] range.
 //
 // Optional hook: onBeforePickUp — called by PickupSystem.pickUp() BEFORE
 // changing physics. Used by DriveSlot to eject an inserted drive (make it
@@ -26,7 +27,8 @@ export class Pickupable extends Component {
   /** True while the PickupSystem is carrying this object. */
   held = false;
 
-  /** Metres in front of the camera when held. */
+  /** Metres in front of the camera when held. Set on every pick-up to where
+   *  the object is; this default only stands when there is no camera. */
   holdDistance = 1.0;
 
   /** Closest the player can pull the object (mouse wheel scroll up). */

@@ -61,7 +61,6 @@ export class DriveBox extends GameObject {
 
     this.pickupable = this.addComponent(new Pickupable());
     this.pickupable.promptLabel = opts.promptLabel ?? '[E] Pick up drive box';
-    this.pickupable.holdDistance = opts.holdDistance ?? 1.2;
   }
 
   /** The socket grid on the lid: rows × columns of drives standing on end

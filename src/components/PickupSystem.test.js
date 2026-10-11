@@ -126,6 +126,75 @@ describe('PickupSystem', () => {
     expect(hookCallOrder).toBeLessThan(gravityCallOrder);
   });
 
+  // ── Hold distance: where the item already is ──
+
+  describe('picked up at the distance it is', () => {
+    // Camera at (0, 1.6, 0) facing -Z.
+    const at = (go, pos) => { go.rigidBody.translation = () => ({ ...pos }); };
+
+    it('holds it as far away as it was, not at a set arm length', () => {
+      const { go, pickupable } = makePickupableGO('Drive');
+      at(go, { x: 0, y: 1.6, z: -1.4 });
+      system.pickUp(pickupable);
+      expect(pickupable.holdDistance).toBeCloseTo(1.4);
+    });
+
+    it('so the first step does not pull it anywhere (no yank into the desk under it)', () => {
+      const { go, pickupable } = makePickupableGO('Drive');
+      at(go, { x: 0, y: 1.6, z: -0.7 });
+      system.pickUp(pickupable);
+      system.onFixedUpdate(1 / 60);
+      const f = go.rigidBody.addForce.mock.calls.at(-1)[0];
+      expect(Math.hypot(f.x, f.y, f.z)).toBeLessThan(1e-6);
+    });
+
+    it('measures along the view: an item off the crosshair keeps its depth', () => {
+      const { go, pickupable } = makePickupableGO('Drive');
+      at(go, { x: 0.5, y: 1.2, z: -1.2 });
+      system.pickUp(pickupable);
+      expect(pickupable.holdDistance).toBeCloseTo(1.2);
+    });
+
+    it('forgets the distance it was last carried at', () => {
+      const { go, pickupable } = makePickupableGO('Drive');
+      at(go, { x: 0, y: 1.6, z: -1.8 });
+      system.pickUp(pickupable);
+      engine.input.mouse.wheel = 5;              // reeled in to 1.3
+      system.onUpdate(1 / 60);
+      engine.input.mouse.wheel = 0;
+      system.dropHeld();
+
+      at(go, { x: 0, y: 1.6, z: -0.8 });
+      system.pickUp(pickupable);
+      expect(pickupable.holdDistance).toBeCloseTo(0.8);
+    });
+
+    it('a second item is held at its own distance, not the last one\'s', () => {
+      const a = makePickupableGO('A');
+      at(a.go, { x: 0, y: 1.6, z: -1.9 });
+      system.pickUp(a.pickupable);
+      system.dropHeld();
+
+      const b = makePickupableGO('B');
+      at(b.go, { x: 0, y: 1.6, z: -0.6 });
+      system.pickUp(b.pickupable);
+      expect(b.pickupable.holdDistance).toBeCloseTo(0.6);
+    });
+
+    it('stays within reach: too near is held at the minimum, too far at the maximum', () => {
+      const near = makePickupableGO('Near');
+      at(near.go, { x: 0, y: 1.6, z: -0.2 });
+      system.pickUp(near.pickupable);
+      expect(near.pickupable.holdDistance).toBe(near.pickupable.minHoldDistance);
+      system.dropHeld();
+
+      const far = makePickupableGO('Far');
+      at(far.go, { x: 0, y: 1.6, z: -2.8 });
+      system.pickUp(far.pickupable);
+      expect(far.pickupable.holdDistance).toBe(far.pickupable.maxHoldDistance);
+    });
+  });
+
   // ── Drop ──
 
   it('dropHeld releases the object and restores physics', () => {
@@ -228,7 +297,8 @@ describe('PickupSystem', () => {
   });
 
   it('scroll up increases hold distance (pushes further)', () => {
-    const { pickupable } = makePickupableGO();
+    const { go, pickupable } = makePickupableGO();
+    go.rigidBody.translation = () => ({ x: 0, y: 1.6, z: -1.2 });   // room to push out
     system.pickUp(pickupable);
     const initial = pickupable.holdDistance;
 
@@ -263,6 +333,7 @@ describe('PickupSystem', () => {
   it('applies spring-damper forces while holding', () => {
     const { go, pickupable } = makePickupableGO();
     system.pickUp(pickupable);
+    pickupable.holdDistance = 1;                 // reeled in from where it was picked up
 
     system.onFixedUpdate(1 / 60);
     // Rapier 0.20 user forces persist until reset, so each step must clear
@@ -274,7 +345,7 @@ describe('PickupSystem', () => {
     expect(typeof force.x).toBe('number');
     expect(typeof force.y).toBe('number');
     expect(typeof force.z).toBe('number');
-    expect(force.z).toBeGreaterThan(0);          // target is 1 m further -z than the body
+    expect(force.z).toBeGreaterThan(0);          // the hand is 1 m nearer (+z) than the body
   });
 
   it('does not apply forces when not holding', () => {
@@ -451,6 +522,7 @@ describe('PickupSystem', () => {
       const collider = { setEnabled: vi.fn() };
       go.colliders = [collider];
       system.pickUp(pickupable);
+      pickupable.holdDistance = 1;   // reeled in, or knocked away from the hand
       return { go, collider, at };
     }
     const steps = (n) => { for (let i = 0; i < n; i++) system.onFixedUpdate(STEP); };

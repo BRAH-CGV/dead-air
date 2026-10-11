@@ -19,8 +19,9 @@ import { keyName } from '../app/keyNames.js';
 // target each physics step, so it still knocks against things.
 //
 // The held object is a real physics body — it can bump into things, be pushed
-// by the player walking, and falls when dropped. Mouse wheel scrolling
-// adjusts the hold distance while carrying.
+// by the player walking, and falls when dropped. It is held as far along the
+// view as it was when picked up (within the Pickupable's reach), and mouse
+// wheel scrolling adjusts that distance while carrying.
 //
 // Prompt coordination with InteractionSystem:
 //   - While carrying, the carried body is excluded from InteractionSystem's
@@ -162,8 +163,19 @@ export class PickupSystem extends Component {
       go.rigidBody.enableCcd?.(true);
     }
 
-    // Hold it at the angle it was picked up at, relative to the camera.
+    // Hold it as far away as it already is. A set arm length yanked it to
+    // that distance on the first step — down through the desk it sat on,
+    // or into the wall behind it.
     const engine = this._getEngine();
+    const t = go?.rigidBody?.translation?.();
+    if (engine?.camera && t) {
+      this._view(engine.camera);
+      const depth = _disp.set(t.x, t.y, t.z).sub(_camPos).dot(_camFwd);
+      pickupable.holdDistance = THREE.MathUtils.clamp(
+        depth, pickupable.minHoldDistance, pickupable.maxHoldDistance);
+    }
+
+    // Hold it at the angle it was picked up at, relative to the camera.
     const r = go?.rigidBody?.rotation?.();
     _bodyQuat.set(r?.x ?? 0, r?.y ?? 0, r?.z ?? 0, r?.w ?? 1);
     if (engine?.camera) engine.camera.getWorldQuaternion(_camQuat);
@@ -237,8 +249,7 @@ export class PickupSystem extends Component {
     if (!go?.rigidBody) return;
 
     // Target = camera position + camera forward * holdDistance
-    engine.camera.getWorldPosition(_camPos);
-    _camFwd.set(0, 0, -1).applyQuaternion(engine.camera.quaternion);
+    this._view(engine.camera);
     _target.copy(_camPos).addScaledVector(_camFwd, this.heldPickupable.holdDistance);
 
     // Current body position
@@ -321,6 +332,12 @@ export class PickupSystem extends Component {
    *  InteractionSystem's raycast — the same ray the prompt runs on. */
   _getPickupTarget() {
     return this.interactionSystem?.currentPickupable ?? null;
+  }
+
+  /** Where the view starts and points: fills _camPos and _camFwd. */
+  _view(camera) {
+    camera.getWorldPosition(_camPos);
+    _camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
   }
 
   /** The world rotation the held object is steered to: camera × holdRotation.
