@@ -108,22 +108,10 @@ const SIDE_ROOM_Z = 1;
  *  above the floor and settles onto it. */
 const PLAYER_SPAWN = [0, 1, 0];
 
-/** Fog density for the SEALED rooms — the ones with no sightline out of the
- *  base, so their density is free to be an atmosphere knob: thicker in the
- *  server room, thinner in living quarters.
- *
- *  Rooms here are small (6-12 m across), so fog only needs to be a light
- *  depth cue, not the "can't see the far wall" effect it's for outdoors —
- *  ServerRoom was originally 0.05, which combined with its dim lighting to
- *  make it borderline unreadable. Kept subtle now that the racks light
- *  themselves (see ServerRoom.buildLighting). */
-const ROOM_FOG_DENSITY = {
-  ServerRoom: 0.03,
-  LivingQuarters: 0.008,
-};
-
-/** Density everywhere the valley is visible: the main office (whose back wall
- *  is an 8.5 m window), the corridors, and outside.
+/** The fog's density, everywhere: every room, every corridor and outside.
+ *  No room has a fog of its own — a room that changed it showed as the view
+ *  through the office window changing at its doorway — and the rooms' own
+ *  surfaces take no fog at all (_keepFogOutside).
  *
  *  This is the one number the two halves of this scene had to agree on, and
  *  they did not. The engine's base fog (0.02) is opaque by ~150 m, and
@@ -733,8 +721,7 @@ export class BaseScene extends Scene {
     this.sky = sky;   // Daylight turns its uDawn
 
     // Remember the fog we were handed before touching it. Scene teardown
-    // never resets scene.fog, and both halves of the pair are ours now: the
-    // colour here, the density in _applyRoomFog.
+    // never resets scene.fog, and both halves of the pair are ours now.
     this._prevFogColor   = this.engine.scene.fog?.color.getHex();
     this._prevFogDensity = this.engine.scene.fog?.density;
 
@@ -743,10 +730,8 @@ export class BaseScene extends Scene {
     // seam where the ground meets the sky.
     this.engine.scene.fog?.color.set(0x1f2a38);
 
-    // Start the scene at the outdoor density. RoomTransitionSystem only
-    // reports a room on its first update, and the player spawns in the office
-    // facing the window — without this the first frame is drawn at whatever
-    // density the engine happened to leave in scene.fog.
+    // One density, everywhere and for good: the engine's base fog is far too
+    // thick for the valley (see OUTDOOR_FOG_DENSITY).
     if (this.engine.scene.fog) this.engine.scene.fog.density = OUTDOOR_FOG_DENSITY;
   }
 
@@ -1167,19 +1152,17 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
 
-  /** The office, the airlock and the corridors take no fog. They share the
-   *  outdoor fog density — the office window has to show the valley, and the
-   *  storm swallowing it — but the scene's fog is one fog, and at a storm's
-   *  density it filled the rooms themselves with brown haze (a wall 10 m off
-   *  a third dust). Their own surfaces opt out instead; everything seen
-   *  through the glass keeps it. On a clear night that fog is ~0.05 % at
-   *  10 m, so indoors nothing changes. The sealed rooms keep theirs: it is
-   *  their mood. A material shared with anything outside the opted-out
-   *  parts is copied for them first, so nothing else loses its fog. Built
-   *  before the power grid collects the lamps' materials, so the grid holds
-   *  the copies. */
+  /** No room or corridor takes fog. The scene's fog is one fog — the office
+   *  window has to show the valley, and the storm swallowing it — and at a
+   *  storm's density it filled the rooms themselves with brown haze (a wall
+   *  10 m off a third dust). Their own surfaces opt out instead; everything
+   *  seen through the glass keeps it. On a clear night that fog is ~0.05 %
+   *  at 10 m, so indoors nothing changes. A material shared with anything
+   *  outside the building is copied for it first, so nothing else loses its
+   *  fog. Built before the power grid collects the lamps' materials, so the
+   *  grid holds the copies. */
   _keepFogOutside() {
-    const parts = [this.rooms.MainOffice, this.rooms.Airlock, ...Object.values(this.corridors)].filter(Boolean);
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)].filter(Boolean);
     const inside = new Set();
     for (const part of parts) part.root.object3d.traverse(o => { if (o.isMesh) inside.add(o); });
     const elsewhere = new Set();
@@ -1205,50 +1188,6 @@ export class BaseScene extends Scene {
     };
     for (const mesh of inside) {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(optOut) : optOut(mesh.material);
-    }
-    this._switchSealedRoomFog();
-  }
-
-  /** A sealed room's mood fog is for being inside it. Seen through a
-   *  doorway from anywhere else it took the storm's brown — the server room
-   *  glowed rust down the corridor. So each sealed room's fogged surfaces
-   *  get a switch in their fog shader (roomFog, 0 or 1), on only while the
-   *  player is in that room (_applyRoomFog). A uniform, not material.fog:
-   *  flipping that would recompile the room's shaders on every doorway. */
-  _switchSealedRoomFog() {
-    this._roomFog = new Map();
-    const sealed = Object.values(this.rooms)
-      .filter(room => room !== this.rooms.Airlock && this._fogDensityFor(room) !== OUTDOOR_FOG_DENSITY);
-    for (const room of sealed) {
-      const ref = { value: 0 };
-      this._roomFog.set(room, ref);
-      const mine = new Set();
-      room.root.object3d.traverse(o => { if (o.isMesh) mine.add(o); });
-      const elsewhere = new Set();
-      this._sceneRoot.object3d.traverse(o => {
-        if (!o.isMesh || mine.has(o)) return;
-        for (const m of [].concat(o.material)) if (m) elsewhere.add(m);
-      });
-      const copies = new Map();
-      const switched = (m) => {
-        if (!m || !m.fog) return m;
-        let target = m;
-        if (elsewhere.has(m)) {
-          target = copies.get(m);
-          if (!target) { target = this._own(m.clone()); copies.set(m, target); }
-        }
-        target.onBeforeCompile = (shader) => {
-          shader.uniforms.roomFog = ref;
-          shader.fragmentShader = 'uniform float roomFog;\n'
-            + shader.fragmentShader.replace('#include <fog_fragment>', ROOM_FOG_FRAGMENT);
-        };
-        target.customProgramCacheKey = () => 'roomFog';
-        target.needsUpdate = true;
-        return target;
-      };
-      for (const mesh of mine) {
-        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(switched) : switched(mesh.material);
-      }
     }
   }
 
@@ -1288,16 +1227,6 @@ export class BaseScene extends Scene {
       ambience: this.ambience,
       hooks: {
         listenerPosition: out => engine.camera.getWorldPosition(out),
-        isOutside:        p => this._isOutside(p),
-        // Outside, the office (its window) and the airlock (its hatch is on
-        // the yard, and from it the office window shows through the inner
-        // door — a window seen clear from there used to pop to storm on the
-        // step into the office). Not the corridors: no window, and the storm
-        // fog there only tinted the sealed rooms seen through their doorways.
-        // Not the sealed mood rooms.
-        valleyInView:     () => (this._currentRoom
-          ? this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY
-          : this._isOutside(engine.camera.getWorldPosition(_valleyEye))),
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
@@ -1586,7 +1515,6 @@ export class BaseScene extends Scene {
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),
     });
-    transitions.onRoomChange = room => this._applyRoomFog(room);
     engine.player.addComponent(transitions);
 
     // The suit rides on the player; the hatch follows it however it changes,
@@ -1599,32 +1527,6 @@ export class BaseScene extends Scene {
       suit: this.suit,
       silenced: () => this.gameController?.state === 'gameOver',
     }));
-  }
-
-  /** Per-room atmosphere: dense fog in the sealed server room, light in the
-   *  sealed living quarters, the outdoor density everywhere the valley is in
-   *  view (the main office, the corridors, and outside). */
-  _applyRoomFog(room) {
-    this._currentRoom = room;
-    // A sealed room's mood fog shows only from inside it.
-    for (const [sealed, ref] of this._roomFog ?? []) ref.value = sealed === room ? 1 : 0;
-    const fog = this.engine.scene.fog;
-    if (!fog) return;
-    fog.density = this._fogDensityFor(room);
-  }
-
-  /** A room that can see the valley takes the outdoor density whatever else
-   *  it would like; only sealed rooms get a mood of their own. Corridors and
-   *  outside arrive here as room = null.
-   *
-   *  "Can see the valley" is read off the room's own openings — a sill above
-   *  the floor is a window, per Room's opening schema — rather than from a
-   *  list of room names kept in step by hand. Give a room a window and its
-   *  fog follows; nobody has to remember this function exists. */
-  _fogDensityFor(room) {
-    if (!room) return OUTDOOR_FOG_DENSITY;
-    if (room.openings?.some(o => (o.sill ?? 0) > 0)) return OUTDOOR_FOG_DENSITY;
-    return ROOM_FOG_DENSITY[room.name] ?? OUTDOOR_FOG_DENSITY;
   }
 
   // ──────────────────────────────────────────
@@ -1664,18 +1566,6 @@ export class BaseScene extends Scene {
 
 const _box = new THREE.Box3();
 
-/** three's fog, scaled by a sealed room's switch (BaseScene._switchSealedRoomFog). */
-const ROOM_FOG_FRAGMENT = /* glsl */`
-#ifdef USE_FOG
-  #ifdef FOG_EXP2
-    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
-  #else
-    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
-  #endif
-  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor * roomFog );
-#endif
-`;
-const _valleyEye = new THREE.Vector3();
 const _airlockEar = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */

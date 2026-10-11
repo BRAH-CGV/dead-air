@@ -14,21 +14,23 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 //           storm tells it how hard it is blowing (Ambience.setStorm), and
 //           the Ambience blows it harder outside and lets a hiss of it
 //           through the walls.
-//   fog     thicker and dust-brown wherever the valley is in view (outside,
-//           and rooms with a window). Sealed rooms keep their own fog.
+//   fog     thicker and dust-brown — one fog, the same wherever the player
+//           stands. The rooms and corridors take no fog (BaseScene
+//           ._keepFogOutside), so it fills the view through the office
+//           window and out in the yard, never a room.
 //   sky     dimmed toward dust: the stars and moons are lost (MarsSky.setStorm).
-//   dust    streaming grit around the player wherever the valley is in view
-//           — outside, and past the office window (DustStorm, which is cut
-//           out of the building so no grain blows through a room).
+//   dust    streaming grit around the player — outside, and past the office
+//           window (DustStorm, which is cut out of the building so no grain
+//           blows through a room).
 //
-// Where the valley is in view eases in and out rather than switching, so
-// walking between a sealed room and the rest of the base fades the storm
-// instead of popping it.
+// Nothing about the storm depends on where the player is: a room that
+// changed the fog showed as the storm flickering or fading through the
+// window at its doorway.
 //
-// The fog is shared with Daylight (colour) and the room fog (density). The
-// storm never keeps its own copy of "the clear fog": each frame it notices
-// whatever someone else wrote since its last write and lays itself on top
-// of that, so it hands back exactly what the night would have had.
+// The fog is shared with Daylight (colour). The storm never keeps its own
+// copy of "the clear fog": each frame it notices whatever someone else wrote
+// since its last write and lays itself on top of that, so it hands back
+// exactly what the night would have had.
 //
 // Never with the UFO: on its nights (UFO.nights) there is no storm at
 // random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the K key starts one mid-visit.
@@ -36,14 +38,9 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // `held` keeps it blowing at full for as long as it is set — DustEyes sets
 // it through a chase, so the storm can't die down until the player is away.
 //
-// Outside, the fog closes right in (fogDensityOutside); from the windows the
-// valley is murky but further (fogDensity). The change eases with the
-// player's place, like the sound.
-//
 // For testing, summon() — the K key — starts one at once, on any night.
 // Rooms don't know about gameplay, and this doesn't know about rooms: the
-// scene hands it hooks for where the ear is, whether it is outside, and
-// whether the valley is in view.
+// scene hands it one hook, where the ear is, for the grit.
 // ─────────────────────────────────────────────
 
 /** Tuning. Seconds unless stated. */
@@ -61,14 +58,9 @@ export const SANDSTORM = {
   afterUfoDelay: [10, 30],
   /** Build-up and die-down. */
   rampSeconds: 6,
-  /** Rate (per second) the storm eases at between indoors and out, and
-   *  between having the valley in view and not. */
-  placeRate: 4,
-  /** FogExp2 density at full strength, seen from indoors: from the desk the
-   *  storm swallows the view just before the radar dish, ~23 m out… */
+  /** FogExp2 density at full strength, wherever the player stands: from the
+   *  desk the storm swallows the view just before the radar dish, ~23 m out. */
   fogDensity: 0.065,
-  /** …and with the player out in it — closed in tighter still, ~20 m. */
-  fogDensityOutside: 0.08,
   /** The dust's colour, and how far the fog is pulled toward it. Chosen for
    *  what the fog comes out as at full storm, 0x4c2818: a dark rust-brown
    *  within a shade of the wind dust's clouds as the screen shows them (they
@@ -149,8 +141,6 @@ export class Sandstorm extends Component {
    * @param {import('./GameController.js').GameController} opts.controller
    * @param {object} opts.hooks
    * @param {(out: THREE.Vector3) => THREE.Vector3} opts.hooks.listenerPosition
-   * @param {(p: THREE.Vector3) => boolean} opts.hooks.isOutside
-   * @param {() => boolean} opts.hooks.valleyInView  Outside, or in a room with a window.
    * @param {THREE.FogExp2} [opts.fog]
    * @param {{ setStorm: (k: number) => void }} [opts.sky]  A MarsSky.
    * @param {{ setLevel: (k: number) => void, setWind: (angle: number, speed: number) => void }} [opts.dust]  A DustStorm.
@@ -172,8 +162,6 @@ export class Sandstorm extends Component {
 
     this._elapsed = 0;       // seconds of 'playing' this night
     this._storm = null;      // { start, duration } in _elapsed, or null
-    this._view = null;       // eased 1 with the valley in view … 0, for the fog and dust
-    this._out = null;        // eased 1 outside … 0 inside, for how close the fog is
     this._afterUfo = false;  // a UFO night with a storm to follow it
     this._afterUfoAt = null; // when that storm starts, in _elapsed, once the UFO has gone
 
@@ -264,32 +252,24 @@ export class Sandstorm extends Component {
     }
 
     const ear = this.hooks.listenerPosition(_ear);
-    const outside = this.hooks.isOutside(ear);
-    const ease = 1 - Math.exp(-SANDSTORM.placeRate * dt);
-    const view = this.hooks.valleyInView() ? 1 : 0;
-    this._view = this._view === null ? view : this._view + (view - this._view) * ease;
-    const out = outside ? 1 : 0;
-    this._out = this._out === null ? out : this._out + (out - this._out) * ease;
-
     this._applyFog();
     this.ambience?.setStorm?.(this.level);
     this.sky?.setStorm?.(this.level);
     this.clouds?.setStorm?.(this.level);
-    this.dust?.setLevel?.(this.level * this._view);
+    this.dust?.setLevel?.(this.level);
     this.dust?.tick?.(dt, ear);
   }
 
-  /** Thicker, browner fog over whatever the night and the room left there. */
+  /** Thicker, browner fog over whatever the night left there. */
   _applyFog() {
     const fog = this.fog;
     if (!fog) return;
     if (fog.density !== this._wroteDensity) this._baseDensity = fog.density;
     if (this._wroteDensity === null || !fog.color.equals(this._wroteColor)) this._baseColor.copy(fog.color);
 
-    const k = this.level * this._view;
+    const k = this.level;
     const base = this._baseDensity;
-    const storm = SANDSTORM.fogDensity + (SANDSTORM.fogDensityOutside - SANDSTORM.fogDensity) * this._out;
-    fog.density = base + (Math.max(base, storm) - base) * k;
+    fog.density = base + (Math.max(base, SANDSTORM.fogDensity) - base) * k;
     fog.color.lerpColors(this._baseColor, _dust.copy(this._dustColor), k * SANDSTORM.fogTint);
 
     this._wroteDensity = fog.density;

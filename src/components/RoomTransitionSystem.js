@@ -13,8 +13,9 @@ import { PromptLabel } from '../ui/PromptLabel.js';
 //    the door's lockedPrompt while the player is there — re-shown if the
 //    door changes it meanwhile (the airlock's doors do, as it cycles).
 //  • Rooms — keeps `currentRoom` (null in corridors and outside) and calls
-//    onRoomChange(room, previous) when it changes. Per-room atmosphere
-//    (fog, ambience) hooks in there.
+//    onRoomChange(room, previous) when it changes. Nothing changes the fog
+//    by room: the view through the office window must not change at a
+//    doorway (#73).
 //
 // No teleporting: the base is one continuous scene, so the player simply
 // walks through an unlocked doorway.

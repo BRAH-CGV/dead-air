@@ -23,12 +23,11 @@ describe('clockDigits', () => {
     expect(clockDigits(13.25)).toEqual([null, 1, 1, 5]);   //  1:15 pm
   });
 
-  it('keeps time with the HUD: whole minutes, floored like NightClock.formatTime', () => {
-    // The HUD shows NightClock.formatTime, which floors whole minutes since
-    // midnight (#61). A clock that rounded would run ahead of it for the
-    // last half-minute of every hour.
-    expect(clockDigits(0.0084)).toEqual([1, 2, 0, 0]);     // 12:00:30 → 12:00, as the HUD has it
-    expect(clockDigits(0.017)).toEqual([1, 2, 0, 1]);      // 12:01:00 → 12:01
+  it('keeps time with the HUD: the minute gone, like a real clock (#61)', () => {
+    // The HUD shows NightClock.formatTime, which floors (it used to round,
+    // and showed "1:60" for it). The wall clock has to agree with it.
+    expect(clockDigits(0.0084)).toEqual([1, 2, 0, 0]);     // 12:00:30 → still 12:00
+    expect(clockDigits(1.9999)).toEqual([null, 1, 5, 9]);  // never 1:60
     for (let hour = 0; hour <= 6; hour += 1 / 977) {
       const hud = NightClock.formatTime(hour).split(' ')[0];           // "H:MM"
       const [h10, h1, m10, m1] = clockDigits(hour);
