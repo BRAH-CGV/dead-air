@@ -23,7 +23,7 @@ import { hiddenFromRegion } from '../systems/Sightlines.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
-import { Sandstorm } from '../gameplay/Sandstorm.js';
+import { Sandstorm, SANDSTORM } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
@@ -344,49 +344,6 @@ describe('BaseScene', () => {
     // player spawns facing the office window — the scene cannot be left on
     // whatever density the engine happened to hand it.
     expect(engine.scene.fog.density).toBeLessThan(0.005);
-  });
-
-  it('thickens the fog in the sealed rooms, server room densest', () => {
-    const sys = engine.player.getComponent(RoomTransitionSystem);
-    const outdoor = engine.scene.fog.density;
-
-    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
-    const server = engine.scene.fog.density;
-
-    sys.onRoomChange(scene.rooms.LivingQuarters, scene.rooms.ServerRoom);
-    const quarters = engine.scene.fog.density;
-
-    // Both are sealed, so both are free to be thick for mood; the server room
-    // is the thicker of the two.
-    expect(server).toBeGreaterThan(quarters);
-    expect(quarters).toBeGreaterThan(outdoor);
-  });
-
-  it('gives any room with a window the outdoor density, whatever its name', () => {
-    const sys = engine.player.getComponent(RoomTransitionSystem);
-    const outdoor = engine.scene.fog.density;
-
-    // The office's back wall is an 8.5 m window onto the valley, whose ridge
-    // line is 350-500 m out. Indoor fog would erase it.
-    expect(scene.rooms.MainOffice.openings.some(o => (o.sill ?? 0) > 0)).toBe(true);
-    sys.onRoomChange(scene.rooms.ServerRoom, null);
-    sys.onRoomChange(scene.rooms.MainOffice, scene.rooms.ServerRoom);
-    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
-
-    // Read off the openings, not a name list: give a sealed room a window and
-    // its fog follows without anyone editing BaseScene.
-    scene.rooms.ServerRoom.openings.push({ side: 'back', width: 2, height: 1.2, sill: 1 });
-    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
-    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
-  });
-
-  it('uses the outdoor density in corridors and outside (room = null)', () => {
-    const sys = engine.player.getComponent(RoomTransitionSystem);
-    const outdoor = engine.scene.fog.density;
-
-    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.MainOffice);
-    sys.onRoomChange(null, scene.rooms.ServerRoom);
-    expect(engine.scene.fog.density).toBeCloseTo(outdoor);
   });
 
   it('disposes the radar and review overlays on dispose, so restarts do not stack listeners', () => {
@@ -1318,30 +1275,6 @@ describe('BaseScene sandstorms', () => {
     expect(scene.dust.points.material.uniforms.uCutoutCount.value).toBe(parts.length);
   });
 
-  it('sees the valley outside and from rooms with a window, not from sealed rooms', () => {
-    const { valleyInView } = scene.sandstorm.hooks;
-    const sys = engine.player.getComponent(RoomTransitionSystem);
-    sys.onRoomChange(scene.rooms.MainOffice, null);
-    expect(valleyInView()).toBe(true);
-    // The airlock opens on the yard and looks into the office through its
-    // inner door: no clear window there that pops to storm on the way in.
-    sys.onRoomChange(scene.rooms.Airlock, scene.rooms.MainOffice);
-    expect(valleyInView()).toBe(true);
-    sys.onRoomChange(scene.rooms.ServerRoom, scene.rooms.Airlock);
-    expect(valleyInView()).toBe(false);
-    // Out of every room: outside sees it; a corridor (no window) doesn't —
-    // there the storm fog only tinted the rooms seen through its doorways.
-    const camera = engine.camera ?? (engine.camera = new THREE.PerspectiveCamera());
-    const corridor = Object.values(scene.corridors).find(c => c !== scene.rooms.Airlock);
-    sys.onRoomChange(null, scene.rooms.ServerRoom);
-    camera.position.set(corridor.position[0], 1.2, corridor.position[2]);
-    camera.updateMatrixWorld(true);
-    expect(valleyInView()).toBe(false);
-    camera.position.set(0, 1.2, scene.fence.rect.maxZ - 2);
-    camera.updateMatrixWorld(true);
-    expect(valleyInView()).toBe(true);
-  });
-
   it('frees the dust on dispose', () => {
     const dispose = vi.spyOn(scene.dust, 'dispose');
     scene.dispose();
@@ -1535,10 +1468,10 @@ describe('BaseScene storm fog stays outside', () => {
     return out;
   };
   const materials = (mesh) => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+  const building = () => [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
 
-  it('the office, the airlock and the corridors take no fog: the storm stays outside the glass', () => {
-    const parts = [scene.rooms.MainOffice, scene.rooms.Airlock, ...Object.values(scene.corridors)];
-    for (const part of parts) {
+  it('no room or corridor takes fog: the storm stays outside the glass', () => {
+    for (const part of building()) {
       for (const mesh of meshesOf(part.root.object3d)) {
         for (const m of materials(mesh)) {
           if ('fog' in m) expect(m.fog, `${part.name} / ${mesh.name}`).toBe(false);
@@ -1547,67 +1480,98 @@ describe('BaseScene storm fog stays outside', () => {
     }
   });
 
-  it('the sealed rooms keep their own mood fog', () => {
-    for (const room of [scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
-      const fogged = meshesOf(room.root.object3d).some(mesh => materials(mesh).some(m => m.fog === true));
-      expect(fogged, room.name).toBe(true);
-    }
-  });
-
   it('nothing outside loses its fog — no material is shared across the building\'s walls', () => {
     const inside = new Set();
-    for (const part of [scene.rooms.MainOffice, scene.rooms.Airlock, ...Object.values(scene.corridors)]) {
+    for (const part of building()) {
       for (const mesh of meshesOf(part.root.object3d)) for (const m of materials(mesh)) inside.add(m);
     }
     const outside = scene._sceneRoot.find('Outside').object3d;
     for (const mesh of meshesOf(outside)) {
       for (const m of materials(mesh)) expect(inside.has(m), mesh.name).toBe(false);
     }
-    for (const room of [scene.rooms.ServerRoom, scene.rooms.LivingQuarters]) {
-      for (const mesh of meshesOf(room.root.object3d)) {
-        for (const m of materials(mesh)) expect(inside.has(m), `${room.name} / ${mesh.name}`).toBe(false);
-      }
-    }
   });
 });
 
-describe('BaseScene sealed rooms fog only from inside', () => {
+describe('BaseScene fog is the same in every room', () => {
+  // No room has a fog of its own, and none changes the storm's: walked
+  // through every doorway, the fog is the same on every frame. Rooms that
+  // wrote their own (the sealed rooms' mood fog, the storm thinned where
+  // there was no window and thickened outside) showed as the storm
+  // flickering or fading through the office window at a doorway (#73).
+  //
+  // The real frame: every root object updates, then every one late-updates.
+  // The scene root (the storm, on GameplaySystems) comes before the player
+  // (RoomTransitionSystem), so a room change lands after the storm's write.
   let engine, scene;
-  beforeEach(() => {
-    engine = makeSceneEngine();
-    scene = new BaseScene(engine);
-    scene.build();
-  });
-
-  const fogged = (room) => {
-    const out = [];
-    room.root.object3d.traverse(o => {
-      if (!o.isMesh) return;
-      for (const m of [].concat(o.material)) if (m?.fog) out.push(m);
-    });
-    return out;
+  const frame = dt => {
+    for (const o of engine._rootObjects) o._update(dt);
+    for (const o of engine._rootObjects) o._lateUpdate(dt);
+  };
+  const stand = ([x, , z]) => {
+    engine.player.object3d.position.set(x, 1, z);
+    engine.camera.position.set(x, 1.2, z);
+    engine.camera.updateMatrixWorld(true);
   };
 
-  it('each sealed room\'s fog is switched by whether the player is in it', () => {
+  /** End to end along the base, back to the office and out through the
+   *  airlock into the yard, a frame every half metre: every fog drawn, every
+   *  room stood in, and whether the walk got outside. */
+  const walk = () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
-    const server = scene.rooms.ServerRoom, quarters = scene.rooms.LivingQuarters;
-    sys.onRoomChange(scene.rooms.MainOffice, null);
-    expect(scene._roomFog.get(server).value).toBe(0);
-    expect(scene._roomFog.get(quarters).value).toBe(0);
-    sys.onRoomChange(server, scene.rooms.MainOffice);
-    expect(scene._roomFog.get(server).value).toBe(1);
-    expect(scene._roomFog.get(quarters).value).toBe(0);
-    sys.onRoomChange(null, server);
-    expect(scene._roomFog.get(server).value).toBe(0);
+    const { Airlock, MainOffice } = scene.rooms;
+    const row = [...Object.values(scene.rooms), ...Object.values(scene.corridors)]
+      .filter(part => part !== Airlock)
+      .map(part => part.position)
+      .sort((a, b) => a[0] - b[0]);
+    const yard = [Airlock.position[0], 0, scene.fence.rect.maxZ - 2];
+    const route = [...row, MainOffice.position, Airlock.position, yard];
+    const fogs = new Set(), rooms = new Set();
+    let outside = false;
+    for (let i = 1; i < route.length; i++) {
+      const [a, b] = [route[i - 1], route[i]];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[2] - a[2]) / 0.5));
+      for (let s = 0; s <= steps; s++) {
+        stand([a[0] + (b[0] - a[0]) * s / steps, 0, a[2] + (b[2] - a[2]) * s / steps]);
+        frame(0.016);
+        const { density, color } = engine.scene.fog;
+        fogs.add(`${density} ${color.r} ${color.g} ${color.b}`);
+        rooms.add(sys.currentRoom);
+        outside ||= scene._isOutside(engine.camera.position);
+      }
+    }
+    return { fogs, rooms, outside };
+  };
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    engine.camera = new THREE.PerspectiveCamera();
+    scene = new BaseScene(engine);
+    scene.build();
+    for (const o of engine._rootObjects) o._init(engine.scene, engine.world);
+    // Midnight, past the dusk, so the daylight holds the fog's colour still.
+    scene.nightClock.elapsed = scene.nightClock.nightDuration / 2;
+    stand(scene.rooms.MainOffice.position);
+    frame(0.016);
   });
 
-  it('their fogged materials carry the switch into the fog shader', () => {
-    const material = fogged(scene.rooms.ServerRoom)[0];
-    expect(material).toBeTruthy();
-    const shader = { uniforms: {}, fragmentShader: 'void main() {\n#include <fog_fragment>\n}' };
-    material.onBeforeCompile(shader);
-    expect(shader.uniforms.roomFog).toBe(scene._roomFog.get(scene.rooms.ServerRoom));
-    expect(shader.fragmentShader).toMatch(/roomFog/);
-    expect(shader.fragmentShader).not.toMatch(/#include <fog_fragment>/);
+  it('on a clear night', () => {
+    const { fogs, rooms, outside } = walk();
+    // The walk went everywhere: every room, a corridor, the yard.
+    for (const room of Object.values(scene.rooms)) expect(rooms.has(room), room.name).toBe(true);
+    expect(rooms.has(null)).toBe(true);
+    expect(outside).toBe(true);
+    expect([...fogs]).toHaveLength(1);
+    expect(engine.scene.fog.density).toBeLessThan(0.005);
+  });
+
+  it('in a storm: no frame drawn without it, none thinner or thicker', () => {
+    expect(scene.sandstorm.summon()).toBe(true);
+    for (let t = 0; t < SANDSTORM.rampSeconds + 1; t += 0.5) frame(0.5);
+    expect(engine.scene.fog.density).toBeCloseTo(SANDSTORM.fogDensity);
+    const { fogs, rooms, outside } = walk();
+    for (const room of Object.values(scene.rooms)) expect(rooms.has(room), room.name).toBe(true);
+    expect(outside).toBe(true);
+    expect([...fogs]).toHaveLength(1);
+    expect(engine.scene.fog.density).toBeCloseTo(SANDSTORM.fogDensity);
   });
 });

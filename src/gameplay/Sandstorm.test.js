@@ -45,7 +45,7 @@ describe('stormLevel', () => {
 });
 
 
-function makeRig({ night = 2, outside = true, valley = true, random = () => 0, ufo = null, clouds = null } = {}) {
+function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null } = {}) {
   const listeners = [];
   const controller = {
     state: 'playing',
@@ -56,11 +56,10 @@ function makeRig({ night = 2, outside = true, valley = true, random = () => 0, u
   const sky = { setStorm: vi.fn() };
   const dust = { setLevel: vi.fn(), setWind: vi.fn(), tick: vi.fn() };
   const ambience = { setStorm: vi.fn() };
-  const hooks = {
-    listenerPosition: out => out.set(0, 1.2, 0),
-    isOutside: vi.fn(() => outside),
-    valleyInView: vi.fn(() => valley),
-  };
+  // Where the ear is (for the grit), and nothing else: the storm's fog is the
+  // same wherever the player stands, so it never asks whether they are
+  // outside or which room they are in.
+  const hooks = { listenerPosition: out => out.set(0, 1.2, 0) };
   const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, nightDuration: NIGHT, random });
   storm.onStart();
   return { storm, controller, fog, sky, dust, ambience, hooks, startNight: n => listeners.forEach(fn => fn(n)) };
@@ -133,7 +132,7 @@ describe('Sandstorm', () => {
   it('blows without an ambience to tell', () => {
     const storm = new Sandstorm({
       controller: { state: 'playing', nightNumber: 1, onNightStart: () => () => {} },
-      hooks: { listenerPosition: out => out.set(0, 1.2, 0), isOutside: () => true, valleyInView: () => true },
+      hooks: { listenerPosition: out => out.set(0, 1.2, 0) },
       nightDuration: NIGHT, random: () => 0,
     });
     storm.onStart();
@@ -148,44 +147,18 @@ describe('Sandstorm', () => {
     expect(fogged(10)).toBeLessThan(0.5);       // the near ground still reads
   });
 
-  it('closes the fog in around the player outside', () => {
-    const out = makeRig({ outside: true });
-    const inside = makeRig({ outside: false });
-    for (const r of [out, inside]) { r.storm.summon(); run(r.storm, SANDSTORM.rampSeconds + 3); }
-    expect(out.fog.density).toBeCloseTo(SANDSTORM.fogDensityOutside);
-    expect(SANDSTORM.fogDensityOutside).toBeGreaterThan(SANDSTORM.fogDensity);
-    expect(inside.fog.density).toBeCloseTo(SANDSTORM.fogDensity);
-  });
-
-  it('thickens and browns the fog while the valley is in view', () => {
-    const { storm, fog } = makeRig({ valley: true, outside: false });
+  it('thickens and browns the fog: one fog, the same wherever the player stands', () => {
+    const { storm, fog } = makeRig();
     const clear = fog.color.clone();
     storm.summon();
     run(storm, SANDSTORM.rampSeconds + 2);
     expect(fog.density).toBeCloseTo(SANDSTORM.fogDensity);
     expect(fog.color.equals(clear)).toBe(false);
     expect(fog.color.r).toBeGreaterThan(fog.color.b);
-  });
-
-  it('fades the storm fog in as the valley comes into view, rather than popping', () => {
-    const { storm, fog, hooks } = makeRig({ valley: false, outside: false });
-    storm.summon();
-    run(storm, SANDSTORM.rampSeconds + 2);
-    const clear = fog.density;
-    hooks.valleyInView.mockReturnValue(true);
-    storm.onUpdate(0.05);
-    expect(fog.density).toBeGreaterThan(clear);
-    expect(fog.density).toBeLessThan(SANDSTORM.fogDensity * 0.5);
-    run(storm, 3);
-    expect(fog.density).toBeCloseTo(SANDSTORM.fogDensity);
-  });
-
-  it('leaves a sealed room\'s fog alone', () => {
-    const { storm, fog } = makeRig({ valley: false });
-    fog.density = 0.03;
-    storm.summon();
-    run(storm, SANDSTORM.rampSeconds + 2);
-    expect(fog.density).toBe(0.03);
+    // No room, no corridor and no step outside changes it: no denser fog
+    // for the yard, no fade where the valley is out of view.
+    expect(SANDSTORM.fogDensityOutside).toBeUndefined();
+    expect(SANDSTORM.placeRate).toBeUndefined();
   });
 
   it('hands the fog back exactly as it was once it passes', () => {
@@ -197,11 +170,11 @@ describe('Sandstorm', () => {
     expect(fog.color.equals(color)).toBe(true);
   });
 
-  it('follows whoever else rewrites the fog meanwhile (dawn, room changes)', () => {
-    const { storm, fog } = makeRig({ outside: false });
+  it('follows whoever else rewrites the fog meanwhile (the dawn)', () => {
+    const { storm, fog } = makeRig();
     storm.summon();
     run(storm, SANDSTORM.rampSeconds + 2);
-    fog.density = 0.008;              // a room change wrote its own
+    fog.density = 0.008;              // someone wrote their own
     fog.color.setHex(0x000000);       // Daylight wrote its own
     storm.onUpdate(0.1);
     // Ours on top of theirs, not a stale base.
@@ -212,14 +185,14 @@ describe('Sandstorm', () => {
     expect(fog.color.getHex()).toBe(0x000000);
   });
 
-  it('shows the dust wherever the valley is in view — outside, and past the office window', () => {
-    const out = makeRig({ outside: true, valley: true });
-    const office = makeRig({ outside: false, valley: true });
-    const sealed = makeRig({ outside: false, valley: false });
-    for (const r of [out, office, sealed]) { r.storm.summon(); run(r.storm, SANDSTORM.rampSeconds + 3); }
-    expect(out.dust.setLevel.mock.lastCall[0]).toBeGreaterThan(0.9);
-    expect(office.dust.setLevel.mock.lastCall[0]).toBeGreaterThan(0.9);
-    expect(sealed.dust.setLevel.mock.lastCall[0]).toBeLessThan(0.05);
+  it('blows the dust at the storm\'s own level wherever the player is', () => {
+    // Every room and corridor is cut out of it, so indoors it shows only
+    // through the glass.
+    const { storm, dust } = makeRig();
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 3);
+    expect(dust.setLevel.mock.lastCall[0]).toBe(storm.level);
+    expect(storm.level).toBe(1);
   });
 
   it('blows for about an hour and a half of clock time', () => {
