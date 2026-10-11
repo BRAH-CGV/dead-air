@@ -33,12 +33,12 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // exactly what the night would have had.
 //
 // Never with the UFO: on its nights (UFO.nights) there is no storm at
-// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the K key starts one mid-visit.
+// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the console's `storm` starts one mid-visit.
 //
 // `held` keeps it blowing at full for as long as it is set — DustEyes sets
 // it through a chase, so the storm can't die down until the player is away.
 //
-// For testing, summon() — the K key — starts one at once, on any night.
+// For testing, summon() — the dev console's `storm` — starts one at once, on any night.
 // Rooms don't know about gameplay, and this doesn't know about rooms: the
 // scene hands it one hook, where the ear is, for the grit.
 // ─────────────────────────────────────────────
@@ -197,7 +197,7 @@ export class Sandstorm extends Component {
   }
 
   /**
-   * Start one now rather than at its random time — the K debug key. Only
+   * Start one now rather than at its random time — the dev console's `storm`. Only
    * during a shift, and not over one already blowing.
    * @returns {boolean} whether a storm started
    */

@@ -99,8 +99,8 @@ import { CameraOverlay } from '../ui/CameraOverlay.js';
 // wall clock and the HUD both show. The last hour brings the dawn (Daylight
 // turns the sky, lights and fog to the Martian day). A met quota makes it
 // morning, and the bunk in LivingQuarters sleeps through the day to the next
-// night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
-// night 1 after the last.
+// night. The dev console's `night` skips ahead; it wraps back to night 1
+// after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -414,10 +414,10 @@ export class BaseScene extends Scene {
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
       listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
-      // Testing only — remove before release. Each key swings a music
-      // track in, and back out on the next press: M the spooky one, comma
-      // the ambient one. Dev builds only: the production bundle has no keys.
-      testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
+      // Testing only: the dev console's `music spooky|ambient|off` swings
+      // one in under the game. Dev builds only, so the production bundle
+      // never loads the extra track for it.
+      testTracks: import.meta.env?.DEV ? { spooky: AMBIENCE.music, ambient: AMBIENCE.ambientMusic } : null,
     }));
 
     // The silence of the sealed airlock is filled by its pressure release:
@@ -918,7 +918,7 @@ export class BaseScene extends Scene {
     // door. Scaled against the doorway it stands next to: the model is 3.3 m
     // tall as downloaded, which beside a 2.2 m door reads as a machine that
     // could not get through it. BUGGY_SCALE brings the roof to just over the
-    // lintel. Position and heading placed by hand in the level editor (F2).
+    // lintel. Position and heading placed by hand in the level editor.
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
     // Generator stand-in until generator.glb arrives (asset list, P1). In the
@@ -1673,7 +1673,7 @@ export class BaseScene extends Scene {
    * body rather than on the floor, so dropped at y = 0 the wheels end up
    * buried, and this is measured off the model's own bounds so swapping it
    * cannot quietly sink it again. Passing `y` explicitly overrides that with
-   * a value read straight from the level editor (F2): easier to trust than
+   * a value read straight from the level editor: easier to trust than
    * the computed one once someone has actually looked at where the wheels
    * land, and the fix if that ever needs revisiting.
    */

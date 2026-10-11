@@ -159,7 +159,7 @@ const PLACED = {
     // mechanic. The model is a solid cabinet (not a table on 4 open legs),
     // indented on one face only.
     //
-    // Measured directly in the level editor (F2, box primitives placed
+    // Measured directly in the level editor (box primitives placed
     // against the rendered model, positions/sizes read off their transform
     // and handed back) rather than guessed — two guesses in a row from the
     // raw mesh data got the shape wrong (open on 3 sides, then a top slab

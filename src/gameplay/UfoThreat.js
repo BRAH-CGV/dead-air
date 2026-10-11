@@ -7,7 +7,7 @@ import { Component } from '../core/Component.js';
 // On its nights (UFO.nights — night 3), guaranteed, something comes for
 // the base: it flashes into the sky beside the dish, in view of the office
 // window, at a random time between 1:00 and 4:30 on the night clock. (For
-// testing, summon() — the U key — brings it at once, on any night.)
+// testing, summon() — the dev console's `ufo` — brings it at once, on any night.)
 //
 //   waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
 //                                              │
@@ -303,7 +303,7 @@ export class UfoThreat extends Component {
   }
 
   /**
-   * Bring it now rather than at its random time — the U debug key. Starts a
+   * Bring it now rather than at its random time — the dev console's `ufo`. Starts a
    * visit if none is under way (waiting, or already gone tonight) during a
    * shift; the damage and the night are left as they are.
    * @returns {boolean} whether a visit started
@@ -449,7 +449,7 @@ export class UfoThreat extends Component {
     this._calm({ keepBeam: true });
   }
 
-  /** The shift ended mid-visit (quota, debug key). Call the whole thing off. */
+  /** The shift ended mid-visit (quota, the console's `time` or `night`). Call the whole thing off. */
   _standDown() {
     this.phase = 'gone';
     this.ufo.setVisible(false);

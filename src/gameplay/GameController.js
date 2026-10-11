@@ -124,7 +124,7 @@ export class GameController extends Component {
   }
 
   /** Follow a NightManager: start the night it is on now, and every night
-   *  it moves to after — sleeping, or the debug key. One night number for
+   *  it moves to after — sleeping, or the console's `night`. One night number for
    *  the whole scene.
    *  @param {import('../systems/NightManager.js').NightManager} nights
    *  @returns {() => void} unsubscribe */

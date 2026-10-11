@@ -82,8 +82,8 @@ export const AMBIENCE = {
   seamSeconds: 0.25,
 };
 
-/** The tension source the test key holds. */
-const TEST_SOURCE = 'test-key';
+/** The tension source the test music holds. */
+const TEST_SOURCE = 'test-music';
 
 /** Below this a gain counts as having arrived. */
 const SETTLED = 1e-3;
@@ -134,13 +134,13 @@ export class Ambience extends Component {
    * @param {Record<string, number>} [opts.volumes]  Trim by track key.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  By track key. Left
    *        out, each is built on `engine.audioListener` as its clip loads.
-   * @param {Record<string, string>|null} [opts.testKeys]  Testing only:
-   *        KeyboardEvent.code → a music track. A press swings that track
-   *        fully in; pressing it again swings it back out.
+   * @param {Record<string, string>|null} [opts.testTracks]  Testing only:
+   *        a name → a music track, for the dev console's `music` command
+   *        (testMusic). Listed here so they load with the rest.
    */
   constructor({
     mix, listenerPosition, music = AMBIENCE.music, volumes = AMBIENCE.volumes,
-    sounds = null, testKeys = null,
+    sounds = null, testTracks = null,
   }) {
     super();
     this.mix = mix;
@@ -148,12 +148,13 @@ export class Ambience extends Component {
     this.music = music;
     this.volumes = volumes ?? {};
     this.sounds = sounds;
-    this.testKeys = testKeys;
-    this._onKey = null;
-    /** The track a threat's tension raises; a test key borrows `music`. */
+    this.testTracks = testTracks ?? {};
+    /** The test track swung in (testMusic), by name, or null. */
+    this.testTrack = null;
+    /** The track a threat's tension raises; the test music borrows `music`. */
     this._ownMusic = music;
-    /** Every music track: the real one, and any on a test key. */
-    this._musics = [...new Set([music, ...Object.values(testKeys ?? {})])].filter(Boolean);
+    /** Every music track: the real one, and the test tracks. */
+    this._musics = [...new Set([music, ...Object.values(this.testTracks)])].filter(Boolean);
 
     /** Where the mix wants each room track, and where each is now. */
     this._targets = {};
@@ -219,24 +220,25 @@ export class Ambience extends Component {
     this._loadSounds();
   }
 
-  onStart() {
-    if (this.testKeys && typeof addEventListener === 'function') {
-      this._onKey = e => this.onKeyDown(e);
-      addEventListener('keydown', this._onKey);
+  /** Testing only (the dev console's `music`): swing a test track fully in
+   *  by name, or let go with null. Another track crossfades in over the one
+   *  playing. It holds a tension source of its own, so a real threat's is
+   *  left alone, and letting go hands the music back to the real track.
+   *  @param {string|null} name
+   *  @returns {boolean} false for a name with no track */
+  testMusic(name) {
+    if (name === null) {
+      this.testTrack = null;
+      this.music = this._ownMusic;
+      this.setTension(0, TEST_SOURCE);
+      return true;
     }
-  }
-
-  /** A test key: its track at full tension on one press, let go on the
-   *  next. Another key's track crossfades in over the one playing. The keys
-   *  hold a tension source of their own, so a real threat's is left alone,
-   *  and letting go hands the music back to the real track. */
-  onKeyDown(e) {
-    const track = this.testKeys?.[e.code];
-    if (!track || e.repeat) return;
-    const release = this._tensions.has(TEST_SOURCE) && this.music === track;
-    this.music = release ? this._ownMusic : track;
-    this.setTension(release ? 0 : 1, TEST_SOURCE);
-    console.log(`[DEBUG] Tension music ${track} fading ${release ? 'out' : 'in'}`);
+    const track = this.testTracks[name];
+    if (!track) return false;
+    this.testTrack = name;
+    this.music = track;
+    this.setTension(1, TEST_SOURCE);
+    return true;
   }
 
   onUpdate(dt) {
@@ -272,8 +274,6 @@ export class Ambience extends Component {
 
   onDestroy() {
     this._destroyed = true;
-    if (this._onKey) removeEventListener('keydown', this._onKey);
-    this._onKey = null;
     for (const sound of Object.values(this.sounds ?? {})) {
       if (sound.isPlaying) sound.stop();
       // THREE.Audio connects itself to the listener on construction; unhook

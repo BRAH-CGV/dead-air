@@ -5,7 +5,7 @@ import { ASSETS } from '../assets/manifest.js';
 // ─────────────────────────────────────────────
 // LevelEditor  –  Visual scene editing tool
 // ─────────────────────────────────────────────
-// Toggle with F2. Provides keyboard-based transform controls for moving,
+// Toggle with `editor` in the dev console. Provides keyboard-based transform controls for moving,
 // rotating, and scaling objects. Exports layout as JSON or JavaScript code.
 // ─────────────────────────────────────────────
 
@@ -174,8 +174,8 @@ export class LevelEditor {
     this._buildHierarchy();
   }
 
-  /** Called by the engine after a scene (re)build — e.g. F4 model-debug
-   *  respawn or a scene-switcher change. An open editor must never keep
+  /** Called by the engine after a scene (re)build — e.g. the console's
+   *  `models` respawn or a scene-switcher change. An open editor must never keep
    *  references into the old scene: a stale selection would sync dead
    *  physics bodies (use-after-free in Rapier) on the next edit. */
   onSceneRebuilt() {

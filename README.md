@@ -66,8 +66,8 @@ dead-air/
 │   │   ├── ColliderSpec.js # Manifest physics block → collider shapes
 │   │   ├── Colliders.js    # Collider shapes → Rapier bodies
 │   │   ├── PhysicsDebug.js # Collider wireframe overlay
-│   │   ├── DebugCamera.js  # Free-fly noclip camera (V)
-│   │   └── Fullbright.js   # Unlit debug lighting (B)
+│   │   ├── DebugCamera.js  # Free-fly noclip camera (console: fly)
+│   │   └── Fullbright.js   # Unlit debug lighting (console: fullbright)
 │   ├── components/
 │   │   └── FirstPersonController.js  # WASD + mouse look
 │   ├── assets/
@@ -126,7 +126,7 @@ That fits a box to the model's bounds — cheap, and right for most props. When 
   ]},
   ```
 
-Press **`` ` ``** in game to see every collider drawn over the scene. Use it — a collider that's subtly wrong looks completely fine until you walk into it. Full details in [AGENTS.md](AGENTS.md#physics--colliders).
+Type `colliders` in the developer console (**`` ` ``** in game, dev builds) to see every collider drawn over the scene. Use it — a collider that's subtly wrong looks completely fine until you walk into it. Full details in [AGENTS.md](AGENTS.md#physics--colliders).
 
 ## Controls
 
@@ -137,9 +137,7 @@ Press **`` ` ``** in game to see every collider drawn over the scene. Use it —
 | **C** | Crouch |
 | **Mouse** | Look around (the mouse is captured when you pick New game or Resume) |
 | **E** / **F** | Interact / flashlight (rebindable in Settings → CONTROLS) |
-| **`** | Toggle the collider debug overlay (this and the debug keys below work in `npm run dev` only, not in the production build) |
-| **V** | Toggle the free-fly debug camera (noclip; WASD + mouse, Space/C up/down, Shift boost) |
-| **B** | Toggle fullbright (all lights off, unlit materials) |
+| **`** | Developer console, `npm run dev` only: the debug tools as commands (`help` lists them — `colliders`, `fly`, `fullbright`, `storm`, `time 3:00am`, …). Also in Settings → GAME |
 | **Esc** | Pause menu (resume, settings, controls, restart night, main menu); Back inside menus |
 
 ## Team

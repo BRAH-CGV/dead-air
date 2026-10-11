@@ -99,8 +99,9 @@ export class Engine {
    *  them) but nothing steps or updates — the clock, the dish, the airlock
    *  and every enemy freeze without knowing why. Set through setPaused(). */
   paused = false;
-  /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
-   *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
+  /** Gates the developer console, where every debug tool lives
+   *  (src/app/devConsole/). The app layer sets it from the build; on by
+   *  default so a bare Engine keeps its tools. */
   devTools = true;
   /** True while a DOM panel has the mouse (the generator's breaker panel):
    *  the pointer lock was let go on purpose, so losing it isn't a pause. */
@@ -141,21 +142,6 @@ export class Engine {
     interact: 'KeyE',
     flashlight: 'KeyF',
     rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
-    // Debug keys, in the same table so they remap with everything else.
-    debugFly:   'KeyV',   // toggle the noclip fly camera
-    fullbright: 'KeyB',   // toggle the unlit lighting mode
-    nextNight:  'KeyN',   // BaseScene: advance the night (wraps to night 1)
-    perfStats:  'KeyI',   // toggle the FPS / draw-call readout
-    // TESTING ONLY — remove before release: bring the UFO now (BaseScene).
-    summonUfo:  'KeyU',
-    // TESTING ONLY — remove before release: start a sandstorm now (BaseScene).
-    summonStorm: 'KeyK',
-    // TESTING ONLY — remove before release: bring a dust eye now, with a
-    // storm if none is blowing (BaseScene).
-    summonEyes:  'KeyJ',
-    // TESTING ONLY — remove before release: put the evil signal in the sky
-    // (BaseScene).
-    summonEvil:  'KeyG',
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -195,13 +181,8 @@ export class Engine {
     return this.viewCamera ?? this.camera;
   }
 
-  /** Whether the debug keys may act right now. */
-  get debugKeysActive() {
-    return this.devTools && !this.paused;
-  }
-
   /** Subscribe to scene loads — called at the end of every loadScene, the
-   *  ones the app starts and the ones it doesn't (F4, the editor's switcher).
+   *  ones the app starts and the ones it doesn't (the editor's switcher).
    *  @param {(scene: import('./Scene.js').Scene) => void} listener
    *  @returns {() => void} unsubscribe */
   onSceneLoaded(listener) {
@@ -315,63 +296,11 @@ export class Engine {
     });
 
     // ── Debug tooling ──
-    // Built before their key handlers are registered, so a debug key can
-    // never arrive before the tool it toggles exists.
+    // No keys of their own: the developer console (src/app/devConsole/,
+    // dev builds) drives them all.
     this.debugCamera = new DebugCamera(this.camera, this.scene);
     this.fullbright  = new Fullbright(this.scene, this.renderer);
     this.perfStats   = new PerfStats();
-
-    // ── Debug toggles ──
-    // Edge-triggered, so like the collider overlay they get their own
-    // listener rather than `input.keys`, which is level-triggered.
-    addEventListener('keydown', (e) => {
-      if (!this.debugKeysActive) return;
-      if (e.code === 'Backquote')        this.physicsDebug?.toggle();
-      if (e.code === 'F2')               this.levelEditor?.toggle();
-      if (e.code === this.keyBinds.debugFly)
-        this.debugCamera?.toggle(this.player);
-      if (e.code === this.keyBinds.fullbright) this.fullbright?.toggle();
-      if (e.code === this.keyBinds.perfStats)  this.perfStats?.toggle();
-      // Only scenes with night progression (BaseScene) have `nights`.
-      const nights = this.activeScene?.nights;
-      // TESTING ONLY — remove before release.
-      if (e.code === this.keyBinds.summonUfo && this.activeScene?.ufoThreat) {
-        const coming = this.activeScene.ufoThreat.summon();
-        console.log(coming ? '[DEBUG] UFO summoned' : '[DEBUG] UFO not summoned — a visit is under way, or no shift is');
-      }
-      if (e.code === this.keyBinds.summonStorm && this.activeScene?.sandstorm) {
-        const coming = this.activeScene.sandstorm.summon();
-        console.log(coming ? '[DEBUG] Sandstorm summoned' : '[DEBUG] Sandstorm not summoned — one is blowing, or no shift is');
-      }
-      if (e.code === this.keyBinds.summonEyes && this.activeScene?.dustEyes) {
-        const coming = this.activeScene.dustEyes.summon();
-        console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
-      }
-      if (e.code === this.keyBinds.summonEvil && this.activeScene?.evilSignal) {
-        const came = this.activeScene.evilSignal.summon();
-        console.log(came ? '[DEBUG] Evil signal summoned' : '[DEBUG] Evil signal not summoned — one is already up, or no shift is');
-      }
-      if (e.code === this.keyBinds.nextNight && nights) {
-        if (nights.isLastNight()) nights.setNight(1);
-        else nights.advance();
-        console.log(`[DEBUG] Night ${nights.currentNight} of ${nights.maxNight}`);
-      }
-      // F4, not F1: F1 belongs to the browser — Chrome opens help with it
-      // and DevTools opens its settings — and those contexts swallow the
-      // key before the page ever sees it, preventDefault or not.
-      if (e.code === 'F4') {
-        e.preventDefault();
-        this.debugModels = !this.debugModels;
-        console.log(`[DEBUG] Model debug logging ${this.debugModels ? 'ENABLED' : 'DISABLED'}`);
-        if (this.debugModels) {
-          console.log('[DEBUG] Re-spawning models to show debug info...');
-          // Re-spawn current scene to show debug info
-          if (this.activeScene) {
-            this.loadScene(this.activeScene.constructor);
-          }
-        }
-      }
-    });
 
     // ── Resize ──
     addEventListener('resize', () => {
@@ -395,10 +324,10 @@ export class Engine {
     this.registerScene('BaseScene', BaseScene);
     this.loadScene(BaseScene);
 
-    // Hidden until ` is pressed, and costs nothing while hidden.
+    // Hidden until the console's `colliders`, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
-    
-    // Level editor — toggle with F2. Provides visual object placement.
+
+    // Level editor — the console's `editor`. Provides visual object placement.
     this.levelEditor = new LevelEditor(this);
     this.levelEditor.init();
 
@@ -494,7 +423,7 @@ export class Engine {
     // only when something changes).
     this.shadows.adopt(this.scene);
 
-    // The editor may be open across a scene switch (F4 reset): refresh its
+    // The editor may be open across a scene switch (the console's `models`): refresh its
     // tree and drop any selection pointing into the old scene, or the next
     // arrow-key press would sync dead physics bodies.
     this.levelEditor?.onSceneRebuilt?.();

@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────
 
 /** @typedef {'loading'|'mainMenu'|'playing'|'paused'|'ended'} AppState */
-/** @typedef {'main'|'pause'|'settings'|'credits'|'nightSelect'|'confirm'|'nightFailed'|'runComplete'} Screen */
+/** @typedef {'main'|'pause'|'settings'|'credits'|'nightSelect'|'confirm'|'console'|'nightFailed'|'runComplete'} Screen */
 
 export class AppFlow {
   /** @type {AppState} */
@@ -37,6 +37,12 @@ export class AppFlow {
 
   /** True while any menu covers the game. */
   get isMenuOpen() { return this.state !== 'loading' && this.state !== 'playing'; }
+
+  /** True while the console sits straight over the pause screen: it was
+   *  opened from play, so closing it plays on. */
+  get consoleOverPlay() {
+    return this.screen === 'console' && this._stack.length === 2 && this._stack[0] === 'pause';
+  }
 
   /** True once the scene behind the menu has been played. */
   get needsRebuild() { return this._dirty; }
@@ -127,6 +133,13 @@ export class AppFlow {
   /** Pick a night to play (#18): nights reached before are unlocked. */
   openNightSelect() {
     if (this.screen === 'main') this._push('nightSelect');
+  }
+
+  /** The developer console (dev builds): over Settings, or straight from
+   *  play, paused under it, so Back lands on the pause screen. */
+  openConsole() {
+    if (this.state === 'playing') this._go('paused', ['pause', 'console']);
+    else if (this.screen === 'settings') this._push('console');
   }
 
   /** @param {'restart'|'quit'} action */
