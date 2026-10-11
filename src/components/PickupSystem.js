@@ -73,7 +73,7 @@ const MAX_SPIN = 20;
 
 /** Further than this from the hand (metres) and the item is stuck behind
  *  something: it snaps back (#77). */
-const SNAP_DISTANCE = 1;
+const SNAP_DISTANCE = 2;
 
 /** Seconds it has to stay that far before it counts as stuck — an item
  *  picked up from across the room starts far away and flies in. */

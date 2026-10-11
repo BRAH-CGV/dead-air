@@ -527,10 +527,10 @@ describe('PickupSystem', () => {
     }
     const steps = (n) => { for (let i = 0; i < n; i++) system.onFixedUpdate(STEP); };
     // Camera at (0, 1.6, 0) facing -Z, hold distance 1: the hand is (0, 1.6, -1).
-    const STUCK = { x: 0, y: 1.6, z: -2.5 };
+    const STUCK = { x: 0, y: 1.6, z: -3.5 };   // 2.5 m from the hand
     const HAND = { x: 0, y: 1.6, z: -1 };
 
-    it('more than 1 m from the hand for half a second: teleports there, stops, drops collision', () => {
+    it('more than 2 m from the hand for half a second: teleports there, stops, drops collision', () => {
       const { go, collider } = heldAt(STUCK);
       steps(31);
       const [p] = go.rigidBody.setTranslation.mock.calls.at(-1);
@@ -557,8 +557,8 @@ describe('PickupSystem', () => {
       expect(collider.setEnabled).toHaveBeenLastCalledWith(true);
     });
 
-    it('within 1 m it is left to the spring', () => {
-      const { go, collider } = heldAt({ x: 0, y: 1.6, z: -1.8 });
+    it('within 2 m it is left to the spring (1.5 m here)', () => {
+      const { go, collider } = heldAt({ x: 0, y: 1.6, z: -2.5 });
       steps(60);
       expect(go.rigidBody.setTranslation).not.toHaveBeenCalled();
       expect(collider.setEnabled).not.toHaveBeenCalled();
