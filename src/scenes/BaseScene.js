@@ -1334,8 +1334,11 @@ export class BaseScene extends Scene {
    *  the frozen shadow maps. */
   _addSleepDemon() {
     const { engine } = this;
+    // Its body is the baked model (sleep-demon.glb); without it (a test's
+    // stub asset manager) the placeholder capsule stands in.
+    const model = engine.assets?.has?.('model:sleep-demon') ? engine.assets.get('model:sleep-demon').scene : null;
     const figure = createMonsterFigure({
-      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb',
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb', model,
     });
     this._group('Threats').addChild(figure);
     this._ownResourcesOf(figure);

@@ -238,6 +238,16 @@ const PLACED = {
     scale: 0.365,
     physics: 'static',
   },
+  // The Sleep Demon's body: render-only (monsters are not physics), drawn
+  // with MonsterFigure's shade. Baked from the download by
+  // scripts/bake-sleep-demon.mjs — metres, feet on the origin, facing +Z,
+  // with EyeL / EyeR / Mouth / MouthAxis marker nodes.
+  'model:sleep-demon': {
+    type: 'model',
+    url: 'assets/models/sleep-demon.glb',
+    castShadow: false,
+    receiveShadow: false,
+  },
   'model:trash-bin': {
     type: 'model',
     url: 'assets/models/trash-bin.glb',

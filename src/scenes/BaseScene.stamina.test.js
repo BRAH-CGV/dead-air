@@ -126,6 +126,33 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     for (let o = figure.object3d; o; o = o.parent) expect(zoned).not.toContain(o);
   });
 
+  it('the sleep demon wears the baked model once it is loaded: its body, eyes and grin', () => {
+    const model = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.8, 0.3).translate(0, 0.9, 0));
+    body.name = 'Body';
+    model.add(body);
+    for (const [name, z] of [['EyeL', 0.14], ['EyeR', 0.14], ['Mouth', 0.15], ['MouthAxis', 0.03]]) {
+      const node = new THREE.Object3D();
+      node.name = name;
+      node.position.set(name === 'EyeL' ? -0.05 : 0.05, 1.6, z);
+      model.add(node);
+    }
+    const withModel = makeSceneEngine();
+    withModel.assets = {
+      has: key => key === 'model:sleep-demon',
+      get: vi.fn(key => (key === 'model:sleep-demon' ? { scene: model } : null)),
+    };
+    const other = new BaseScene(withModel);
+    other.build();
+    const figure = other.sleepDemon.figure;
+    expect(figure.placeholderFor).toBeNull();
+    const worn = figure.object3d.children.find(c => c.name === 'SleepDemonBody');
+    expect(worn.geometry.attributes.position.count).toBe(body.geometry.attributes.position.count);
+    expect(worn.material.fragmentShader).toMatch(/uEdge/);   // the shade
+    expect(figure.eyes[0].position.z).toBeCloseTo(0.14);
+    expect(figure.smile.visible).toBe(false);
+  });
+
   it("watches the player's camera, and the terminal's screen covers the view", () => {
     expect(scene.sleepDemon.camera).toBe(engine.camera);
     expect(scene.sleepDemon.terminal).toBe(scene.terminal);

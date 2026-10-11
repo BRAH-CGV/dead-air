@@ -9,9 +9,15 @@ import { GameObject } from '../core/GameObject.js';
 // lighting, so they read in the dark and through the fog, and a pale grin
 // under them,
 // hidden until a threat shows it (`smile`): a wide crescent of
-// interlocking teeth wrapped round the face. It is a placeholder: swap
-// in a real model by replacing what this returns; `placeholderFor` records
-// the file it waits for.
+// interlocking teeth wrapped round the face. Without a model it is a
+// placeholder capsule; `placeholderFor` records the file it waits for.
+//
+// Given a `model` (a loaded .glb's scene, as scripts/bake-sleep-demon.mjs
+// writes it: one mesh named `Body`, feet on the origin, facing +Z, and empty
+// nodes `EyeL`, `EyeR`, `Mouth` and `MouthAxis`), it wears that body instead:
+// its eyes go where the markers say, and the grin wraps round `MouthAxis`
+// with its front on `Mouth`. The body is a copy of the model's geometry,
+// never the cached one, so the figure owns everything it is built from.
 //
 // Origin on the floor, facing +Z — Object3D.lookAt turns +Z toward its
 // target, so a threat aims the figure with one call. Built hidden, with no
@@ -187,12 +193,20 @@ function createGrinMaterial(color) {
  * @param {boolean} [opts.castShadow]  false: nothing on the floor gives it away
  * @param {boolean} [opts.shade]  a shadow in itself: a pitch-black, unlit body
  *        whose edges thin out to nothing (createShadeMaterial), not a solid one
+ * @param {THREE.Object3D|null} [opts.model]  a body to wear instead of the
+ *        capsule, with its eye and mouth markers (see the header); `height`
+ *        and `radius` are then the model's
+ * @param {number} [opts.eyeRadius]  metres; with a model, the size of its sockets
  * @returns {GameObject & { eyes: THREE.Mesh[], smile: THREE.Mesh, placeholderFor: string|null }}
  */
 export function createMonsterFigure({
   name = 'Monster', height = 2.4, radius = 0.2,
   color = 0x0b0a0c, eyeColor = 0xff3a22, smileColor = 0xe8e0cc, castShadow = true, shade = false, placeholderFor = null,
+  model = null, eyeRadius = 0.02,
 } = {}) {
+  if (model) {
+    return figureFromModel(model, { name, color, eyeColor, smileColor, castShadow, shade, eyeRadius });
+  }
   const go = new GameObject(name);
 
   // CapsuleGeometry's `length` is the straight middle; the caps add a
@@ -201,8 +215,7 @@ export function createMonsterFigure({
   // never swaps a shader state mid-game.
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(radius, height - radius * 2, 4, 10),
-    shade ? createShadeMaterial()
-      : new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, transparent: true }),
+    bodyMaterial(shade, color),
   );
   body.name = `${name}Body`;
   body.position.y = height / 2;
@@ -235,3 +248,56 @@ export function createMonsterFigure({
   go.object3d.visible = false;
   return go;
 }
+
+/** The figure's body material: the shade, or a dark, lit, fadeable solid. */
+function bodyMaterial(shade, color) {
+  return shade ? createShadeMaterial()
+    : new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, transparent: true });
+}
+
+/** createMonsterFigure for a model: its body, its eyes, its mouth. */
+function figureFromModel(model, { name, color, eyeColor, smileColor, castShadow, shade, eyeRadius }) {
+  const go = new GameObject(name);
+  const marker = key => {
+    const node = model.getObjectByName(key);
+    if (!node) throw new Error(`[MonsterFigure] the model has no '${key}' node`);
+    return node;
+  };
+
+  const source = marker('Body');
+  const body = new THREE.Mesh(source.geometry.clone(), bodyMaterial(shade, color));
+  body.name = `${name}Body`;
+  body.position.copy(source.position);
+  body.quaternion.copy(source.quaternion);
+  body.scale.copy(source.scale);
+  body.castShadow = castShadow;
+  go.object3d.add(body);
+
+  const eyeGeometry = new THREE.SphereGeometry(eyeRadius, 8, 6);
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: eyeColor, fog: false, transparent: true });
+  go.eyes = ['EyeL', 'EyeR'].map(key => {
+    const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    eye.name = `${name}Eye`;
+    eye.position.copy(marker(key).position);
+    go.object3d.add(eye);
+    return eye;
+  });
+
+  // The grin's band is round the axis, just proud of the face (as on the
+  // capsule), as tall as the capsule's is for its radius, centred on the mouth.
+  const mouth = marker('Mouth').position;
+  const axis = marker('MouthAxis').position;
+  const around = Math.hypot(mouth.x - axis.x, mouth.z - axis.z) * 1.03;
+  const tall = around * 0.65;
+  go.smile = new THREE.Mesh(grinBand(around, -tall / 2, tall), createGrinMaterial(smileColor));
+  go.smile.name = `${name}Smile`;
+  go.smile.position.copy(axis);
+  go.smile.rotation.y = Math.atan2(mouth.x - axis.x, mouth.z - axis.z);
+  go.smile.visible = false;
+  go.object3d.add(go.smile);
+
+  go.placeholderFor = null;
+  go.object3d.visible = false;
+  return go;
+}
+
