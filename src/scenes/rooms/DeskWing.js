@@ -83,6 +83,32 @@ export function deskWingOutline(side, desk) {
   return { body: flip(body), top: flip(top), centre: [side * cx, cz] };
 }
 
+/**
+ * What is solid under a wing's top, floor to desk top, in two pieces: the
+ * square under B, C and D as a box, and the sliver between it and the desk
+ * (A, B, the square's fourth corner, E) as a small hull. Together they are
+ * the top's outline. One hull of the whole wing let drives sink through the
+ * left one — Rapier made next to no contacts against it — so the big part
+ * is a box, which it holds steady.
+ *
+ * @param {1|-1} side  1 = right of the desk (+x), −1 = left
+ * @returns {{ square: { centre: number[], halfExtents: number[], rotationY: number },
+ *             filler: number[][] }}  [x, z] in the desk's space; the box
+ *   turns `rotationY` about y, its local +x along B → C
+ */
+export function deskWingSolids(side, desk) {
+  const [a, b, c, d, e] = deskWingOutline(side, desk).top;
+  const q = [b[0] + d[0] - c[0], b[1] + d[1] - c[1]];
+  return {
+    square: {
+      centre: [(b[0] + d[0]) / 2, (b[1] + d[1]) / 2],
+      halfExtents: [Math.hypot(c[0] - b[0], c[1] - b[1]) / 2, Math.hypot(d[0] - c[0], d[1] - c[1]) / 2],
+      rotationY: Math.atan2(-(c[1] - b[1]), c[0] - b[0]),
+    },
+    filler: [a, b, q, e],
+  };
+}
+
 /** Clip a convex polygon of [x, z] points to one side of an axis-aligned line. */
 function clip(points, axis, value, keepGreater) {
   const out = [];

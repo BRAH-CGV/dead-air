@@ -11,7 +11,7 @@ import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { deskWingGeometry, deskWingOutline } from './DeskWing.js';
+import { deskWingGeometry, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
 // The shelf collider (manifest) has five boards; these are their top
@@ -377,17 +377,16 @@ export class MainOffice extends Room {
     return go;
   }
 
-  /** A fixed body with a convex hull for a collider, nothing drawn: for a
-   *  solid no box fits. `points` are [x, y, z] in the room's space. */
-  _addHull(name, points) {
+  /** A fixed body with these colliders, nothing drawn: for a solid made of
+   *  more than one shape. The descs are placed in the room's space. */
+  _addSolid(name, descs) {
     const go = new GameObject(name);
     const { world } = this.engine;
     const [ox, oy, oz] = this.position;
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(ox, oy, oz));
-    const collider = world.createCollider(RAPIER.ColliderDesc.convexHull(new Float32Array(points.flat())), body);
     go.rigidBody = body;
-    go.colliders = [collider];
-    go.collider  = collider;
+    go.colliders = descs.map(desc => world.createCollider(desc, body));
+    go.collider  = go.colliders[0];
     this.engine._bodyToGO?.set(body.handle, go);
     this.root.addChild(go);
     return go;
@@ -396,11 +395,12 @@ export class MainOffice extends Room {
   /** The desk top carried on to each side: a wing turned 45° in toward the
    *  seat, its inner corner on the desk's front corner, drawn as one piece
    *  with the desk's own material (DeskWing.js maps it into the desk's
-   *  texture). What is solid (`DeskWingSolid_*`) is the hull of what is
-   *  drawn: the body's outline on the floor, the top's at the desk top. It
-   *  takes in the wedge between the wing and the desk's side, so what is
+   *  texture). What is solid (`DeskWingSolid_*`) is the top's outline,
+   *  floor to desk top: a box under the square and a small hull for the
+   *  wedge between it and the desk's side (`deskWingSolids`), so what is
    *  set down there (the globe's side) rests on it, and nobody walks into
-   *  it from behind the desk. */
+   *  it from behind the desk. Not one hull of the whole wing: Rapier made
+   *  next to no contacts against the left one, and drives sank through. */
   _buildDeskWings(desk) {
     // The desk's material belongs to the asset cache — shared, never freed
     // here. A desk with no textured mesh (a stand-in model, a test) gets
@@ -415,10 +415,16 @@ export class MainOffice extends Room {
       mesh.castShadow = mesh.receiveShadow = true;
       this._addGroup(mesh.name).object3d.add(mesh);
 
-      const { body, top } = deskWingOutline(side, DESK);
-      this._addHull(`DeskWingSolid_${label}`, [
-        ...body.map(([x, z]) => [x, 0, z]),
-        ...top.map(([x, z]) => [x, DESK.top, z]),
+      const { square, filler } = deskWingSolids(side, DESK);
+      const [hx, hz] = square.halfExtents, turn = square.rotationY / 2;
+      this._addSolid(`DeskWingSolid_${label}`, [
+        RAPIER.ColliderDesc.cuboid(hx, DESK.top / 2, hz)
+          .setTranslation(square.centre[0], DESK.top / 2, square.centre[1])
+          .setRotation({ x: 0, y: Math.sin(turn), z: 0, w: Math.cos(turn) }),
+        RAPIER.ColliderDesc.convexHull(new Float32Array([
+          ...filler.map(([x, z]) => [x, 0, z]),
+          ...filler.map(([x, z]) => [x, DESK.top, z]),
+        ].flat())),
       ]);
     }
   }
