@@ -28,17 +28,6 @@ licensed under Creative Commons Attribution
 | **Used for** | The satellite dish outside the office |
 | **Modifications** | Created a base that the dish sits on and moves with |
 
-### Server V2 + console
-
-"Server V2 +console" (https://skfb.ly/ADNW) by FlevasGR is licensed under
-Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/server_v2_console.glb` |
-| **Manifest key** | — (downloaded, not yet wired into the manifest) |
-| **Used for** | Server rack candidate — model includes a console/terminal |
-| **Modifications** | None recorded |
 
 ### Server
 
@@ -52,33 +41,7 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **Used for** | Server rack in the office |
 | **Modifications** | None recorded |
 
-### Blast door — closed
 
-"Space Ship Blast Door (Closed)"
-(https://sketchfab.com/3d-models/space-ship-blast-door-closed-d652b30770574419bbc37b7024cffd22)
-by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/blast-door-closed.glb` |
-| **Manifest key** | `model:blast-door-closed` |
-| **Used for** | Large sliding blast door — closed state |
-| **Modifications** | None recorded |
-
-### Blast door — open
-
-"Space Ship Blast Door (Open)"
-(https://sketchfab.com/3d-models/space-ship-blast-door-open-f28fa7e29155478a9238c349959a72d6)
-by Jacob Smith (ChampComputings) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/blast-door-open.glb` |
-| **Manifest key** | `model:blast-door-open` |
-| **Used for** | Large sliding blast door — open state |
-| **Modifications** | None recorded |
 
 ### Server console (terminal)
 
@@ -119,20 +82,8 @@ by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/bunk-bed.glb` |
 | **Manifest key** | `model:bunk-bed` |
 | **Used for** | Crew quarters bunk bed |
-| **Modifications** | None recorded |
+| **Modifications** | Base-colour texture edited: red blood marks painted out of the mattress |
 
-### Couch
-
-"Old Couch" (https://sketchfab.com/3d-models/old-couch-443d9bb95e944afe8ebc4ff489e2886c)
-by oisougabo is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/couch.glb` |
-| **Manifest key** | `model:couch` |
-| **Used for** | Break room / lounge couch |
-| **Modifications** | None recorded |
 
 ### Locker
 
@@ -146,7 +97,7 @@ by Ottto3d is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/locker.glb` |
 | **Manifest key** | `model:locker` |
 | **Used for** | Metal storage locker prop |
-| **Modifications** | None recorded |
+| **Modifications** | Base-colour recoloured from rust to dark gunmetal; roughness, metalness and normal map smoothed |
 
 ### Metal barrel
 
@@ -175,40 +126,7 @@ by Mehdi Shahsavan (ahmagh2e) is licensed under Creative Commons Attribution
 | **Used for** | Metal shelving unit prop |
 | **Modifications** | None recorded |
 
-### Soap dispenser — ⚠ non-commercial license
 
-"Retro Soap Dispenser(2K)"
-(https://sketchfab.com/3d-models/retro-soap-dispenser2k-8945615518324c5dbdca911f0545edd9)
-by Minh Nguyen (Minh_Nguyen_2004) is licensed under **Creative Commons
-Attribution-NonCommercial**
-(http://creativecommons.org/licenses/by-nc/4.0/) — **not** the standard CC BY
-used everywhere else in this file. Commercial use is not permitted under this
-licence.
-
-**Decided (Sept 2026): keep it.** Dead Air is a non-commercial university
-project. Unlike the poster this licence carries no ND clause, so the asset may
-be modified. It has to be replaced if the game is ever sold or monetised.
-
-| | |
-|---|---|
-| **File** | `public/assets/models/soap-dispenser.glb` |
-| **Manifest key** | `model:soap-dispenser` |
-| **Used for** | Bathroom / break room soap dispenser prop |
-| **Modifications** | None recorded |
-
-### Vending machine
-
-"(Retro) - Vending Machine"
-(https://sketchfab.com/3d-models/retro-vending-machine-8864bbc0957649c7b17f9147e9b58910)
-by Kasujin is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/vending-machine.glb` |
-| **Manifest key** | `model:vending-machine` |
-| **Used for** | Break room vending machine |
-| **Modifications** | None recorded |
 
 ### Mars rover
 
@@ -329,8 +247,8 @@ by ConhuirParker is licensed under Creative Commons Attribution
 |---|---|
 | **File** | `public/assets/models/light-ceiling.glb` |
 | **Manifest key** | `model:light-ceiling` |
-| **Used for** | Ceiling-mounted light fixture |
-| **Modifications** | None recorded |
+| **Used for** | UV grow lights on the office's grow rack |
+| **Modifications** | Hung face-down; glow recoloured UV purple at runtime (`GrowRack.js`) |
 
 ### Wall light
 
@@ -370,7 +288,20 @@ by felixawani is licensed under Creative Commons Attribution
 |---|---|
 | **File** | `public/assets/models/simple-desk.glb` |
 | **Manifest key** | `model:simple-desk` |
-| **Used for** | Office desk prop |
+| **Used for** | The bedroom's desk |
+| **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
+
+### Storage rack
+
+"Worn Metal Rack" (https://polyhaven.com/a/worn_metal_rack) from Poly Haven,
+released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bigger-shelf.glb` |
+| **Manifest key** | `model:bigger-shelf` |
+| **Used for** | The bedroom's storage racks |
 | **Modifications** | None recorded |
 
 ### Generator
@@ -383,8 +314,8 @@ by AnaCi (zuciwien) is licensed under Creative Commons Attribution
 |---|---|
 | **File** | `public/assets/models/generator.glb` |
 | **Manifest key** | `model:generator` |
-| **Used for** | Backup generator prop |
-| **Modifications** | None recorded |
+| **Used for** | The base's generator, in the fenced yard: the power switch |
+| **Modifications** | Scaled to 0.44 and stood on the ground at load (manifest `scale`, `origin`) |
 
 ### Metal chair
 
@@ -411,7 +342,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
-| **Modifications** | None recorded |
+| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32 |
 
 ### Crate
 
@@ -439,6 +370,15 @@ by ribot02 is licensed under Creative Commons Attribution
 | **Manifest key** | `model:wall-screen` |
 | **Used for** | Wall-mounted retro CRT/monitor screens |
 | **Modifications** | None recorded |
+
+The security-camera monitor is cut from the same model:
+
+| | |
+|---|---|
+| **File** | `public/assets/models/camera-monitor.glb` |
+| **Manifest key** | `model:camera-monitor` |
+| **Used for** | The security-camera monitor on the office desk |
+| **Modifications** | The bottom-left screen only, cut out of the bank of four; turned to face +z, scaled to 0.6 m wide, stood on the floor; screen made dark glass, as if off |
 
 ### Interior door
 
@@ -827,8 +767,6 @@ before submission (the credits screen must list all non-original work):
 - `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
 - `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
 - `break-panel.glb` (`model:break-panel`)
-- `office-scene.glb` (not in the manifest)
-- `retro_command_console_aged.glb` (not in the manifest)
 - `ragno_monster.glb` (not in the manifest)
 - `the_boiled_one_horror_game_-_boiled_one.glb` (not in the manifest)
 

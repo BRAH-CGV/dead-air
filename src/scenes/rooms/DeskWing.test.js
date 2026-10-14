@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { deskWingGeometry, deskWingOutline, DESK_ATLAS, WING } from './DeskWing.js';
+import { deskWingGeometry, deskWingOutline, deskWingSolids, DESK_ATLAS, WING } from './DeskWing.js';
 
 // The office's computer desk, as MainOffice seats it.
 const DESK = { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95, top: 0.864 };
@@ -51,6 +51,84 @@ describe('deskWingOutline', () => {
     const right = deskWingOutline(1, DESK), left = deskWingOutline(-1, DESK);
     expect(left.centre[0]).toBeCloseTo(-right.centre[0]);
     expect(left.top.map(([x]) => x).sort()).toEqual(right.top.map(([x]) => -x).sort());
+  });
+});
+
+/** Inside a convex polygon of [x, z] points, either winding (edges count). */
+function inPolygon([x, z], poly, eps = 1e-6) {
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, az] = poly[i], [bx, bz] = poly[(i + 1) % poly.length];
+    const cross = (bx - ax) * (z - az) - (bz - az) * (x - ax);
+    if (Math.abs(cross) <= eps) continue;
+    if (sign && Math.sign(cross) !== sign) return false;
+    sign = Math.sign(cross);
+  }
+  return true;
+}
+
+/** The square's four corners, from its centre, half extents and turn about y. */
+function squareCorners({ centre: [cx, cz], halfExtents: [hx, hz], rotationY: a }) {
+  const u = [Math.cos(a), -Math.sin(a)], v = [Math.sin(a), Math.cos(a)];   // local +x, +z in the room
+  return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([i, k]) =>
+    [cx + i * hx * u[0] + k * hz * v[0], cz + i * hx * u[1] + k * hz * v[1]]);
+}
+
+const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-9;
+
+// Drives set down on the left wing sank into it and fell through: Rapier
+// generated next to no contacts against the one convex hull of the whole
+// wing, mirrored, while its rays still hit it. A box for the square part
+// and a small hull for the sliver beside the desk hold both sides up.
+describe('deskWingSolids', () => {
+  it("the square under the top is a box with its corners on the top's B, C and D", () => {
+    for (const side of [1, -1]) {
+      const { top } = deskWingOutline(side, DESK);
+      const { square } = deskWingSolids(side, DESK);
+      const corners = squareCorners(square);
+      for (const p of [top[1], top[2], top[3]]) expect(corners.some(c => near(c, p)), `side ${side}`).toBe(true);
+    }
+  });
+
+  it("the filler is the sliver between the square and the desk: A, B, the square's fourth corner, E", () => {
+    for (const side of [1, -1]) {
+      const { top } = deskWingOutline(side, DESK);
+      const { square, filler } = deskWingSolids(side, DESK);
+      expect(filler.length).toBe(4);
+      expect(filler[0]).toEqual(top[0]);
+      expect(filler[1]).toEqual(top[1]);
+      expect(filler[3]).toEqual(top[4]);
+      expect(squareCorners(square).some(c => near(c, filler[2])), `side ${side}`).toBe(true);
+      // It stays on the wing's side of the desk top's edge, clear of the pillar tops and the drive reader.
+      for (const [x] of filler) expect(side * x, `side ${side}`).toBeGreaterThan(0.749);
+    }
+  });
+
+  it("together they are the top's outline, no more and no less", () => {
+    for (const side of [1, -1]) {
+      const { top } = deskWingOutline(side, DESK);
+      const { square, filler } = deskWingSolids(side, DESK);
+      const box = squareCorners(square);
+      const xs = top.map(p => p[0]), zs = top.map(p => p[1]);
+      const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+      for (let i = 0; i <= 60; i++) for (let k = 0; k <= 60; k++) {
+        const p = [x0 + (x1 - x0) * i / 60, z0 + (z1 - z0) * k / 60];
+        const solid = inPolygon(p, box) || inPolygon(p, filler);
+        expect(solid, `side ${side} at ${p}`).toBe(inPolygon(p, top));
+      }
+    }
+  });
+
+  it('mirrors for the left side', () => {
+    const right = deskWingSolids(1, DESK), left = deskWingSolids(-1, DESK);
+    expect(left.square.centre[0]).toBeCloseTo(-right.square.centre[0]);
+    expect(left.square.centre[1]).toBeCloseTo(right.square.centre[1]);
+    expect(left.square.halfExtents[0]).toBeCloseTo(right.square.halfExtents[0]);
+    expect(left.square.halfExtents[1]).toBeCloseTo(right.square.halfExtents[1]);
+    left.filler.forEach(([x, z], i) => {
+      expect(x).toBeCloseTo(-right.filler[i][0]);
+      expect(z).toBeCloseTo(right.filler[i][1]);
+    });
   });
 });
 

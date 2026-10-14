@@ -66,7 +66,7 @@ describe('stormLevel', () => {
 });
 
 
-function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null } = {}) {
+function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null, moon = null, ambient = null } = {}) {
   const listeners = [];
   const controller = {
     state: 'playing',
@@ -81,7 +81,7 @@ function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null } = {}
   // same wherever the player stands, so it never asks whether they are
   // outside or which room they are in.
   const hooks = { listenerPosition: out => out.set(0, 1.2, 0) };
-  const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, nightDuration: NIGHT, random });
+  const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, moon, ambient, nightDuration: NIGHT, random });
   storm.onStart();
   return { storm, controller, fog, sky, dust, ambience, hooks, startNight: n => listeners.forEach(fn => fn(n)) };
 }
@@ -249,6 +249,81 @@ describe('Sandstorm', () => {
     const { storm, controller } = makeRig();
     controller.state = 'morning';
     expect(storm.summon()).toBe(false);
+  });
+});
+
+describe('Sandstorm — the moonlight', () => {
+  // The night's lights, as the scene builds them.
+  const lights = () => ({
+    moon:    new THREE.DirectionalLight(0xb8c4e0, 1.2),
+    ambient: new THREE.AmbientLight(0x435472, 0.72),
+  });
+
+  it('dims the moonlight and the ambient light with its level', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds / 2);
+    // Part way in, part way down.
+    expect(moon.intensity).toBeLessThan(1.2);
+    expect(moon.intensity).toBeGreaterThan(1.2 * SANDSTORM.moonlight);
+    run(storm, SANDSTORM.rampSeconds);
+    // At full strength, the share the dust lets through.
+    expect(moon.intensity).toBeCloseTo(1.2 * SANDSTORM.moonlight);
+    expect(ambient.intensity).toBeCloseTo(0.72 * SANDSTORM.ambientLight);
+  });
+
+  it('blots out the moon far more than it darkens the night\'s fill', () => {
+    // The moonlight through the window is what read as a clear night; the
+    // ambient light also fills the rooms, which have lamps of their own.
+    expect(SANDSTORM.moonlight).toBeLessThan(0.25);
+    expect(SANDSTORM.ambientLight).toBeGreaterThan(SANDSTORM.moonlight);
+    expect(SANDSTORM.ambientLight).toBeLessThan(1);
+  });
+
+  it('holds steady at full strength: it never dims its own dimming again', () => {
+    // In the morning nothing else rewrites the lights (Daylight writes only
+    // while the clock moves), so a storm that scaled whatever it found would
+    // sink them a little more every frame.
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    const held = moon.intensity;
+    run(storm, 5);
+    expect(moon.intensity).toBe(held);
+    expect(ambient.intensity).toBeCloseTo(0.72 * SANDSTORM.ambientLight);
+  });
+
+  it('hands the lights back exactly as they were once it passes', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ night: 1, moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.durationHours[1] * HOUR + 1);
+    expect(moon.intensity).toBe(1.2);
+    expect(ambient.intensity).toBe(0.72);
+  });
+
+  it('dims whatever the dawn writes meanwhile, and hands that back', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    moon.intensity = 2.2;              // Daylight: the morning sun
+    ambient.intensity = 1.4;
+    storm.onUpdate(0.1);
+    expect(moon.intensity).toBeCloseTo(2.2 * SANDSTORM.moonlight);
+    expect(ambient.intensity).toBeCloseTo(1.4 * SANDSTORM.ambientLight);
+    storm.reset(1);
+    storm.onUpdate(0.1);
+    expect(moon.intensity).toBe(2.2);
+    expect(ambient.intensity).toBe(1.4);
+  });
+
+  it('blows without lights to dim', () => {
+    const { storm } = makeRig();
+    storm.summon();
+    expect(() => run(storm, SANDSTORM.rampSeconds + 1)).not.toThrow();
   });
 });
 

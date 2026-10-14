@@ -44,7 +44,7 @@ export function rapierModule() {
       ColliderDesc: {
         cuboid: (x, y, z) => {
           const d = {
-            half: { x, y, z }, t: { x: 0, y: 0, z: 0 }, sensor: false,
+            half: { x, y, z }, t: { x: 0, y: 0, z: 0 }, q: { x: 0, y: 0, z: 0, w: 1 }, sensor: false,
             setSensor(s) { d.sensor = s; return d; },
             setFriction(v) { d.friction = v; return d; },
             setRestitution(v) { d.restitution = v; return d; },
@@ -54,6 +54,17 @@ export function rapierModule() {
             // its body — a fixed body carrying several colliders at their
             // own offsets, the pattern the rock field and the fence both use.
             setTranslation(tx, ty, tz) { d.t = { x: tx, y: ty, z: tz }; return d; },
+            setRotation(q) { d.q = { ...q }; return d; },
+          };
+          return d;
+        },
+        // BunkerShell's slopes. Records the points; real Rapier returns null
+        // for a set it can't hull, which this never does.
+        convexHull: (points) => {
+          const d = {
+            points, sensor: false,
+            setSensor(v) { d.sensor = v; return d; },
+            setFriction(v) { d.friction = v; return d; },
           };
           return d;
         },
@@ -66,6 +77,12 @@ export function rapierModule() {
             sensor: false,
             setSensor(v) { d.sensor = v; return d; },
           };
+          return d;
+        },
+        // A solid no box fits (the office's desk wings). Keeps its points, so
+        // a test can rebuild the hull it describes.
+        convexHull: points => {
+          const d = { points, sensor: false, setSensor(v) { d.sensor = v; return d; } };
           return d;
         },
       },
@@ -109,7 +126,9 @@ export class FakeWorld {
       // through `heightfield` instead, the way the real API splits them.
       halfExtents: () => ({ ...desc.half }),
       translation: () => ({ ...desc.t }),
+      rotation: () => ({ ...desc.q }),
       heightfield: desc.heightfield,
+      points: desc.points,
       isSensor: () => sensor,
       setSensor: s => { sensor = s; },
     };
