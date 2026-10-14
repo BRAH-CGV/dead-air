@@ -6,7 +6,26 @@ import { Nap, NAP } from './Nap.js';
 // wakes you or it is 6 AM
 // ─────────────────────────────────────────────
 
-function makeRig({ alarms = {} } = {}) {
+/** A bed animation: `instant` falls asleep the moment it lies down. */
+function makeRest({ instant = true } = {}) {
+  const rest = {
+    active: false,
+    _asleep: null,
+    lieDown: vi.fn(onAsleep => {
+      rest.active = true;
+      rest._asleep = onAsleep;
+      if (instant) rest.fallAsleep();
+      return true;
+    }),
+    /** The lids shut. */
+    fallAsleep() { const fn = rest._asleep; rest._asleep = null; fn?.(); },
+    getUp: vi.fn(() => true),
+    cancel: vi.fn(() => { rest.active = false; }),
+  };
+  return rest;
+}
+
+function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } = {}) {
   const controller = {
     state: 'playing',
     refreshPrompt: vi.fn(),
@@ -21,34 +40,62 @@ function makeRig({ alarms = {} } = {}) {
   };
   /** Press E (a fresh press: the last one was let go). */
   engine.press = () => { engine.held = true; engine.consumed = false; };
-  const fade = { cover: vi.fn(onDark => { onDark(); return true; }), uncover: vi.fn() };
   const hud = { setPrompt: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
-    controller, engine, fade, hud, hooks,
+    controller, engine, hud, hooks, rest,
     alarms: [
       { test: () => state.power, message: 'The power went out.' },
       { test: () => state.ufo,   message: 'Something on the radar woke you.' },
       { test: () => state.eyes,  message: 'You feel watched.' },
     ],
   });
-  return { nap, controller, engine, fade, hud, hooks, state };
+  return { nap, controller, engine, rest, hud, hooks, state };
 }
 
 describe('Nap', () => {
   let rig;
   beforeEach(() => { rig = makeRig(); });
 
-  it('during the shift: fades to black, freezes the player and runs the night fast', () => {
-    const { nap, engine, fade, hooks } = rig;
+  it('during the shift: lies down, and only once the eyes are shut runs the night fast', () => {
+    const r = makeRig({ instant: false });
+    const { nap, engine, rest } = r;
     expect(nap.canNap).toBe(true);
     expect(nap.start()).toBe(true);
     expect(nap.napping).toBe(true);
-    expect(fade.cover).toHaveBeenCalledOnce();
-    expect(hooks.setPlayerLocked).toHaveBeenLastCalledWith(true);
+    expect(rest.lieDown).toHaveBeenCalledOnce();
+    expect(engine.timeScale).toBe(1);             // still getting in
+    rest.fallAsleep();
     expect(engine.timeScale).toBe(NAP.timeScale);
     expect(NAP.timeScale).toBeGreaterThanOrEqual(10);
+  });
+
+  it('woken while still getting in: the night was never sped up, and you get straight back out', () => {
+    const r = makeRig({ instant: false });
+    r.nap.start();
+    r.state.power = true;
+    r.nap.onUpdate(0.016);
+    expect(r.nap.napping).toBe(false);
+    expect(r.rest.getUp).toHaveBeenCalledWith('startled');
+    r.rest.fallAsleep();                          // a late callback changes nothing
+    expect(r.engine.timeScale).toBe(1);
+  });
+
+  it('not while still getting out of bed from the last one', () => {
+    const { nap, rest } = rig;
+    rest.active = true;
+    expect(nap.canNap).toBe(false);
+  });
+
+  it('with no bed animation, freezes the player and runs fast at once', () => {
+    const r = makeRig({ rest: null });
+    r.nap.start();
+    expect(r.hooks.setPlayerLocked).toHaveBeenLastCalledWith(true);
+    expect(r.engine.timeScale).toBe(NAP.timeScale);
+    r.nap.wake();
+    expect(r.hooks.setPlayerLocked).toHaveBeenLastCalledWith(false);
+    expect(r.engine.timeScale).toBe(1);
   });
 
   it('only during the shift, and not twice', () => {
@@ -69,8 +116,8 @@ describe('Nap', () => {
     expect(rig.engine.timeScale).toBe(1);
   });
 
-  it('sleeps on until the shift ends, then wakes without a word', () => {
-    const { nap, controller, engine, fade, hooks, hud } = rig;
+  it('sleeps on until the shift ends, then wakes calmly without a word', () => {
+    const { nap, controller, engine, rest, hud } = rig;
     nap.start();
     nap.onUpdate(1);
     expect(nap.napping).toBe(true);
@@ -78,18 +125,29 @@ describe('Nap', () => {
     nap.onUpdate(1);
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
-    expect(fade.uncover).toHaveBeenCalledOnce();
-    expect(hooks.setPlayerLocked).toHaveBeenLastCalledWith(false);
+    expect(rest.getUp).toHaveBeenCalledWith('calm');
     expect(hud.setPrompt).not.toHaveBeenCalled();
   });
 
-  it('wakes when something happens, and says what', () => {
-    const { nap, state, engine, hud } = rig;
+  it('a night failed under it (not the morning): real time, and the view handed straight back', () => {
+    const { nap, controller, engine, rest } = rig;
+    nap.start();
+    controller.state = 'gameOver';
+    nap.onUpdate(1);
+    expect(nap.napping).toBe(false);
+    expect(engine.timeScale).toBe(1);
+    expect(rest.getUp).not.toHaveBeenCalled();
+    expect(rest.cancel).toHaveBeenCalled();
+  });
+
+  it('wakes when something happens, startled, and says what', () => {
+    const { nap, state, engine, hud, rest } = rig;
     nap.start();
     state.power = true;
     nap.onUpdate(1);
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
+    expect(rest.getUp).toHaveBeenCalledWith('startled');
     expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');
     expect(nap.wokeBy).toBe('The power went out.');
   });
@@ -117,22 +175,24 @@ describe('Nap', () => {
     expect(controller.refreshPrompt).toHaveBeenCalledOnce();
   });
 
-  it('a scene torn down mid-nap leaves the engine at real time and the screen clear', () => {
-    const { nap, engine, fade } = rig;
+  it('a scene torn down mid-nap leaves the engine at real time and the view handed back', () => {
+    const { nap, engine, rest } = rig;
     nap.start();
     nap.onDestroy();
     expect(engine.timeScale).toBe(1);
-    expect(fade.uncover).toHaveBeenCalled();
+    expect(nap.napping).toBe(false);
+    expect(rest.cancel).toHaveBeenCalled();
+    expect(rest.getUp).not.toHaveBeenCalled();
   });
 
   it('wake() by hand does nothing when not napping', () => {
-    const { nap, fade } = rig;
+    const { nap, rest } = rig;
     nap.wake();
-    expect(fade.uncover).not.toHaveBeenCalled();
+    expect(rest.getUp).not.toHaveBeenCalled();
   });
 
-  it('pressing E wakes you yourself — not the press that lay you down', () => {
-    const { nap, engine, fade, hud } = rig;
+  it('pressing E wakes you yourself, calmly — not the press that lay you down', () => {
+    const { nap, engine, rest, hud } = rig;
     engine.press();                               // E at the bunk
     nap.start();
     nap.onUpdate(0.016);
@@ -143,7 +203,8 @@ describe('Nap', () => {
     nap.onUpdate(0.016);
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
-    expect(fade.uncover).toHaveBeenCalledOnce();
+    expect(rest.getUp).toHaveBeenCalledOnce();
+    expect(rest.getUp).toHaveBeenCalledWith('calm');
     expect(hud.setPrompt).not.toHaveBeenCalled(); // you know why you're up
     expect(engine.consumed).toBe(true);           // the bunk doesn't take it as a new nap
   });
@@ -153,8 +214,8 @@ describe('Nap', () => {
       expect(NAP.lengths).toEqual([0.5, 1, 2, 3, null]);
     });
 
-    it('wakes you when the clock has run on by the length you set', () => {
-      const { nap, controller, hud, engine } = rig;
+    it('wakes you, calmly, when the clock has run on by the length you set', () => {
+      const { nap, controller, hud, engine, rest } = rig;
       controller.nightClock.currentTime = 1;      // 1:00 AM
       nap.start(2);
       expect(nap.wakeAt).toBe(3);
@@ -166,6 +227,7 @@ describe('Nap', () => {
       expect(nap.napping).toBe(false);
       expect(engine.timeScale).toBe(1);
       expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/alarm/i));
+      expect(rest.getUp).toHaveBeenCalledWith('calm');
     });
 
     it('with no length, sleeps on to 6 AM', () => {

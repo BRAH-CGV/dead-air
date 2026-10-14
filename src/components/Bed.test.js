@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Bed } from './Bed.js';
 import { Interactable } from './Interactable.js';
+import * as THREE from 'three';
+import { GameObject } from '../core/GameObject.js';
+import { BUNK_POSES } from './Bed.js';
 
 describe('Bed', () => {
   let controller, fade, bed;
@@ -148,6 +151,104 @@ describe('Bed', () => {
       bed.onInteract();
       expect(controller.sleep).toHaveBeenCalledOnce();
       expect(nap.start).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the bunk\'s poses: the bed animation follows the bunk wherever it stands', () => {
+    /** A bed on a bunk at `position`, turned `yaw` about +Y. */
+    function onBunk(position = [0, 0, 0], yaw = 0) {
+      const go = new GameObject('Bunk');
+      go.object3d.position.set(...position);
+      go.object3d.rotation.y = yaw;
+      go.object3d.updateMatrixWorld(true);
+      const b = go.addComponent(new Bed());
+      return b;
+    }
+
+    it('the pillow: the eye at lying height on the bunk, looking up and tipped onto its side', () => {
+      const pose = onBunk().pillowPose();
+      expect(pose.position.toArray()).toEqual(BUNK_POSES.pillow.position);
+      expect(pose.position.y).toBeGreaterThan(0.4);           // on the mattress …
+      expect(pose.position.y).toBeLessThan(0.9);              // … lying, not sitting
+      expect(pose.pitch).toBeGreaterThan(0.3);                // up toward the ceiling
+      expect(Math.abs(pose.roll)).toBeGreaterThan(0.05);      // onto its side
+    });
+
+    it('the get-out spot stands clear of the bunk, facing into the room', () => {
+      const spot = onBunk().getOutSpot();
+      expect(spot.position.y).toBe(0);                         // the feet, on the floor
+      // Outside the bunk's footprint (1.08 × 2 m about its origin) by more
+      // than the player's radius, so the capsule never lands in its collider.
+      expect(spot.position.x).toBeGreaterThan(0.54 + 0.3);
+      // Facing +x, out of the bunk's open side: forward is (−sin yaw, −cos yaw).
+      expect(-Math.sin(spot.yaw)).toBeCloseTo(1);
+    });
+
+    it('sitting is on the bunk\'s edge, between the pillow and the spot', () => {
+      const b = onBunk();
+      const sit = b.sitPose().position;
+      expect(sit.x).toBeGreaterThan(b.pillowPose().position.x);
+      expect(sit.x).toBeLessThan(b.getOutSpot().position.x);
+      expect(sit.y).toBeGreaterThan(b.pillowPose().position.y);
+    });
+
+    it('moved and turned with the bunk', () => {
+      const here = onBunk();
+      const there = onBunk([3, 0, -2], Math.PI / 2);
+      const p0 = here.pillowPose(), p1 = there.pillowPose();
+      const expected = new THREE.Vector3(...BUNK_POSES.pillow.position)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2).add(new THREE.Vector3(3, 0, -2));
+      expect(p1.position.distanceTo(expected)).toBeLessThan(1e-6);
+      expect(p1.yaw - p0.yaw).toBeCloseTo(Math.PI / 2);
+      expect(p1.pitch).toBeCloseTo(p0.pitch);
+      const out = there.getOutSpot();
+      expect(out.yaw - here.getOutSpot().yaw).toBeCloseTo(Math.PI / 2);
+    });
+  });
+
+  describe('getting into bed for the morning sleep (a BedRest)', () => {
+    let rest;
+    beforeEach(() => {
+      rest = {
+        active: false,
+        lieDown: vi.fn(onAsleep => { rest.active = true; rest.onAsleep = onAsleep; return true; }),
+        getUp: vi.fn(() => true),
+        cancel: vi.fn(() => { rest.active = false; }),
+      };
+      bed.rest = rest;
+      controller.state = 'morning';
+    });
+
+    it('lies down instead of fading, and sleeps only once the eyes are shut', () => {
+      bed.onInteract();
+      expect(rest.lieDown).toHaveBeenCalledOnce();
+      expect(fade.play).not.toHaveBeenCalled();
+      expect(controller.sleep).not.toHaveBeenCalled();
+      rest.onAsleep();
+      expect(controller.sleep).toHaveBeenCalledOnce();
+    });
+
+    it('the next night begun, gets up out of bed', () => {
+      controller.sleep = vi.fn(() => { controller.state = 'playing'; });
+      bed.onInteract();
+      rest.onAsleep();
+      expect(rest.getUp).toHaveBeenCalledWith('calm');
+    });
+
+    it('the run over (the last night), hands the view straight back', () => {
+      controller.sleep = vi.fn(() => { controller.state = 'finished'; });
+      bed.onInteract();
+      rest.onAsleep();
+      expect(rest.getUp).not.toHaveBeenCalled();
+      expect(rest.cancel).toHaveBeenCalled();
+    });
+
+    it('offers nothing and does nothing while the animation runs', () => {
+      bed.onInteract();
+      bed.onUpdate(0.016);
+      expect(bed.promptLabel).toBe('');
+      bed.onInteract();
+      expect(rest.lieDown).toHaveBeenCalledOnce();
     });
   });
 });

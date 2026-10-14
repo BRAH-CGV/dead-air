@@ -55,4 +55,13 @@ describe('Engine time scale (a nap fast-forwards the night)', () => {
     tick(fast);
     expect(fast.world.step.mock.calls.length).toBe(steps);
   });
+
+  it('keeps the real frame time readable (realDt), for what must run at real speed through a nap', () => {
+    engine.timeScale = 15;
+    let seen = null;
+    root._update.mockImplementation(() => { seen = engine.realDt; });
+    tick(engine);
+    expect(seen).toBeCloseTo(0.05);
+    expect(root._update.mock.calls[0][0]).toBeCloseTo(0.75);
+  });
 });

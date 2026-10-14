@@ -104,6 +104,10 @@ export class Engine {
    *  A nap sets it (Nap.js) to fast-forward the night; physics keeps real
    *  time, since many more steps a frame would only cost frames. */
   timeScale = 1;
+  /** Real seconds in the frame being simulated, whatever timeScale is: for
+   *  what must keep real speed through a nap (getting into and out of bed,
+   *  what the player sees while half awake). */
+  realDt = 0;
   /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
    *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
   devTools = true;
@@ -788,6 +792,7 @@ export class Engine {
    *  @param {number} frameDt  Real seconds this frame.
    *  @param {number} [gameDt=frameDt]  Game seconds (scaled by timeScale). */
   _simulate(frameDt, gameDt = frameDt) {
+    this.realDt = frameDt;
     // ── Fixed update (physics) ──
     this._accumulator += frameDt;
     while (this._accumulator >= Engine.FIXED_DT) {

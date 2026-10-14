@@ -71,6 +71,8 @@ import { sealAgainst } from '../core/ShadowSides.js';
 import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
+import { BedRest } from '../components/BedRest.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -253,6 +255,7 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addBedRest();
     this._addUfo();
     this._addSandstorm();
     this._addNap();
@@ -1283,6 +1286,30 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Getting into and out of the bunk (BedRest)
+  // ──────────────────────────────────────────
+  /** The view to the pillow and back, the lids, the peeks. It writes the
+   *  lids last (its late update).
+   *  The bunk and the nap are handed it. */
+  _addBedRest() {
+    const { engine } = this;
+    const bed = this.rooms.LivingQuarters.bed;
+    if (!bed) return;
+    this.bedRest = this._sceneRoot.find('GameplaySystems').addComponent(new BedRest({
+      engine,
+      camera:          engine.camera ?? null,
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      interaction:     engine.player?.getComponent(InteractionSystem) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      bed,
+      controller:      this.gameController,
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      isFrozen:        () => !!engine.debugCamera?.active,
+    }));
+    bed.rest = this.bedRest;
+  }
+
+  // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
@@ -1505,8 +1532,10 @@ export class BaseScene extends Scene {
    *  player presses E, or until something loud enough to wake a sleeper —
    *  the lamps buzzing before a storm outage, the UFO's roar. Silent things
    *  (the power simply going, the radar blob, eyes at the window) don't.
-   *  No nap with the UFO on its way. Added last, so it reads every threat
-   *  after it has moved this frame. */
+   *  No nap with the UFO on its way. Getting into and out of the bunk is
+   *  the bed animation (BedRest): the night speeds up only once the eyes
+   *  are shut. Added last, so it reads every threat after it has moved this
+   *  frame. */
   _addNap() {
     const ufoBusy = () => {
       const phase = this.ufoThreat?.phase;
@@ -1515,7 +1544,7 @@ export class BaseScene extends Scene {
     this.nap = new Nap({
       controller: this.gameController,
       engine:     this.engine,
-      fade:       this.screenFade,
+      rest:       this.bedRest ?? null,
       hud:        this.hud,
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),

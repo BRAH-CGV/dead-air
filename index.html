@@ -144,6 +144,38 @@
         letter-spacing: 0.1em;
       }
 
+      /* ── Eyelids (FatigueOverlay.js) ──────────────────────
+         The bed animation closes them (BedRest.js). The tunnel sits under
+         the HUD; the lids close over the HUD and the panels, but under the
+         white-out, the menus and the screen fade. */
+      #fatigue-tunnel {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 80;
+        background: radial-gradient(ellipse at center,
+          transparent 24%, rgba(0,0,0,0.55) 50%, #000 80%);
+      }
+      #fatigue-lids {
+        --lid: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+      #fatigue-lids::before,
+      #fatigue-lids::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 52%;
+        background: #000;
+      }
+      #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
+      #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
+
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
         position: fixed;
@@ -704,6 +736,12 @@
       <div id="hud-scan-bar"></div>
       <div id="hud-prompt"></div>
       <div id="hud-suit">EVA suit on</div>
+    </div>
+
+    <!-- The eyelids, and a tired player's tunnel vignette (FatigueOverlay.js) -->
+    <div id="fatigue">
+      <div id="fatigue-tunnel"></div>
+      <div id="fatigue-lids"></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->
