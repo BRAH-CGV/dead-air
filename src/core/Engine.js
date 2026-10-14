@@ -123,6 +123,9 @@ export class Engine {
     pressed: {},
     mouse: { dx: 0, dy: 0, wheel: 0 },
     locked: false,
+    /** A scroll wheel has been used in game, so the player has one (a
+     *  touchpad may not). Set on the first wheel event, and kept. */
+    hasWheel: false,
   };
   
   // ── Debug ─────────────────────────────────
@@ -283,6 +286,7 @@ export class Engine {
       // deltaY is positive when scrolling down (away from user).
       // Normalise to ±1 ticks so consumers can multiply by a step size.
       this.input.mouse.wheel += Math.sign(e.deltaY);
+      this.input.hasWheel = true;
     }, { passive: true });
 
     // ── Keyboard ──
