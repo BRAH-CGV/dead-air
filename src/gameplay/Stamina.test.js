@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Stamina, STAMINA } from './Stamina.js';
+import { Stamina, STAMINA, drainForShift } from './Stamina.js';
 
 describe('Stamina', () => {
   it('starts full and ok', () => {
@@ -10,12 +10,22 @@ describe('Stamina', () => {
 
   it('drains over the night: empty by 4:48 AM of a 300 s shift with no food', () => {
     const s = new Stamina();
-    expect(STAMINA.drainPerSecond).toBeCloseTo(1 / 240);
+    expect(STAMINA.emptyAt).toBe(0.8);
     s.update(120);
     expect(s.value).toBeCloseTo(0.5);
     s.update(119);
     expect(s.value).toBeGreaterThan(0);
     s.update(1);
+    expect(s.value).toBe(0);
+  });
+
+  it('empties the same share of the way through whatever length the shift is', () => {
+    expect(drainForShift(300)).toBeCloseTo(1 / 240);
+    expect(drainForShift(600)).toBeCloseTo(1 / 480);
+    const s = new Stamina({ nightSeconds: 600 });
+    s.update(240);
+    expect(s.value).toBeCloseTo(0.5);
+    s.update(240);
     expect(s.value).toBe(0);
   });
 

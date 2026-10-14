@@ -6,7 +6,7 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')
 import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { makeEngine } from '../test/fakeRapier.js';
-import { Stamina } from '../gameplay/Stamina.js';
+import { Stamina, STAMINA } from '../gameplay/Stamina.js';
 import { StaminaDrain, FATIGUE_DIM_MIN } from '../components/StaminaDrain.js';
 import { SleepDemon } from '../gameplay/SleepDemon.js';
 import { SLEEP_DEMON_DEATH } from '../gameplay/SleepDemonDeath.js';
@@ -75,6 +75,11 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(at(drain)).toBeGreaterThan(at(scene.gameController));
     expect(at(scene.sleepDemon)).toBeGreaterThan(at(drain));
     expect(at(fx)).toBeGreaterThan(at(drain));
+  });
+
+  it("drains over the scene's own shift, so a longer night drains as slowly", () => {
+    const shift = scene.nightClock.nightDuration;
+    expect(scene.stamina.drainPerSecond).toBeCloseTo(1 / (STAMINA.emptyAt * shift));
   });
 
   it('shows the stamina bar on the HUD, and a tired player sees the base dim, on top of the power', () => {

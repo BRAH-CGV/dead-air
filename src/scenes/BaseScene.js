@@ -1305,7 +1305,7 @@ export class BaseScene extends Scene {
    *  and before the demon and the fatigue effects, so within a frame both
    *  read this frame's stamina. */
   _addStamina() {
-    this.stamina = new Stamina();
+    this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
     const dispenser = this.rooms.MainOffice.rationDispenser;
     if (dispenser) {
       dispenser.stamina = this.stamina;

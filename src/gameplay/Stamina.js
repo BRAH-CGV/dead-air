@@ -10,23 +10,34 @@
 // ─────────────────────────────────────────────
 
 export const STAMINA = Object.freeze({
-  /** Empty after 240 s: 4:48 AM of a 300 s shift, with no food. The Sleep
-   *  Demon is about from half stamina (SLEEP_DEMON.appearBelow), 2:24 AM
-   *  with no food, faint at first, and creeps nearer the tireder the
-   *  player gets. */
-  drainPerSecond: 1 / 240,
+  /** Empty this share of the way through the shift, with no food: 4:48 AM
+   *  of a midnight-to-6 shift, whatever its length in real seconds. The
+   *  Sleep Demon is about from half stamina (SLEEP_DEMON.appearBelow),
+   *  2:24 AM with no food, faint at first, and creeps nearer the tireder
+   *  the player gets. */
+  emptyAt: 0.8,
   /** What one ration gives back. */
   ration: 0.35,
   tiredBelow: 0.5,
   criticalBelow: 0.2,
 });
 
+/** The drain that empties a full bar STAMINA.emptyAt of the way through a
+ *  shift `nightSeconds` long. */
+export function drainForShift(nightSeconds) {
+  return 1 / (STAMINA.emptyAt * nightSeconds);
+}
+
 export class Stamina {
   /** 1 wide awake … 0 asleep on your feet. */
   value = 1;
 
-  /** @param {object} [opts] @param {number} [opts.drainPerSecond] */
-  constructor({ drainPerSecond = STAMINA.drainPerSecond } = {}) {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.nightSeconds]  The shift's real length (NightClock.nightDuration).
+   * @param {number} [opts.drainPerSecond]  Overrides the drain the shift gives.
+   */
+  constructor({ nightSeconds = 300, drainPerSecond = drainForShift(nightSeconds) } = {}) {
     this.drainPerSecond = drainPerSecond;
   }
 
