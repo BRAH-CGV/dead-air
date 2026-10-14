@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   UfoThreat, loudestTime, scheduleApproach, ufoTimeline, approachDistance, pathPoint, skyAngles, spawnBearing, UFO,
 } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { COMM_TOWERS } from '../gameobjects/CommTowers.js';
@@ -39,37 +40,44 @@ describe('ufoTimeline', () => {
 });
 
 describe('scheduleApproach', () => {
-  /** Night-clock hour at `seconds` into a 300 s, 6-hour night. */
-  const hourAt = seconds => seconds / 300 * 6;
+  const NIGHT = NIGHT_SECONDS;
+  /** Night-clock hour at `seconds` into the shift. */
+  const hourAt = seconds => SHIFT.startHour + seconds / NIGHT * (SHIFT.endHour - SHIFT.startHour);
 
   it('comes only on its nights — night 3', () => {
     expect(UFO.nights).toEqual([3]);
     for (const night of [1, 2]) {
-      expect(scheduleApproach({ night, nightDuration: 300, random: () => 0.5 })).toBe(Infinity);
+      expect(scheduleApproach({ night, nightDuration: NIGHT, random: () => 0.5 })).toBe(Infinity);
     }
   });
 
-  it('spawns at a random time between 1:00 and 4:30 on the night clock, the radar warning ahead of it', () => {
+  it('spawns at a random time between 8:00 PM and 4:30 AM on the night clock, the radar warning ahead of it', () => {
+    expect(UFO.spawnHours).toEqual([-4, 4.5]);
     for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
-      const start = scheduleApproach({ night: 3, nightDuration: 300, random: () => r });
+      const start = scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => r });
       const spawn = start + UFO.radarLead;   // the flash, as the sound starts
-      expect(hourAt(spawn)).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(hourAt(spawn)).toBeGreaterThanOrEqual(-4 - 1e-9);
       expect(hourAt(spawn)).toBeLessThanOrEqual(4.5 + 1e-9);
       expect(start).toBeGreaterThan(0);
     }
-    expect(hourAt(scheduleApproach({ night: 3, nightDuration: 300, random: () => 0 }) + UFO.radarLead)).toBeCloseTo(1);
-    expect(hourAt(scheduleApproach({ night: 3, nightDuration: 300, random: () => 1 }) + UFO.radarLead)).toBeCloseTo(4.5);
+    expect(hourAt(scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 0 }) + UFO.radarLead)).toBeCloseTo(-4);
+    expect(hourAt(scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 1 }) + UFO.radarLead)).toBeCloseTo(4.5);
+  });
+
+  it('never shows on the radar before dark', () => {
+    const start = scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 0 });
+    expect(hourAt(start)).toBeGreaterThan(SHIFT.darkHour);
   });
 
   it('even the latest spawn is gone well before 6 AM', () => {
     const tl = ufoTimeline({ soundArrival: 23 });
-    const start = scheduleApproach({ night: 3, nightDuration: 300, random: () => 1 });
-    expect(start + tl.departure).toBeLessThan(300);
+    const start = scheduleApproach({ night: 3, nightDuration: NIGHT, random: () => 1 });
+    expect(start + tl.departure).toBeLessThan(NIGHT);
   });
 
-  it('follows the night clock’s own length', () => {
-    const start = scheduleApproach({ night: 3, nightDuration: 600, random: () => 0 });
-    expect((start + UFO.radarLead) / 600 * 6).toBeCloseTo(1);
+  it('follows the night clock’s own length and start', () => {
+    const start = scheduleApproach({ night: 3, nightDuration: 300, nightHours: 6, startHour: 0, random: () => 1 });
+    expect((start + UFO.radarLead) / 300 * 6).toBeCloseTo(UFO.spawnHours[1]);
   });
 });
 

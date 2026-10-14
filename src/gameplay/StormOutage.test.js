@@ -3,7 +3,7 @@ import { StormOutage, STORM_OUTAGE } from './StormOutage.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 
 // ─────────────────────────────────────────────
-// StormOutage — every sandstorm takes the power out, once
+// StormOutage — a sandstorm may take the power out, once
 // ─────────────────────────────────────────────
 
 function makeSound() {
@@ -15,7 +15,8 @@ function makeSound() {
   };
 }
 
-function makeRig({ random = () => 0.5 } = {}) {
+/** Every storm cuts the power unless a test says otherwise (`chance`). */
+function makeRig({ random = () => 0.5, chance = 1 } = {}) {
   const listeners = [];
   const controller = { state: 'playing', onNightStart: fn => { listeners.push(fn); return () => {}; } };
   // A storm the test moves through by hand.
@@ -23,7 +24,7 @@ function makeRig({ random = () => 0.5 } = {}) {
   const grid = new PowerGrid();
   const cutPower = vi.fn(() => grid.setOn(false));
   const sounds = { flicker: makeSound() };
-  const outage = new StormOutage({ controller, sandstorm, grid, cutPower, sounds, random });
+  const outage = new StormOutage({ controller, sandstorm, grid, cutPower, sounds, random, chance });
   outage.onStart();
   return { outage, controller, sandstorm, grid, cutPower, sounds, startNight: n => listeners.forEach(fn => fn(n)) };
 }
@@ -52,7 +53,7 @@ describe('StormOutage', () => {
     expect(rig.grid.brownout).toBeGreaterThan(0);
   });
 
-  it('every storm: the lights flicker first, then the power goes', () => {
+  it('a storm that takes it: the lights flicker first, then the power goes', () => {
     const rig = makeRig();
     through(rig, 0, 0.9);
     expect(rig.sounds.flicker.isPlaying).toBe(true);
@@ -116,5 +117,66 @@ describe('StormOutage', () => {
     rig.startNight(2);
     expect(rig.grid.brownout).toBe(0);
     expect(rig.cutPower).not.toHaveBeenCalled();
+  });
+});
+
+describe('StormOutage — not every storm (#107)', () => {
+  /** A dice that rolls these in turn, then the last for ever. */
+  const dice = (...rolls) => () => (rolls.length > 1 ? rolls.shift() : rolls[0]);
+
+  it('about half the storms take the power', () => {
+    expect(STORM_OUTAGE.chance).toBeGreaterThan(0.3);
+    expect(STORM_OUTAGE.chance).toBeLessThan(0.7);
+  });
+
+  it('a storm that misses blows through with the lights steady', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.9 });
+    through(rig, 0, 1, 80);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.grid.brownout).toBe(0);
+    expect(rig.sounds.flicker.play).not.toHaveBeenCalled();
+    expect(rig.cutPower).not.toHaveBeenCalled();
+    expect(rig.grid.on).toBe(true);
+  });
+
+  it('a storm that hits takes it as before', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.1 });
+    through(rig, 0, 0.9);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+  });
+
+  it('each storm rolls its own', () => {
+    const rig = makeRig({ chance: 0.5, random: dice(0.9, 0.1, 0.5) });
+    through(rig, 0, 1);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).not.toHaveBeenCalled();
+    rig.sandstorm.stormId = 2;   // the next storm
+    through(rig, 0, 1);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+  });
+
+  it('a new night rolls again for a storm it had already passed over', () => {
+    const rig = makeRig({ chance: 0.5, random: dice(0.9, 0.1, 0.5) });
+    through(rig, 0, 0.5);
+    rig.startNight(2);            // a retry: the same stormId comes round again
+    through(rig, 0, 0.9);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls STORM_OUTAGE.chance unless told otherwise', () => {
+    for (const [roll, cuts] of [[STORM_OUTAGE.chance + 0.01, 0], [STORM_OUTAGE.chance - 0.01, 1]]) {
+      const controller = { state: 'playing', onNightStart: () => () => {} };
+      const sandstorm = { level: 1, stormId: 1, stormProgress: 0 };
+      const grid = new PowerGrid();
+      const cutPower = vi.fn(() => grid.setOn(false));
+      const outage = new StormOutage({ controller, sandstorm, grid, cutPower, sounds: {}, random: () => roll });
+      outage.onStart();
+      for (let i = 0; i <= 40; i++) { sandstorm.stormProgress = 0.9 * i / 40; outage.onUpdate(0.05); }
+      run(outage, STORM_OUTAGE.flickerSeconds + 0.1);
+      expect(cutPower, `roll ${roll}`).toHaveBeenCalledTimes(cuts);
+    }
   });
 });

@@ -76,7 +76,7 @@ src/
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
-│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
+│   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog (dusk and dawn); turns the sky, aims the moonlight
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
 │   ├── StaminaDrain.js  # Ticks Stamina through the shift; a tired player sees the base dim
 │   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns, the walk-down's breath (setDread)
@@ -86,6 +86,7 @@ src/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── DigitalClock.js  # The desk's seven-segment clock, in 24-hour time
 │   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
@@ -97,7 +98,7 @@ src/
 │   ├── SignalMast.js    # Lattice relay mast on the bunker roof; red lamp flashing (SignalBlink), no light
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
-│   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
+│   ├── NightClock.js    # 6:00 PM → 6:00 AM: one twelve-hour shift (SHIFT, NIGHT_SECONDS)
 │   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
 │   ├── Stamina.js       # How awake the player is, 1 → 0 over a shift (pure)
 │   ├── Fatigue.js       # What low stamina does: tunnel and heartbeat curves, yawn/blink/stutter timers (pure)
@@ -107,7 +108,7 @@ src/
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
-│   ├── Sandstorm.js     # Random dust storms from night 2: wind sound, fog, sky, moonlight, dust
+│   ├── Sandstorm.js     # One long dust storm a night: wind sound, fog, sky, moonlight, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
@@ -228,7 +229,9 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
 
 ### Shift and day
 
-A night is a shift: `NightClock` runs 12:00 → 6:00 AM, shown on the HUD and on the office's `WallClock`. `GameController` owns the state:
+A night is one twelve-hour shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD ("6:00 PM"), on the office's `WallClock` and on the desk's `DigitalClock`, which reads 24-hour time (18:00 → 06:00, with the leading zero). The desk clock floors to the minute gone, as the HUD does, so the two never disagree. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
+
+`GameController` owns the state:
 
 ```
 playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
@@ -236,11 +239,13 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
-Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning".
+
+Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
+
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
-- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
-- **Dawn.** `dawnFactor(hour, state)` is 0 all night, smoothsteps to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to:
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning (`controller.canSleep`), and it runs `controller.sleep()` behind a `ScreenFade`; during the shift its label says why not. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Dusk and dawn.** `dawnFactor(hour, state)` is 1 at 6 PM, the shift starting in the last of the daylight, smoothsteps to 0 over the first hour, is 0 all night, smoothsteps back to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to the following — from `onAwake` too, so the main menu, over a scene that never ticks, shows the dusk:
   - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
   - the ambient and moon lights (the moon light is the morning sun).
   - the fog colour.
@@ -248,12 +253,12 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
   Night values are captured when `Daylight` is built, so the scene's lighting code stays the one place that defines the night.
 - **The sky turns.** `Daylight` also calls `sky.setHour(clock.currentTime)`.
   - **What turns.** The stars, Milky Way, both moons and the Sun turn together, 15° an hour, westward about a pole due north and 35° up (`latitude`, `hourRate`). Midnight is the sky as authored, so the moon angles in `DEFAULT_MOONS` are their midnight positions.
-  - **The Sun.** The turn is what places it: it reaches the horizon at `sunAzimuth`, in the window, at 6 AM (`sunriseHour`). The moons ride ~125° away from it, across the sky, and stay up all night.
+  - **The Sun.** The turn is what places it: it reaches the horizon at `sunAzimuth`, in the window, at 6 AM (`sunriseHour`). It is on the celestial equator, so it set twelve hours earlier, at 6 PM, behind the base. The moons ride ~125° away from it, across the sky: both are down at sunset and rise at about 10:30 PM (Phobos) and 11 PM (Deimos).
   - **How each part turns.**
     - The stars and moons get the turn as a quaternion.
     - The dome can't rotate, since its horizon haze belongs to the ground. It gets the same turn as the `uSkyRotation` mat3 uniform, and looks the Milky Way up at `dir * uSkyRotation`.
     - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
-  - **The moonlight.** It shines from wherever Phobos is. Through the dawn it swings to the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
+  - **The moonlight.** It shines from wherever Phobos is. While Phobos is low or down it comes from Phobos's bearing but never lower than `MOONLIGHT.minElevation` (20°), never from under the ground, and dimmed to `MOONLIGHT.downLevel` (35 %) until Phobos rises: the early evening is the darkest part of the night. Through the dusk and the dawn it swings between that and the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
 
 ### Stamina and the Sleep Demon
@@ -294,7 +299,7 @@ The Sleep Demon comes every night, 1 to 3 — silent and mysterious but for the 
   - **Cut** (`cut`, 0.7 s): `ScreenFade` to black, then the failed night.
   - **Its lids win.** It writes the `FatigueOverlay` after `FatigueEffects` does (`onLateUpdate`), and they share one overlay so their caches agree.
   - **It runs on the game clock**, so a pause or the fly camera holds it.
-  - **Called off.** The shift ending under it calls it off, and so does a night start (a retry or the N key). Either one, or `onDestroy` (a rebuild from the menu), gives everything back: the player, the camera's pose, the lids and the volume.
+  - **Called off.** The shift ending under it calls it off, and so does a night start (a retry or the console's `night`). Either one, or `onDestroy` (a rebuild from the menu), gives everything back: the player, the camera's pose, the lids and the volume.
 - **Fatigue.** `Fatigue.js` holds the curves and timers, `FatigueEffects` (after the drain) plays them, and `FatigueOverlay` draws `#fatigue` in index.html.
   - **Tired** (below 0.5): the base dims through the grid's `fatigue` factor, sinking towards `FATIGUE_DIM_MIN` (0.6) at empty. The view narrows (the tunnel), and the player yawns (`sfx:yawn`) every 20–35 s.
   - **Critical** (below 0.2): a yawn every 7–12 s and a blink every 4–8 s. The lights stutter through the grid's `dread` factor (down to 0.5), and a heartbeat (`sfx:heartbeat`) rises towards empty.
@@ -339,7 +344,7 @@ The generator outside is the base's one power switch. It stands in the far corne
   - **Volume.** Outdoors it falls off with distance from the generator; inside any room or corridor it is a whisper (`insideLevel`, 1 %).
   - **The clips** are cut at MPEG frame boundaries from one 3-minute recording, so only about 22 s of audio is decoded.
 
-`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 1:00 and 4:30 on the night clock (`UFO.spawnHours`, via `scheduleApproach`, which follows the clock's own length), with the radar warning `radarLead` seconds before. For testing, `summon()` (the console's `ufo`) brings it at once, on any night:
+`UfoThreat` (on `GameplaySystems`) brings the UFO on its nights only (`UFO.nights`: night 3, the last), guaranteed and once. It spawns at a random time between 8:00 PM and 4:30 AM on the night clock (`UFO.spawnHours`, -4 … 4.5, via `scheduleApproach`, which follows the clock's own length and start), with the radar warning `radarLead` seconds before. For testing, `summon()` (the console's `ufo`) brings it at once, on any night:
 
 ```
 waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
@@ -399,7 +404,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 ### Sandstorms
 
-`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings a dust storm every night, night 1 included (the dust eyes stay away until night 2). It starts at a random hour (`startHours`, 0:30–4:12) and blows for about an hour and a half of clock time (`durationHours`, 1.3–1.7), building up and dying down over `rampSeconds` (`stormLevel`). The schedule follows the clock's own length (`scheduleStorm`). For testing, `summon()` (the console's `storm`) starts one at once, on any night. `sandstorm.level` (0 … 1) is what the dust eyes read.
+`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings one long dust storm every night (`perNight`), night 1 included (the dust eyes stay away until night 2). It blows after dark, somewhere wholly inside `stormHours` (-4.5 … 5.9: 7:30 PM – 5:54 AM), for about three hours of clock time (`durationHours`, 2.5–3.5; 125–175 real seconds), building up and dying down over `rampSeconds` (`stormLevel`). One long storm rather than two short ones (#107): two, each cutting the power, left no time for the tension to build. `perNight` is the one number to change: the stretch is split into that many equal parts with one storm wholly inside each, so they never overlap, and two of the longer storms still fit (a test keeps them fitting). The schedule follows the clock's own length and start (`scheduleStorms`); the next storm comes up when the last has blown over (a new `stormId`). For testing, `summon()` (the console's `storm`) starts one at once, on any night, standing in for the next storm that hasn't started. `sandstorm.level` (0 … 1) is what the dust eyes read.
 
 - **Never with the UFO.** On a UFO night (`UFO.nights`) nothing is scheduled at random; instead a storm always follows the UFO, `afterUfoDelay` (10–30 s) after it has gone. Neither a scheduled storm nor the console's `storm` starts one while a visit is under way (`_ufoBusy`); a storm due then waits.
 - **Held.** While `sandstorm.held` is set (`DustEyes`, through a chase) the end keeps being pushed back past the die-down, so the storm stays at full until the player is away.
@@ -433,7 +438,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 ### Storm outages
 
-`StormOutage` (on `GameplaySystems`) takes the power out once every storm (`sandstorm.stormId`), at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
+`StormOutage` (on `GameplaySystems`) rolls `STORM_OUTAGE.chance` (50 %) as each storm comes up (`sandstorm.stormId`), so a storm is never a sure thing (#107). One that misses blows through with the lights steady. One that hits takes the power out once, at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
 
 ### Input system
 

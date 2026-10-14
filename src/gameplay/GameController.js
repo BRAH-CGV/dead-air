@@ -11,8 +11,8 @@ import { Component } from '../core/Component.js';
 //      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
 //      └──fail() (a threat got the player)──▶ gameOver
 //
-// Meeting the quota early doesn't end the shift: the player still has to
-// hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
+// One twelve-hour shift, 6 PM to 6 AM. Meeting the quota early doesn't end
+// it: the player still has to hold out until 6 AM. The day is for sleeping — the Sun drowns the faint
 // signals and heats up the dust storms — so nothing happens in the morning
 // until the player goes to bed.
 //
@@ -55,6 +55,9 @@ export class GameController extends Component {
    *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
   quotaDock = null;
 
+  /** Which shift prompt is up (a PROMPT key), so it is set once, on change. */
+  _shiftPrompt = null;
+
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
   /** Seconds before a failed night's prompt shows and [E] retries. */
@@ -76,6 +79,7 @@ export class GameController extends Component {
    *         game over — listeners put the player back at the start. */
   startNight(nightNumber, { retry = false } = {}) {
     this.nightNumber = nightNumber;
+    this._shiftPrompt = null;
     this._setState('playing');
 
     this.nightClock?.reset();
@@ -94,7 +98,7 @@ export class GameController extends Component {
       this.quotaDock?.collectedCount ?? 0,
       this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
     );
-    this.hud?.setTime(this.nightClock?.timeString ?? '12:00 AM');
+    this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
 
@@ -148,14 +152,17 @@ export class GameController extends Component {
     return () => this._stateListeners.delete(listener);
   }
 
+  /** Whether the bed takes the player: the morning after a met quota. */
+  get canSleep() {
+    return this.state === 'morning';
+  }
+
   /** Called when a signal is saved by the terminal. Scanning no longer
    *  affects the quota directly — the drive box dock counts saved drives
    *  seated in the docked box. Kept for backward compatibility (HUD refresh). */
   onSignalSaved() {
     this._updateHUD();
-    if (this.state === 'playing' && this.quotaDock?.isQuotaMet()) {
-      this.hud?.setPrompt(PROMPT.quotaMet);
-    }
+    if (this.state === 'playing') this._updateShiftPrompt();
   }
 
   /** Called when a signal is deleted by the terminal. */
@@ -169,11 +176,11 @@ export class GameController extends Component {
     this.startNight(this.nightNumber, { retry: true });
   }
 
-  /** Go to bed. Only the morning after a successful shift: moves to the next
-   *  night, or ends the run after the last one.
+  /** Go to bed. Only the morning after a successful shift (canSleep):
+   *  moves to the next night, or ends the run after the last one.
    *  @returns {boolean} whether the player slept */
   sleep() {
-    if (this.state !== 'morning') return false;
+    if (!this.canSleep) return false;
     if (this.nights?.isLastNight()) {
       this._finish();
     } else if (this.nights) {
@@ -224,6 +231,7 @@ export class GameController extends Component {
 
     // Update HUD every frame
     this._updateHUD();
+    this._updateShiftPrompt();
 
     // Check shift end — quota is counted by the drive box dock (saved
     // drives seated in the docked box), not by signals scanned.
@@ -249,9 +257,18 @@ export class GameController extends Component {
     return !!engine.input?.pressed?.[engine.keyBinds?.interact];
   }
 
+  /** The prompt for where the shift stands — the quota met, or not yet —
+   *  set only when that changes. */
+  _updateShiftPrompt() {
+    const key = this.quotaDock?.isQuotaMet() ? 'quotaMet' : null;
+    if (key === this._shiftPrompt) return;
+    this._shiftPrompt = key;
+    this.hud?.setPrompt(key ? PROMPT[key] : '');
+  }
+
   _updateHUD() {
     if (!this.hud) return;
-    this.hud.setTime(this.nightClock?.timeString ?? '12:00 AM');
+    this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
 
     // Quota progress comes from the drive box dock (saved drives in the
     // docked box), falling back to the signal manager's required count

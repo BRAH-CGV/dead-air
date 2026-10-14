@@ -449,7 +449,12 @@ describe('createCommands', () => {
 
   describe('time', () => {
     it('no argument shows the clock', () => {
-      expect(run('time').out).toEqual(['Time 12:00 AM']);
+      expect(run('time').out).toEqual(['Time 6:00 PM']);
+    });
+
+    it('takes an evening time, before midnight', () => {
+      expect(run('time 11:30 pm').out).toEqual(['Time 11:30 PM']);
+      expect(scene.nightClock.currentTime).toBe(-0.5);
     });
 
     it('sets the clock', () => {
@@ -463,18 +468,18 @@ describe('createCommands', () => {
     });
 
     it('outside the shift is a usage error and leaves the clock', () => {
-      for (const bad of ['noon', '11pm']) {
+      for (const bad of ['noon', '5pm', '7am']) {
         const { ok, out } = run(`time ${bad}`);
         expect(ok, bad).toBe(false);
         expect(out.at(-1)).toBe('Usage: time [h:mm am|pm]');
       }
-      expect(scene.nightClock.currentTime).toBe(0);
+      expect(scene.nightClock.timeString).toBe('6:00 PM');
     });
 
     it('follows the clock\'s own hours', () => {
-      scene.nightClock = new NightClock({ startHour: -6, endHour: 6, nightDuration: 600 });
-      expect(run('time 11:30 pm').out).toEqual(['Time 11:30 PM']);
-      expect(scene.nightClock.currentTime).toBe(-0.5);
+      scene.nightClock = new NightClock({ startHour: 0, endHour: 6, nightDuration: 300 });
+      expect(run('time 11pm').ok).toBe(false);
+      expect(run('time 2am').out).toEqual(['Time 2:00 AM']);
     });
 
     it('only during a shift', () => {
