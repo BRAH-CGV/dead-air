@@ -168,6 +168,27 @@ describe('the face an open end butts against', () => {
   });
 });
 
+describe('a passageway open at both ends', () => {
+  it('lines the room wall at each end, round its doorway', () => {
+    const corridor = new Corridor(engineWithTextures(), {
+      name: 'Hall', length: 4, width: 2, axis: 'x',
+      openEndDoorways: { left: { width: 1.2, height: 2.2 }, right: { width: 1.2, height: 2.2 } },
+    });
+    corridor.build();
+    const pos = sheet(corridor, 'Lining_Walls').geometry.getAttribute('position');
+    expect(pos.count / 4).toBe(2 + 3 + 3);                            // long walls, and each end face round its doorway
+    const onPlane = x => {
+      let quads = 0;
+      for (let q = 0; q < pos.count / 4; q++) {
+        if ([0, 1, 2, 3].every(i => Math.abs(pos.getX(q * 4 + i) - x) < 1e-6)) quads++;
+      }
+      return quads;
+    };
+    expect(onPlane(-2 + LINING.gap)).toBe(3);                         // just inside the left end
+    expect(onPlane(2 - LINING.gap)).toBe(3);                          // just inside the right end
+  });
+});
+
 describe('the office\'s lining', () => {
   it('lines the window wall round the glass, not across it', () => {
     const office = new MainOffice(engineWithTextures());

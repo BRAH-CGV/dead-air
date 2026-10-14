@@ -312,6 +312,20 @@ describe('BaseScene', () => {
     expect(scene.rooms.Airlock.openEndDoorways).toEqual({ back: { width: front.width, height: front.height } });
   });
 
+  it('tells each passageway of the doorways at its ends, so the room walls it butts against are lined round them', () => {
+    const door = (room, side) => {
+      const { width, height } = scene.rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
+    // Both run along x: their left end is the −x one.
+    expect(scene.corridors.OfficeToServer.openEndDoorways).toEqual({
+      left: door('MainOffice', 'right'), right: door('ServerRoom', 'left'),
+    });
+    expect(scene.corridors.OfficeToQuarters.openEndDoorways).toEqual({
+      left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left'),
+    });
+  });
+
   it('the generator is a raycastable Interactable that switches the power grid', () => {
     const generator = sceneRoot.find('Outside').find('Generator');
     const interactable = generator.getComponent(Interactable);

@@ -370,9 +370,22 @@ export class BaseScene extends Scene {
       length: CORRIDOR_LENGTH, width: CORRIDOR_WIDTH,
       height: rooms.MainOffice.height, wallThick: rooms.MainOffice.wallThick, axis: 'x',
     };
+    // Each end butts against a room's outer wall, round its doorway; the
+    // corridor lines that face, as neither room's own walls cover it. A
+    // corridor runs along x, so its left end is the −x one.
+    const door = (room, side) => {
+      const { width, height } = rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
     this.corridors = {
-      OfficeToServer:   new Corridor(engine, { ...common, name: 'OfficeToServer',   position: [ mid, 0, this._doorZ.right] }),
-      OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
+      OfficeToServer: new Corridor(engine, {
+        ...common, name: 'OfficeToServer', position: [mid, 0, this._doorZ.right],
+        openEndDoorways: { left: door('MainOffice', 'right'), right: door('ServerRoom', 'left') },
+      }),
+      OfficeToQuarters: new Corridor(engine, {
+        ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left],
+        openEndDoorways: { left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left') },
+      }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
   }
