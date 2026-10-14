@@ -24,6 +24,9 @@ import { Component } from '../core/Component.js';
 // flash in short, uneven, over-bright bursts whatever the signals are doing.
 // Its bulb is `offGrid` so the grid's collect() leaves the material to it.
 //
+// `lit` says whether the bulb is shining this frame, for whoever wants to
+// act on each light-up (ScannerAlertSound beeps on it).
+//
 // Placeholder until a proper warning-lamp model is sourced. It owns its
 // geometry and material; dispose() frees them.
 // ─────────────────────────────────────────────
@@ -58,6 +61,10 @@ export class SignalAlertLight extends GameObject {
   offIntensity;
 
   _phase = 0;
+
+  /** Is the bulb shining right now? False through the dim half of a blink,
+   *  with nothing to scan and with no power. */
+  lit = false;
 
   /** Set while the UFO closes in: the lamp flashes wildly, signal or not. */
   frantic = false;
@@ -104,6 +111,7 @@ export class SignalAlertLight extends GameObject {
   _tick(dt) {
     if (this.powerLevel <= 0) {
       this.bulb.material.emissiveIntensity = 0;
+      this.lit = false;
       return;
     }
     if (this.frantic) {
@@ -113,10 +121,12 @@ export class SignalAlertLight extends GameObject {
     if (!this.isAlerting()) {
       this.bulb.material.emissiveIntensity = this.offIntensity;
       this._phase = 0;   // the next window starts on, not mid-off
+      this.lit = false;
       return;
     }
     this._phase = (this._phase + dt) % this.period;
     const on = this._phase < this.period / 2;
+    this.lit = on;
     this.bulb.material.emissiveIntensity = (on ? this.onIntensity : this.offIntensity) * Math.max(this.powerLevel, 1);
   }
 
@@ -128,6 +138,7 @@ export class SignalAlertLight extends GameObject {
       this._franticOn = !this._franticOn;
       this._franticHold = FRANTIC_MIN + Math.random() * (FRANTIC_MAX - FRANTIC_MIN);
     }
+    this.lit = this._franticOn;
     this.bulb.material.emissiveIntensity = this._franticOn
       ? this.onIntensity * FRANTIC_GAIN * Math.max(this.powerLevel, 1)
       : this.offIntensity;

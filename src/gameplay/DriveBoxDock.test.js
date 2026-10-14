@@ -5,11 +5,13 @@ import { DriveBoxDock } from './DriveBoxDock.js';
 // `box.receiver.attachedItems` and calls `socket.detach(box)` — no physics
 // or scene graph needed.
 
-/** A duck-typed seated drive: only `saved` and `setEjected` matter. */
-function makeDrive({ saved = false } = {}) {
+/** A duck-typed seated drive: only `saved`, `corrupted` and `setEjected`
+ *  matter. setEjected mirrors the real Drive — it clears both flags. */
+function makeDrive({ saved = false, corrupted = false } = {}) {
   return {
     saved,
-    setEjected() { this.saved = false; },
+    corrupted,
+    setEjected() { this.saved = false; this.corrupted = false; },
   };
 }
 
@@ -49,6 +51,18 @@ describe('DriveBoxDock', () => {
     expect(dock.isQuotaMet()).toBe(true);
   });
 
+  it('never counts a corrupted (red) drive, even seated saved in the dock', () => {
+    const box = makeBox([
+      makeDrive({ saved: true }),
+      makeDrive({ saved: true, corrupted: true }),
+      makeDrive({ saved: true, corrupted: true }),
+    ]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 2 });
+
+    expect(dock.collectedCount).toBe(1);
+    expect(dock.isQuotaMet()).toBe(false);
+  });
+
   it('ignores saved drives in boxes that are not docked', () => {
     const docked = makeBox([makeDrive({ saved: false })]);
     const elsewhere = makeBox([makeDrive({ saved: true }), makeDrive({ saved: true })]);
@@ -85,6 +99,16 @@ describe('DriveBoxDock', () => {
     expect(released).toBe(box);
     expect(detached).toBe(box);
     for (const drive of drives) expect(drive.saved).toBe(false);
+  });
+
+  it('empty() clears corruption along with the save', () => {
+    const drive = makeDrive({ saved: true, corrupted: true });
+    const box = makeBox([drive]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box) });
+
+    expect(dock.empty()).toBe(box);
+    expect(drive.saved).toBe(false);
+    expect(drive.corrupted).toBe(false);
   });
 
   it('empty() tolerates empty slots among the seated drives', () => {

@@ -115,6 +115,37 @@ describe('MenuView', () => {
     expect(view.panel.querySelector('.menu-settings h3').textContent).toBe('COMPUTER TERMINAL');
   });
 
+  describe('one highlight at a time (#75)', () => {
+    const hover = (el) => el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+
+    it('hovering an option moves the focus to it, so the old one stops highlighting', () => {
+      view.show('pause', { status: '' });
+      expect(document.activeElement).toBe(byAction(view, 'resume'));
+      hover(byAction(view, 'settings'));
+      expect(document.activeElement).toBe(byAction(view, 'settings'));
+    });
+
+    it('arrow keys carry on from the hovered option', () => {
+      view.show('pause', { status: '' });
+      hover(byAction(view, 'settings'));
+      view.handleKey(new KeyboardEvent('keydown', { code: 'ArrowDown' }));
+      expect(document.activeElement).toBe(byAction(view, 'restart'));
+    });
+
+    it('hovering a disabled option leaves the focus where it is', () => {
+      view.show('main', { tagline: [], version: '1', continueNight: null });
+      byAction(view, 'settings').disabled = true;
+      hover(byAction(view, 'settings'));
+      expect(document.activeElement).toBe(byAction(view, 'newGame'));
+    });
+
+    it('hovering the gaps between options changes nothing', () => {
+      view.show('pause', { status: '' });
+      hover(view.panel);
+      expect(document.activeElement).toBe(byAction(view, 'resume'));
+    });
+  });
+
   describe('keyboard', () => {
     it('ArrowDown and ArrowUp move focus, wrapping', () => {
       view.show('pause', { status: '' });

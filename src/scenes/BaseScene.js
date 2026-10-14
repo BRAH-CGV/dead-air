@@ -52,9 +52,14 @@ import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { EvilSignal } from '../gameplay/EvilSignal.js';
+import { DOOM_LIGHT_COLOR, DOOM_LIGHT_MAX_DISTANCE } from '../gameobjects/Drive.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
+import { DeleteWarning } from '../ui/DeleteWarning.js';
+import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -63,6 +68,9 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
+import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
+import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
+import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
@@ -110,22 +118,10 @@ const SIDE_ROOM_Z = 1;
  *  above the floor and settles onto it. */
 const PLAYER_SPAWN = [0, 1, 0];
 
-/** Fog density for the SEALED rooms — the ones with no sightline out of the
- *  base, so their density is free to be an atmosphere knob: thicker in the
- *  server room, thinner in living quarters.
- *
- *  Rooms here are small (6-12 m across), so fog only needs to be a light
- *  depth cue, not the "can't see the far wall" effect it's for outdoors —
- *  ServerRoom was originally 0.05, which combined with its dim lighting to
- *  make it borderline unreadable. Kept subtle now that the racks light
- *  themselves (see ServerRoom.buildLighting). */
-const ROOM_FOG_DENSITY = {
-  ServerRoom: 0.03,
-  LivingQuarters: 0.008,
-};
-
-/** Density everywhere the valley is visible: the main office (whose back wall
- *  is an 8.5 m window), the corridors, and outside.
+/** The fog's density, everywhere: every room, every corridor and outside.
+ *  No room has a fog of its own — a room that changed it showed as the view
+ *  through the office window changing at its doorway — and the rooms' own
+ *  surfaces take no fog at all (_keepFogOutside).
  *
  *  This is the one number the two halves of this scene had to agree on, and
  *  they did not. The engine's base fog (0.02) is opaque by ~150 m, and
@@ -194,6 +190,19 @@ const UFO_HOVER_HEIGHT = 35;
  *  `glass` is how much of it the window's smudges show by (WindowGlass). */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
+/** The security cameras (_addSecurityCameras), in metres. Indoors: in from
+ *  the corner's two walls, and down from the ceiling. Outdoors: how high on
+ *  the wall, and how far off its face (the bracket's plate). Pan ranges are
+ *  radians either way; `reach` is how far each one's flash carries. */
+const SECURITY_CAMERAS = {
+  room:    { inset: 0.2, drop: 0.25, aimHeight: 0.4, panRange: 0.75, reach: 11 },
+  outside: { height: 2.6, offWall: 0.02, panRange: 1.1, reach: 25 },
+  yard:    { inFromFence: 1.5, panRange: 1.0, reach: 25 },
+  /** The monitor's map: metres of ground shown round the base, [across,
+   *  down] — wide enough across that the end-wall cameras read as outside. */
+  mapMargin: [6, 1.5],
+};
+
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
@@ -250,11 +259,13 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._addSecurityCameras();
     this._addWindDust();
     this._spawnPlayer();
     this._keepFogOutside();
     this._addPower();
     this._addGameplaySystems();
+    this._addCameraTerminal();
     this._addStamina();
     this._addFatigue();
     this._addSleepDemon();
@@ -279,6 +290,13 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
+    // Off the monitor first: the frame goes back to the player's eyes, and
+    // the zones a camera asked for go back to the airlock's choice.
+    this.cameraTerminal?.exit();
+    this.cameraOverlay?.hide();
+    this._offCameraState?.();
+    this._offCameraPause?.();
+    for (const cam of this.securityCameras ?? []) cam.dispose();
     this._offNightStart?.();
     this._offNightReset?.();
     this._offSuitHud?.();
@@ -514,6 +532,28 @@ export class BaseScene extends Scene {
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
 
+    // The red signal (the next threat, in early): it scans itself, pins
+    // the dish when no drive is in, and corrupts the drive it is saved to
+    // — a red drive never counts towards the quota. Summoned with G until
+    // it gets a night of its own.
+    this.evilSignal = new EvilSignal({
+      controller:    this.gameController,
+      signalManager: this.signalManager,
+      terminal:      this.terminal,
+      driveManager:  this.driveManager,
+      satellite:     this.satellite,
+    });
+    gameplayGO.addComponent(this.evilSignal);
+    this.terminal.evilSignal = this.evilSignal;
+
+    // Shared doom PointLight — created once at scene build, moved to the
+    // corrupted drive each frame by EvilSignal. Never added/removed so the
+    // scene's light count stays fixed (no shader recompiles).
+    const doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
+    doomLight.name = 'DoomLight';
+    gameplayGO.object3d.add(doomLight);
+    this.evilSignal.doomLight = doomLight;
+
     // Wire the drive manager to the office's drive reader slot.
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
     if (driveSlot) {
@@ -627,6 +667,8 @@ export class BaseScene extends Scene {
     if (signalLight) {
       signalLight.signalManager  = this.signalManager;
       signalLight.gameController = this.gameController;
+      // Its beep, with every light-up.
+      signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
     const { bed } = this.rooms.LivingQuarters;
@@ -721,8 +763,7 @@ export class BaseScene extends Scene {
     this.sky = sky;   // Daylight turns its uDawn
 
     // Remember the fog we were handed before touching it. Scene teardown
-    // never resets scene.fog, and both halves of the pair are ours now: the
-    // colour here, the density in _applyRoomFog.
+    // never resets scene.fog, and both halves of the pair are ours now.
     this._prevFogColor   = this.engine.scene.fog?.color.getHex();
     this._prevFogDensity = this.engine.scene.fog?.density;
 
@@ -731,10 +772,8 @@ export class BaseScene extends Scene {
     // seam where the ground meets the sky.
     this.engine.scene.fog?.color.set(0x1f2a38);
 
-    // Start the scene at the outdoor density. RoomTransitionSystem only
-    // reports a room on its first update, and the player spawns in the office
-    // facing the window — without this the first frame is drawn at whatever
-    // density the engine happened to leave in scene.fog.
+    // One density, everywhere and for good: the engine's base fog is far too
+    // thick for the valley (see OUTDOOR_FOG_DENSITY).
     if (this.engine.scene.fog) this.engine.scene.fog.density = OUTDOOR_FOG_DENSITY;
   }
 
@@ -909,6 +948,192 @@ export class BaseScene extends Scene {
     this.generator = this._addStandIn('Generator', 'generator.glb',
       [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
     this.dishPad = dishPad;
+  }
+
+  // ──────────────────────────────────────────
+  // Security cameras (watched from the monitor on the desk's left wing)
+  // ──────────────────────────────────────────
+  /** Six cameras, placed off the rooms and the fence so they follow a
+   *  redesign:
+   *    • one in each side room, looking down across it: high in the
+   *      living quarters' outer back corner (its top left, as seen from the
+   *      desk), and high in the middle of the server room's back wall;
+   *    • one on the outside of each end wall, about its middle, looking out;
+   *    • two in the fenced yard, on the building's front near each end of
+   *      the fence, looking out across it.
+   *  The room ones hang in their rooms, so they go undrawn with the
+   *  furnishings; the outdoor ones stand under Outside, for the occlusion
+   *  sort. Each says which zones its picture needs: from indoors the yard
+   *  (and the scenery no one is meant to see) has been left undrawn, and the
+   *  monitor shows static until it is in.
+   *
+   *  A bracket turned off square to its wall stands on a wedge
+   *  (SecurityCamera `mount`), so none of them hangs in the air.
+   *
+   *  The flash they share is built here too, at zero, so the boot warm-up
+   *  compiles every lit shader with it counted. It hangs on the scene root
+   *  — off the grid, and never under a room the occlusion sort can hide. */
+  _addSecurityCameras() {
+    const { rooms } = this;
+    const R = SECURITY_CAMERAS.room, O = SECURITY_CAMERAS.outside, Y = SECURITY_CAMERAS.yard;
+    const cams = [];
+    // A wedge is drawn in the wall it is fixed to: inside, the room's lining
+    // (its plain wall if the lining's textures aren't loaded); outside, the
+    // shell. Both the room's, shared — never freed by the camera.
+    const innerWall = room => room.root.object3d.getObjectByName('Lining_Walls')?.material ?? room.material;
+    const place = (parent, spec, origin = [0, 0, 0]) => {
+      const local = v => v.map((c, i) => c - origin[i]);
+      // The mount is in the same space: a corner's (x, z), or a wall's plane.
+      const { mount } = spec;
+      const localMount = mount?.corner ? { ...mount, corner: [mount.corner[0] - origin[0], mount.corner[1] - origin[2]] }
+        : mount?.wall ? { ...mount, wall: { axis: mount.wall.axis, at: mount.wall.at - origin[mount.wall.axis === 'x' ? 0 : 2] } }
+        : null;
+      const cam = new SecurityCamera({
+        ...spec, name: `SecurityCamera_${cams.length + 1}`,
+        position: local(spec.position), target: local(spec.target), mount: localMount,
+      });
+      parent.addChild(cam);
+      cams.push(cam);
+    };
+
+    // The living quarters: high in the far back corner, on a wedge.
+    {
+      const room = rooms.LivingQuarters, b = room.bounds(), t = room.wallThick;
+      const corner = [b.min.x + t, b.min.z + t];   // the inner faces of the end and back walls
+      place(room.root, {
+        label: 'LIVING QUARTERS', panRange: R.panRange, zones: ['interior'], flashReach: R.reach,
+        position: [corner[0] + R.inset, room.position[1] + room.height - R.drop, corner[1] + R.inset],
+        target: [room.position[0], R.aimHeight, room.position[2]],
+        mount: { corner, material: innerWall(room) },
+      }, room.position);
+    }
+    // The server room: high in the middle of the back wall, straight down the room.
+    {
+      const room = rooms.ServerRoom, b = room.bounds(), t = room.wallThick;
+      const wall = b.min.z + t;
+      place(room.root, {
+        label: 'SERVER ROOM', panRange: R.panRange, zones: ['interior'], flashReach: R.reach,
+        position: [room.position[0], room.position[1] + room.height - R.drop, wall + O.offWall],
+        target: [room.position[0], R.aimHeight, room.position[2]],
+        mount: { wall: { axis: 'z', at: wall }, material: innerWall(room) },
+      }, room.position);
+    }
+
+    // Outside each end wall, about its middle, looking out.
+    for (const [room, label, side] of [[rooms.LivingQuarters, 'EXTERIOR — QUARTERS END', -1], [rooms.ServerRoom, 'EXTERIOR — SERVER END', 1]]) {
+      const b = room.bounds();
+      const x = (side < 0 ? b.min.x : b.max.x) + side * O.offWall;
+      const z = (b.min.z + b.max.z) / 2;
+      place(this._outside, {
+        label, panRange: O.panRange, zones: ['yard', 'unseen'], flashReach: O.reach,
+        position: [x, O.height, z], target: [x + side * 15, 0, z],
+        mount: { wall: { axis: 'x', at: side < 0 ? b.min.x : b.max.x }, material: room.material },
+      });
+    }
+
+    // In the fenced yard: on the end rooms' front walls, in from each end of
+    // the fence, looking across to the middle of the yard's far side.
+    const { rect } = this.fence;
+    for (const [room, label, side] of [[rooms.LivingQuarters, 'YARD — QUARTERS SIDE', -1], [rooms.ServerRoom, 'YARD — SERVER SIDE', 1]]) {
+      const x = side < 0 ? rect.minX + Y.inFromFence : rect.maxX - Y.inFromFence;
+      const front = room.bounds().max.z;
+      place(this._outside, {
+        label, panRange: Y.panRange, zones: ['yard', 'unseen'], flashReach: Y.reach,
+        position: [x, O.height, front + O.offWall],
+        target: [rect.x, 0, rect.maxZ - 2],
+        mount: { wall: { axis: 'z', at: front }, material: room.material },
+      });
+    }
+    this.securityCameras = cams;
+    this.cameraMap = this._cameraMap(cams);
+
+    const flashGO = new GameObject('CameraFlash');
+    flashGO.object3d.userData.offGrid = true;
+    const flash = new THREE.SpotLight(CAMERA_FLASH.color, 0, R.reach, CAMERA_FLASH.angle, CAMERA_FLASH.penumbra, CAMERA_FLASH.decay);
+    flash.name = 'CameraFlash';
+    flash.castShadow = false;
+    flashGO.object3d.add(flash, flash.target);
+    this._sceneRoot.addChild(flashGO);
+    this.cameraFlash = flash;
+  }
+
+  /** The monitor's map, as CameraOverlay.setMap wants it: every room and
+   *  corridor's shell from above, the fenced yard as an outline, and each
+   *  camera where it hangs — all in world x / z. */
+  _cameraMap(cams) {
+    // Short: the side rooms are narrow on the map, with camera buttons on their walls.
+    const NAMES = { MainOffice: 'OFFICE', LivingQuarters: 'QTRS', ServerRoom: 'SRVR', Airlock: 'A/L' };
+    const block = (b, label) => ({ label, x0: b.min.x, z0: b.min.z, x1: b.max.x, z1: b.max.z });
+    const { minX, maxX, minZ, maxZ } = this.fence.rect;
+    return {
+      margin: SECURITY_CAMERAS.mapMargin,
+      rooms: [
+        // The yard first, so the building is drawn over its overlap.
+        { label: 'YARD', x0: minX, z0: minZ, x1: maxX, z1: maxZ, outline: true },
+        ...Object.values(this.corridors).map(c => block(c.bounds(), '')),
+        ...Object.values(this.rooms).map(r => block(r.bounds(), NAMES[r.name] ?? r.name)),
+      ],
+      cameras: cams.map((cam, i) => {
+        const p = cam.object3d.getWorldPosition(new THREE.Vector3());
+        // Which way it faces at rest, level: the map puts its square that
+        // side of the wall, so a room camera's is inside, the others' out.
+        cam.object3d.updateWorldMatrix(true, true);
+        const d = cam.lens.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
+        return { label: String(i + 1), x: p.x, z: p.z, dir: [d.x, d.z] };   // a numbered button, FNAF style
+      }),
+    };
+  }
+
+  /** The monitor's CameraTerminal: on the generator like the computer, and
+   *  let go of on any end to the shift (a game over, the morning). Built
+   *  after the gameplay systems, which it reads; the occlusion zones come
+   *  last of all, so they are read when used. */
+  _addCameraTerminal() {
+    const monitor = this.rooms.MainOffice.cameraMonitor;
+    this.cameraOverlay = new CameraOverlay();
+    this.cameraOverlay.setMap(this.cameraMap);
+    this.cameraTerminal = new CameraTerminal({
+      cameras:   this.securityCameras,
+      flash:     this.cameraFlash,
+      overlay:   this.cameraOverlay,
+      crosshair: this.engine.crosshair,
+      sounds: {
+        servo:     this._sound('sfx:camera-servo'),
+        static:    this._sound('sfx:camera-static'),
+        spotlight:    this._sound('sfx:camera-spotlight'),
+        spotlightOff: this._sound('sfx:camera-spotlight-off'),
+      },
+      hooks: {
+        setViewZones: zones => this.portal?.setViewZones(zones),
+        isReady:      zone => this.zones?.isReady(zone) ?? true,
+        // The mouse goes to the page, for the map — as for the breaker panel.
+        // Taken off the monitor by the shift ending (a game over, the
+        // morning), the pointer lock isn't asked back: there was no click.
+        holdPlayer: (held) => {
+          if (held || this.gameController?.state === 'playing') return this._usePanel(held);
+          this.engine.uiHasMouse = false;
+          this.engine.crosshair?.show();
+          this._setPlayerLocked(false);
+        },
+      },
+    });
+    if (monitor) {
+      monitor.addComponent(this.cameraTerminal);
+      monitor.addComponent(createCameraInteractable(this.cameraTerminal));
+    } else {
+      console.warn('[BaseScene] no CameraMonitor in MainOffice — security cameras not attached');
+    }
+
+    this.cameraTerminal.setPowered(this.power.on);
+    this._offPower.push(this.power.onChange(grid => this.cameraTerminal.setPowered(grid.on)));
+    this._offCameraState = this.gameController.onStateChange((state) => {
+      if (state !== 'playing') this.cameraTerminal.exit();
+    });
+    // Paused, nothing updates but the audio clock runs on: hush the loops.
+    // The first frame after resuming starts whatever is still wanted.
+    this._offCameraPause = this.engine.onPauseChange?.((paused) => {
+      if (paused) this.cameraTerminal.silence();
+    });
   }
 
   // ──────────────────────────────────────────
@@ -1208,6 +1433,13 @@ export class BaseScene extends Scene {
     };
 
     this.whiteOut = new WhiteOut();
+    this.evilSignal.whiteOut = this.whiteOut;
+    this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
+    this.evilSignal.deleteWarning = new DeleteWarning();
+    this._redOut = new RedOut();
+    this._redOut.attach(this.engine);
+    this.engine.postProcess = this._redOut;
+    this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
       grid:        this.power,
@@ -1225,19 +1457,17 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
 
-  /** The office, the airlock and the corridors take no fog. They share the
-   *  outdoor fog density — the office window has to show the valley, and the
-   *  storm swallowing it — but the scene's fog is one fog, and at a storm's
-   *  density it filled the rooms themselves with brown haze (a wall 10 m off
-   *  a third dust). Their own surfaces opt out instead; everything seen
-   *  through the glass keeps it. On a clear night that fog is ~0.05 % at
-   *  10 m, so indoors nothing changes. The sealed rooms keep theirs: it is
-   *  their mood. A material shared with anything outside the opted-out
-   *  parts is copied for them first, so nothing else loses its fog. Built
-   *  before the power grid collects the lamps' materials, so the grid holds
-   *  the copies. */
+  /** No room or corridor takes fog. The scene's fog is one fog — the office
+   *  window has to show the valley, and the storm swallowing it — and at a
+   *  storm's density it filled the rooms themselves with brown haze (a wall
+   *  10 m off a third dust). Their own surfaces opt out instead; everything
+   *  seen through the glass keeps it. On a clear night that fog is ~0.05 %
+   *  at 10 m, so indoors nothing changes. A material shared with anything
+   *  outside the building is copied for it first, so nothing else loses its
+   *  fog. Built before the power grid collects the lamps' materials, so the
+   *  grid holds the copies. */
   _keepFogOutside() {
-    const parts = [this.rooms.MainOffice, this.rooms.Airlock, ...Object.values(this.corridors)].filter(Boolean);
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)].filter(Boolean);
     const inside = new Set();
     for (const part of parts) part.root.object3d.traverse(o => { if (o.isMesh) inside.add(o); });
     const elsewhere = new Set();
@@ -1263,50 +1493,6 @@ export class BaseScene extends Scene {
     };
     for (const mesh of inside) {
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(optOut) : optOut(mesh.material);
-    }
-    this._switchSealedRoomFog();
-  }
-
-  /** A sealed room's mood fog is for being inside it. Seen through a
-   *  doorway from anywhere else it took the storm's brown — the server room
-   *  glowed rust down the corridor. So each sealed room's fogged surfaces
-   *  get a switch in their fog shader (roomFog, 0 or 1), on only while the
-   *  player is in that room (_applyRoomFog). A uniform, not material.fog:
-   *  flipping that would recompile the room's shaders on every doorway. */
-  _switchSealedRoomFog() {
-    this._roomFog = new Map();
-    const sealed = Object.values(this.rooms)
-      .filter(room => room !== this.rooms.Airlock && this._fogDensityFor(room) !== OUTDOOR_FOG_DENSITY);
-    for (const room of sealed) {
-      const ref = { value: 0 };
-      this._roomFog.set(room, ref);
-      const mine = new Set();
-      room.root.object3d.traverse(o => { if (o.isMesh) mine.add(o); });
-      const elsewhere = new Set();
-      this._sceneRoot.object3d.traverse(o => {
-        if (!o.isMesh || mine.has(o)) return;
-        for (const m of [].concat(o.material)) if (m) elsewhere.add(m);
-      });
-      const copies = new Map();
-      const switched = (m) => {
-        if (!m || !m.fog) return m;
-        let target = m;
-        if (elsewhere.has(m)) {
-          target = copies.get(m);
-          if (!target) { target = this._own(m.clone()); copies.set(m, target); }
-        }
-        target.onBeforeCompile = (shader) => {
-          shader.uniforms.roomFog = ref;
-          shader.fragmentShader = 'uniform float roomFog;\n'
-            + shader.fragmentShader.replace('#include <fog_fragment>', ROOM_FOG_FRAGMENT);
-        };
-        target.customProgramCacheKey = () => 'roomFog';
-        target.needsUpdate = true;
-        return target;
-      };
-      for (const mesh of mine) {
-        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(switched) : switched(mesh.material);
-      }
     }
   }
 
@@ -1345,17 +1531,9 @@ export class BaseScene extends Scene {
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
       hooks: {
-        listenerPosition: out => engine.camera.getWorldPosition(out),
-        isOutside:        p => this._isOutside(p),
-        // Outside, the office (its window) and the airlock (its hatch is on
-        // the yard, and from it the office window shows through the inner
-        // door — a window seen clear from there used to pop to storm on the
-        // step into the office). Not the corridors: no window, and the storm
-        // fog there only tinted the sealed rooms seen through their doorways.
-        // Not the sealed mood rooms.
-        valleyInView:     () => (this._currentRoom
-          ? this._fogDensityFor(this._currentRoom) === OUTDOOR_FOG_DENSITY
-          : this._isOutside(engine.camera.getWorldPosition(_valleyEye))),
+        // The grit is wrapped round the eye the frame is drawn from — a
+        // security camera's, on the monitor (Engine.renderCamera).
+        listenerPosition: out => (engine.renderCamera ?? engine.camera).getWorldPosition(out),
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
@@ -1644,7 +1822,6 @@ export class BaseScene extends Scene {
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),
     });
-    transitions.onRoomChange = room => this._applyRoomFog(room);
     engine.player.addComponent(transitions);
 
     // The suit rides on the player; the hatch follows it however it changes,
@@ -1657,32 +1834,6 @@ export class BaseScene extends Scene {
       suit: this.suit,
       silenced: () => this.gameController?.state === 'gameOver',
     }));
-  }
-
-  /** Per-room atmosphere: dense fog in the sealed server room, light in the
-   *  sealed living quarters, the outdoor density everywhere the valley is in
-   *  view (the main office, the corridors, and outside). */
-  _applyRoomFog(room) {
-    this._currentRoom = room;
-    // A sealed room's mood fog shows only from inside it.
-    for (const [sealed, ref] of this._roomFog ?? []) ref.value = sealed === room ? 1 : 0;
-    const fog = this.engine.scene.fog;
-    if (!fog) return;
-    fog.density = this._fogDensityFor(room);
-  }
-
-  /** A room that can see the valley takes the outdoor density whatever else
-   *  it would like; only sealed rooms get a mood of their own. Corridors and
-   *  outside arrive here as room = null.
-   *
-   *  "Can see the valley" is read off the room's own openings — a sill above
-   *  the floor is a window, per Room's opening schema — rather than from a
-   *  list of room names kept in step by hand. Give a room a window and its
-   *  fog follows; nobody has to remember this function exists. */
-  _fogDensityFor(room) {
-    if (!room) return OUTDOOR_FOG_DENSITY;
-    if (room.openings?.some(o => (o.sill ?? 0) > 0)) return OUTDOOR_FOG_DENSITY;
-    return ROOM_FOG_DENSITY[room.name] ?? OUTDOOR_FOG_DENSITY;
   }
 
   // ──────────────────────────────────────────
@@ -1722,18 +1873,6 @@ export class BaseScene extends Scene {
 
 const _box = new THREE.Box3();
 
-/** three's fog, scaled by a sealed room's switch (BaseScene._switchSealedRoomFog). */
-const ROOM_FOG_FRAGMENT = /* glsl */`
-#ifdef USE_FOG
-  #ifdef FOG_EXP2
-    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
-  #else
-    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
-  #endif
-  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor * roomFog );
-#endif
-`;
-const _valleyEye = new THREE.Vector3();
 const _airlockEar = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */

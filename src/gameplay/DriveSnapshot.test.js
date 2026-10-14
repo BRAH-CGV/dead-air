@@ -67,6 +67,36 @@ describe('DriveSnapshot', () => {
     expect(drive.saved).toBe(false);
   });
 
+  it('a red (corrupted) save survives capture and restore', () => {
+    const drive = new Drive('Red');
+    drive.setSaved(true, { corrupted: true });
+    const snap = new DriveSnapshot({ drives: [drive] });
+    snap.capture();
+
+    // Mid-night the player wipes it at the ServerRoom console.
+    drive.setEjected();
+    expect(drive.saved).toBe(false);
+
+    // The retry restores the red drive as it was.
+    snap.restore();
+
+    expect(drive.saved).toBe(true);
+    expect(drive.corrupted).toBe(true);
+    expect(drive._material.emissive.getHex()).toBe(0xcc2222);
+  });
+
+  it('a red save made mid-night reverts to blank, not just unsaved', () => {
+    const drive = new Drive('Blank');
+    const snap = new DriveSnapshot({ drives: [drive] });
+    snap.capture();
+
+    drive.setSaved(true, { corrupted: true });
+    snap.restore();
+
+    expect(drive.saved).toBe(false);
+    expect(drive.corrupted).toBe(false);
+  });
+
   it('a drive blank at capture stays blank', () => {
     const blank = new Drive('Plain');
     const savedDrive = new Drive('Marked');

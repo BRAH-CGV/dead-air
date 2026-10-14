@@ -288,6 +288,38 @@ describe('MainOffice', () => {
     expect(Math.hypot(pos.x - 0.65, pos.z + 2.26)).toBeGreaterThan(0.25);
   });
 
+  it('stands the security-camera monitor on the left wing, turned to the seat, solid for the interact ray', () => {
+    const monitor = room.root.find('CameraMonitor');
+    expect(monitor).not.toBeNull();
+    expect(room.cameraMonitor).toBe(monitor);
+
+    // On the left wing's top, well in from its edges.
+    const { top, centre } = deskWingOutline(-1, { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95 });
+    const pos = monitor.object3d.position;
+    expect(Math.hypot(pos.x - centre[0], pos.z - centre[1])).toBeLessThan(0.15);
+    const box = new THREE.Box3().setFromObject(monitor.object3d);
+    expect(box.min.y).toBeCloseTo(0.864, 2);               // standing on the top
+    const xs = top.map(p => p[0]);
+    expect(box.max.x).toBeLessThan(Math.max(...xs));
+    expect(box.min.x).toBeGreaterThan(Math.min(...xs));
+
+    // Its screen looks back toward the seat (in front of the desk, +z, to the right).
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(monitor.object3d.rotation);
+    expect(facing.x).toBeGreaterThan(0.5);
+    expect(facing.z).toBeGreaterThan(0.3);
+
+    // Something for the interact ray to land on: its own fixed body.
+    expect(monitor.rigidBody.isFixed()).toBe(true);
+    expect(engine._bodyToGO.get(monitor.rigidBody.handle)).toBe(monitor);
+
+    // The screen is a vital function, like the terminal's glow: it stays lit
+    // through a blow-out (PowerGrid reads `unbreakable`).
+    const screen = monitor.object3d.getObjectByName('CameraMonitorScreen');
+    expect(screen.userData.unbreakable).toBe(true);
+    // No Interactable of its own: the scene attaches the CameraTerminal's.
+    expect(monitor.getComponent(Interactable)).toBeNull();
+  });
+
   it('a globe on its stand, on the right wing beside the clock: [E] gives it a spin', () => {
     const globe = room.root.find('Globe'), stand = room.root.find('GlobeStand');
     expect(globe.physicsAssetKey).toBe('model:mars-globe');

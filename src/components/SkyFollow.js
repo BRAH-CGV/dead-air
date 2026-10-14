@@ -18,7 +18,10 @@ export class SkyFollow extends Component {
   _worldPos = new THREE.Vector3();
 
   onLateUpdate(dt) {
-    const camera = this.gameObject?.scene?.userData?.engine?.camera;
+    // The camera the frame is drawn through: the player's, or a security
+    // camera's on the monitor (Engine.renderCamera).
+    const engine = this.gameObject?.scene?.userData?.engine;
+    const camera = engine?.renderCamera ?? engine?.camera;
     if (!camera) return;
 
     // getWorldPosition, not .position: the camera is normally a child of the

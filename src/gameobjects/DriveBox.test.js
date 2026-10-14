@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { DriveBox } from './DriveBox.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { FakeWorld, rapierModule } from '../test/fakeRapier.js';
 
 function makeSceneContext() {
@@ -38,6 +39,18 @@ function makeDrive(position = [0, 0, 0]) {
 }
 
 describe('DriveBox', () => {
+  it('carries the box clips for when it is put down or dropped', () => {
+    const impact = new DriveBox().getComponent(ImpactSound);
+    expect(impact).toBeTruthy();
+    expect(impact.clips).toEqual(IMPACT_SOUNDS.box.clips);
+    // Picked up, docked and undocked with a clip of its own.
+    expect(impact.handling).toEqual(IMPACT_SOUNDS.box.handling);
+  });
+
+  it('seats and gives up its drives with their own knock, not a beep', () => {
+    expect(new DriveBox().receiver.sounds).toBe('item');
+  });
+
   it('creates a dynamic physics pickupable box on init', () => {
     const box = new DriveBox('ExampleDriveBox');
     const { scene, world, engine } = makeSceneContext();

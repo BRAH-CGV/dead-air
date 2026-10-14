@@ -431,17 +431,19 @@
         left: 8px;
         opacity: 0;
       }
-      .menu-item:hover, .menu-item:focus,
-      .menu-tab:hover, .menu-tab:focus,
-      .menu-choice:hover, .menu-choice:focus,
-      .menu-bind:hover, .menu-bind:focus {
+      /* Focus only, not :hover — MenuView moves the focus to whatever the
+         mouse points at, so there is only ever one highlighted option (#75). */
+      .menu-item:focus,
+      .menu-tab:focus,
+      .menu-choice:focus,
+      .menu-bind:focus {
         outline: none;
         color: var(--menu-bright);
         background: rgba(184, 184, 200, 0.07);
       }
       .menu-slider input:focus { outline: 1px solid var(--menu-accent); outline-offset: 2px; }
-      .menu-item:hover::before, .menu-item:focus::before { opacity: 1; }
-      .menu-item.is-danger:hover, .menu-item.is-danger:focus { color: var(--menu-danger); }
+      .menu-item:focus::before { opacity: 1; }
+      .menu-item.is-danger:focus { color: var(--menu-danger); }
       .menu-item:disabled, .menu-choice:disabled { color: var(--menu-muted); cursor: default; background: none; }
       .menu-item:disabled::before { opacity: 0; }
 
@@ -485,9 +487,140 @@
         .menu-roll-window { overflow-y: auto; }
       }
 
+      /* ── Security camera monitor (CameraOverlay.js) ──────── */
+      #cctv {
+        position: fixed;
+        inset: 0;
+        display: none;
+        /* Takes the clicks while the mouse is free for the map: one beside it
+           would otherwise land on the canvas and lock the pointer again. */
+        pointer-events: auto;
+        cursor: default;
+        z-index: 89;   /* under the HUD: the clock stays readable */
+        font: 13px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #e8f0e8;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+        /* A dark edge: a monitor, not the player's own eyes. */
+        background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%);
+      }
+      #cctv.is-on { display: block; }
+      /* Scanlines that crawl slowly down the picture, and a faint band
+         rolling through it, as on a real feed. Each moves by whole periods,
+         so the loop has no seam. */
+      #cctv::before,
+      #cctv::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      #cctv::before {
+        background: repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0 1px, transparent 1px 3px);
+        animation: cctv-crawl 0.9s linear infinite;
+      }
+      #cctv::after {
+        background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.045) 45%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.045) 55%, transparent 100%);
+        background-size: 100% 40%;
+        background-repeat: no-repeat;
+        animation: cctv-roll 7s linear infinite;
+      }
+      @keyframes cctv-crawl { to { background-position: 0 3px; } }
+      @keyframes cctv-roll { from { background-position: 0 -150%; } to { background-position: 0 250%; } }
+      @media (prefers-reduced-motion: reduce) {
+        #cctv::before, #cctv::after { animation: none; }
+      }
+      #cctv-static {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        image-rendering: pixelated;
+        opacity: 0;
+      }
+      #cctv.is-static #cctv-static { opacity: 1; }
+      #cctv-label {
+        position: absolute;
+        top: 18px;
+        left: 22px;
+        font-size: 15px;
+        letter-spacing: 0.08em;
+      }
+      #cctv-label::after {
+        content: "  ● REC";
+        color: #ff3a2a;
+        animation: cctv-rec 1s steps(1) infinite;
+      }
+      @keyframes cctv-rec { 50% { opacity: 0; } }
+      #cctv-flash {
+        position: absolute;
+        top: 42px;
+        left: 22px;
+        color: #ffe9a0;
+        letter-spacing: 0.08em;
+        display: none;
+      }
+      #cctv.is-flash #cctv-flash { display: block; }
+      #cctv-hint {
+        position: absolute;
+        bottom: 18px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: #b8c8d8;
+        font-size: 12px;
+      }
+      /* The map, bottom left: the base from above, a button per camera. */
+      #cctv-map {
+        position: absolute;
+        left: 22px;
+        bottom: 44px;
+        width: min(540px, 46vw);
+        background: rgba(6, 12, 10, 0.72);
+        border: 1px solid rgba(160, 220, 180, 0.45);
+        z-index: 1;
+      }
+      .cctv-room {
+        position: absolute;
+        box-sizing: border-box;
+        border: 2px solid rgba(190, 230, 200, 0.75);
+        background: rgba(40, 70, 55, 0.55);
+        color: rgba(220, 240, 225, 0.8);
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .cctv-room.is-outline {
+        border: 1px dashed rgba(190, 230, 200, 0.45);
+        background: transparent;
+        align-items: flex-end;
+        padding-bottom: 3px;
+      }
+      .cctv-cam {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        /* Its size is set inline (CameraOverlay CAMERA_SQUARE), so the push
+           off its wall and the square agree. */
+        box-sizing: border-box;
+        padding: 0;
+        font: bold 14px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #dfe9e2;
+        background: #2a3530;
+        border: 2px solid #9fb8a8;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .cctv-cam:hover { background: #3c4b44; }
+      .cctv-cam.is-active { background: #c9d94a; color: #111; border-color: #f2ff8a; }
+
+      /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
+      body.cctv-on :is(#crosshair, #prompt) { visibility: hidden !important; }
+
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv) {
         visibility: hidden !important;
       }
 
@@ -593,6 +726,29 @@
         transition: opacity 1.5s ease;
       }
       .whiteout-message.is-shown { opacity: 1; }
+
+      /* Evil signal DELETE warning — flashing red text at random positions. */
+#delete-warning {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 101;
+        overflow: hidden;
+        opacity: 0;
+        transition: opacity 5s ease-in;
+      }
+#delete-warning.is-active { opacity: 1; }
+      .delete-text {
+        position: absolute;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        color: #ff1111;
+        text-shadow: 0 0 8px #ff0000, 0 0 20px #cc0000;
+        opacity: 0;
+        white-space: nowrap;
+        user-select: none;
+        transition: none;
+      }
     </style>
   </head>
   <body>
@@ -623,6 +779,15 @@
       <div id="radar-hint">Select a signal blip, then aim with WASD</div>
     </div>
 
+    <!-- Security camera monitor (shown while using the camera terminal) -->
+    <div id="cctv">
+      <canvas id="cctv-static"></canvas>
+      <div id="cctv-label"></div>
+      <div id="cctv-flash">FLASH ON</div>
+      <div id="cctv-hint"></div>
+      <div id="cctv-map"></div>
+    </div>
+
     <!-- Signal review modal (shown after scanning a signal) -->
     <div id="signal-review">
       <img id="signal-review-image" alt="Signal payload" />
@@ -641,6 +806,9 @@
     <div id="breaker-panel"></div>
 
     <div id="whiteout"><div class="whiteout-message"></div></div>
+    
+        <!-- Evil signal DELETE warning (flashing red text) -->
+    <div id="delete-warning"></div>
 
     <div id="loading">
       <div id="loading-track"><div id="loading-bar"></div></div>

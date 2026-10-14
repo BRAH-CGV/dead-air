@@ -17,8 +17,11 @@ import * as THREE from 'three';
 //   • a moving physics body moved — update(bodies) is handed the engine's
 //     dynamic and kinematic bodies each frame, so a carried drive or a
 //     knocked crate takes its shadow with it (#57) instead of leaving it
-//     baked where it spawned. Bodies at rest, and ones that cast no shadow
-//     (the player), cost one matrix compare and redraw nothing.
+//     baked where it spawned. Only the maps it is in are redrawn: a light
+//     with a range (`distance`) is left alone while the body moves beyond
+//     it, so a drive carried across the office doesn't redraw the corridor
+//     lamps (#87). Bodies at rest, and ones that cast no shadow (the
+//     player), cost one matrix compare and redraw nothing.
 //
 // Per light (`light.shadow.autoUpdate`), not the renderer-wide switch, so a
 // moving moon doesn't drag the static ceiling light along with it.
@@ -31,6 +34,9 @@ import * as THREE from 'three';
 const _pos = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _dir = new THREE.Vector3();
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _lightPos = new THREE.Vector3();
 
 export class ShadowScheduler {
   /** Lights under management. @type {THREE.Light[]} */
@@ -81,7 +87,7 @@ export class ShadowScheduler {
   /** Call once a frame, before rendering.
    *  @param {Map<any, {object3d: THREE.Object3D}>} [bodies]  The moving bodies
    *         (Engine.rigidBodyMap): any shadow caster among them that moved
-   *         redraws every map. */
+   *         redraws every map that reaches it. */
   update(bodies) {
     for (const light of this.lights) {
       if (light.shadow.needsUpdate) continue;
@@ -96,7 +102,7 @@ export class ShadowScheduler {
       }
     }
 
-    if (bodies && this._bodiesMoved(bodies)) this.invalidate();
+    if (bodies) this._followBodies(bodies);
   }
 
   /** Hand every light back to per-frame shadow updates and forget it. */
@@ -110,30 +116,40 @@ export class ShadowScheduler {
 
   // ── Internals ─────────────────────────────
 
-  /** Whether any shadow-casting body moved past `distance` since the map was
-   *  last drawn for it. A body seen for the first time is remembered (its
-   *  first frame is drawn by whatever drew the scene, or the next redraw). */
-  _bodiesMoved(bodies) {
-    let moved = false;
+  /** Redraw the maps of every shadow-casting body that moved past
+   *  `distance` since they were last drawn for it: those of the lights that
+   *  reach where it was (so its old shadow goes) or where it is. A body seen
+   *  for the first time is remembered and drawn where it is. */
+  _followBodies(bodies) {
     for (const go of bodies.values()) {
       const object = go?.object3d;
       if (!object) continue;
       let pose = this._bodyPoses.get(object);
       if (!pose) {
         object.updateWorldMatrix(true, false);
-        pose = { casts: castsShadow(object), last: object.matrixWorld.clone() };
+        pose = { casts: castsShadow(object), reach: reachOf(object), last: object.matrixWorld.clone() };
         this._bodyPoses.set(object, pose);
-        if (pose.casts) moved = true;   // new in view: draw it where it is
+        if (pose.casts) this._redrawReaching(_from.setFromMatrixPosition(pose.last), null, pose.reach);
         continue;
       }
       if (!pose.casts) continue;
       object.updateWorldMatrix(true, false);
       if (matrixMoved(pose.last, object.matrixWorld, this.distance)) {
+        _from.setFromMatrixPosition(pose.last);
+        _to.setFromMatrixPosition(object.matrixWorld);
         pose.last.copy(object.matrixWorld);
-        moved = true;
+        this._redrawReaching(_from, _to, pose.reach);
       }
     }
-    return moved;
+  }
+
+  /** Redraw every light that reaches a body `reach` metres round `from`, or
+   *  round `to` if given. */
+  _redrawReaching(from, to, reach) {
+    for (const light of this.lights) {
+      if (light.shadow.needsUpdate) continue;
+      if (reaches(light, from, reach) || (to && reaches(light, to, reach))) this._redraw(light);
+    }
   }
 
   _redraw(light) {
@@ -170,6 +186,26 @@ function poseOf(light, scratch = false) {
 }
 
 /** Does anything under `object` cast a shadow? Asked once per body. */
+/** Whether `light` can light anything of a body within `reach` of `point`.
+ *  A directional light, or one with no range, reaches everywhere; a point or
+ *  spot light lights nothing past its `distance` (its shadow camera's far
+ *  plane is set to it too). */
+function reaches(light, point, reach) {
+  if (light.isDirectionalLight || !(light.distance > 0)) return true;
+  _lightPos.setFromMatrixPosition(light.matrixWorld);
+  return _lightPos.distanceTo(point) <= light.distance + reach;
+}
+
+/** How far a body's meshes reach from its origin: their bounding sphere,
+ *  plus how far its centre sits off the origin. Measured once, when the
+ *  body is first seen; a body doesn't change shape. */
+function reachOf(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return 0;
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  return sphere.radius + sphere.center.distanceTo(_from.setFromMatrixPosition(object.matrixWorld));
+}
+
 function castsShadow(object) {
   let casts = false;
   object.traverse((o) => { if (o.isMesh && o.castShadow) casts = true; });
