@@ -158,6 +158,26 @@ describe('SecurityCamera', () => {
       expect(cam.panLimits[0]).toBeCloseTo(-1.0);
       expect(cam.panLimits[1]).toBeCloseTo(1.0);
     });
+
+    it('square to the wall, by default stops short of looking along it', () => {
+      const cam = mounted({ position: [0, 2.6, 5.02], target: [0, 0, 15], panRange: Math.PI / 2, mount: { wall: { axis: 'z', at: 5 } } });
+      expect(cam.panLimits[1]).toBeLessThanOrEqual(CAMERA_CLEARANCE.view + 1e-6);
+    });
+
+    it('given maxView π/2, turns all the way round each way, to look along its wall', () => {
+      const cam = mounted({
+        position: [0, 2.6, 5.02], target: [0, 0, 15], panRange: Math.PI / 2, maxView: Math.PI / 2,
+        mount: { wall: { axis: 'z', at: 5 } },
+      });
+      expect(cam.panLimits[0]).toBeCloseTo(-Math.PI / 2, 5);
+      expect(cam.panLimits[1]).toBeCloseTo(Math.PI / 2, 5);
+      for (const p of cam.panLimits) {
+        cam.setPan(p);
+        cam.object3d.updateMatrixWorld(true);
+        // Still clear of the wall it hangs on.
+        expect(cam.lens.getWorldPosition(new THREE.Vector3()).z - 5).toBeGreaterThanOrEqual(CAMERA_CLEARANCE.lens - 1e-6);
+      }
+    });
   });
 
   it('frees what it built on dispose', () => {
