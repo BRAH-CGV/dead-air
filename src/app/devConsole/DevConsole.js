@@ -34,6 +34,8 @@ export class DevConsole {
   /** @type {string[]} */
   _history = [];
   _cursor = 0;
+  /** @type {Line[]|null} what the run under way has added */
+  _added = null;
 
   /** @param {{ maxLines?: number }} [opts] */
   constructor({ maxLines = 200 } = {}) {
@@ -64,11 +66,23 @@ export class DevConsole {
   /**
    * Run one typed line: echo it, then whatever the command says.
    * @param {string} line
-   * @returns {{ ok: boolean }}
+   * @returns {{ ok: boolean, lines: Line[] }} lines: what this run added,
+   *   even those the cap or a `clear` has since taken off the log
    */
   run(line) {
+    const added = [];
+    this._added = added;
+    try {
+      return { ok: this._run(line), lines: added };
+    } finally {
+      this._added = null;
+    }
+  }
+
+  /** @returns {boolean} whether the command ran */
+  _run(line) {
     const text = String(line ?? '').trim();
-    if (!text) return { ok: false };
+    if (!text) return false;
     this._remember(text);
 
     const [word, ...args] = text.split(/\s+/);
@@ -79,13 +93,13 @@ export class DevConsole {
       this._add(guess
         ? `Unknown command "${word}". Did you mean ${guess}?`
         : `Unknown command "${word}". Type "help" for a list of commands.`, 'error');
-      return { ok: false };
+      return false;
     }
 
     try {
       const out = command.run(args);
       for (const l of [out ?? []].flat()) this._add(String(l), 'output');
-      return { ok: true };
+      return true;
     } catch (err) {
       if (err instanceof UsageError) {
         this._add(err.message, 'error');
@@ -96,7 +110,7 @@ export class DevConsole {
         console.error(err);
         this._add(`Error: ${err?.message ?? err}`, 'error');
       }
-      return { ok: false };
+      return false;
     }
   }
 
@@ -179,7 +193,9 @@ export class DevConsole {
   }
 
   _add(text, kind) {
-    this.lines.push({ text, kind });
+    const line = { text, kind };
+    this.lines.push(line);
+    this._added?.push(line);
     if (this.lines.length > this.maxLines) this.lines.splice(0, this.lines.length - this.maxLines);
   }
 }

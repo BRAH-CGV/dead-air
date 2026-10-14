@@ -22,7 +22,8 @@
 //     can't fire behind it.
 //   • The developer console (dev builds) is a menu screen too: ` opens it
 //     from play, paused under it, and ` again plays on — the keydown is the
-//     gesture the lock needs. Its commands are src/app/devConsole/.
+//     gesture the lock needs. Its commands are src/app/devConsole/. In every
+//     build they also run from the browser's console (F12): dev('ufo').
 // ─────────────────────────────────────────────
 
 import { AppFlow } from './AppFlow.js';
@@ -106,8 +107,9 @@ export class App {
     // Not a setting: the dev tools go before release, so they simply follow
     // the build — on in `npm run dev`, off in the production bundle.
     this.devTools = devToolsDefault;
-    /** The developer console, or null in a production build. */
-    this.devConsole = devToolsDefault ? this._buildConsole() : null;
+    /** The developer console's commands and log. Built in every build, for
+     *  F12's dev(); its screen in the menus is dev builds only. */
+    this.devConsole = this._buildConsole();
     /** What the console's input holds when it is next drawn (a recalled line). */
     this._consoleDraft = '';
     this.dev = dev;
@@ -166,6 +168,9 @@ export class App {
     this._offs.push(this.settings.onChange((values, keys) => this._onSettingsChanged(values, keys)));
     this._offs.push(engine.onSceneLoaded((scene) => this._onSceneLoaded(scene)));
     this._onSceneLoaded(engine.activeScene);
+
+    win.dev = this._devFromBrowser;
+    this._offs.push(() => { if (win.dev === this._devFromBrowser) delete win.dev; });
 
     await engine.revealed;
     flow.ready();
@@ -329,6 +334,16 @@ export class App {
     return devConsole;
   }
 
+  /** F12's dev('ufo'): a console command from the browser's console, in
+   *  every build. What it says is logged there, a mistake as a warning. No
+   *  menu opens and nothing pauses. dev() alone lists the commands. */
+  _devFromBrowser = (line) => {
+    const { lines } = this.devConsole.run(String(line ?? '').trim() || 'help');
+    const said = (kind) => lines.filter(l => l.kind === kind).map(l => l.text).join('\n');
+    if (said('output')) console.log(said('output'));
+    if (said('error')) console.warn(said('error'));
+  };
+
   /** Restart (from pause) or Retry (from Night failed): a full rebuild, then
    *  back to the night that was being played — the same path as the
    *  console's `night`.
@@ -477,7 +492,7 @@ export class App {
   _mayOpenConsole(e) {
     const target = /** @type {HTMLElement} */ (e.target);
     const typing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
-    return !!this.devConsole && this.engine.devTools && this.flow.state === 'playing'
+    return this.devTools && this.engine.devTools && this.flow.state === 'playing'
       && !this._busy && !e.repeat && !typing;
   }
 
@@ -517,12 +532,11 @@ export class App {
         return this.flow.openConsole();
       case 'consoleRun':
         this._consoleDraft = '';
-        this.devConsole?.run(data.line);
+        this.devConsole.run(data.line);
         // A command may have closed it (`editor`).
         if (this.flow.screen === 'console') this._render();
         return undefined;
       case 'consoleHistory':
-        if (!this.devConsole) return undefined;
         this._consoleDraft = (data.dir === 'prev' ? this.devConsole.historyPrev() : this.devConsole.historyNext()) ?? '';
         return this._render();
       case 'tab':
@@ -611,9 +625,9 @@ export class App {
       case 'console': {
         const devConsole = this.devConsole;
         return {
-          lines: devConsole?.lines ?? [],
+          lines: devConsole.lines,
           draft: this._consoleDraft,
-          suggest: (text) => devConsole?.suggest(text) ?? [],
+          suggest: (text) => devConsole.suggest(text),
         };
       }
       default:
@@ -654,7 +668,7 @@ export class App {
         for (const r of group.rows) rows.push({ type: 'info', label: r.label, text: r.keys });
       }
     }
-    if (tab === 'game' && this.devConsole) {
+    if (tab === 'game' && this.devTools) {
       rows.push({ type: 'heading', label: 'DEVELOPER' });
       rows.push({ type: 'button', action: 'devConsole', label: 'Developer console' });
     }

@@ -64,7 +64,7 @@ src/
 │   ├── applySettings.js # Settings → camera, renderer, player, shadows, debug gate
 │   ├── keyNames.js      # keyName(code), reserved keys, rebind() with swap
 │   ├── controlsList.js  # The fixed keys listed on the CONTROLS tab
-│   └── devConsole/      # The developer console (dev builds; see Debug tooling)
+│   └── devConsole/      # The developer console (` in dev builds, dev() from F12 in any; see Debug tooling)
 │       ├── DevConsole.js # Pure: register, run a line, history, suggest / complete
 │       └── commands.js  # Every command, on the engine and the live scene
 ├── components/
@@ -452,7 +452,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 - A volume slider is one `SCHEMA` entry, e.g. `volume: { tab: 'game', type: 'number', label: 'Volume', min: 0, max: 1, step: 0.05, default: 0.8, format }`, plus `engine.audioListener.setMasterVolume(s.volume)` in `applySettings`.
 - To silence sound while paused, suspend and resume the `AudioContext` where App calls `engine.setPaused(true/false)`, or watch `app.flow.onChange`.
 
-**Dev tools gate.** `engine.devTools` gates the developer console: without it `` ` `` does nothing and Settings has no Developer console row. It isn't a setting, because the dev tools go before release: App sets it from the build, on in `npm run dev` and off in the production bundle, so graders never open the level editor by accident. Show FPS (Settings → GAME) works either way.
+**Dev tools gate.** `engine.devTools` gates the developer console: without it `` ` `` does nothing and Settings has no Developer console row. It isn't a setting, because the dev tools go before release: App sets it from the build, on in `npm run dev` and off in the production bundle, so graders never open the level editor by accident. Show FPS (Settings → GAME) works either way, and so does F12's `dev()` (see Debug tooling).
 
 **Controls** live on one screen, Settings → CONTROLS: the rebind rows, then the keys that can't be rebound (Esc, mouse look, the computer terminal, from `controlsList`). Debug keys are never listed.
 
@@ -468,10 +468,11 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 ## Debug tooling
 
-Every debug tool is a command in the **developer console** (`src/app/devConsole/`), and none has a key of its own. The console exists in dev builds only (`engine.devTools`, see "Dev tools gate"); the production bundle has neither the console nor any debug key.
+Every debug tool is a command in the **developer console** (`src/app/devConsole/`), and none has a key of its own. The console's screen is in dev builds only (`engine.devTools`, see "Dev tools gate"); the production bundle has no console screen and no debug key, but its commands still run from the browser's console (below).
 
 - **Opening it.** `` ` `` in game, or Settings → GAME → DEVELOPER → Developer console. From the game it pauses (the flow's `paused`, its stack `['pause', 'console']`) and lets the mouse go; the scene still renders behind it, so a toggle shows at once. `` ` `` again plays on (the keypress is the gesture the pointer lock needs), and Esc is Back to the pause screen. Opened from Settings, `` ` `` and Back return there.
 - **Typing.** The empty input says *Type "help" for a list of commands* (its placeholder). As you type, a list under it guesses the command — exact, prefix, substring, the letters in order, then a typo within two edits — each row its format and what it does. Click a row, or Tab (the top one) or ↑ / ↓ then Enter, to fill in `name `; past the space the list shows only that command's format. With no list, ↑ / ↓ walk the history. An unknown command answers "did you mean …?".
+- **From F12, in every build.** `dev('ufo')` in the browser's console runs a line as if typed into the console, and `dev()` alone lists the commands. What the command says is logged there, a mistake as a warning; it shares the console's log and history. No menu opens and nothing pauses, though clicking into DevTools blurs the window, which pauses as it always does. App installs `window.dev` in `start()` and takes it away in `dispose()`. `editor` still needs the console opened in game.
 - **What a command sees.** Each looks up `engine.activeScene` when it runs, so it follows a rebuild; one whose system isn't in the scene says so. A toggle with no argument flips; `on` / `off` set it.
 - **Adding one.** An entry in `createCommands` (`commands.js`) — `name`, `usage`, `help`, `run(args)` returning its output lines, or throwing `CommandError` — and a test beside it in `commands.test.js`.
 

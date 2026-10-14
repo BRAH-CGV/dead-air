@@ -820,8 +820,7 @@ describe('App', () => {
         await app.start();
       });
 
-      it('there is none: no Settings button, and ` does nothing in play', async () => {
-        expect(app.devConsole).toBe(null);
+      it('there is no in-game console: no Settings button, and ` does nothing in play', async () => {
         await click('settings');
         expect(panel().querySelector('[data-action="devConsole"]')).toBeNull();
         expect(panel().textContent).not.toContain('DEVELOPER');
@@ -829,6 +828,53 @@ describe('App', () => {
         await startGame();
         backquote();
         expect(app.flow.state).toBe('playing');
+      });
+    });
+
+    describe('window.dev, from the browser console (F12), in every build', () => {
+      let log, warn;
+      beforeEach(async () => {
+        app.dispose();
+        engine = makeEngine();
+        app = new App(engine, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+        await app.start();
+        log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      });
+      afterEach(() => { log.mockRestore(); warn.mockRestore(); });
+
+      it('runs a command and prints what it says, in one log', () => {
+        window.dev('help stamina');
+        expect(log).toHaveBeenCalledTimes(1);
+        expect(log.mock.calls[0][0]).toContain('stamina [0–1]');
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('with nothing typed, prints the list of commands', () => {
+        window.dev();
+        expect(log.mock.calls[0][0]).toContain('help [command] — List the commands, or explain one');
+        expect(log.mock.calls[0][0]).toContain('night [n]');
+      });
+
+      it('a mistake is a warning', () => {
+        window.dev('nope');
+        expect(log).not.toHaveBeenCalled();
+        expect(warn.mock.calls[0][0]).toContain('Unknown command "nope"');
+      });
+
+      it('leaves the game running: no menu opens and nothing pauses', async () => {
+        await startGame();
+        window.dev('help');
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+      });
+
+      it('goes with the App, and only its own', () => {
+        const other = new App(makeEngine(), { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+        other.dispose();
+        expect(typeof window.dev).toBe('function');
+        app.dispose();
+        expect(window.dev).toBeUndefined();
       });
     });
   });

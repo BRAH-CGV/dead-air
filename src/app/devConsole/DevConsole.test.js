@@ -96,6 +96,16 @@ describe('DevConsole', () => {
       expect(small.lines).toHaveLength(5);
       expect(small.lines[0]).toEqual({ text: 'out', kind: 'output' });
     });
+
+    it('returns the lines it added, even those the cap has already dropped', () => {
+      const small = new DevConsole({ maxLines: 2 });
+      small.register({ name: 'x', usage: 'x', help: '', run: () => ['one', 'two'] });
+      expect(small.run('x').lines).toEqual([
+        { text: '> x', kind: 'input' }, { text: 'one', kind: 'output' }, { text: 'two', kind: 'output' },
+      ]);
+      expect(small.run('nope').lines.map(l => l.kind)).toEqual(['input', 'error']);
+      expect(small.run('   ').lines).toEqual([]);
+    });
   });
 
   describe('help and clear', () => {
@@ -120,6 +130,10 @@ describe('DevConsole', () => {
       c.run('storm');
       c.run('clear');
       expect(c.lines).toEqual([]);
+    });
+
+    it('clear still returns its own echo', () => {
+      expect(c.run('clear').lines).toEqual([{ text: '> clear', kind: 'input' }]);
     });
   });
 
