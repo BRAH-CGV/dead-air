@@ -31,6 +31,9 @@ export class ServerRoom extends Room {
   /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
   _driveSlot = null;
 
+  /** The processing screen overlay (set by BaseScene). @type {import('../../ui/ProcessingScreen.js').ProcessingScreen|null} */
+  _processingScreen = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -56,6 +59,9 @@ export class ServerRoom extends Room {
 
   /** The drive slot on the console (for external wiring). */
   get driveSlot() { return this._driveSlot; }
+
+  /** Wire the processing screen overlay. Called by BaseScene. */
+  set processingScreen(screen) { this._processingScreen = screen; }
 
   buildLighting() {
     // Blue only, to match the racks' own glow — a red light here read as an
@@ -168,25 +174,21 @@ export class ServerRoom extends Room {
     slotBox.addComponent(driveSlot);
     this._driveSlot = driveSlot;
 
-    // The processing interactable: upgrades a level-1 signal to level 2.
+    // The processing interactable: opens the processing screen overlay.
+    // The screen shows the signal image from the inserted drive and an
+    // abstract set of controls (upgrade button for now).
     const self = this;
     console_.addComponent(new class extends Interactable {
       promptLabel = '[E] Process signal';
       interactRange = 2;
 
-      _findUpgradeableDrive() {
-        const slot = self._driveSlot;
-        if (!slot) return null;
-        const drive = slot.insertedDrive;
-        if (drive?.canUpgradeLevel) return drive;
-        return null;
-      }
-
       refreshPrompt() {
-        if (this._findUpgradeableDrive()) {
+        const slot = self._driveSlot;
+        const drive = slot?.insertedDrive;
+        if (drive?.canUpgradeLevel) {
           this.promptLabel = '[E] Process signal';
         } else {
-          this.promptLabel = 'No signal to process';
+          this.promptLabel = '[E] Processing console';
         }
       }
 
@@ -195,11 +197,23 @@ export class ServerRoom extends Room {
       }
 
       onInteract() {
-        const drive = this._findUpgradeableDrive();
-        if (drive) {
-          drive.setSignalLevel(drive.signalLevel + 1);
-        }
-        this.refreshPrompt();
+        const screen = self._processingScreen;
+        if (!screen) return;
+        const drive = self._driveSlot?.insertedDrive ?? null;
+        const actions = [
+          {
+            id: 'upgrade',
+            label: 'Upgrade Signal',
+            enabled: drive?.canUpgradeLevel ?? false,
+            onClick: () => {
+              if (drive?.canUpgradeLevel) {
+                drive.setSignalLevel(drive.signalLevel + 1);
+              }
+              screen.refreshActions(self._driveSlot?.insertedDrive ?? null);
+            },
+          },
+        ];
+        screen.open(drive, actions);
       }
     }());
 

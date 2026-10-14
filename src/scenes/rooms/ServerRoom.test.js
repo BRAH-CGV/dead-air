@@ -217,12 +217,20 @@ describe('ServerRoom', () => {
     expect(slot.snapDistance).toBe(0.25);
   });
 
-  it('the console Interactable upgrades the signal level of the inserted drive in the slot', () => {
+  it('the console Interactable opens the processing screen with an upgrade action for the inserted drive', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     const slotBox = room.root.find('DriveSlot');
     const slot = slotBox.getComponent(DriveSlot);
     expect(interactable).not.toBeNull();
     expect(slot).not.toBeNull();
+
+    // Fake processing screen injected by BaseScene.
+    const opened = [];
+    const fakeScreen = {
+      open(drive, actions) { opened.push({ drive, actions }); },
+      refreshActions: vi.fn(),
+    };
+    room.processingScreen = fakeScreen;
 
     // Simulate a saved, level-1 drive inserted in the slot.
     let level = 1;
@@ -234,20 +242,39 @@ describe('ServerRoom', () => {
     interactable.refreshPrompt();
     expect(interactable.promptLabel).toBe('[E] Process signal');
 
-    // Interact to upgrade the signal.
+    // Interact to open the processing screen.
     interactable.onInteract({});
-    expect(level).toBe(2);
+    expect(opened.length).toBe(1);
+    expect(opened[0].drive).toBe(fakeDrive);
+    expect(opened[0].actions).toHaveLength(1);
+    expect(opened[0].actions[0].id).toBe('upgrade');
+    expect(opened[0].actions[0].enabled).toBe(true);
 
-    // After upgrading, canUpgradeLevel is false, so the prompt should revert.
-    fakeDrive.canUpgradeLevel = false;
-    interactable.refreshPrompt();
-    expect(interactable.promptLabel).toBe('No signal to process');
+    // The upgrade action's onClick upgrades the drive and refreshes.
+    opened[0].actions[0].onClick();
+    expect(level).toBe(2);
+    expect(fakeScreen.refreshActions).toHaveBeenCalled();
   });
 
-  it('the console shows "No signal to process" when the slot has no drive', () => {
+  it('the console opens the processing screen even with no drive inserted', () => {
+    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    const opened = [];
+    const fakeScreen = {
+      open(drive, actions) { opened.push({ drive, actions }); },
+      refreshActions: vi.fn(),
+    };
+    room.processingScreen = fakeScreen;
+
+    interactable.onInteract({});
+    expect(opened.length).toBe(1);
+    expect(opened[0].drive).toBeNull();
+    expect(opened[0].actions[0].enabled).toBe(false);
+  });
+
+  it('the console prompt adapts to whether a drive can be upgraded', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     interactable.refreshPrompt();
-    expect(interactable.promptLabel).toBe('No signal to process');
+    expect(interactable.promptLabel).toBe('[E] Processing console');
   });
 
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {

@@ -13,7 +13,7 @@ import { SignalManager } from '../gameplay/SignalManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { SignalAlertLight } from '../gameobjects/SignalAlertLight.js';
-import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { HUD, RadarOverlay } from '../ui/HUD.js';
 
 // ─────────────────────────────────────────────
 // OfficeScene  –  The starting office level
@@ -97,7 +97,6 @@ export class OfficeScene extends Scene {
     // dispose(), not just hide(): both hang listeners on page elements and
     // the window that outlive the scene.
     this.radarOverlay?.dispose();
-    this.reviewPanel?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -121,7 +120,6 @@ export class OfficeScene extends Scene {
     // ── UI wrappers (read from DOM elements in index.html) ──
     this.hud          = new HUD();
     this.radarOverlay = new RadarOverlay();
-    this.reviewPanel  = new SignalReviewPanel();
 
     // The real sky behind the radar grid — reads the sky live each frame,
     // so it turns and dawns in step with the view out of the window.
@@ -133,7 +131,6 @@ export class OfficeScene extends Scene {
     this.terminal.signalManager = this.signalManager;
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
-    this.terminal.reviewPanel   = this.reviewPanel;
     this.terminal.crosshair     = this.engine.crosshair;
 
     // Attach the terminal and its Interactable to the computer model.

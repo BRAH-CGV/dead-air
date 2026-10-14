@@ -37,7 +37,8 @@ import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
-import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { HUD, RadarOverlay } from '../ui/HUD.js';
+import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
@@ -315,14 +316,15 @@ export class BaseScene extends Scene {
     }
     for (const resource of this._owned) resource.dispose();
     this._owned.length = 0;
-    // The HUD, radar and review panel are DOM overlays living in index.html,
-    // outside the scene graph — nothing tears them down for us, so a scene
-    // swap would leave last night's numbers floating over the next level.
+    // The HUD, radar and processing screen are DOM overlays living in
+    // index.html, outside the scene graph — nothing tears them down for
+    // us, so a scene swap would leave last night's numbers floating over
+    // the next level.
     this.hud?.hide();
     // dispose(), not just hide(): both hang listeners on page elements and
     // the window that outlive the scene.
     this.radarOverlay?.dispose();
-    this.reviewPanel?.dispose();
+    this.processingScreen?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -474,7 +476,7 @@ export class BaseScene extends Scene {
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
     this.radarOverlay = new RadarOverlay();
-    this.reviewPanel  = new SignalReviewPanel();
+    this.processingScreen = new ProcessingScreen();
 
     // The real sky behind the radar grid: the backdrop reads it live, so it
     // turns with the night and drowns in the dawn exactly as the window
@@ -486,7 +488,6 @@ export class BaseScene extends Scene {
     this.terminal.signalManager = this.signalManager;
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
-    this.terminal.reviewPanel   = this.reviewPanel;
     this.terminal.driveManager  = this.driveManager;
     this.terminal.crosshair     = this.engine.crosshair;
     // The desk is a room prop, so it is found through the room rather than
@@ -548,6 +549,14 @@ export class BaseScene extends Scene {
     // Interactable checks the slot's insertedDrive for signals.
     const deleteSlot = this.rooms.MainOffice?.deleteDriveSlot;
     const processingSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Wire the processing screen to the ServerRoom console and the signal
+    // manager (for payload URL lookup from the drive's signal index).
+    this.processingScreen.signalManager = this.signalManager;
+    this.processingScreen.setEngine(this.engine);
+    if (this.rooms.ServerRoom) {
+      this.rooms.ServerRoom.processingScreen = this.processingScreen;
+    }
 
     // Wire the drive box dock in the airlock and the drive boxes on the
     // office shelf.
@@ -620,9 +629,6 @@ export class BaseScene extends Scene {
       driveManager: this.driveManager,
       pickupSystem: this.pickupSystem,
     });
-
-    // The review panel is now display-only — Q auto-saves via the terminal.
-    // No onSave/onDelete callbacks needed.
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on

@@ -191,28 +191,75 @@
         letter-spacing: 0.06em;
       }
 
-      /* ── Signal review panel ───────────────────────────── */
-      #signal-review {
+      /* ── Processing screen (ServerRoom console) ────────── */
+      #processing-screen {
         position: fixed;
         inset: 0;
         display: none;
         align-items: center;
         justify-content: center;
         flex-direction: column;
-        gap: 16px;
+        gap: 14px;
         background: rgba(6, 8, 14, 0.92);
         z-index: 96;
         font: 13px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #b8c8d8;
       }
-      #signal-review-image {
+      #processing-title {
+        color: #00dcc8;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-weight: bold;
+        font-size: 14px;
+      }
+      #processing-preview {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 484px;
+        height: 364px;
+        border: 2px solid rgba(0, 200, 180, 0.15);
+        border-radius: 4px;
+      }
+      #processing-image {
         max-width: 480px;
         max-height: 360px;
         border: 2px solid rgba(0, 200, 180, 0.4);
         border-radius: 4px;
         box-shadow: 0 0 20px rgba(0, 200, 180, 0.15);
       }
-      #signal-review-hint {
-        color: #8898a8;
+      #processing-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        min-height: 36px;
+      }
+      .processing-btn {
+        appearance: none;
+        padding: 6px 18px;
+        border: 1px solid rgba(0, 200, 180, 0.5);
+        border-radius: 2px;
+        background: rgba(0, 200, 180, 0.08);
+        color: #b8c8d8;
+        font: inherit;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .processing-btn:hover:not(:disabled) {
+        background: rgba(0, 200, 180, 0.18);
+        border-color: rgba(0, 200, 180, 0.8);
+        color: #d8f0e8;
+      }
+      .processing-btn:disabled {
+        opacity: 0.35;
+        cursor: default;
+        border-color: rgba(128, 128, 128, 0.3);
+      }
+      #processing-hint {
+        color: #556;
         letter-spacing: 0.06em;
         text-transform: uppercase;
         font-size: 11px;
@@ -562,7 +609,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #cctv) {
         visibility: hidden !important;
       }
 
@@ -723,10 +770,14 @@
       <div id="cctv-map"></div>
     </div>
 
-    <!-- Signal review modal (shown after scanning a signal) -->
-    <div id="signal-review">
-      <img id="signal-review-image" alt="Signal payload" />
-      <div id="signal-review-hint">Signal saved to drive — press Q to continue</div>
+    <!-- Processing screen (ServerRoom console overlay) -->
+    <div id="processing-screen">
+      <div id="processing-title">Signal Processing</div>
+      <div id="processing-preview">
+        <img id="processing-image" alt="Signal preview" />
+      </div>
+      <div id="processing-controls"></div>
+      <div id="processing-hint">Q: close</div>
     </div>
 
     <!-- Menus: main, pause, settings, controls, credits, end screens -->

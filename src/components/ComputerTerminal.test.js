@@ -75,12 +75,6 @@ function makeRadar() {
   };
 }
 
-function makeReviewPanel() {
-  return {
-    show: vi.fn(), hide: vi.fn(),
-  };
-}
-
 function makeDriveManager(inserted = true) {
   return {
     driveInserted: inserted,
@@ -111,7 +105,7 @@ function revealAll(mgr) {
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('ComputerTerminal', () => {
-  let term, sat, mgr, hud, radar, review, crosshair, driveMgr;
+  let term, sat, mgr, hud, radar, crosshair, driveMgr;
 
   beforeEach(() => {
     term   = new ComputerTerminal();
@@ -119,7 +113,6 @@ describe('ComputerTerminal', () => {
     mgr    = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
     hud    = makeHUD();
     radar  = makeRadar();
-    review = makeReviewPanel();
     crosshair = makeCrosshair();
     driveMgr  = makeDriveManager(true);
 
@@ -127,7 +120,6 @@ describe('ComputerTerminal', () => {
     term.signalManager = mgr;
     term.hud          = hud;
     term.radar        = radar;
-    term.reviewPanel  = review;
     term.crosshair    = crosshair;
     term.driveManager = driveMgr;
 
@@ -595,9 +587,9 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
   });
 
-  // ── SCANNING → REVIEW ──
+  // ── SCANNING → AUTO-SAVE ──
 
-  it('transitions to review when scan completes', () => {
+  it('auto-saves the signal and returns to radar when scan completes', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -617,10 +609,12 @@ describe('ComputerTerminal', () => {
     sat.isScanning = false;
     sat._scanComplete = true;
 
-    term._enterReview();
-    expect(term.state).toBe('review');
-    expect(review.show).toHaveBeenCalledWith(sig.payloadUrl);
-    expect(sat.isScanning).toBe(false);
+    // The scanning handler auto-saves and returns to radar.
+    term.saveSignal();
+    term._onSignalResolved();
+    expect(term.state).toBe('radar');
+    expect(sig.saved).toBe(true);
+    expect(driveMgr.saveToDrive).toHaveBeenCalled();
   });
 
   it('scan progress bar updates during scanning state', () => {
@@ -663,9 +657,9 @@ describe('ComputerTerminal', () => {
     expect(sat.scanProgress).toBe(1.5);
   });
 
-  // ── REVIEW ──
+  // ── SAVE ──
 
-  it('saveSignal marks signal saved, saves to drive, and returns to radar', () => {
+  it('saveSignal marks signal saved and saves to drive', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -673,15 +667,9 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
 
-    // Jump to review state
-    term._enterReview();
-    expect(term.state).toBe('review');
-
     term.saveSignal();
     expect(sig.saved).toBe(true);
     expect(driveMgr.saveToDrive).toHaveBeenCalled();
-    expect(term.state).toBe('radar');
-    expect(review.hide).toHaveBeenCalled();
   });
 
   it('scan is blocked when no drive is inserted', () => {
@@ -722,23 +710,14 @@ describe('ComputerTerminal', () => {
     expect(radar.hide).toHaveBeenCalled();
   });
 
-  it('exit during review auto-saves the signal', () => {
+  it('exit during scanning drops the scan in progress', () => {
     term.enter();
-    const sig = mgr.signals[0];
-    const cur = skyToCursor(sig.yaw, sig.pitch);
-    term._cursorX = cur.x;
-    term._cursorY = cur.y;
-    term._updateHover();
+    term._enterScanning();
+    expect(term.state).toBe('scanning');
 
-    term._enterReview();
-    expect(sig.scanned).toBe(true);
-
-    // Simulate Q key: the onUpdate handler calls saveSignal then exit.
-    term.saveSignal();
     term.exit();
     expect(term.state).toBe('idle');
-    expect(sig.saved).toBe(true);
-    expect(review.hide).toHaveBeenCalled();
+    expect(sat.isScanning).toBe(false);
   });
 
   it('exit from idle does nothing', () => {
@@ -758,20 +737,6 @@ describe('ComputerTerminal', () => {
     expect(sat.scanProgress).toBe(0);
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
-  });
-
-  // ── Background scan completion on reopen ──
-
-  it('entering radar detects scan completed while terminal was closed', () => {
-    // Simulate: scan completed while terminal was idle
-    sat._scanComplete = true;
-    const sig = mgr.signals[0];
-    sig.scanned = true;
-    term._hoveredSignal = sig;
-
-    // Open terminal — should go directly to review
-    term.enter();
-    expect(term.state).toBe('review');
   });
 
   // ── Power ──
