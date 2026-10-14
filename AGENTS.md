@@ -642,7 +642,18 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 - Profile with Chrome DevTools before optimizing.
 - **Shadows are frozen** (`engine.shadows`). Something new that casts shadows
   and moves needs `engine.shadows.watch(object, [light])`; a one-off change
-  (a panel shown, a prop placed) needs `engine.shadows.invalidate()`.
+  (a panel shown, a prop placed) needs `engine.shadows.invalidate()`. A
+  moving physics body (a carried drive) redraws only the maps of the lights
+  that reach it — a point or spot light's `distance`, plus the body's size,
+  where it was or where it is; the moon reaches everything — so carrying
+  one across the office doesn't redraw the corridors' lamps.
+- **A light that casts no shadow shines through walls.** It lights every
+  surface in its range that faces it. The office's ceiling light and every
+  corridor's (the airlock's included) cast shadows for that reason (#87):
+  small cube maps (256² for a corridor), frozen like the rest. The living
+  quarters' lamp and the server room's glows still don't. Each shadowed
+  light is one more texture unit in every lit shader (seven now, of a
+  guaranteed sixteen), so add one where the leak shows, not everywhere.
 - **Never hide a light with `visible = false`** — the light count is compiled
   into every lit shader, so it recompiles the scene. Zero its intensity.
 - **Occlusion zones** (`BaseScene._buildOcclusion`): room furnishings go

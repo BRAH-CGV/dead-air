@@ -207,6 +207,22 @@ describe('Corridor', () => {
     expect(light.intensity).toBeGreaterThan(3);   // brighter than the first pass
   });
 
+  // Unshadowed, its 8 m of light went straight through the walls: the yard
+  // beside every corridor and the next room's floor were lit as brightly as
+  // the corridor itself (#87).
+  it('casts shadows, so its walls keep its light in', () => {
+    const c = new Corridor(engine, X);
+    c.build();
+    const group = c.root.find('CorridorLight');
+    const light = group.object3d.children.find(o => o.isPointLight);
+    expect(light.castShadow).toBe(true);
+    // The ceiling's underside is 0.3 m above it: a near plane past that
+    // leaves the ceiling out of the map, and lets the light out the top.
+    expect(light.shadow.camera.near).toBeLessThan(0.3);
+    // The fixture sits on the light: if it cast, it would shut the light in.
+    expect(group.object3d.children.find(o => o.isMesh).castShadow).toBe(false);
+  });
+
   it('has a visible fixture mesh at the light, like the room ceiling lights', () => {
     const c = new Corridor(engine, X);
     c.build();
