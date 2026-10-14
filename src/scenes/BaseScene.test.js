@@ -44,6 +44,17 @@ function makeSceneEngine() {
   engine.scene = new THREE.Scene();
   engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.assets = { get: vi.fn(() => null) };
+  // The generator arrives drawn, as the real spawn loads it: a box its size
+  // (generator.glb at its manifest scale), so the zones and the dust eyes
+  // have something to measure.
+  const spawn = engine.spawnModel;
+  engine.spawnModel = vi.fn((key, opts) => {
+    const go = spawn(key, opts);
+    if (key === 'model:generator') {
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.24, 0.89).translate(0, 0.62, 0)));
+    }
+    return go;
+  });
   engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
     const player = new GameObject('Player');
     player.object3d.position.set(...position);
@@ -252,14 +263,18 @@ describe('BaseScene', () => {
     expect(-cam.left).toBeGreaterThanOrEqual(extent);
   });
 
-  it('builds the outside area: satellite and generator stand-in, outside every room', () => {
+  it('builds the outside area: satellite and generator, outside every room', () => {
     const outside = sceneRoot.find('Outside');
     const satCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:dish-tower');
     expect(satCall[1].type).toBe(Satellite);
     expect(outside.find('Satellite')).not.toBeNull();
 
+    // The real model now, not a stand-in box, standing on the ground.
     const generator = outside.find('Generator');
-    expect(generator.placeholderFor).toBe('generator.glb');
+    expect(generator.physicsAssetKey).toBe('model:generator');
+    expect(generator.placeholderFor).toBeFalsy();
+    expect(generator.object3d.position.y).toBe(0);
+    expect(engine._rootObjects).not.toContain(generator);         // updated once, under Outside
     for (const room of Object.values(scene.rooms)) {
       expect(room.containsPoint(worldPos(generator)), room.name).toBe(false);
     }
@@ -291,6 +306,25 @@ describe('BaseScene', () => {
       // bounding box the size of the valley.
       expect(field.isGroup, name).toBe(true);
     }
+  });
+
+  it('tells the airlock of the office\'s front doorway, so the wall it butts against is lined round it', () => {
+    const front = scene.rooms.MainOffice.openings.find(o => o.side === 'front');
+    expect(scene.rooms.Airlock.openEndDoorways).toEqual({ back: { width: front.width, height: front.height } });
+  });
+
+  it('tells each passageway of the doorways at its ends, so the room walls it butts against are lined round them', () => {
+    const door = (room, side) => {
+      const { width, height } = scene.rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
+    // Both run along x: their left end is the −x one.
+    expect(scene.corridors.OfficeToServer.openEndDoorways).toEqual({
+      left: door('MainOffice', 'right'), right: door('ServerRoom', 'left'),
+    });
+    expect(scene.corridors.OfficeToQuarters.openEndDoorways).toEqual({
+      left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left'),
+    });
   });
 
   it('the generator is a raycastable Interactable that switches the power grid', () => {
@@ -1332,6 +1366,11 @@ describe('BaseScene dust eyes', () => {
 
   it('keeps the storm off the UFO', () => {
     expect(scene.sandstorm.ufo).toBe(scene.ufoThreat);
+  });
+
+  it('hands the storm the moonlight and the night\'s ambient light to dim', () => {
+    expect(scene.sandstorm.moon).toBe(scene.moonLight);
+    expect(scene.sandstorm.ambient).toBe(scene.ambientLight);
   });
 
   it('builds its eyes up front, hidden, on the scene root', () => {

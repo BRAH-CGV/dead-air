@@ -50,6 +50,7 @@ import { PLAYER_BODY } from '../components/PlayerBody.js';
 import { Component } from '../core/Component.js';
 import { LEDStrip } from '../components/LEDStrip.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
@@ -72,6 +73,12 @@ import { sealAgainst } from '../core/ShadowSides.js';
 import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
+import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -226,6 +233,13 @@ export class BaseScene extends Scene {
    *  @type {PowerGrid|null} */
   power = null;
 
+  /** How awake the player is: drained through the shift, topped up by a
+   *  ration. The Sleep Demon and the fatigue effects read it.
+   *  @type {Stamina|null} */
+  stamina = null;
+  /** The thing in the corner of the eye, every night. @type {SleepDemon|null} */
+  sleepDemon = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
   /** Sounds the scene itself plays (the breaker panel's click). */
@@ -260,6 +274,9 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addStamina();
+    this._addFatigue();
+    this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
     this._buildOcclusion();
@@ -268,7 +285,7 @@ export class BaseScene extends Scene {
     this._logBuildStats();
   }
 
-  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+  /** Budget check (see docs/PERFORMANCE-PLAN.md): how many
    *  physics bodies and Object3Ds one BaseScene build produces. */
   _logBuildStats() {
     const { engine } = this;
@@ -352,7 +369,11 @@ export class BaseScene extends Scene {
     // The airlock's open end sits on the office's front outer wall face,
     // centred on the front doorway — the office doorway is its way in.
     const airlock = new Airlock(engine);
-    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontDoor = office.openings.find(o => o.side === 'front');
+    const frontDoorX = office.position[0] + frontDoor.offset;
+    // The office's front wall shows inside the airlock, round that doorway:
+    // the airlock lines it, as neither room's own walls cover it.
+    airlock.openEndDoorways = { back: { width: frontDoor.width, height: frontDoor.height } };
     const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
     airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
 
@@ -374,9 +395,22 @@ export class BaseScene extends Scene {
       length: CORRIDOR_LENGTH, width: CORRIDOR_WIDTH,
       height: rooms.MainOffice.height, wallThick: rooms.MainOffice.wallThick, axis: 'x',
     };
+    // Each end butts against a room's outer wall, round its doorway; the
+    // corridor lines that face, as neither room's own walls cover it. A
+    // corridor runs along x, so its left end is the −x one.
+    const door = (room, side) => {
+      const { width, height } = rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
     this.corridors = {
-      OfficeToServer:   new Corridor(engine, { ...common, name: 'OfficeToServer',   position: [ mid, 0, this._doorZ.right] }),
-      OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
+      OfficeToServer: new Corridor(engine, {
+        ...common, name: 'OfficeToServer', position: [mid, 0, this._doorZ.right],
+        openEndDoorways: { left: door('MainOffice', 'right'), right: door('ServerRoom', 'left') },
+      }),
+      OfficeToQuarters: new Corridor(engine, {
+        ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left],
+        openEndDoorways: { left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left') },
+      }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
   }
@@ -1044,15 +1078,18 @@ export class BaseScene extends Scene {
     // lintel. Position and heading placed by hand in the level editor.
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). In the
-    // far corner of the fenced yard, on the side away from the buggy — a walk
-    // out into the storm to cut the power, along the wire. Read off the
-    // fence, so it follows the yard. _addPower() puts its switch on it.
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it.
     const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
     const [insetX, insetZ] = GENERATOR_CORNER_INSET;
     const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this._addStandIn('Generator', 'generator.glb',
-      [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
   }
 
@@ -1409,6 +1446,101 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Stamina and the Sleep Demon (every night)
+  // ──────────────────────────────────────────
+  /** Stamina drains through the shift and the office's ration dispenser
+   *  tops it up. The drain ticks on GameplaySystems after the controller,
+   *  and before the demon and the fatigue effects, so within a frame both
+   *  read this frame's stamina. */
+  _addStamina() {
+    this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
+    const dispenser = this.rooms.MainOffice.rationDispenser;
+    if (dispenser) {
+      dispenser.stamina = this.stamina;
+      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
+      dispenser.onEat = () => {
+        if (!crunch) return;
+        if (crunch.isPlaying) crunch.stop();
+        crunch.play();
+      };
+    }
+    this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      grid:         this.power,
+      onNightStart: () => dispenser?.reset(),
+    }));
+  }
+
+  /** The Sleep Demon, in the corner of the player's eye once they tire (see
+   *  SleepDemon). Its figure is a placeholder under a Threats group on the
+   *  scene root, which sits at the world origin: the demon writes world
+   *  positions, and no occlusion zone ever hides it. It is a shadow in
+   *  itself: a pitch-black shade no light shows, and it casts none — a solid
+   *  shadow under a faint figure gave it away — so moving it never redraws
+   *  the frozen shadow maps. */
+  /** The screens at the desk that fill the view: the terminal's radar or
+   *  review and the security monitor. Whichever is up is the state; 'idle'
+   *  while neither is. Read every frame, so it allocates nothing. */
+  _screens() {
+    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    return {
+      get state() {
+        for (let i = 0; i < screens.length; i++) {
+          if (screens[i].state !== 'idle') return screens[i].state;
+        }
+        return 'idle';
+      },
+    };
+  }
+
+  _addSleepDemon() {
+    const { engine } = this;
+    // Its body is the baked model (sleep-demon.glb); without it (a test's
+    // stub asset manager) the placeholder capsule stands in.
+    const model = engine.assets?.has?.('model:sleep-demon') ? engine.assets.get('model:sleep-demon').scene : null;
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb', model,
+    });
+    this._group('Threats').addChild(figure);
+    this._ownResourcesOf(figure);
+    this.sleepDemon = this._sceneRoot.find('GameplaySystems').addComponent(new SleepDemon({
+      controller:      this.gameController,
+      stamina:         this.stamina,
+      figure,
+      camera:          engine.camera ?? null,
+      terminal:        this._screens(),
+      rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
+      isFrozen:        () => !!engine.debugCamera?.active,
+      flashlight:      engine.player?.getComponent(Flashlight) ?? null,
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
+      // Walking them down: the breath and the heart carry the dread.
+      fatigue:         this.fatigueEffects,
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
+    }));
+  }
+
+  /** What low stamina does to the player: the tunnel and the eyelids, the
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns.
+   *  Built before the demon, which tells it how hard the walk-down grips. */
+  _addFatigue() {
+    const { engine } = this;
+    this.fatigueEffects = this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
+      grid:       this.power,
+      isFrozen:   () => !!engine.debugCamera?.active,
+    }));
+  }
+
+  // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
@@ -1564,6 +1696,9 @@ export class BaseScene extends Scene {
       // …and the wind: the storm has no recording of its own. It blows the
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
+      // The moons are lost in the dust, and their light with them.
+      moon:     this.moonLight,
+      ambient:  this.ambientLight,
       hooks: {
         // The grit is wrapped round the eye the frame is drawn from — a
         // security camera's, on the monitor (Engine.renderCamera).
@@ -1821,31 +1956,6 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
-  }
-
-  /** Solid box standing in for a model that hasn't been sourced yet. */
-  _addStandIn(name, file, position, size, color) {
-    const { world } = this.engine;
-    const go = new GameObject(name);
-    go.object3d.position.set(...position);
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(...size)),
-      this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.3 })),
-    );
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...position));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2), body);
-    go.rigidBody = body;
-    go.collider  = collider;
-    go.colliders = [collider];
-    go._originalSize = [...size];
-    go.placeholderFor = file;
-    this.engine._bodyToGO?.set(body.handle, go);
-
-    this._outside.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────

@@ -3,15 +3,7 @@ import { DevConsole, UsageError } from './DevConsole.js';
 import { createCommands, parseToggle, parseUnit, parseHour } from './commands.js';
 import { NightManager } from '../../systems/NightManager.js';
 import { NightClock } from '../../gameplay/NightClock.js';
-
-/** Stamina as the console reads it: a value and a level. The stamina system
- *  isn't in the base yet, so the command is tested against this. */
-function fakeStamina() {
-  return {
-    value: 1,
-    get level() { return this.value <= 0.2 ? 'critical' : this.value <= 0.5 ? 'tired' : 'ok'; },
-  };
-}
+import { Stamina } from '../../gameplay/Stamina.js';
 
 /** A flag object whose methods flip it, like the real debug tools. */
 function flag(key, on, off) {
@@ -432,9 +424,9 @@ describe('createCommands', () => {
   });
 
   describe('stamina', () => {
-    beforeEach(() => { scene.stamina = fakeStamina(); });
+    beforeEach(() => { scene.stamina = new Stamina(); });
 
-    it('a scene without stamina says so (the base has none yet)', () => {
+    it('a scene without stamina says so', () => {
       delete scene.stamina;
       expect(run('stamina')).toEqual({ ok: false, out: ['No stamina in this scene'] });
       expect(run('stamina 0.5')).toEqual({ ok: false, out: ['No stamina in this scene'] });

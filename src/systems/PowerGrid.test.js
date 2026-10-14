@@ -268,3 +268,73 @@ describe('PowerGrid — brown-out', () => {
     expect(light.intensity).toBe(2);
   });
 });
+
+describe('PowerGrid — dim factors', () => {
+  it('dims every lamp and fitting by a named factor, unbreakable ones too', () => {
+    const grid = new PowerGrid();
+    const light = lamp(6);
+    const screen = lamp(2);
+    const material = glow(1.8);
+    grid.addLight(light);
+    grid.addLight(screen, { breakable: false });
+    grid.addMaterial(material);
+
+    grid.setFactor('fatigue', 0.5);
+    grid.update(0.016);
+    expect(light.intensity).toBeCloseTo(3);
+    expect(screen.intensity).toBeCloseTo(1);
+    expect(material.emissiveIntensity).toBeCloseTo(0.9);
+  });
+
+  it('multiplies factors together, and every factor back at 1 restores the built values', () => {
+    const grid = new PowerGrid();
+    const light = lamp(4);
+    grid.addLight(light);
+    grid.setFactor('fatigue', 0.6);
+    grid.setFactor('dread', 0.5);
+    expect(grid.dim).toBeCloseTo(0.3);
+    grid.update(0.016);
+    expect(light.intensity).toBeCloseTo(1.2);
+
+    grid.setFactor('fatigue', 1);
+    grid.setFactor('dread', 1);
+    grid.update(0.016);
+    expect(light.intensity).toBe(4);
+  });
+
+  it('composes with the switch: off is still off', () => {
+    const grid = new PowerGrid();
+    const light = lamp(4);
+    grid.addLight(light);
+    grid.setFactor('fatigue', 0.6);
+    grid.setOn(false);
+    grid.update(0.016);
+    expect(light.intensity).toBe(0);
+  });
+
+  it('dims an unlit (Basic) fitting through its colour', () => {
+    const grid = new PowerGrid();
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    grid.addMaterial(material);
+    grid.setFactor('fatigue', 0.5);
+    grid.update(0.016);
+    expect(material.color.r).toBeCloseTo(0.5);
+  });
+
+  it('leaves the electrical level and the consumers alone: dimming is what the player sees', () => {
+    const grid = new PowerGrid();
+    const strip = { powerLevel: 1 };
+    grid.addConsumer(strip);
+    grid.setFactor('fatigue', 0.5);
+    grid.update(0.016);
+    expect(grid.level).toBe(1);
+    expect(strip.powerLevel).toBe(1);
+  });
+
+  it('reads 1 for a factor never set, and never goes below 0', () => {
+    const grid = new PowerGrid();
+    expect(grid.getFactor('dread')).toBe(1);
+    grid.setFactor('dread', -2);
+    expect(grid.getFactor('dread')).toBe(0);
+  });
+});
