@@ -191,7 +191,7 @@ export function populateGrowRack(target, { assets, own }) {
   const plantMaterial = {
     stems:  { roughness: 0.8 },
     leaves: { roughness: 0.65, side: THREE.DoubleSide },
-    fruit:  { roughness: 0.3 },
+    fruit:  { roughness: 0.45 },
   };
   const plantParts = Object.keys(plantMaterial).map(name => ({
     kind: name, geometry: own(plant[name]), matrix: new THREE.Matrix4(),

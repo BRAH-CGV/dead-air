@@ -44,6 +44,27 @@ describe('GrowPlant', () => {
     expect(other).toBeGreaterThan(0);
   });
 
+  it('carries a handful of fruit, not a cluster on every shoot', () => {
+    const count = triangles(buildGrowPlant().fruit) / 80;   // an icosahedron at detail 1 is 80 triangles
+    expect(count).toBeGreaterThanOrEqual(5);
+    expect(count).toBeLessThanOrEqual(12);
+  });
+
+  it('spreads its fruit round the bush, not bunched by the stem', () => {
+    const fruit = bounds(buildGrowPlant().fruit);
+    expect(Math.max(fruit.max.x - fruit.min.x, fruit.max.z - fruit.min.z)).toBeGreaterThan(0.15);
+    expect(fruit.max.y - fruit.min.y).toBeGreaterThan(0.08);
+  });
+
+  it('keeps the fruit muted, not candy-bright', () => {
+    const colour = buildGrowPlant().fruit.attributes.color;
+    const c = new THREE.Color(), hsl = {};
+    for (let i = 0; i < colour.count; i += 3) {
+      c.fromBufferAttribute(colour, i).getHSL(hsl, THREE.SRGBColorSpace);   // as it shows, not linear
+      expect(hsl.s).toBeLessThan(0.7);
+    }
+  });
+
   it('hangs its fruit inside the bush, not floating off it', () => {
     const p = buildGrowPlant();
     const bush = bounds(p.leaves).clone().expandByScalar(0.02);

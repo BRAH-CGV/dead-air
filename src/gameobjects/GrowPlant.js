@@ -16,9 +16,9 @@ export const GROW_PLANT = {
 
 const STEM_COLOUR = new THREE.Color(0x4f6e2c);
 const FRUIT = [
-  { colour: new THREE.Color(0xc0160c), share: 0.7 },   // ripe
-  { colour: new THREE.Color(0xe0640e), share: 0.15 },  // turning
-  { colour: new THREE.Color(0x5e9a26), share: 0.15 },  // green
+  { colour: new THREE.Color(0xa83a30), share: 0.65 },  // ripe
+  { colour: new THREE.Color(0xb8743c), share: 0.2 },   // turning
+  { colour: new THREE.Color(0x7a9a4a), share: 0.15 },  // green
 ];
 
 /** Mulberry32: small and seedable. */
@@ -155,7 +155,7 @@ export function buildGrowPlant({ seed = GROW_PLANT.seed, height = GROW_PLANT.hei
     stem(from, hang, 0.0025, 0.002);
     for (let i = 0; i < count; i++) {
       const r = range(0.014, 0.019);
-      const at = hang.clone().add(new THREE.Vector3(range(-0.022, 0.022), -r - range(0, 0.025), range(-0.022, 0.022)));
+      const at = hang.clone().add(new THREE.Vector3(range(-0.03, 0.03), -r - range(0, 0.03), range(-0.03, 0.03)));
       const tint = fruitColour(forceGreen && i === 0).clone().offsetHSL(range(-0.01, 0.01), 0, range(-0.04, 0.04));
       m4.compose(at, q.identity(), new THREE.Vector3(1, range(0.9, 1), 1));
       fruit.addGeometry(new THREE.IcosahedronGeometry(r, 1), m4, tint);
@@ -187,7 +187,7 @@ export function buildGrowPlant({ seed = GROW_PLANT.seed, height = GROW_PLANT.hei
     stem(base, mid, 0.004, 0.0032);
     stem(mid, tip, 0.0032, 0.002);
     compoundLeaf(base, tip, 6, range(0.06, 0.075));
-    if (h > 0.16 && h < stemTop - 0.08) trussFrom.push(base.clone().lerp(mid, 0.6));
+    if (h > 0.16 && h < stemTop - 0.08 && i % 2 === 1) trussFrom.push(base.clone().lerp(tip, 0.55));   // every other shoot, out along it
   }
 
   // The tuft at the top: young shoots with smaller leaves.
@@ -200,7 +200,7 @@ export function buildGrowPlant({ seed = GROW_PLANT.seed, height = GROW_PLANT.hei
   }
 
   // Trusses of fruit under the middle shoots; the last one keeps a green one.
-  trussFrom.forEach((at, i) => truss(at, 3 + Math.floor(rand() * 3), i === trussFrom.length - 1));
+  trussFrom.forEach((at, i) => truss(at, 2 + Math.floor(rand() * 2), i === trussFrom.length - 1));
 
   return { stems: stems.build(), leaves: leaves.build(), fruit: fruit.build() };
 }
