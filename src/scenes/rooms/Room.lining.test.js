@@ -122,6 +122,73 @@ describe('a corridor\'s lining', () => {
   });
 });
 
+describe('the face an open end butts against', () => {
+  // The airlock: open at the back, where it sits flush on the office's
+  // front wall, round the office's front doorway. That face is the
+  // office's outer wall, so neither room lined it.
+  const airlockLike = (opts = {}) => {
+    const corridor = new Corridor(engineWithTextures(), {
+      name: 'Lock', length: 3, width: 2.4, axis: 'z', ends: ['open', 'doorway'], doorWidth: 1.1, ...opts,
+    });
+    corridor.build();
+    return corridor;
+  };
+  const quadsOn = (mesh, z) => {
+    const pos = mesh.geometry.getAttribute('position');
+    const quads = [];
+    for (let q = 0; q < pos.count / 4; q++) {
+      const zs = [0, 1, 2, 3].map(i => pos.getZ(q * 4 + i));
+      if (zs.every(v => Math.abs(v - z) < 1e-6)) {
+        const xs = [0, 1, 2, 3].map(i => pos.getX(q * 4 + i)), ys = [0, 1, 2, 3].map(i => pos.getY(q * 4 + i));
+        quads.push({ x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      }
+    }
+    return quads;
+  };
+
+  it('is left alone when the corridor is not told of a doorway there', () => {
+    const walls = sheet(airlockLike(), 'Lining_Walls');
+    expect(walls.geometry.getIndex().count / 6).toBe(2 + 3);          // long walls, and the hatch end round its doorway
+  });
+
+  it('is lined round the doorway in it, from wall to wall, on the corridor\'s side', () => {
+    const corridor = airlockLike({ openEndDoorways: { back: { width: 1, height: 2.2 } } });
+    const walls = sheet(corridor, 'Lining_Walls');
+    expect(walls.geometry.getIndex().count / 6).toBe(2 + 3 + 3);      // …and the face behind the open end
+    const face = quadsOn(walls, -1.5 + LINING.gap);
+    expect(face.length).toBe(3);
+    const inner = (2.4 - 0.2) / 2;                                    // between the long walls' inner faces
+    expect(Math.min(...face.map(q => q.x0))).toBeCloseTo(-inner);
+    expect(Math.max(...face.map(q => q.x1))).toBeCloseTo(inner);
+    // Nothing across the doorway itself.
+    for (const q of face) {
+      const acrossDoor = q.x0 < 0.5 - 1e-6 && q.x1 > -0.5 + 1e-6;
+      if (acrossDoor) expect(q.y0).toBeCloseTo(2.2);                  // only the header above it
+    }
+  });
+});
+
+describe('a passageway open at both ends', () => {
+  it('lines the room wall at each end, round its doorway', () => {
+    const corridor = new Corridor(engineWithTextures(), {
+      name: 'Hall', length: 4, width: 2, axis: 'x',
+      openEndDoorways: { left: { width: 1.2, height: 2.2 }, right: { width: 1.2, height: 2.2 } },
+    });
+    corridor.build();
+    const pos = sheet(corridor, 'Lining_Walls').geometry.getAttribute('position');
+    expect(pos.count / 4).toBe(2 + 3 + 3);                            // long walls, and each end face round its doorway
+    const onPlane = x => {
+      let quads = 0;
+      for (let q = 0; q < pos.count / 4; q++) {
+        if ([0, 1, 2, 3].every(i => Math.abs(pos.getX(q * 4 + i) - x) < 1e-6)) quads++;
+      }
+      return quads;
+    };
+    expect(onPlane(-2 + LINING.gap)).toBe(3);                         // just inside the left end
+    expect(onPlane(2 - LINING.gap)).toBe(3);                          // just inside the right end
+  });
+});
+
 describe('the office\'s lining', () => {
   it('lines the window wall round the glass, not across it', () => {
     const office = new MainOffice(engineWithTextures());

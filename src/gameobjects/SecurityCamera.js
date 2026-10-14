@@ -58,6 +58,9 @@ export class SecurityCamera extends GameObject {
    * @param {number[]} [opts.position=[0,0,0]]  In the parent's space.
    * @param {number[]} [opts.target]         Where it looks at rest, same space.
    * @param {number}   [opts.panRange=0.8]   Radians either way it can pan.
+   * @param {number}   [opts.maxView]        On a single wall, how far off square
+   *        (radians) the view may turn: CAMERA_CLEARANCE.view unless given —
+   *        π/2 lets it turn all the way round to look along the wall.
    * @param {string[]} [opts.zones=[]]       Occlusion zones its picture needs.
    * @param {number}   [opts.fov=70]
    * @param {number}   [opts.flashReach=12]  Metres the flash carries.
@@ -71,10 +74,12 @@ export class SecurityCamera extends GameObject {
   constructor({
     name = 'SecurityCamera', label = name, position = [0, 0, 0], target = null,
     panRange = 0.8, zones = [], fov = 70, flashReach = 12, mount = null,
+    maxView = CAMERA_CLEARANCE.view,
   } = {}) {
     super(name);
     this.label = label;
     this.panRange = panRange;
+    this.maxView = maxView;
     this.zones = zones;
     this.flashReach = flashReach;
     this._owned = [];
@@ -122,7 +127,7 @@ export class SecurityCamera extends GameObject {
     /** How far it may pan from rest, [right, left] radians (− right, + left).
      *  Within panRange, and on a wall never so far round that the lens swings
      *  behind the wall's face (the picture would be inside the building), nor
-     *  — on a single wall — the view past CAMERA_CLEARANCE.view off it. */
+     *  — on a single wall — the view past `maxView` off it. */
     this.panLimits = mount ? this._panLimits(mount, yaw, pitch) : [-panRange, panRange];
   }
 
@@ -147,13 +152,13 @@ export class SecurityCamera extends GameObject {
     const fwd = a => [-Math.sin(a), -Math.cos(a)];
     const pivot = [ox + fwd(yaw)[0] * ARM, oz + fwd(yaw)[1] * ARM];
     const reach = (HOUSING[2] + 0.02) * Math.cos(pitch);
-    const minCos = Math.cos(CAMERA_CLEARANCE.view);
+    const minCos = Math.cos(this.maxView);
     const ok = (p) => {
       const f = fwd(yaw + p);
       return sides.every(({ i, at, out }) => {
         const lens = pivot[i] + f[i] * reach;
         if ((lens - at) * out < CAMERA_CLEARANCE.lens) return false;
-        return sides.length > 1 || f[i] * out >= minCos;
+        return sides.length > 1 || f[i] * out >= minCos - 1e-9;
       });
     };
     const STEP = 0.005;

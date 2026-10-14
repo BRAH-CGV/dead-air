@@ -17,24 +17,23 @@ import { Journal } from '../../components/Journal.js';
 // The room is split in three with the furniture, using the models already
 // in the game as stand-ins until better ones are found:
 //
-//   bedroom   back left: the bunk and a side table, with the lockers
-//             against the left wall at the foot of the bed
-//   storage   back right: three rows of shelves running front to back
-//             (the last against the right wall), with aisles between
+//   bedroom   back left: the bunk and a side table, with the lockers on the
+//             back wall beside the table
+//   storage   back right: two rows of big racks running front to back (one
+//             against the right wall), with an aisle between
 //   office    front: the desk end-on to the front wall with its chair and a
 //             lit lamp, the previous operator's notebook (the Journal,
-//             #79), shelves along the wall, and a row of shelves out from
-//             the left wall parting it from the bedroom
+//             #79), and two small shelves along the wall behind it
 //
 // The player wakes here (`spawn`): beside the bunk, facing the desk, so
 // the journal is the first thing in reach each night.
 //
 // The main paths stay open: in at the door and across the middle of the
-// room, and from there round the end of the divider into the bedroom.
+// room, and from there into the bedroom and down the storage aisle.
 //
 // The doorway is in the right wall, leading back toward the office.
 // `doorOffset` slides it along the wall so BaseScene can line it up with
-// the corridor. Only the storage shelves stand on the right wall, in the
+// the corridor. Only the storage racks stand on the right wall, in the
 // back half (z < −0.5): from there forward the metre inside the wall is
 // clear, so the doorway works anywhere in the front half.
 // ─────────────────────────────────────────────
@@ -101,52 +100,50 @@ export class LivingQuarters extends Room {
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
     this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
 
-    // Three lockers in one model, against the left wall just past the foot
-    // of the bunk, the doors facing into the room. Same model, scale and
-    // turn as the airlock's suit locker: locker.glb's origin is 0.274 m
-    // off-centre along its width, so turned to face +x at 0.9 scale it
-    // reaches 0.9 m toward the back wall from the spawn point and 0.41 m
-    // the other way.
-    const bunkFoot = -inZ + 2.02;
+    // Three lockers in one model, against the back wall past the side
+    // table, the doors facing into the room: the bed, the table and the
+    // lockers together. locker.glb's origin is 0.274 m off-centre along its
+    // width (0.246 m at 0.9 scale), so the spawn point sits that far left of
+    // the lockers' middle.
     this._spawnProp('model:locker', {
-      name: 'Lockers', position: [-inX + 0.22, 0, bunkFoot + 0.05 + 0.9], rotationY: Math.PI / 2, scale: 0.9,
+      name: 'Lockers', position: [-0.2 - 0.246, 0, -inZ + 0.225 - 0.018], scale: 0.9,
     });
 
     // ── Storage ──
-    // A shelf is 0.37 × 1.03 m, its open sides facing ±x. Three rows run
-    // out from the back wall: one beside the bedroom, one down the middle,
-    // one against the right wall and a shelf longer. The aisles between
-    // are 0.8 m, and open at the front onto the middle of the room.
-    const rows = [[0.35, 2], [1.52, 2], [inX - 0.2, 3]];   // x, shelves
-    let shelf = 0;
-    for (const [x, count] of rows) {
-      for (let i = 0; i < count; i++) {
-        this._spawnProp('model:shelf', { name: `StorageShelf_${++shelf}`, position: [x, 0, -3.35 + i * 1.05] });
+    // Two rows of three big racks (0.92 × 0.6 m) running out from the back
+    // wall, turned end-on to it: one against the right wall, one standing
+    // free with a 0.9 m aisle between, open at the front onto the middle of
+    // the room. The racks are open both sides.
+    const rack = { w: 0.92, d: 0.6 };
+    const rows = [inX - 0.005 - rack.d / 2, inX - 0.005 - rack.d * 1.5 - 0.9];   // x of each row
+    let n = 0;
+    for (const x of rows) {
+      for (let i = 0; i < 3; i++) {
+        this._spawnProp('model:bigger-shelf', {
+          name: `StorageRack_${++n}`,
+          position: [x, 0, -inZ + 0.005 + (rack.w + 0.01) * i + rack.w / 2],
+          rotationY: Math.PI / 2,
+        });
       }
     }
 
     // ── Office ──
-    // A row of shelves out from the left wall, between the bunk and the
-    // desk; the way into the bedroom is past its end.
-    [-inX + 0.52, -inX + 1.56].forEach((x, i) => {
-      this._spawnProp('model:shelf', { name: `DividerShelf_${i + 1}`, position: [x, 0, 0.35], rotationY: Math.PI / 2 });
-    });
-
-    // The desk end-on to the front wall, the chair on its left, facing it.
-    this._spawnProp('model:desk', { name: 'Desk', position: [-0.2, 0, 2.68], rotationY: -Math.PI / 2 });
+    // The desk end-on to the front wall, its drawers toward the chair on its
+    // left, facing it.
+    this._spawnProp('model:simple-desk', { name: 'Desk', position: [-0.2, 0, 2.6], rotationY: Math.PI });
     this._spawnProp('model:metal-chair', { name: 'DeskChair', position: [-1.45, 0, 2.67], rotationY: 1.3 });
-    this._buildDeskLamp([-0.05, 0.745, 2.2]);
-    this._buildNotebook([-0.25, 0.755, 2.75]);
-    this._placeSpawn([-1.3, -2.4], [-0.2, 2.68]);
+    this._buildDeskLamp([-0.05, 0.79, 2.2]);
+    this._buildNotebook([-0.25, 0.8, 2.75]);
+    this._placeSpawn([-1.3, -2.4], [-0.2, 2.6]);
 
-    // Shelves along the front wall, behind the desk's end.
+    // Two small shelves along the front wall, behind the desk's end.
     [-1.3, -0.26].forEach((x, i) => {
       this._spawnProp('model:shelf', { name: `OfficeShelf_${i + 1}`, position: [x, 0, inZ - 0.2], rotationY: Math.PI / 2 });
     });
   }
 
   /** A lamp on the desk: base, stem, a glowing shade and a small light,
-   *  drawn only, with no collider. `position` is on the desk top (0.745 m). */
+   *  drawn only, with no collider. `position` is on the desk top (0.79 m). */
   _buildDeskLamp(position) {
     const go = this._addGroup('DeskLamp');
     go.object3d.position.set(...position);

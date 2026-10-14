@@ -50,8 +50,6 @@
 | Model | Description | Where it's used | Notes |
 |---|---|---|---|
 | `bunk-bed.glb` | Bunk bed. Metal frame, 2-3 tiers. Military/dormitory style. | LivingQuarters room | 100 hits to destroy with a crowbar (per VotV). Doesn't need to be breakable for us, but should look sturdy and institutional. |
-| `vending-machine.glb` | Snack/drink vending machine. Retro style. | BreakRoom or LivingQuarters, against a wall | Think 1970s vending machine, not a modern touchscreen one. Buttons, glass front, dim internal light. Could dispense coffee (gameplay item for stamina). |
-| `couch.glb` | Worn couch / sofa. Fabric, slightly dirty/stained. | BreakRoom | Doesn't need to be interactive. Just atmosphere. |
 | `locker.glb` | Metal wall locker / storage locker. Steel, maybe with a vent grille. | LivingQuarters or corridor walls, row of 3-4 | Institutional style. Gym locker or military locker. |
 
 ---
@@ -128,8 +126,6 @@ public/assets/models/
 ├── server-rack-tall.glb
 ├── server-console.glb
 ├── bunk-bed.glb
-├── vending-machine.glb
-├── couch.glb
 ├── locker.glb
 ├── crate-supply.glb
 ├── barrel.glb
