@@ -97,7 +97,7 @@ by Ottto3d is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/locker.glb` |
 | **Manifest key** | `model:locker` |
 | **Used for** | Metal storage locker prop |
-| **Modifications** | Base-colour texture recoloured from rust to painted grey-blue metal |
+| **Modifications** | Base-colour recoloured from rust to dark gunmetal; roughness, metalness and normal map smoothed |
 
 ### Metal barrel
 
@@ -329,7 +329,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
-| **Modifications** | Bin base-colour texture recoloured from rust to galvanised grey |
+| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32 |
 
 ### Crate
 
