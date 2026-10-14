@@ -157,6 +157,12 @@ export class GameController extends Component {
     return this.state === 'morning';
   }
 
+  /** Put the shift's prompt back up, after something else wrote over it
+   *  (a nap's wake-up line). */
+  refreshPrompt() {
+    if (this.state === 'playing') this.hud?.setPrompt(this.quotaDock?.isQuotaMet() ? PROMPT.quotaMet : '');
+  }
+
   /** Called when a signal is saved by the terminal. Scanning no longer
    *  affects the quota directly — the drive box dock counts saved drives
    *  seated in the docked box. Kept for backward compatibility (HUD refresh). */

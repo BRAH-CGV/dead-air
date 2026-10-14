@@ -99,6 +99,15 @@ export class Engine {
    *  them) but nothing steps or updates — the clock, the dish, the airlock
    *  and every enemy freeze without knowing why. Set through setPaused(). */
   paused = false;
+
+  /** How fast game time runs: the updates are handed frameDt × timeScale.
+   *  A nap sets it (Nap.js) to fast-forward the night; physics keeps real
+   *  time, since many more steps a frame would only cost frames. */
+  timeScale = 1;
+  /** Real seconds in the frame being simulated, whatever timeScale is: for
+   *  what must keep real speed through a nap (getting into and out of bed,
+   *  what the player sees while half awake). */
+  realDt = 0;
   /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
    *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
   devTools = true;
@@ -797,14 +806,18 @@ export class Engine {
 
     // Paused: the clock above still moves (no spike on resume), the frame
     // still renders, and nothing in between runs.
-    if (!this.paused) this._simulate(frameDt);
+    if (!this.paused) this._simulate(frameDt, frameDt * this.timeScale);
 
     this._renderFrame(frameDt);
   };
 
   /** One frame of simulation: fixed steps, interpolation, the debug camera,
-   *  then the variable and late updates. Skipped while paused. */
-  _simulate(frameDt) {
+   *  then the variable and late updates. Skipped while paused. Physics and
+   *  the fly camera run on real time, the updates on game time.
+   *  @param {number} frameDt  Real seconds this frame.
+   *  @param {number} [gameDt=frameDt]  Game seconds (scaled by timeScale). */
+  _simulate(frameDt, gameDt = frameDt) {
+    this.realDt = frameDt;
     // ── Fixed update (physics) ──
     this._accumulator += frameDt;
     while (this._accumulator >= Engine.FIXED_DT) {
@@ -845,10 +858,10 @@ export class Engine {
     }
 
     // ── Variable update ──
-    for (const obj of this._rootObjects) obj._update(frameDt);
+    for (const obj of this._rootObjects) obj._update(gameDt);
 
     // ── Late update (post-update, camera, etc.) ──
-    for (const obj of this._rootObjects) obj._lateUpdate(frameDt);
+    for (const obj of this._rootObjects) obj._lateUpdate(gameDt);
   }
 
   /** Draw the frame and consume one-frame input — runs paused or not. */

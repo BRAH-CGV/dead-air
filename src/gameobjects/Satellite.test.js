@@ -121,16 +121,17 @@ describe('Satellite', () => {
     sat.angularDamping = 8;  // high damping for quick decel
     sat.targetYaw = 0.5;     // close target
 
-    // Get it moving
+    // Get it moving, and follow it in: its speed peaks on the way, and
+    // falls away as it nears the target.
     sat._update(0.2);
-    const vel1 = sat.velYaw;
-    expect(vel1).toBeGreaterThan(0);
-
-    // As it nears target, velocity should decrease
-    sat._update(0.2);
-    const vel2 = sat.velYaw;
-    // Either velocity decreased or it settled
-    expect(vel2 <= vel1 || Math.abs(sat.currentYaw - 0.5) < 0.01).toBe(true);
+    expect(sat.velYaw).toBeGreaterThan(0);
+    let peak = sat.velYaw;
+    for (let t = 0; t < 5; t += 0.2) {
+      sat._update(0.2);
+      peak = Math.max(peak, sat.velYaw);
+    }
+    expect(sat.velYaw).toBeLessThan(peak / 2);
+    expect(Math.abs(sat.currentYaw - 0.5)).toBeLessThan(0.05);
   });
 
   it('clamps velocity to maxRotationSpeed', () => {

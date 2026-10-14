@@ -30,6 +30,9 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap, NAP } from '../gameplay/Nap.js';
+import { BedRest } from '../components/BedRest.js';
+import { BED_TRANSITION } from '../gameplay/BedTransition.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -619,6 +622,82 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
   }
 
+  /** Run the bed animation on for `seconds` (the fake engine has no realDt:
+   *  BedRest takes the frame's own). */
+  function inBed(seconds, dt = 0.05) {
+    for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
+  }
+
+  it('one bed animation, shared: the bunk and the nap both know it', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const rest = gameplay.getComponent(BedRest);
+    expect(rest).toBe(scene.bedRest);
+    expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
+    expect(scene.nap.rest).toBe(rest);
+    expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
+    // The nap's "[E] Wake up" line, over the lids (#nap-hint).
+    expect(typeof scene.nap.hint?.show).toBe('function');
+    expect(typeof scene.nap.hint?.hide).toBe('function');
+  });
+
+  it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const nap = gameplay.getComponent(Nap);
+    expect(nap).toBe(scene.nap);
+    expect(bed.nap).toBe(nap);
+
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toMatch(/^\[E\] Nap/);
+    bed.onInteract({});
+    expect(nap.napping).toBe(true);
+    expect(engine.timeScale).not.toBe(NAP.timeScale);   // lying down
+    inBed(BED_TRANSITION.lieDown + 0.1);
+    expect(engine.timeScale).toBe(NAP.timeScale);
+
+    scene.stormOutage._flickering = 0;          // the lamps start to buzz
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(engine.timeScale).toBe(1);
+    expect(nap.wokeBy).toMatch(/buzz/i);
+    expect(scene.bedRest.transition.style).toBe('startled');
+    inBed(1);
+    expect(scene.bedRest.active).toBe(false);
+  });
+
+  it('the scene torn down mid-nap: real time again, and the player given back', () => {
+    const nap = scene.nap;
+    nap.start();
+    inBed(BED_TRANSITION.lieDown + 0.1);
+    expect(engine.timeScale).toBe(NAP.timeScale);
+    engine._rootObjects.find(go => go.name === 'SceneRoot').destroy();
+    expect(engine.timeScale).toBe(1);
+    expect(scene.bedRest.active).toBe(false);
+  });
+
+  it('sleeps through a silent power cut — nothing you could hear from the bunk', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.power.setOn(false);
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    nap.wake();
+    scene.bedRest.cancel();
+  });
+
+  it('the UFO wakes you when you can hear it, not while it is only on the radar — and no nap while it is coming', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.ufoThreat.phase = 'approaching';      // the blob is on the radar
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    scene.ufoThreat._flightStartedAt = 0;       // the roar starts
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(nap.wokeBy).toMatch(/roar/i);
+    expect(nap.canNap).toBe(false);
+  });
+
   it('the bunk sleeps through the day to the next night, in step across NightManager, controller and HUD', () => {
     const bed = scene.rooms.LivingQuarters.bed;
     expect(bed.controller).toBe(scene.gameController);
@@ -629,12 +708,18 @@ describe('BaseScene gameplay loop', () => {
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
 
-    bed.onInteract({});                  // no DOM: the fade goes black at once
+    bed.onInteract({});
+    expect(scene.nights.currentNight).toBe(1);  // lying down: not asleep yet
+    inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.nights.currentNight).toBe(2);
     expect(scene.gameController.nightNumber).toBe(2);
     expect(scene.gameController.state).toBe('playing');
     expect(setNight).toHaveBeenLastCalledWith(2);
     expect(scene.nightClock.timeString).toBe('6:00 PM');
+    // Up out of bed into the new night.
+    expect(scene.bedRest.transition.style).toBe('calm');
+    inBed(3);
+    expect(scene.bedRest.active).toBe(false);
   });
 
   it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
@@ -654,6 +739,7 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
 
     scene.rooms.LivingQuarters.bed.onInteract({});
+    inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.gameController.nightNumber).toBe(2);
 
     // The docked box: released, parked resting on the floor, drives blank.
@@ -746,6 +832,7 @@ describe('BaseScene gameplay loop', () => {
     expect(engine.scene.fog.color.getHex()).not.toBe(night.fog);
 
     scene.rooms.LivingQuarters.bed.onInteract({});
+    inBed(BED_TRANSITION.lieDown + 0.1);
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(1);          // the next shift starts at dusk
     scene.nightClock.currentTime = 0;
