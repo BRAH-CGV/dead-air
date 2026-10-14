@@ -105,6 +105,15 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(dispenser.refill).toBe(0);
   });
 
+  it('a nap is rest: it tops up the same stamina, and holds the drain while napping', () => {
+    const drain = gameplay.getComponent(StaminaDrain);
+    expect(scene.nap.stamina).toBe(scene.stamina);
+    expect(drain.isResting()).toBe(false);
+    scene.nap.napping = true;
+    expect(drain.isResting()).toBe(true);
+    scene.nap.napping = false;
+  });
+
   it('a ration makes a sound', () => {
     const ration = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
     vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? ration : null));

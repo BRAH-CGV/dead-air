@@ -1327,6 +1327,7 @@ export class BaseScene extends Scene {
       hud:          this.hud,
       grid:         this.power,
       onNightStart: () => dispenser?.reset(),
+      isResting:    () => !!this.nap?.napping,
     }));
   }
 
@@ -1653,6 +1654,7 @@ export class BaseScene extends Scene {
       hud:        this.hud,
       // Over the closed lids (#nap-hint): the HUD is under them.
       hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
+      stamina:    this.stamina,
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),
         restless:        ufoBusy,
