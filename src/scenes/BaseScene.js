@@ -67,6 +67,7 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap } from '../gameplay/Nap.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
@@ -78,6 +79,8 @@ import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
+import { BedRest } from '../components/BedRest.js';
+import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
@@ -276,10 +279,12 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addCameraTerminal();
     this._addStamina();
+    this._addBedRest();
     this._addFatigue();
     this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
+    this._addNap();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
@@ -1542,6 +1547,30 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Getting into and out of the bunk (BedRest)
+  // ──────────────────────────────────────────
+  /** The view to the pillow and back, the lids, the peeks. It writes the
+   *  lids last (its late update).
+   *  The bunk and the nap are handed it. */
+  _addBedRest() {
+    const { engine } = this;
+    const bed = this.rooms.LivingQuarters.bed;
+    if (!bed) return;
+    this.bedRest = this._sceneRoot.find('GameplaySystems').addComponent(new BedRest({
+      engine,
+      camera:          engine.camera ?? null,
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      interaction:     engine.player?.getComponent(InteractionSystem) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      bed,
+      controller:      this.gameController,
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      isFrozen:        () => !!engine.debugCamera?.active,
+    }));
+    bed.rest = this.bedRest;
+  }
+
+  // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
@@ -1763,6 +1792,40 @@ export class BaseScene extends Scene {
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
+  }
+
+  /** Naps at the bunk: the night fast-forwarded until 6 AM, until the
+   *  player presses E, or until something loud enough to wake a sleeper —
+   *  the lamps buzzing before a storm outage, the UFO's roar. Silent things
+   *  (the power simply going, the radar blob, eyes at the window) don't.
+   *  No nap with the UFO on its way. Getting into and out of the bunk is
+   *  the bed animation (BedRest): the night speeds up only once the eyes
+   *  are shut. Added last, so it reads every threat after it has moved this
+   *  frame. */
+  _addNap() {
+    const ufoBusy = () => {
+      const phase = this.ufoThreat?.phase;
+      return !!phase && phase !== 'waiting' && phase !== 'gone';
+    };
+    this.nap = new Nap({
+      controller: this.gameController,
+      engine:     this.engine,
+      rest:       this.bedRest ?? null,
+      hud:        this.hud,
+      // Over the closed lids (#nap-hint): the HUD is under them.
+      hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
+      hooks: {
+        setPlayerLocked: locked => this._setPlayerLocked(locked),
+        restless:        ufoBusy,
+      },
+      alarms: [
+        { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },
+        { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.' },
+      ],
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) bed.nap = this.nap;
   }
 
   /** The solid things standing in the yard, as ground-plan rectangles —

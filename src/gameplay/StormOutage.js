@@ -44,6 +44,12 @@ export const STORM_OUTAGE_SOUNDS = {
 };
 
 export class StormOutage extends Component {
+  /** True while the lamps gutter and buzz, before the power goes — loud
+   *  enough to wake a sleeper (Nap). */
+  get flickering() {
+    return this._flickering !== null;
+  }
+
   /**
    * @param {object} opts
    * @param {import('./GameController.js').GameController} opts.controller

@@ -455,6 +455,39 @@ describe('GameController', () => {
   });
 });
 
+describe('GameController.refreshPrompt', () => {
+  const setUp = (collected) => {
+    const gc = new GameController();
+    const hud = makeHUD();
+    const quotaDock = { requiredCount: 1, collectedCount: collected, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
+    Object.assign(gc, { nightClock: new NightClock(), hud, quotaDock, satellite: makeSatellite(), autoStart: false });
+    gc.startNight(1);
+    return { gc, hud };
+  };
+
+  it("puts the quota-met prompt back up after something else wrote over it (a nap's wake-up line)", () => {
+    const { gc, hud } = setUp(1);
+    hud.setPrompt('The power went out.');
+    gc.refreshPrompt();
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+  });
+
+  it('clears the line when the quota is not met yet', () => {
+    const { gc, hud } = setUp(0);
+    hud.setPrompt('Your alarm went off.');
+    gc.refreshPrompt();
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('');
+  });
+
+  it('leaves the end-of-shift prompts alone', () => {
+    const { gc, hud } = setUp(1);
+    gc.fail();
+    hud.setPrompt.mockClear();
+    gc.refreshPrompt();
+    expect(hud.setPrompt).not.toHaveBeenCalled();
+  });
+});
+
 // ─────────────────────────────────────────────
 // One twelve-hour shift: 6 PM to 6 AM, no overtime
 // ─────────────────────────────────────────────

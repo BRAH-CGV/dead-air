@@ -53,6 +53,15 @@ describe('StormOutage', () => {
     expect(rig.grid.brownout).toBeGreaterThan(0);
   });
 
+  it('says while it is flickering — the buzz is loud enough to wake a sleeper', () => {
+    const rig = makeRig();
+    expect(rig.outage.flickering).toBe(false);
+    through(rig, 0, 0.9);
+    expect(rig.outage.flickering).toBe(true);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.outage.flickering).toBe(false);
+  });
+
   it('a storm that takes it: the lights flicker first, then the power goes', () => {
     const rig = makeRig();
     through(rig, 0, 0.9);

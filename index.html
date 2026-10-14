@@ -170,7 +170,8 @@
       #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
       #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
 
-      /* ── Fatigue (FatigueOverlay.js) ──────────────────────
+      /* ── Eyelids (FatigueOverlay.js) ──────────────────────
+         The bed animation closes them (BedRest.js), and so does fatigue.
          The tunnel sits under the HUD so the stamina bar stays readable;
          the lids close over the HUD and the panels, but under the
          white-out, the menus and the screen fade. */
@@ -189,6 +190,21 @@
         inset: 0;
         pointer-events: none;
         z-index: 100;
+      }
+      /* A nap's way out ("[E] Wake up", Nap.js): over the closed lids,
+         which cover the HUD; under the white-out and the screen fade. */
+      #nap-hint {
+        display: none;
+        position: fixed;
+        left: 50%;
+        bottom: 12%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 101;
+        font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.08em;
+        color: #8898a8;
+        text-shadow: 0 1px 3px #000;
       }
       #fatigue-lids::before,
       #fatigue-lids::after {
@@ -682,7 +698,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv, #nap-hint) {
         visibility: hidden !important;
       }
 
@@ -817,6 +833,7 @@
     <div id="crosshair"></div>
 
     <!-- HUD (hidden until gameplay starts) -->
+    <div id="nap-hint"></div>
     <div id="hud">
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>
@@ -827,7 +844,7 @@
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
     </div>
 
-    <!-- Fatigue: the tunnel vignette and the eyelids (FatigueOverlay.js) -->
+    <!-- The eyelids, and a tired player's tunnel vignette (FatigueOverlay.js) -->
     <div id="fatigue">
       <div id="fatigue-tunnel"></div>
       <div id="fatigue-lids"></div>
