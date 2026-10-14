@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EvilSignal, EVIL, SPARK_SOUNDS } from './EvilSignal.js';
+import { EvilSignal, EVIL, SPARK_SOUNDS, HUM } from './EvilSignal.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
@@ -28,7 +28,7 @@ function makeDrive() {
   };
 }
 
-function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice } = {}) {
+function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humVoice } = {}) {
   const controller = {
     state: 'playing',
     nightNumber: night,
@@ -67,12 +67,13 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice } = {
   const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
   const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
-  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random, voice });
+  const hum = humVoice ?? { set: vi.fn(() => true), dispose: vi.fn() };
+  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random, voice, hum });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum };
 }
 
 /** The single red target in the manager's list. */
@@ -689,6 +690,71 @@ describe('EvilSignal redOut — last-moment red filter', () => {
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal hum — the countdown', () => {
+  const level = rig => rig.hum.set.mock.calls.at(-1)[0];
+
+  function infect(rig) {
+    rig.evil.summon();
+    rig.evil.hover(evilSig(rig.signalManager));
+    rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
+  }
+
+  it('is off until a drive is corrupted', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    rig.evil.onUpdate(0.1);
+    expect(rig.hum.set).toHaveBeenCalled();
+    expect(level(rig)).toBe(0);
+  });
+
+  it('is faint while the drive is corrupted, and a little louder as the timer runs down', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    infect(rig);
+    rig.evil.onUpdate(0.5);
+    const early = level(rig);
+    expect(early).toBeGreaterThan(0);
+    rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
+    const late = level(rig);
+    expect(late).toBeGreaterThan(early);
+    // Subtle: never more than a faint level, even at the end.
+    expect(late).toBeLessThanOrEqual(HUM.volume);
+    expect(HUM.volume).toBeLessThanOrEqual(0.2);
+    expect(early).toBeGreaterThanOrEqual(HUM.volume * HUM.minLevel * 0.99);
+  });
+
+  it('is handed the host it is heard from, and the frame time', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    infect(rig);
+    rig.evil.onUpdate(0.25);
+    expect(rig.hum.set.mock.calls.at(-1)[1]).toBe(0.25);
+  });
+
+  it('goes away when the drive is wiped, the shift ends, or the scene is torn down', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    infect(rig);
+    rig.evil.onUpdate(0.5);
+    expect(level(rig)).toBeGreaterThan(0);
+    drive.setEjected();
+    rig.evil.onUpdate(0.1);
+    expect(level(rig)).toBe(0);
+
+    const second = makeRig({ drive: makeDrive() });
+    infect(second);
+    second.evil.onUpdate(0.5);
+    second.controller.state = 'morning';
+    second.evil.onUpdate(0.1);
+    expect(level(second)).toBe(0);
+
+    second.evil.onDestroy();
+    expect(second.hum.dispose).toHaveBeenCalled();
+  });
+
+  it('has its clip ready before the first infection', () => {
+    expect(ASSETS[HUM.key]).toMatchObject({ type: 'audio', url: 'assets/audio/evil-hum.mp3' });
+    expect(PRELOAD).toContain(HUM.key);
   });
 });
 

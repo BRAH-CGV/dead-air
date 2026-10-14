@@ -534,6 +534,11 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/scanner-alert.mp3',
   },
+  // The faint hum under the evil drive's countdown (EvilSignal), looped.
+  'sfx:evil-hum': {
+    type: 'audio',
+    url: 'assets/audio/evil-hum.mp3',
+  },
   // The corrupted drive sparking (EvilSignal): one of three, at random, on
   // each hop.
   'sfx:spark-1': {

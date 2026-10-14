@@ -756,6 +756,15 @@ Three spark clips, cut by us from a mix of two Freesound recordings, both used u
 | **Used for** | The corrupted drive sparking on each hop (`EvilSignal`), one picked at random |
 | **Modifications** | The recordings mixed and cut into three short clips |
 
+### Evil signal hum
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/evil-hum.mp3` |
+| **Manifest key** | `sfx:evil-hum` |
+| **Used for** | The faint hum while a corrupted drive's countdown runs (`EvilSignal`) |
+| **Title / author / licence** | TODO — fill in the source, or mark it as our own |
+
 ### Base ambience (room tone loops)
 
 Three room-tone loops, mixed by us from six Freesound recordings, all Creative Commons 0 — free to use, attribution not required, credited here anyway: "d0 gentle Computer hum with hard drive access" by dav0r (https://freesound.org/people/dav0r/sounds/381258/), "Interior bedroom apartment night room tone roomtone.wav" by franciscopcoutinho (https://freesound.org/people/franciscopcoutinho/sounds/466123/), "AMBIENCE_INTERIOR_WIND_NOISE_WINDOW" by pblzr (https://freesound.org/people/pblzr/sounds/816508/), "Computer Fan Loop" by Ezcah (https://freesound.org/people/Ezcah/sounds/242042/), "Computer Hum 1" by elle-trudgett (https://freesound.org/people/elle-trudgett/sounds/146949/) and "Utility room rear" by blaukreuz (https://freesound.org/people/blaukreuz/sounds/212780/).

@@ -4,6 +4,7 @@ import { VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 import { DriveSparks, SPARKS } from './DriveSparks.js';
 import { ClipVoice, clipSet } from '../components/ClipVoice.js';
+import { LoopVoice } from '../components/LoopVoice.js';
 import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 
 // ─────────────────────────────────────────────
@@ -85,6 +86,15 @@ export const SPARK_SOUNDS = {
   clips: ['sfx:spark-1', 'sfx:spark-2', 'sfx:spark-3'],
   volume: 0.7,
   minLevel: 0.5,
+};
+
+/** The hum under the countdown: a very faint loop for as long as a corrupted
+ *  drive is out, from `minLevel` of `volume` at the start up to `volume` as
+ *  the silence timer runs out. Kept low: it is there to be half noticed. */
+export const HUM = {
+  key: 'sfx:evil-hum',
+  volume: 0.12,
+  minLevel: 0.6,
 };
 
 export class EvilSignal extends Component {
@@ -182,14 +192,20 @@ export class EvilSignal extends Component {
    * @param {() => number} [opts.random]
    * @param {{ play: Function, dispose: Function }} [opts.voice]  Plays the
    *        sparks; a ClipVoice when left out.
+   * @param {{ set: Function, dispose: Function }} [opts.hum]  The hum under
+   *        the countdown; a LoopVoice when left out.
    */
   constructor({
     controller = null, signalManager = null, terminal = null,
     driveManager = null, satellite = null, random = Math.random, voice = new ClipVoice(),
+    hum = new LoopVoice({ key: HUM.key }),
   } = {}) {
     super();
     Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, random });
     this._voice = voice;
+    this._hum = hum;
+    /** What the hum should be this frame, set by the countdown. */
+    this._humLevel = 0;
     this._sparkClips = clipSet(SPARK_SOUNDS.clips);
   }
 
@@ -199,6 +215,7 @@ export class EvilSignal extends Component {
 
   onDestroy() {
     this._voice.dispose();
+    this._hum.dispose();
     this._release();
     this._offNight?.();
     this._offNight = null;
@@ -266,6 +283,13 @@ export class EvilSignal extends Component {
   }
 
   onUpdate(dt) {
+    this._humLevel = 0;
+    this._step(dt);
+    this._hum.set(this._humLevel, dt, this.gameObject);
+  }
+
+  /** One frame of the red signal; sets `_humLevel` while a drive is out. */
+  _step(dt) {
     // The shift ended mid-hold: let go, whatever the terminal is doing.
     if (this.controller && this.controller.state !== 'playing') {
       if (this.locked) this._release();
@@ -332,6 +356,7 @@ export class EvilSignal extends Component {
         // Ramp the doom glow: 0 at the start, 1 when the timer expires.
         const doomFraction = 1 - (this._silenceTimer / EVIL.silenceSeconds);
         corrupted.setDoomGlow?.(doomFraction);
+        this._humLevel = HUM.volume * (HUM.minLevel + (1 - HUM.minLevel) * Math.min(Math.max(doomFraction, 0), 1));
         this._lastCorruptedDrive = corrupted;
 
         // Position the shared doom light at the corrupted drive and set
@@ -374,6 +399,7 @@ export class EvilSignal extends Component {
         }
 
         if (this._silenceTimer <= 0) {
+          this._humLevel = 0;
           this._disposeSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;
