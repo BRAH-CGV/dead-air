@@ -77,7 +77,7 @@ describe('scheduleApproach', () => {
 
   it('follows the night clock’s own length and start', () => {
     const start = scheduleApproach({ night: 3, nightDuration: 300, nightHours: 6, startHour: 0, random: () => 1 });
-    expect((start + UFO.radarLead) / 300 * 6).toBeCloseTo(4.5);
+    expect((start + UFO.radarLead) / 300 * 6).toBeCloseTo(UFO.spawnHours[1]);
   });
 });
 

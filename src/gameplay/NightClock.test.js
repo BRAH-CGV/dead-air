@@ -204,3 +204,16 @@ describe('the shift runs from dusk to dawn', () => {
     expect(hours).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
   });
 });
+
+describe('one twelve-hour shift', () => {
+  it('runs sunset to sunrise with no overtime: one shift, 6:00 PM to 6:00 AM', () => {
+    expect(SHIFT.endHour - SHIFT.startHour).toBe(12);
+    expect(SHIFT.shiftEndHour).toBeUndefined();
+    const clock = new NightClock();
+    expect(clock.overtime).toBeUndefined();
+    clock.update(NIGHT_SECONDS - 1);
+    expect(clock.finished).toBe(false);
+    clock.update(1);
+    expect(clock.finished).toBe(true);
+  });
+});

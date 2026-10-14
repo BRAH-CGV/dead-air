@@ -92,7 +92,7 @@ src/
 │   ├── SecurityCamera.js # Wall-mounted CCTV placeholder: bracket, panning head, lens camera
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
-│   ├── NightClock.js    # 6:00 PM → 6:00 AM over one shift (SHIFT, NIGHT_SECONDS)
+│   ├── NightClock.js    # 6:00 PM → 6:00 AM: one twelve-hour shift (SHIFT, NIGHT_SECONDS)
 │   ├── GameController.js # playing → morning → sleep → next night; fail() for threats
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
@@ -214,7 +214,9 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
 
 ### Shift and day
 
-A night is a shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour), shown on the HUD and on the office's `WallClock`. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too. `GameController` owns the state:
+A night is one twelve-hour shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD and on the office's `WallClock`. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
+
+`GameController` owns the state:
 
 ```
 playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
@@ -222,10 +224,12 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
+**Rates, not counts.** Things happen as often per real minute as on the old five-minute night, so the longer night has more of them: `SIGNALS_PER_NIGHT` 10 (was 5) over the same share of the night, two storms (`SANDSTORM.perNight`, was one). The quota is 1.5× the old 3, 4, 5: 5, 6, 8 (`QUOTA_SCALE`); night 3's 8 fills a drive box. The UFO still comes once, on night 3.
+
 Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
 
 - **One night number.** `gameController.bindNights(nights)` makes the controller follow the `NightManager`; sleeping calls `nights.advance()` and the listener starts the next night. Never call `startNight` beside it, or the HUD and the quota drift apart.
-- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning, and it runs `controller.sleep()` behind a `ScreenFade`. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
+- **Sleep.** The `Bed` interactable sits on the LivingQuarters bunk (`rooms.LivingQuarters.bed`). It is live only in the morning (`controller.canSleep`), and it runs `controller.sleep()` behind a `ScreenFade`; during the shift its label says why not. Rooms build the bed and the clock; `BaseScene` hands them the controller, fade and clock, because rooms don't know about gameplay.
 - **Dusk and dawn.** `dawnFactor(hour, state)` is 1 at 6 PM, the shift starting in the last of the daylight, smoothsteps to 0 over the first hour, is 0 all night, smoothsteps back to 1 over the last hour and holds at 1 all morning. `Daylight` (after the controller on `GameplaySystems`) applies it to the following — from `onAwake` too, so the main menu, over a scene that never ticks, shows the dusk:
   - `MarsSky`'s `uDawn` uniform, which is shared by the dome and the stars. This is the state-driven shader uniform: night gradient + Milky Way → butterscotch day, blue glow round the Sun, stars fading out.
   - the ambient and moon lights (the moon light is the morning sun).
@@ -338,7 +342,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 ### Sandstorms
 
-`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings a dust storm every night, night 1 included (the dust eyes stay away until night 2). It starts at a random hour after dark (`startHours`, -4.5 … 4.2: 7:30 PM – 4:12 AM) and blows for about an hour and a half of clock time (`durationHours`, 1.3–1.7), building up and dying down over `rampSeconds` (`stormLevel`). The schedule follows the clock's own length (`scheduleStorm`). For testing, `summon()` (the **K** key, to go before release) starts one at once, on any night. `sandstorm.level` (0 … 1) is what the dust eyes read.
+`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings two dust storms every night (`perNight`), night 1 included (the dust eyes stay away until night 2). They blow after dark, in `stormHours` (-4.5 … 5.9: 7:30 PM – 5:54 AM), split into equal parts with one storm wholly inside each, so one comes in the evening and one in the small hours and they never overlap. Each blows for about an hour and a half of clock time (`durationHours`, 1.3–1.7), building up and dying down over `rampSeconds` (`stormLevel`). The schedule follows the clock's own length and start (`scheduleStorms`); the next storm comes up when the last has blown over (a new `stormId`). For testing, `summon()` (the **K** key, to go before release) starts one at once, on any night, standing in for the next storm that hasn't started. `sandstorm.level` (0 … 1) is what the dust eyes read.
 
 - **Never with the UFO.** On a UFO night (`UFO.nights`) nothing is scheduled at random; instead a storm always follows the UFO, `afterUfoDelay` (10–30 s) after it has gone. Neither a scheduled storm nor K starts one while a visit is under way (`_ufoBusy`); a storm due then waits.
 - **Held.** While `sandstorm.held` is set (`DustEyes`, through a chase) the end keeps being pushed back past the die-down, so the storm stays at full until the player is away.
