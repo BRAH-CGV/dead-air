@@ -37,6 +37,27 @@ describe('SLEEP_DEMON tuning', () => {
     expect(T.fadeOut).toBeLessThan(T.fadeIn);
   });
 
+  it('a look must rest on it to send it away: a quick sweep across even the widest cone does not', () => {
+    // At 200°/s the view crosses the 80° of the widest cone, edge to edge, in 0.4 s.
+    expect((2 * T.focusFar) / (200 * DEG)).toBeLessThan(T.lookHold);
+    expect(T.lookHold).toBeGreaterThanOrEqual(0.4);
+    expect(T.lookHold).toBeLessThanOrEqual(0.6);
+  });
+
+  it('a look back within a couple of seconds of a glance counts the glance: the double take', () => {
+    expect(T.doubleTakeWindow).toBeGreaterThan(T.lookHold);
+    expect(T.doubleTakeWindow).toBeGreaterThanOrEqual(1);
+    expect(T.doubleTakeWindow).toBeLessThanOrEqual(3);
+  });
+
+  it('the player walking up to it sends it away too, from a couple of metres', () => {
+    expect(T.nearFade).toBeGreaterThan(T.minDistance);
+    expect(T.nearFade).toBeGreaterThanOrEqual(2);
+    expect(T.nearFade).toBeLessThanOrEqual(3);
+    expect(T.nearCloser).toBeGreaterThan(0);
+    expect(T.nearCloser).toBeLessThan(0.5);
+  });
+
   it('some showings land behind the player by the roll; the rest in the periphery', () => {
     expect(T.behindChance).toBeGreaterThan(0);
     expect(T.behindChance).toBeLessThan(1);
@@ -129,17 +150,25 @@ describe('angleToUpright', () => {
 describe('SleepDemonLogic', () => {
   /** Where the player's view is from it: lookAngle() returns this. */
   let angle, standing;
+  /** Metres the player has walked toward it since it last stood, and
+   *  whether all of it is inside the view: gap() and wholeInView(). */
+  let walked, whole;
 
   /** approach() walks it in `step` from where it stands, with no floor of
    *  its own: the floors these tests check are the logic's. */
   function make({ rand = () => 0.9, tuning = T, approach = step => (standing -= step), place } = {}) {
     angle = CORNER;
     standing = Infinity;
+    walked = 0;
+    whole = true;
     const spies = {
       place: vi.fn(place ?? (spot => { standing = spot.distance; return true; })),
       hide: vi.fn(), onKill: vi.fn(), approach: vi.fn(approach), playerDrift: vi.fn(() => 0),
     };
-    const logic = new SleepDemonLogic({ ...spies, lookAngle: () => angle, rand, tuning });
+    const logic = new SleepDemonLogic({
+      ...spies, lookAngle: () => angle, rand, tuning,
+      gap: () => standing - walked, wholeInView: () => whole,
+    });
     return { logic, ...spies };
   }
 
@@ -195,11 +224,11 @@ describe('SleepDemonLogic', () => {
     expect(logic.ambush).toBe(true);
   });
 
-  it('looked at inside the cone, it fades away, and is back later at the other side', () => {
+  it('looked at inside the cone, the look resting on it, it fades away, and is back later at the other side', () => {
     const { logic, place, hide } = make();
     shown(logic, 0.2941);
     angle = 25 * DEG;                       // the cone at 0.5 is ~28.3°
-    logic.update(0.1, 0.2941);
+    run(logic, T.lookHold, 0.2941);
     expect(hide).toHaveBeenCalledTimes(1);
     expect(logic.shown).toBe(false);
 
@@ -212,21 +241,137 @@ describe('SleepDemonLogic', () => {
     expect(place).toHaveBeenLastCalledWith(expect.objectContaining({ side: -1 }));
   });
 
-  it('at 50 % a glance within 40° sends it away; by 15 % that glance no longer counts', () => {
+  it('at 50 % a look within 40° sends it away; by 15 % that look no longer counts', () => {
     const fresh = make();
     shown(fresh.logic, 0.4941);
     angle = 38 * DEG;
-    fresh.logic.update(0.1, 0.4941);
+    run(fresh.logic, T.lookHold, 0.4941);
     expect(fresh.hide).toHaveBeenCalled();
 
     const tired = make();
     shown(tired.logic, 0.15);
     angle = 25 * DEG;
-    tired.logic.update(0.1, 0.15);
+    run(tired.logic, T.lookHold, 0.15);
     expect(tired.hide).not.toHaveBeenCalled();
     angle = 15 * DEG;
-    tired.logic.update(0.1, 0.15);
+    run(tired.logic, T.lookHold, 0.15);
     expect(tired.hide).toHaveBeenCalled();
+  });
+
+  it('a quick sweep of the view across it leaves it standing', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.4118);
+    angle = 20 * DEG;                       // inside the cone, but not for long
+    run(logic, T.lookHold - 0.2, 0.4118);
+    angle = CORNER;                         // swept on past it
+    run(logic, 1, 0.4118);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('a look resting on it for lookHold sends it away', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.4118);
+    angle = 20 * DEG;
+    run(logic, T.lookHold - 0.1, 0.4118);
+    expect(hide).not.toHaveBeenCalled();
+    run(logic, 0.1, 0.4118);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(logic.shown).toBe(false);
+  });
+
+  it('the double take: a glance, then a look back within the window, and it goes sooner than from a cold stare', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.4118);
+    angle = 20 * DEG;
+    run(logic, 0.3, 0.4118);                // a glance
+    angle = CORNER;
+    run(logic, T.doubleTakeWindow - 0.5, 0.4118);   // away …
+    expect(hide).not.toHaveBeenCalled();
+    angle = 20 * DEG;
+    run(logic, T.lookHold - 0.3, 0.4118);   // … and back: the glance counts
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('a glance with no look back is forgotten once the window has passed', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.4118);
+    angle = 20 * DEG;
+    run(logic, 0.3, 0.4118);                // a glance
+    angle = Infinity;
+    run(logic, T.doubleTakeWindow + 0.2, 0.4118);   // turned away, for good
+    angle = CORNER;
+    run(logic, 1, 0.4118);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+    angle = 20 * DEG;                       // a look, from cold: the whole lookHold
+    run(logic, T.lookHold - 0.1, 0.4118);
+    expect(hide).not.toHaveBeenCalled();
+    run(logic, 0.1, 0.4118);
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('the player walking up to it, all of it in view, sends it away as a look does, and it is back later at the other side', () => {
+    const { logic, place, hide } = make();
+    shown(logic, 0.2941);                   // 6.2 m off, in the corner of the eye
+    const from = logic.distance;
+    walked = from - (T.nearFade + 0.3);     // not near enough yet
+    run(logic, 1, 0.2941);
+    expect(hide).not.toHaveBeenCalled();
+    walked = from - (T.nearFade - 0.1);     // within nearFade
+    logic.update(0.1, 0.2941);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(logic.shown).toBe(false);
+
+    walked = 0;                             // measured from where the player now stands
+    const gone = T.goneFar + (T.goneNear - T.goneFar) * closenessFor(0.2941);
+    run(logic, gone - 0.15, 0.2941);
+    expect(place).toHaveBeenCalledTimes(1);
+    run(logic, 0.3, 0.2941);
+    expect(place).toHaveBeenCalledTimes(2);
+    expect(place).toHaveBeenLastCalledWith(expect.objectContaining({ side: -1 }));
+  });
+
+  it('near, but some of it outside the view (the frustum): it stays', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.2941);
+    whole = false;
+    walked = logic.distance - 1.5;
+    run(logic, 2, 0.2941);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('near, all in view, but out of sight (a wall between): it stays', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.2941);
+    walked = logic.distance - 2;
+    angle = Infinity;
+    run(logic, 1, 0.2941);
+    expect(hide).not.toHaveBeenCalled();
+  });
+
+  it('a showing never sends itself away by the nearness: landing short of a wall, near and all in view', () => {
+    const { logic, hide } = make({ place: () => { standing = 1.8; return 1.8; } });
+    shown(logic, 0.2941);                   // asked for 6.2 m; a wall left it 1.8 m
+    expect(logic.distance).toBe(1.8);       // where it really stands
+    run(logic, 5, 0.2941);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('nor by creeping in unseen: only the player closing in counts', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.1176);
+    angle = Infinity;
+    run(logic, 60, 0.1176);                 // crept to its floor, inside nearFade
+    expect(logic.distance).toBeLessThan(T.nearFade);
+    angle = CORNER;                         // turned to it: there it is, near
+    run(logic, 2, 0.1176);
+    expect(hide).not.toHaveBeenCalled();
+    walked = 0.3;                           // the player steps up to it
+    logic.update(0.1, 0.1176);
+    expect(hide).toHaveBeenCalledTimes(1);
   });
 
   it('never teleports: as stamina falls and while it is unseen, it is placed only once', () => {
@@ -293,7 +438,7 @@ describe('SleepDemonLogic', () => {
     run(logic, 5, 0.2941);
     expect(logic.distance).toBeLessThan(ruled);
     angle = 0;
-    logic.update(0.1, 0.2941);
+    run(logic, T.lookHold, 0.2941);
     angle = CORNER;
     run(logic, 6, 0.2941);
     expect(place.mock.calls.at(-1)[0].distance).toBeCloseTo(ruled, 5);
@@ -307,6 +452,25 @@ describe('SleepDemonLogic', () => {
     expect(hide).not.toHaveBeenCalled();
     expect(logic.shown).toBe(true);
     expect(logic.walking).toBe(false);      // above 5 %: it only stares
+  });
+
+  it('below 10 % nor from the player walking up to it', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.08);
+    walked = logic.distance - 1.5;
+    run(logic, 2, 0.08);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('below 5 % the walk-down still reaches arm\'s length, stared at, with the player near and all of it in view', () => {
+    const { logic, hide } = make();
+    run(logic, 1.3, 0.0235);
+    angle = 0;
+    walked = 0.3;
+    run(logic, 30, 0.0235);
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.distance).toBeCloseTo(T.stareFloor, 5);
   });
 
   it('below 5 % it walks in on the player, seen or not', () => {

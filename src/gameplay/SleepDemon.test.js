@@ -151,7 +151,7 @@ describe('SleepDemon', () => {
     expect(seen().angle).toBeGreaterThan(0);
     const at = figure.object3d.position;
     face(at.x, EYE, at.z);
-    run(0.1);                               // the look lands: fading away, not popped
+    run(T.lookHold);                        // the look rests on it: fading away, not popped
     expect(visible()).toBe(true);
     expect(opacity()).toBeGreaterThan(0);
     expect(opacity()).toBeLessThan(1);
@@ -167,6 +167,85 @@ describe('SleepDemon', () => {
     expect(seen().angle).toBeGreaterThan(-HALF_WIDTH);
     run(T.fadeIn);
     expect(opacity()).toBe(1);
+  });
+
+  /** Turn the view `off` radians to the near side of it, so it stands that
+   *  far into the corner of the eye. */
+  function lookBeside(off) {
+    const eye = camera.getWorldPosition(new THREE.Vector3());
+    const to = figure.object3d.position.clone().sub(eye).setY(0).normalize();
+    const side = Math.sign(seen().angle) || 1;
+    const aim = to.applyAxisAngle(new THREE.Vector3(0, 1, 0), side * off);
+    face(eye.x + aim.x * 10, EYE, eye.z + aim.z * 10);
+  }
+
+  /** Stand `gap` metres from it, along the line the eye now sees it on,
+   *  still looking the same way. */
+  function stepTo(gap) {
+    const dir = camera.getWorldDirection(new THREE.Vector3());
+    const at = figure.object3d.position;
+    const from = camera.position.clone().sub(at).setY(0).normalize();
+    camera.position.set(at.x + from.x * gap, EYE, at.z + from.z * gap);
+    face(camera.position.x + dir.x * 10, EYE, camera.position.z + dir.z * 10);
+  }
+
+  it('a quick sweep of the view across it leaves it; a look back soon after sends it away: the double take', () => {
+    stamina.value = 0.2941;
+    run(4);
+    expect(visible()).toBe(true);
+    const at = figure.object3d.position.clone();
+    const away = camera.getWorldDirection(new THREE.Vector3());
+    face(at.x, EYE, at.z);
+    run(T.lookHold - 0.2);                  // swept across it
+    face(away.x * 10, EYE, away.z * 10);
+    run(1);
+    expect(demon.logic.shown).toBe(true);
+    face(at.x, EYE, at.z);                  // … and back
+    run(0.2);
+    expect(demon.logic.shown).toBe(false);
+    run(T.fadeOut);
+    expect(visible()).toBe(false);
+  });
+
+  it('walked up to, all of it in view, it fades away as from a look, and is back later at the other side', () => {
+    stamina.value = 0.2941;
+    run(4);
+    expect(visible()).toBe(true);
+    const side = Math.sign(seen().angle);
+    lookBeside(demon.logic.focus + 6 * DEG);  // in the corner of the eye, not looked at
+    stepTo(T.nearFade + 0.3);
+    run(1);
+    expect(demon.logic.shown).toBe(true);
+    stepTo(T.nearFade - 0.2);               // one step nearer
+    run(0.1);
+    expect(visible()).toBe(true);           // fading away, not popped
+    expect(demon.logic.shown).toBe(false);
+    run(T.fadeOut);
+    expect(visible()).toBe(false);
+    expect(demon.logic.side).toBe(-side);
+  });
+
+  it('walked up to with some of it off the screen, it stays', () => {
+    stamina.value = 0.2941;
+    run(4);
+    lookBeside(HALF_WIDTH);                 // its middle on the edge of the view
+    stepTo(T.nearFade + 0.5);
+    run(0.5);
+    stepTo(T.nearFade - 0.4);
+    run(2);
+    expect(demon.logic.shown).toBe(true);
+    expect(visible()).toBe(true);
+  });
+
+  it('shown short of a wall, near and all in view, it stays: only the player closing in counts', () => {
+    wall = T.nearFade + T.wallGap - 0.3;    // it lands inside nearFade
+    stamina.value = 0.2941;
+    run(4);
+    expect(visible()).toBe(true);
+    lookBeside(demon.logic.focus + 6 * DEG);
+    run(3);
+    expect(demon.logic.shown).toBe(true);
+    expect(visible()).toBe(true);
   });
 
   it('never teleports: as stamina falls it stays where it stood, silent while seen', () => {
@@ -199,6 +278,7 @@ describe('SleepDemon', () => {
     run(7);
     expect(visible()).toBe(true);
     expect(seen().distance).toBeCloseTo(3 - T.wallGap, 5);
+    expect(demon.logic.distance).toBeCloseTo(3 - T.wallGap, 5);   // where it really stands
     const [from, dir] = rayHit.mock.calls[0];
     expect(from.y).toBeCloseTo(EYE);        // level, from the player's eye
     expect(dir.y).toBeCloseTo(0);
@@ -358,7 +438,7 @@ describe('SleepDemon', () => {
     expect(figure.object3d.position.distanceTo(spot)).toBeGreaterThan(0.5);
     expect(seen().distance).toBeLessThan(gapBefore);
     face(spot.x, EYE, spot.z);              // turn round
-    run(0.1);
+    run(T.lookHold);
     expect(visible()).toBe(true);           // fading away, not popped
     run(T.fadeOut);                         // the fade out done
     expect(visible()).toBe(false);
@@ -499,7 +579,7 @@ describe('SleepDemon', () => {
     expect(onFigureChanged).toHaveBeenCalledTimes(1);     // only turns to face the player
     const at = figure.object3d.position;
     face(at.x, EYE, at.z);
-    run(0.1);
+    run(T.lookHold);
     expect(onFigureChanged).toHaveBeenCalledTimes(1);     // fading: still there
     run(T.fadeOut);
     expect(onFigureChanged).toHaveBeenCalledTimes(2);     // gone
@@ -616,7 +696,7 @@ describe('SleepDemon and the flashlight', () => {
     run(0.1);
     expect(stuttering()).toBe(true);
     aimOff(0);
-    run(0.1);
+    run(T.lookHold);
     expect(figure.object3d.visible).toBe(true);           // fading away, still there
     run(0.4);                                             // the fade out done
     expect(figure.object3d.visible).toBe(false);
@@ -928,7 +1008,7 @@ describe('SleepDemon dead air', () => {
     expect(levels[2]).toBeCloseTo(T.duckFloor, 1);
 
     turn(at);                               // the look: it has fled
-    run(T.fadeOut + 0.1);                   // faded away, the duck already let go
+    run(T.lookHold + T.fadeOut);            // faded away, the duck already let go
     expect(figure.object3d.visible).toBe(false);
     expect(duck()).toBe(1);
   });

@@ -25,6 +25,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //              eye and its face. While the terminal's radar or review screen
 //              is up the player is looking at that, not the room.
 //   looked at  the angle between the line of sight and its upright body.
+//   walked up  the player's eye nearer it along the floor, with all of it —
+//              feet to crown, side to side — inside the camera's frustum.
 //
 // It comes every night, and runs only through the shift. In the morning, or
 // behind the failed-night prompt, it is hidden and silent; every night that
@@ -42,8 +44,10 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // so every show, step or hide calls onFigureChanged — turning on the spot
 // doesn't (the body is round). It never pops: wherever it shows it fades in
 // from nothing over the rules' fadeIn, up to their presence (faint while the
-// player is fresh, solid once they are tired), and a look fades it away
-// where it stood (fadeOut); only a night start, the shift ending or the
+// player is fresh, solid once they are tired), and a look held for the
+// rules' lookHold (a double take counts) or walking right up to it, all of
+// it on screen, fades it away where it stood (fadeOut); only a night start,
+// the shift ending or the
 // death take it away at once. In the periphery it shows just outside the
 // look cone (showMargin past it), so it appears where the eye isn't quite
 // looking. From smileBelow it smiles (the figure's `smile`), through the kill.
@@ -257,6 +261,8 @@ export class SleepDemon extends Component {
       onKill: () => this._death.start(),
       approach: (step, unseen) => this._approach(step, unseen),
       playerDrift: () => this._away,
+      gap: () => this._gap(),
+      wholeInView: () => this._wholeInView(),
     });
     /** Metres walked since its shadow was last redrawn. */
     this._unshadowed = 0;
@@ -397,7 +403,8 @@ export class SleepDemon extends Component {
   /** Fade it in `distance` out from the eye, `edge` of the way out to the
    *  `side` (+1 right, −1 left) of the view — but never inside the look
    *  cone (`focus`, plus showMargin); an ambush may land out of view.
-   *  False: no room there. Silent: it fades in, it doesn't step in. */
+   *  The metres it stands off (a wall may bring it in), or false: no room
+   *  there. Silent: it fades in, it doesn't step in. */
   _place({ distance, side, edge, focus = 0, ambush = false }) {
     const camera = this.camera;
     if (!camera) return false;
@@ -427,7 +434,7 @@ export class SleepDemon extends Component {
     this._shownAt = off;
     this._facePlayer();
     this.onFigureChanged?.();
-    return true;
+    return d;
   }
 
   /** Is something standing on the floor at (x, z), taller than a threshold
@@ -440,13 +447,50 @@ export class SleepDemon extends Component {
 
   /** Is any of it, standing at `feet`, inside the camera's view? */
   _inView(feet) {
-    const camera = this.camera;
-    _viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    _frustum.setFromProjectionMatrix(_viewProj);
+    this._viewFrustum();
     _sphere.center.copy(feet);
     _sphere.center.y += this.height / 2;
     _sphere.radius = this.height / 2;
     return _frustum.intersectsSphere(_sphere);
+  }
+
+  /** Is all of it on screen, feet to crown and side to side? The camera's
+   *  whole field of view: the tunnel a tired player sees through is drawn
+   *  over it, and doesn't count. */
+  _wholeInView() {
+    const camera = this.camera;
+    if (!camera) return false;
+    this._viewFrustum();
+    camera.getWorldDirection(_forward);
+    _dir.set(-_forward.z, 0, _forward.x);   // the view's right, level
+    if (_dir.lengthSq() < 1e-8) return false;
+    _dir.normalize().multiplyScalar(SLEEP_DEMON_FIGURE.radius);
+    const feet = this.figure.object3d.position;
+    for (const up of [0, this.height]) {
+      for (const across of [-1, 1]) {
+        _probe.copy(feet).addScaledVector(_dir, across);
+        _probe.y += up;
+        if (!_frustum.containsPoint(_probe)) return false;
+      }
+    }
+    return true;
+  }
+
+  /** Metres from the player's eye to it, along the floor: what walking up
+   *  to it closes. */
+  _gap() {
+    const camera = this.camera;
+    if (!camera) return Infinity;
+    camera.getWorldPosition(_eye);
+    const at = this.figure.object3d.position;
+    return Math.hypot(at.x - _eye.x, at.z - _eye.z);
+  }
+
+  /** _frustum, set to the camera's view as it is now. */
+  _viewFrustum() {
+    const camera = this.camera;
+    _viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    _frustum.setFromProjectionMatrix(_viewProj);
   }
 
   /** Out of sight at once, whatever fade ran: a night start, the shift
