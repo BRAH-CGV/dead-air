@@ -104,9 +104,10 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
-// wall clock and the HUD both show. The last hour brings the dawn (Daylight
-// turns the sky, lights and fog to the Martian day). A met quota makes it
+// A night is a shift: 6:00 PM to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. It starts at sunset and the first hour is
+// the dusk; the last hour brings the dawn (Daylight turns the sky, lights and
+// fog between the night and the Martian day). A met quota makes it
 // morning, and the bunk in LivingQuarters sleeps through the day to the next
 // night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
 // night 1 after the last.
@@ -591,7 +592,7 @@ export class BaseScene extends Scene {
    *  Built after the rooms, the outside area and the player, because it
    *  reaches into all three. */
   _addGameplaySystems() {
-    this.nightClock = new NightClock({ nightDuration: 300 });
+    this.nightClock = new NightClock();
 
     // Payload URLs are direct paths to the placeholder images, not manifest
     // keys — they are displayed through an HTML <img>, not a Three.js
@@ -600,7 +601,7 @@ export class BaseScene extends Scene {
     const payloadPool = Array.from({ length: 8 }, (_, i) =>
       `assets/signals/signal-${i + 1}.png`,
     );
-    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+    this.signalManager = new SignalManager({ payloadPool });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -1619,6 +1620,7 @@ export class BaseScene extends Scene {
       whiteOut:    this.whiteOut,
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
@@ -1706,6 +1708,7 @@ export class BaseScene extends Scene {
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.sandstorm);
     this._addDustEyes();

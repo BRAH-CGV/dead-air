@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
-import { Daylight, dawnFactor } from './Daylight.js';
+import { Daylight, dawnFactor, MOONLIGHT } from './Daylight.js';
+import { SHIFT } from '../gameplay/NightClock.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 
 // ─────────────────────────────────────────────
@@ -35,6 +36,29 @@ describe('dawnFactor', () => {
 
   it('is day at 6 AM after a failed night too — the Sun rises either way', () => {
     expect(dawnFactor(6, 'gameOver')).toBe(1);
+  });
+
+  it('starts the shift in daylight, at sunset, and fades to night over the first hour', () => {
+    expect(dawnFactor(SHIFT.startHour, 'playing')).toBe(1);
+    expect(dawnFactor(SHIFT.startHour + 0.5, 'playing')).toBeCloseTo(0.5);
+    expect(dawnFactor(SHIFT.darkHour, 'playing')).toBe(0);
+
+    let prev = 1;
+    for (let hour = SHIFT.startHour; hour <= SHIFT.darkHour; hour += 0.05) {
+      const f = dawnFactor(hour, 'playing');
+      expect(f).toBeLessThanOrEqual(prev);
+      expect(prev - f).toBeLessThan(0.1);
+      prev = f;
+    }
+  });
+
+  it('is dusk on the main menu too, before the first night has started', () => {
+    expect(dawnFactor(SHIFT.startHour, 'idle')).toBe(1);
+  });
+
+  it('follows a shift that starts at a different hour', () => {
+    expect(dawnFactor(-1.5, 'playing', { startHour: -2 })).toBeCloseTo(0.5);
+    expect(dawnFactor(-1.5, 'playing')).toBe(0);
   });
 
   it('follows a shift that ends at a different hour', () => {
@@ -182,13 +206,41 @@ describe('Daylight turning the sky', () => {
     expect(sky.hour).toBe(4);
   });
 
-  it('shines the moonlight from wherever Phobos is, all night', () => {
+  it('shines the moonlight from wherever Phobos is, while it is up', () => {
     for (const hour of [0, 1.5, 3, 4.5, 5]) {
       at(hour);
       expect(dirOf(sun).distanceTo(sky.directions.phobos), `at ${hour}`).toBeCloseTo(0, 5);
     }
     at(4);
     expect(deg(dirOf(sun).angleTo(midnightPhobos))).toBeGreaterThan(20);   // it moved
+  });
+
+  it('never lights from below the horizon: before moonrise it comes from Phobos\'s bearing, lifted', () => {
+    for (const hour of [-5, -4, -3, -2]) {
+      at(hour);
+      const phobos = azEl(sky.directions.phobos);
+      const light  = azEl(dirOf(sun));
+      expect(light.elevation, `at ${hour}`).toBeCloseTo(Math.max(phobos.elevation, MOONLIGHT.minElevation), 3);
+      expect(light.azimuth, `at ${hour}`).toBeCloseTo(phobos.azimuth, 3);
+    }
+  });
+
+  it('is dimmer before moonrise, and full once Phobos is well up', () => {
+    at(-4);                                    // Phobos ~18° below the horizon
+    expect(sun.intensity).toBeCloseTo(0.8 * MOONLIGHT.downLevel, 5);
+    at(-2.5);                                  // rising
+    expect(sun.intensity).toBeGreaterThan(0.8 * MOONLIGHT.downLevel);
+    expect(sun.intensity).toBeLessThan(0.8);
+    at(0);
+    expect(sun.intensity).toBeCloseTo(0.8, 5);
+  });
+
+  it('lights the menu\'s scene for dusk as soon as it is built, before anything ticks', () => {
+    controller.nightClock.currentTime = SHIFT.startHour;
+    controller.state = 'idle';
+    daylight.onAwake();
+    expect(sky.skyUniforms.uDawn.value).toBe(1);
+    expect(sky.hour).toBe(SHIFT.startHour);
   });
 
   it('keeps the light as far out as the scene put it, so its shadow camera still fits', () => {

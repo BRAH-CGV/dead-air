@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GameController } from './GameController.js';
-import { NightClock } from './NightClock.js';
+import { NightClock, NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { SignalManager } from './SignalManager.js';
 import { NightManager } from '../systems/NightManager.js';
 
@@ -23,8 +23,8 @@ describe('GameController', () => {
 
   beforeEach(() => {
     gc   = new GameController();
-    clock = new NightClock({ nightDuration: 300 });
-    mgr  = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    clock = new NightClock({ startHour: 0, nightDuration: 300 });
+    mgr  = new SignalManager({ signalsPerNight: 10, payloadPool: POOL });
     hud  = makeHUD();
     sat  = makeSatellite();
     // A plain dock stub — the controller only reads collectedCount /
@@ -67,20 +67,18 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');
     expect(gc.nightNumber).toBe(1);
     expect(clock.elapsed).toBe(0);
-    expect(mgr.signals).toHaveLength(5);
+    expect(mgr.signals).toHaveLength(10);
     expect(hud.show).toHaveBeenCalled();
     expect(hud.setNight).toHaveBeenCalledWith(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 3);  // quotaDock: 0/3
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5);  // night 1's quota, synced to the dock
   });
 
   it('startNight scales required count with night number', () => {
-    quotaDock.requiredCount = 3;
     gc.startNight(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 3);
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5);
 
-    quotaDock.requiredCount = 4;
     gc.startNight(2);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 4);
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 6);
   });
 
   it('auto-starts night 1 on first update when autoStart is true', () => {
@@ -217,7 +215,6 @@ describe('GameController', () => {
     });
 
     it('sleep in the morning advances the night and starts it at 12:00 AM', () => {
-      quotaDock.requiredCount = 4;  // night 2 requires 4
       meetQuota();
       gc.onUpdate(999);
       expect(gc.state).toBe('morning');
@@ -231,7 +228,7 @@ describe('GameController', () => {
       expect(gc.state).toBe('playing');
       expect(clock.currentTime).toBe(0);
       expect(clock.timeString).toBe('12:00 AM');
-      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 4);  // night 2's quota
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 6);  // night 2's quota
     });
 
     it('sleeping after the last night finishes the run', () => {
@@ -455,5 +452,59 @@ describe('GameController', () => {
     gc.onUpdate(0.016);
     expect(gc.state).toBe('playing');
     expect(engine.consumeAction).toHaveBeenCalledWith('interact');
+  });
+});
+
+// ─────────────────────────────────────────────
+// One twelve-hour shift: 6 PM to 6 AM, no overtime
+// ─────────────────────────────────────────────
+
+describe('GameController — one twelve-hour shift', () => {
+  let gc, clock, hud, quotaDock, nights;
+  const perHour = NIGHT_SECONDS / (SHIFT.endHour - SHIFT.startHour);
+  /** Run the clock on to `hour` (clock hours from midnight). */
+  const runTo = (hour) => gc.onUpdate((hour - clock.currentTime) * perHour);
+
+  beforeEach(() => {
+    gc = new GameController();
+    clock = new NightClock();                          // 6 PM → 6 AM
+    hud = makeHUD();
+    quotaDock = {
+      requiredCount: 3,
+      collectedCount: 0,
+      isQuotaMet() { return this.collectedCount >= this.requiredCount; },
+    };
+    Object.assign(gc, { nightClock: clock, hud, quotaDock, satellite: makeSatellite(), autoStart: false });
+    nights = new NightManager({ maxNight: 3 });
+    gc.bindNights(nights);
+  });
+
+  it('a quota met early keeps the shift running all night — no bed before 6 AM', () => {
+    quotaDock.collectedCount = 3;
+    gc.onSignalSaved();
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/6:00 AM/));
+    for (const hour of [0, 3, 5.9]) {
+      runTo(hour);
+      expect(gc.state, `at ${hour}`).toBe('playing');
+      expect(gc.canSleep).toBe(false);
+      expect(gc.sleep()).toBe(false);
+    }
+    expect(gc.overtime).toBeUndefined();
+  });
+
+  it('makes it morning at 6 AM with the quota met, and the bed takes the player to the next dusk', () => {
+    quotaDock.collectedCount = 3;
+    runTo(6);
+    expect(gc.state).toBe('morning');
+    expect(gc.canSleep).toBe(true);
+    expect(gc.sleep()).toBe(true);
+    expect(nights.currentNight).toBe(2);
+    expect(clock.timeString).toBe('6:00 PM');
+  });
+
+  it('fails the night at 6 AM with the quota missed', () => {
+    runTo(6);
+    expect(gc.state).toBe('gameOver');
+    expect(gc.canSleep).toBe(false);
   });
 });
