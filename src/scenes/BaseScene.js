@@ -11,6 +11,8 @@ import { createMarsVegetation } from '../gameobjects/MarsVegetation.js';
 import { createCommTowers } from '../gameobjects/CommTowers.js';
 import { createPerimeterFence, yardRect, fenceKeepOut, FENCE } from '../gameobjects/PerimeterFence.js';
 import { createDishPad } from '../gameobjects/DishPad.js';
+import { createBunkerShell, BUNKER } from '../gameobjects/BunkerShell.js';
+import { createSignalMast } from '../gameobjects/SignalMast.js';
 import { createWindDust, WindDustMotion } from '../gameobjects/WindDust.js';
 import { RoomTransitionSystem } from '../components/RoomTransitionSystem.js';
 import { Interactable } from '../components/Interactable.js';
@@ -19,7 +21,7 @@ import { PickupSystem } from '../components/PickupSystem.js';
 import { DriveSlot } from '../components/DriveSlot.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
-import { MainOffice } from './rooms/MainOffice.js';
+import { MainOffice, WINDOW_CORNER_RADIUS } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
@@ -48,6 +50,7 @@ import { PLAYER_BODY } from '../components/PlayerBody.js';
 import { Component } from '../core/Component.js';
 import { LEDStrip } from '../components/LEDStrip.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
@@ -71,6 +74,11 @@ import { sealAgainst } from '../core/ShadowSides.js';
 import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
+import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
@@ -157,6 +165,10 @@ const BUGGY_SCALE = 0.75;
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
 const TREE_FENCE_CLEARANCE = 3;
 
+/** Metres across the concrete buttress each side run of the fence ends on,
+ *  where it runs into the bunker's front slope (BunkerShell.addAnchor). */
+const FENCE_ANCHOR_WIDTH = 0.45;
+
 /** Metres the building-as-occluder is shrunk by on every side, for the
  *  sightlines between the corners hiddenFromRegion samples. */
 const OCCLUDER_MARGIN = 0.3;
@@ -188,13 +200,14 @@ const UFO_HOVER_HEIGHT = 35;
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
- *  the corner's two walls, and down from the ceiling. Outdoors: how high on
- *  the wall, and how far off its face (the bracket's plate). Pan ranges are
+ *  the corner's two walls, and down from the ceiling. Outdoors: how far off
+ *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
+ *  BunkerShell's `fascia`. Pan ranges are
  *  radians either way; `reach` is how far each one's flash carries. */
 const SECURITY_CAMERAS = {
   room:    { inset: 0.2, drop: 0.25, aimHeight: 0.4, panRange: 0.75, reach: 11 },
-  outside: { height: 2.6, offWall: 0.02, panRange: 1.1, reach: 25 },
-  yard:    { inFromFence: 1.5, panRange: 1.0, reach: 25 },
+  outside: { offWall: 0.02, panRange: 1.1, reach: 25 },
+  yard:    { inFromFence: 1.5, panRange: Math.PI / 2, reach: 25 },
   /** The monitor's map: metres of ground shown round the base, [across,
    *  down] — wide enough across that the end-wall cameras read as outside. */
   mapMargin: [6, 1.5],
@@ -223,6 +236,13 @@ export class BaseScene extends Scene {
    *  @type {PowerGrid|null} */
   power = null;
 
+  /** How awake the player is: drained through the shift, topped up by a
+   *  ration. The Sleep Demon and the fatigue effects read it.
+   *  @type {Stamina|null} */
+  stamina = null;
+  /** The thing in the corner of the eye, every night. @type {SleepDemon|null} */
+  sleepDemon = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
   /** Sounds the scene itself plays (the breaker panel's click). */
@@ -243,6 +263,7 @@ export class BaseScene extends Scene {
 
     this._buildRooms();
     this._buildCorridors();
+    this._addBunkerShell();
     this._addAmbience();
     this._setupNights();
     this._addSky();
@@ -256,7 +277,10 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addStamina();
     this._addBedRest();
+    this._addFatigue();
+    this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
     this._addNap();
@@ -266,7 +290,7 @@ export class BaseScene extends Scene {
     this._logBuildStats();
   }
 
-  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+  /** Budget check (see docs/PERFORMANCE-PLAN.md): how many
    *  physics bodies and Object3Ds one BaseScene build produces. */
   _logBuildStats() {
     const { engine } = this;
@@ -350,7 +374,11 @@ export class BaseScene extends Scene {
     // The airlock's open end sits on the office's front outer wall face,
     // centred on the front doorway — the office doorway is its way in.
     const airlock = new Airlock(engine);
-    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontDoor = office.openings.find(o => o.side === 'front');
+    const frontDoorX = office.position[0] + frontDoor.offset;
+    // The office's front wall shows inside the airlock, round that doorway:
+    // the airlock lines it, as neither room's own walls cover it.
+    airlock.openEndDoorways = { back: { width: frontDoor.width, height: frontDoor.height } };
     const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
     airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
 
@@ -372,11 +400,117 @@ export class BaseScene extends Scene {
       length: CORRIDOR_LENGTH, width: CORRIDOR_WIDTH,
       height: rooms.MainOffice.height, wallThick: rooms.MainOffice.wallThick, axis: 'x',
     };
+    // Each end butts against a room's outer wall, round its doorway; the
+    // corridor lines that face, as neither room's own walls cover it. A
+    // corridor runs along x, so its left end is the −x one.
+    const door = (room, side) => {
+      const { width, height } = rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
     this.corridors = {
-      OfficeToServer:   new Corridor(engine, { ...common, name: 'OfficeToServer',   position: [ mid, 0, this._doorZ.right] }),
-      OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
+      OfficeToServer: new Corridor(engine, {
+        ...common, name: 'OfficeToServer', position: [mid, 0, this._doorZ.right],
+        openEndDoorways: { left: door('MainOffice', 'right'), right: door('ServerRoom', 'left') },
+      }),
+      OfficeToQuarters: new Corridor(engine, {
+        ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left],
+        openEndDoorways: { left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left') },
+      }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
+  }
+
+  // ──────────────────────────────────────────
+  // The bunker (the building as seen from outside)
+  // ──────────────────────────────────────────
+  /** The sloped concrete shell round the whole building (BunkerShell). Its
+   *  outline is walked round the rooms' outer wall faces: the wings' backs,
+   *  the office jutting out behind them, the ends, the front, and round the
+   *  airlock, which juts out of the front as a sloped porch. Two stretches
+   *  stay bare: the office's back wall, so the window looks straight out —
+   *  framed in a rounded, flared embrasure — and the airlock's hatch end, so
+   *  the hatch opens on the yard. A signal mast stands on the roof. Read off
+   *  the rooms, so it follows a redesign — as long as the office stands out
+   *  behind the wings and the fronts line up.
+   *
+   *  On the scene root, not under Outside: the occlusion sort would file it
+   *  by where it stands, and it is the building — seen from everywhere
+   *  outside, and from indoors hidden behind the walls anyway. */
+  _addBunkerShell() {
+    const { MainOffice: office, ServerRoom: server, LivingQuarters: quarters, Airlock: airlock } = this.rooms;
+    const ob = office.bounds(), ab = airlock.bounds();
+    const ends = [quarters.bounds(), server.bounds()];
+    const west  = Math.min(...ends.map(b => b.min.x));
+    const east  = Math.max(...ends.map(b => b.max.x));
+    const back  = Math.max(...ends.map(b => b.min.z));          // the wings' back walls
+    const front = Math.min(ob.max.z, ...ends.map(b => b.max.z));
+
+    // Each corner starts the edge to the next; `flat` leaves that edge bare.
+    const corners = {
+      quartersBack: { x: west,     z: back },
+      officeLeft:   { x: ob.min.x, z: back },
+      window:       { x: ob.min.x, z: ob.min.z, flat: true },
+      officeRight:  { x: ob.max.x, z: ob.min.z },
+      serverBack:   { x: ob.max.x, z: back },
+      serverEnd:    { x: east,     z: back },
+      serverFront:  { x: east,     z: front },
+      airlockRight: { x: ab.max.x, z: front },
+      hatch:        { x: ab.max.x, z: ab.max.z, flat: true },
+      airlockLeft:  { x: ab.min.x, z: ab.max.z },
+      quartersFront:{ x: ab.min.x, z: front },
+      quartersEnd:  { x: west,     z: front },
+    };
+    const names = Object.keys(corners);
+    const edge = name => names.indexOf(name);
+
+    // Louvre plates high on the slopes, as on the front of the wings; `at` is
+    // metres along the edge from its corner.
+    const louvre = (name, at) => ({ edge: edge(name), at, y: 2.2, width: 1.3, height: 0.5 });
+    const backWindow = office.openings.find(o => o.side === 'back');
+    const shell = createBunkerShell({
+      engine: this.engine,
+      outline: Object.values(corners),
+      height: ob.max.y,
+      roofProps: [
+        { kind: 'stack', x: quarters.position[0] - 1.2, z: back + 1.6 },
+        { kind: 'vent',  x: server.position[0], z: server.position[2] - 1 },
+        { kind: 'vent',  x: office.position[0] - 3, z: office.position[2] + 1, rotationY: Math.PI / 2 },
+      ],
+      louvres: [
+        louvre('serverFront', east - server.position[0] - 1.6),
+        louvre('serverFront', east - server.position[0] + 1.6),
+        louvre('quartersFront', ab.min.x - quarters.position[0] - 1.6),
+        louvre('quartersFront', ab.min.x - quarters.position[0] + 1.6),
+        louvre('serverEnd', 1.6),
+        louvre('quartersEnd', front - back - 1.6),
+      ],
+      embrasures: [{
+        edge: edge('window'),
+        at: office.position[0] + (backWindow.offset ?? 0) - ob.min.x,
+        sill: office.position[1] + backWindow.sill,
+        width: backWindow.width, height: backWindow.height,
+        radius: WINDOW_CORNER_RADIUS,
+      }],
+    });
+    this._sceneRoot.addChild(shell);
+    for (const resource of shell.resources) this._own(resource);
+    this.bunker = shell;
+
+    // The office's back wall is the one stretch of the rooms' own shell left
+    // in view outside: in the slopes' weathered concrete, laid out as theirs,
+    // it reads as part of the bunker. Its inner face is under the lining.
+    for (const name of ['BackWall_A', 'BackWall_B', 'BackWall_Header', 'BackWall_Sill']) {
+      const mesh = office.root.find(name)?.object3d.children.find(c => c.isMesh);
+      if (mesh) shell.clad(mesh);
+    }
+
+    // The relay mast, on the server wing's roof toward the back: its lamp
+    // flashes red over the building, seen from all round the yard.
+    const mast = createSignalMast();
+    mast.object3d.position.set(server.position[0] + 1.6, ob.max.y + BUNKER.cap.height, back + 1.4);
+    shell.addChild(mast);
+    for (const resource of mast.resources) this._own(resource);
+    this.signalMast = mast;
   }
 
   // ──────────────────────────────────────────
@@ -722,7 +856,9 @@ export class BaseScene extends Scene {
    *  stands — has nothing to sort it by. */
   _addWindDust() {
     const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
-    this.windDust = createWindDust({ cutouts: parts.map(part => part.bounds()) });
+    // The bunker's slopes too: a cloud through one shows as a hard edge.
+    const cutouts = [...parts.map(part => part.bounds()), ...(this.bunker?.cutouts() ?? [])];
+    this.windDust = createWindDust({ cutouts });
     this._sceneRoot.addChild(this.windDust);
     this._ownResourcesOf(this.windDust);
     this._own(this.windDust.dustTexture);
@@ -882,13 +1018,24 @@ export class BaseScene extends Scene {
     // _buildOcclusion). The side runs meet the END rooms' front walls, not the
     // airlock's — the airlock sticks out further, and fencing from its depth
     // would leave a gap at each end of the building to walk round.
+    //
+    // With the bunker round the building, the side runs start at the foot of
+    // its front slope instead of buried in it, and each is anchored there:
+    // a concrete buttress fills the wedge between the last post and the
+    // slope, so the wire runs into the bunker and leaves no gap.
+    const sideStart = this.bunker ? endFront + BUNKER.batter : undefined;
     const fence = createPerimeterFence({
       rect: fenceRect,
       openSides: ['S'],
       assets: engine.assets,
       world: engine.world,
+      sideStart,
     });
     this.fence = fence;
+    this.fenceAnchors = this.bunker
+      ? [fenceRect.minX, fenceRect.maxX].map(x => this.bunker.addAnchor({ x, z: sideStart, height: FENCE.height, width: FENCE_ANCHOR_WIDTH }))
+      : [];
+    for (const { mesh } of this.fenceAnchors) this._own(mesh.geometry);
 
     for (const field of [rocks, belt, towers, fence]) {
       this._outside.addChild(field);
@@ -906,8 +1053,17 @@ export class BaseScene extends Scene {
     this._adopt(this._outside, this.satellite);
     // Its drive while it slews, and the click as it settles.
     this.satellite.addComponent(new SatelliteSound());
-    this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
-    this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+    // Park the dish at its demo pose: set the model sub-nodes and the rig
+    // to the same angles so it spawns already there instead of slewing on
+    // load. The neck mirrors game yaw (bearing g → neck.rotation.y = π − g).
+    const parkYaw   = THREE.MathUtils.degToRad(45);
+    const parkPitch = THREE.MathUtils.degToRad(-55);
+    if (this.satellite.neck) this.satellite.neck.object3d.rotation.y = Math.PI - parkYaw;
+    if (this.satellite.dish) this.satellite.dish.object3d.rotation.x = parkPitch;
+    this.satellite.rig.currentYaw   = parkYaw;
+    this.satellite.rig.currentPitch = parkPitch;
+    this.satellite.targetYaw   = parkYaw;
+    this.satellite.targetPitch = parkPitch;
 
     // The dishes of the neighbouring array nodes, lent to this station.
     // Too far away to be seen or heard, so they are simulated headless:
@@ -927,15 +1083,18 @@ export class BaseScene extends Scene {
     // lintel. Position and heading placed by hand in the level editor (F2).
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). In the
-    // far corner of the fenced yard, on the side away from the buggy — a walk
-    // out into the storm to cut the power, along the wire. Read off the
-    // fence, so it follows the yard. _addPower() puts its switch on it.
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it.
     const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
     const [insetX, insetZ] = GENERATOR_CORNER_INSET;
     const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this._addStandIn('Generator', 'generator.glb',
-      [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
   }
 
@@ -1009,28 +1168,33 @@ export class BaseScene extends Scene {
     }
 
     // Outside each end wall, about its middle, looking out.
+    // The outdoor ones hang on the bunker's roof band — a sheer face, where
+    // the slope under it would swallow a bracket.
+    const band = this.bunker.fascia;
     for (const [room, label, side] of [[rooms.LivingQuarters, 'EXTERIOR — QUARTERS END', -1], [rooms.ServerRoom, 'EXTERIOR — SERVER END', 1]]) {
       const b = room.bounds();
-      const x = (side < 0 ? b.min.x : b.max.x) + side * O.offWall;
+      const face = (side < 0 ? b.min.x : b.max.x) + side * band.out;
+      const x = face + side * O.offWall;
       const z = (b.min.z + b.max.z) / 2;
       place(this._outside, {
         label, panRange: O.panRange, zones: ['yard', 'unseen'], flashReach: O.reach,
-        position: [x, O.height, z], target: [x + side * 15, 0, z],
-        mount: { wall: { axis: 'x', at: side < 0 ? b.min.x : b.max.x }, material: room.material },
+        position: [x, band.y, z], target: [x + side * 15, 0, z],
+        mount: { wall: { axis: 'x', at: face }, material: band.material },
       });
     }
 
     // In the fenced yard: on the end rooms' front walls, in from each end of
-    // the fence, looking across to the middle of the yard's far side.
+    // the fence, looking straight out across the yard — and free to turn
+    // all the way round either way, to look along the building.
     const { rect } = this.fence;
     for (const [room, label, side] of [[rooms.LivingQuarters, 'YARD — QUARTERS SIDE', -1], [rooms.ServerRoom, 'YARD — SERVER SIDE', 1]]) {
       const x = side < 0 ? rect.minX + Y.inFromFence : rect.maxX - Y.inFromFence;
-      const front = room.bounds().max.z;
+      const front = room.bounds().max.z + band.out;
       place(this._outside, {
-        label, panRange: Y.panRange, zones: ['yard', 'unseen'], flashReach: Y.reach,
-        position: [x, O.height, front + O.offWall],
-        target: [rect.x, 0, rect.maxZ - 2],
-        mount: { wall: { axis: 'z', at: front }, material: room.material },
+        label, panRange: Y.panRange, maxView: Y.panRange, zones: ['yard', 'unseen'], flashReach: Y.reach,
+        position: [x, band.y, front + O.offWall],
+        target: [x, 0, rect.maxZ - 2],
+        mount: { wall: { axis: 'z', at: front }, material: band.material },
       });
     }
     this.securityCameras = cams;
@@ -1287,6 +1451,101 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Stamina and the Sleep Demon (every night)
+  // ──────────────────────────────────────────
+  /** Stamina drains through the shift and the office's ration dispenser
+   *  tops it up. The drain ticks on GameplaySystems after the controller,
+   *  and before the demon and the fatigue effects, so within a frame both
+   *  read this frame's stamina. */
+  _addStamina() {
+    this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
+    const dispenser = this.rooms.MainOffice.rationDispenser;
+    if (dispenser) {
+      dispenser.stamina = this.stamina;
+      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
+      dispenser.onEat = () => {
+        if (!crunch) return;
+        if (crunch.isPlaying) crunch.stop();
+        crunch.play();
+      };
+    }
+    this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      grid:         this.power,
+      onNightStart: () => dispenser?.reset(),
+    }));
+  }
+
+  /** The Sleep Demon, in the corner of the player's eye once they tire (see
+   *  SleepDemon). Its figure is a placeholder under a Threats group on the
+   *  scene root, which sits at the world origin: the demon writes world
+   *  positions, and no occlusion zone ever hides it. It is a shadow in
+   *  itself: a pitch-black shade no light shows, and it casts none — a solid
+   *  shadow under a faint figure gave it away — so moving it never redraws
+   *  the frozen shadow maps. */
+  /** The screens at the desk that fill the view: the terminal's radar or
+   *  review and the security monitor. Whichever is up is the state; 'idle'
+   *  while neither is. Read every frame, so it allocates nothing. */
+  _screens() {
+    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    return {
+      get state() {
+        for (let i = 0; i < screens.length; i++) {
+          if (screens[i].state !== 'idle') return screens[i].state;
+        }
+        return 'idle';
+      },
+    };
+  }
+
+  _addSleepDemon() {
+    const { engine } = this;
+    // Its body is the baked model (sleep-demon.glb); without it (a test's
+    // stub asset manager) the placeholder capsule stands in.
+    const model = engine.assets?.has?.('model:sleep-demon') ? engine.assets.get('model:sleep-demon').scene : null;
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb', model,
+    });
+    this._group('Threats').addChild(figure);
+    this._ownResourcesOf(figure);
+    this.sleepDemon = this._sceneRoot.find('GameplaySystems').addComponent(new SleepDemon({
+      controller:      this.gameController,
+      stamina:         this.stamina,
+      figure,
+      camera:          engine.camera ?? null,
+      terminal:        this._screens(),
+      rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
+      isFrozen:        () => !!engine.debugCamera?.active,
+      flashlight:      engine.player?.getComponent(Flashlight) ?? null,
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
+      // Walking them down: the breath and the heart carry the dread.
+      fatigue:         this.fatigueEffects,
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
+    }));
+  }
+
+  /** What low stamina does to the player: the tunnel and the eyelids, the
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns.
+   *  Built before the demon, which tells it how hard the walk-down grips. */
+  _addFatigue() {
+    const { engine } = this;
+    this.fatigueEffects = this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
+      grid:       this.power,
+      isFrozen:   () => !!engine.debugCamera?.active,
+    }));
+  }
+
+  // ──────────────────────────────────────────
   // Getting into and out of the bunk (BedRest)
   // ──────────────────────────────────────────
   /** The view to the pillow and back, the lids, the peeks. It writes the
@@ -1466,6 +1725,9 @@ export class BaseScene extends Scene {
       // …and the wind: the storm has no recording of its own. It blows the
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
+      // The moons are lost in the dust, and their light with them.
+      moon:     this.moonLight,
+      ambient:  this.ambientLight,
       hooks: {
         // The grit is wrapped round the eye the frame is drawn from — a
         // security camera's, on the monitor (Engine.renderCamera).
@@ -1580,12 +1842,14 @@ export class BaseScene extends Scene {
     }
     // The airlock juts into the yard: solid, but for its hatch — a chase
     // after someone inside comes in that way, never through the side walls.
+    // The bunker's slopes either side of it are as solid: out to their toe.
     const airlock = this.rooms.Airlock;
     if (airlock?.hatch) {
       const shell = airlock.bounds();
+      const slope = this.bunker ? BUNKER.batter : 0;
       const hatch = airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
       boxes.push({
-        minX: shell.min.x, maxX: shell.max.x, minZ: shell.min.z, maxZ: shell.max.z,
+        minX: shell.min.x - slope, maxX: shell.max.x + slope, minZ: shell.min.z, maxZ: shell.max.z,
         door: { x: hatch.x, z: hatch.z, halfWidth: airlock.hatch.doorSize[0] / 2 },
       });
     }
@@ -1755,31 +2019,6 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
-  }
-
-  /** Solid box standing in for a model that hasn't been sourced yet. */
-  _addStandIn(name, file, position, size, color) {
-    const { world } = this.engine;
-    const go = new GameObject(name);
-    go.object3d.position.set(...position);
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(...size)),
-      this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.3 })),
-    );
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...position));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2), body);
-    go.rigidBody = body;
-    go.collider  = collider;
-    go.colliders = [collider];
-    go._originalSize = [...size];
-    go.placeholderFor = file;
-    this.engine._bodyToGO?.set(body.handle, go);
-
-    this._outside.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────

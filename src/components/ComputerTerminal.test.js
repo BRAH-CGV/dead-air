@@ -133,6 +133,10 @@ describe('ComputerTerminal', () => {
 
     mgr.startNight(1);  // required=3, 5 signals
     revealAll(mgr);     // hide the appearance schedule from these tests
+    // Reset cursor to the origin — tests verify movement mechanics from a
+    // known position, independent of the scene's park angles.
+    term._cursorX = 0;
+    term._cursorY = 0;
   });
 
   // ── Initial state ──

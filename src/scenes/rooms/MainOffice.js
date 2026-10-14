@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Room } from './Room.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -10,8 +11,9 @@ import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
+import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { deskWingGeometry, deskWingOutline, WING } from './DeskWing.js';
+import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
 // The shelf collider (manifest) has five boards; these are their top
@@ -47,14 +49,15 @@ const DRIVE_BOX_LAYOUT = [
 //   • The station: the desk top carries on into an angled wing each side
 //     (`DeskWing_*`, see DeskWing.js), drawn with the desk's own material
 //     so it reads as one piece of furniture. On the left one stands the
-//     security-camera monitor (a placeholder box; the scene attaches its
-//     CameraTerminal). On the right one stand a digital clock and a globe
+//     security-camera monitor (camera-monitor.glb, square to the wing; the
+//     scene attaches its CameraTerminal). On the right one stand a digital clock and a globe
 //     on its stand; [E] on the globe gives it a spin (GlobeSpin). The clock
 //     and the stand are render-only — a collider on the desk could stop the
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
-//   • The food corner, down the left wall: a two-tier rack of grow beds,
-//     then the dispenser and the bin, short of the doorway.
+//   • The food corner, down the left wall: a two-tier rack of grow beds
+//     under UV lights (GrowRack.js), then the dispenser and the bin, short
+//     of the doorway.
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
@@ -68,7 +71,48 @@ const DRIVE_BOX_LAYOUT = [
 // gameplay. Same for the red signal lamp above the computer desk: the room
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
+//
+// The food-ration dispenser on the left wall is `rationDispenser`, a
+// RationDispenser; the scene hands it the stamina a ration restores.
 // ─────────────────────────────────────────────
+
+const RATION_READY = '[E] Take a food ration';
+const RATION_REFILLING = 'Dispenser refilling…';
+
+/** The dispenser's use: a ration restores stamina, then it refills for
+ *  `cooldown` seconds. The prompt is a data field, so InteractionSystem
+ *  re-shows it when it changes under the crosshair. */
+export class RationDispenser extends Interactable {
+  promptLabel = RATION_READY;
+  /** Set by the scene. @type {{restore(amount: number): void}|null} */
+  stamina = null;
+  /** Stamina per ration. */
+  amount = 0.35;
+  /** Seconds before the next ration. */
+  cooldown = 40;
+  /** Seconds left until it is ready again. */
+  refill = 0;
+  /** Called after each ration (the sound). */
+  onEat = null;
+
+  onUpdate(dt) {
+    if (this.refill > 0 && (this.refill -= dt) <= 0) this.reset();
+  }
+
+  onInteract() {
+    if (!this.stamina || this.refill > 0) return;
+    this.stamina.restore(this.amount);
+    this.refill = this.cooldown;
+    this.promptLabel = RATION_REFILLING;
+    this.onEat?.();
+  }
+
+  /** Ready again: a new or retried night. */
+  reset() {
+    this.refill = 0;
+    this.promptLabel = RATION_READY;
+  }
+}
 
 /** The bars across the window: mullions at ±x, the crossbar's height, and
  *  the mullions' width. The frame is built from them and the glass is cut
@@ -76,6 +120,12 @@ const DRIVE_BOX_LAYOUT = [
 const WINDOW_MULLION_X = 1.42;
 const WINDOW_CROSSBAR_Y = 1.65;
 const WINDOW_BAR = 0.08;
+/** The window's corners are rounded, a quarter circle of this radius (m):
+ *  a steel fillet through the wall in each (_buildWindowFrame), and the
+ *  bunker's embrasure outside follows the same curve (BunkerShell). */
+export const WINDOW_CORNER_RADIUS = 0.45;
+/** Bolt heads round the inside of the frame: radius, and spacing along it. */
+const WINDOW_BOLT = { radius: 0.018, spacing: 0.5 };
 
 /** The computer desk, as MainOffice seats it, read off retro-computer.glb
  *  at its 0.016 spawn scale: its centre; the half-width of its side panels
@@ -88,8 +138,9 @@ const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: 
  *  turns to face. */
 const SEAT = [0, -1.45];
 
-/** The security-camera monitor on the left wing: casing width, height, depth. */
-const CAMERA_MONITOR = [0.42, 0.36, 0.36];
+/** The security-camera monitor on the left wing (camera-monitor.glb):
+ *  width, height, depth. */
+const CAMERA_MONITOR = [0.6, 0.379, 0.331];
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -114,6 +165,9 @@ export class MainOffice extends Room {
 
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
+
+  /** On the VendingMachine, from buildProps(). @type {RationDispenser|null} */
+  rationDispenser = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -278,22 +332,16 @@ export class MainOffice extends Room {
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 
-    go.addComponent(new class extends Interactable {
-      promptLabel = '[E] Take a food ration';
-      onInteract() {
-        // TODO: coordinate with Hayden's stamina system.
-        console.log('[MainOffice] food ration eaten');
-      }
-    }());
+    this.rationDispenser = go.addComponent(new RationDispenser());
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small
    *  static box with a DriveSlot component that auto-snaps nearby unheld
    *  drives. The inserted drive can be picked up directly (no [E] prompt). */
   _buildDriveStation() {
-    // Reader: a small dark box on the desk surface, right of centre.
-    // Desk surface is at about y = 0.73 m; the reader is 3 cm tall, so
-    // its centre sits at 0.73 + 0.015 = 0.745.
+    // Reader: a small dark box on the desk's right pillar, whose top is at
+    // y = 0.86 m; the reader is 3 cm tall, so its centre sits at
+    // 0.86 + 0.015 = 0.875.
     const readerSize = [0.12, 0.03, 0.15];
     const readerPos  = [0.650, 0.875, -2.260];
     const readerMat  = this._own(new THREE.MeshStandardMaterial({
@@ -390,13 +438,30 @@ export class MainOffice extends Room {
     return go;
   }
 
+  /** A fixed body with these colliders, nothing drawn: for a solid made of
+   *  more than one shape. The descs are placed in the room's space. */
+  _addSolid(name, descs) {
+    const go = new GameObject(name);
+    const { world } = this.engine;
+    const [ox, oy, oz] = this.position;
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(ox, oy, oz));
+    go.rigidBody = body;
+    go.colliders = descs.map(desc => world.createCollider(desc, body));
+    go.collider  = go.colliders[0];
+    this.engine._bodyToGO?.set(body.handle, go);
+    this.root.addChild(go);
+    return go;
+  }
+
   /** The desk top carried on to each side: a wing turned 45° in toward the
    *  seat, its inner corner on the desk's front corner, drawn as one piece
    *  with the desk's own material (DeskWing.js maps it into the desk's
-   *  texture). What is solid is simpler than what is drawn: a turned box
-   *  under the square of the top (`DeskWingSolid_*`), and a back to the
-   *  wedge between it and the desk's side (`DeskWingBack_*`), so nobody
-   *  walks into that from behind the desk. */
+   *  texture). What is solid (`DeskWingSolid_*`) is the top's outline,
+   *  floor to desk top: a box under the square and a small hull for the
+   *  wedge between it and the desk's side (`deskWingSolids`), so what is
+   *  set down there (the globe's side) rests on it, and nobody walks into
+   *  it from behind the desk. Not one hull of the whole wing: Rapier made
+   *  next to no contacts against the left one, and drives sank through. */
   _buildDeskWings(desk) {
     // The desk's material belongs to the asset cache — shared, never freed
     // here. A desk with no textured mesh (a stand-in model, a test) gets
@@ -411,52 +476,36 @@ export class MainOffice extends Room {
       mesh.castShadow = mesh.receiveShadow = true;
       this._addGroup(mesh.name).object3d.add(mesh);
 
-      const { body, centre } = deskWingOutline(side, DESK);
-      this._addTurnedBox(`DeskWingSolid_${label}`, [centre[0], DESK.top / 2, centre[1]], [WING.size, DESK.top, WING.size], Math.PI / 4);
-
-      // The wedge's back edge, from the desk's back corner out to the wing's.
-      const [[ax, az], [bx, bz]] = body;
-      this._addTurnedBox(
-        `DeskWingBack_${label}`,
-        [(ax + bx) / 2, DESK.top / 2, (az + bz) / 2],
-        [Math.hypot(bx - ax, bz - az), DESK.top, 0.06],
-        Math.atan2(-(bz - az), bx - ax),
-      );
+      const { square, filler } = deskWingSolids(side, DESK);
+      const [hx, hz] = square.halfExtents, turn = square.rotationY / 2;
+      this._addSolid(`DeskWingSolid_${label}`, [
+        RAPIER.ColliderDesc.cuboid(hx, DESK.top / 2, hz)
+          .setTranslation(square.centre[0], DESK.top / 2, square.centre[1])
+          .setRotation({ x: 0, y: Math.sin(turn), z: 0, w: Math.cos(turn) }),
+        RAPIER.ColliderDesc.convexHull(new Float32Array([
+          ...filler.map(([x, z]) => [x, 0, z]),
+          ...filler.map(([x, z]) => [x, DESK.top, z]),
+        ].flat())),
+      ]);
     }
   }
 
-  /** The security cameras' monitor, a placeholder: a dark casing on the
-   *  left wing's top, its screen turned to the seat. The casing is the
-   *  collider the interact ray lands on; BaseScene attaches the
-   *  CameraTerminal and its Interactable, as it does the computer's. The
-   *  screen is a vital function like the terminal's glow — with the
-   *  generator running it stays lit through a blow-out. */
+  /** The security cameras' monitor on the left wing's top: the bottom-left
+   *  screen of wall-screen.glb, cut out as camera-monitor.glb. It is turned
+   *  square to the wing — the wing is set at 45°, so the screen looks
+   *  straight out of its front edge, toward the front of the room. A box
+   *  the size of the model is the collider the interact ray lands on;
+   *  BaseScene attaches the CameraTerminal and its Interactable to it, as it
+   *  does the computer's. The model is drawn only. Its screen is dark glass,
+   *  as if switched off, until it is given something to show. */
   _buildCameraMonitor() {
     const [w, h, d] = CAMERA_MONITOR;
     const [cx, cz] = deskWingOutline(-1, DESK).centre;
-    const yaw = Math.atan2(SEAT[0] - cx, SEAT[1] - cz);   // its front (+z) to the seat
-    const casing = this._own(new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6, metalness: 0.3 }));
-    const go = this._addTurnedBox('CameraMonitor', [cx, DESK.top + h / 2, cz], [w, h, d], yaw, casing);
-
-    const screen = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(w - 0.08, h - 0.11, 0.01)),
-      this._own(new THREE.MeshStandardMaterial({
-        color: 0x0a0f12, emissive: 0x8fb4c8, emissiveIntensity: 0.55, roughness: 0.3,
-      })),
-    );
-    screen.name = 'CameraMonitorScreen';
-    screen.userData.unbreakable = true;
-    screen.position.set(0, 0.025, d / 2 + 0.005);
-    go.object3d.add(screen);
-
-    // A strip of tally lights under the screen, one per feed.
-    const led = this._own(new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
-    const dot = this._own(new THREE.BoxGeometry(0.012, 0.012, 0.006));
-    for (let i = 0; i < 6; i++) {
-      const mesh = new THREE.Mesh(dot, led);
-      mesh.position.set(-0.1 + i * 0.04, -h / 2 + 0.03, d / 2 + 0.003);
-      go.object3d.add(mesh);
-    }
+    const yaw = Math.PI / 4;   // its front (+z) square to the wing
+    const go = this._addTurnedBox('CameraMonitor', [cx, DESK.top + h / 2, cz], [w, h, d], yaw);
+    const model = this._spawnProp('model:camera-monitor', {
+      name: 'CameraMonitorModel', position: [cx, DESK.top, cz], rotationY: yaw, physics: 'none',
+    });
     this.cameraMonitor = go;
   }
 
@@ -485,51 +534,14 @@ export class MainOffice extends Room {
     globe.addComponent(new GlobeSpin());
   }
 
-  /** Along the left wall, behind the dispenser: a rack of grow beds, two
-   *  tiers of three trays of soil and green, each tier under a strip of
-   *  grow light. The strips are glows, not lights: the light count is
-   *  compiled into every lit shader. One box is the collider — the whole
-   *  rack is solid to walk into — and the frame, trays and strips are drawn
-   *  on it. */
+  /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),
+   *  two tiers of three soil trays, each tier under UV grow lights, two
+   *  plants to a tray. One box is the collider — the whole rack is solid to
+   *  walk into — and the rack is drawn on it. */
   _buildGrowBeds() {
-    const size = [0.7, 1.6, 3.75];
+    const size = GROW_RACK.size;
     const go = this._addTurnedBox('GrowBeds', [-5.9 + size[0] / 2, size[1] / 2, -1.52], size, 0);
-
-    const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.6, metalness: 0.35 }));
-    const soil  = this._own(new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 1 }));
-    const green = this._own(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
-    const lamp  = this._own(new THREE.MeshStandardMaterial({
-      color: 0x241020, emissive: 0xff4fd8, emissiveIntensity: 1.4,
-    }));
-    const board  = this._own(new THREE.BoxGeometry(size[0], 0.04, size[2]));
-    const tray   = this._own(new THREE.BoxGeometry(0.52, 0.1, 1.05));
-    const leaves = this._own(new THREE.BoxGeometry(0.4, 0.14, 0.9));
-    const strip  = this._own(new THREE.BoxGeometry(0.06, 0.04, size[2] - 0.2));
-    const post   = this._own(new THREE.BoxGeometry(0.05, size[1], 0.05));
-
-    // Heights are from the floor; the rack's own origin is its middle.
-    const part = (geometry, material, x, y, z, name) => {
-      const mesh = new THREE.Mesh(geometry, material);
-      if (name) mesh.name = name;
-      mesh.position.set(x, y - size[1] / 2, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      go.object3d.add(mesh);
-    };
-
-    // Each tier: a board, three trays on it, the green in them, and a
-    // light strip 0.55 m above the board.
-    [0.33, 0.95].forEach((shelf, tier) => {
-      part(board, frame, 0, shelf, 0);
-      [-1.25, 0, 1.25].forEach((z, i) => {
-        part(tray, soil, 0, shelf + 0.07, z, `GrowBed_${tier * 3 + i + 1}`);
-        part(leaves, green, 0, shelf + 0.19, z);
-      });
-      part(strip, lamp, 0, shelf + 0.55, 0, `GrowLight_${tier + 1}`);
-    });
-
-    for (const x of [-(size[0] / 2 - 0.025), size[0] / 2 - 0.025]) {
-      for (const z of [-(size[2] / 2 - 0.025), size[2] / 2 - 0.025]) part(post, frame, x, size[1] / 2, z);
-    }
+    populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
   }
 
   /** Above the computer desk, where it reads from anywhere in the room. A
@@ -555,6 +567,71 @@ export class MainOffice extends Room {
       ['WindowFrame_Crossbar',      [0, WINDOW_CROSSBAR_Y, -4.82],    [8.5, 0.06, 0.12]],
     ];
     for (const [name, position, size] of parts) this._addStaticBox(name, position, size, frame);
+    this._buildWindowFillets(frame);
+    this._buildWindowBolts(frame);
+  }
+
+  /** A curved fillet in each corner of the opening, through the wall: from
+   *  inside, the window reads as a hatch in a hardened wall — rounded like
+   *  a ship's port — rather than a cut in a partition. Seen only; the glass
+   *  collider (`BackWindow`) still fills the whole opening. */
+  _buildWindowFillets(material) {
+    const { width, height, offset = 0, sill } = this.openings.find(o => o.side === 'back');
+    const r = WINDOW_CORNER_RADIUS, t = this.wallThick;
+    // The top-right corner's fillet, the corner at the origin; mirrored
+    // into the other three.
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -r);
+    shape.lineTo(0, 0);
+    shape.lineTo(-r, 0);
+    shape.absarc(-r, -r, r, Math.PI / 2, 0, true);
+    const geometry = this._own(new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 10 }));
+
+    const group = new THREE.Group();
+    group.name = 'WindowFillets';
+    group.position.set(offset, 0, this._wallPlane('back') - t / 2);
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(sx * width / 2, sy > 0 ? sill + height : sill, 0);
+      mesh.scale.set(sx, sy, 1);   // three flips the winding for a mirrored mesh
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    this.root.object3d.add(group);
+  }
+
+  /** Bolt heads round the frame, on its face toward the room, one mesh. */
+  _buildWindowBolts(material) {
+    const top = this.root.find('WindowFrame_Top'), left = this.root.find('WindowFrame_Left');
+    const [tw, th, td] = top._originalSize, [, lh] = left._originalSize;
+    const z = top.object3d.position.z + td / 2;
+    const { y: topY } = top.object3d.position, bottomY = this.root.find('WindowFrame_Bottom').object3d.position.y;
+    const leftX = left.object3d.position.x, rightX = this.root.find('WindowFrame_Right').object3d.position.x;
+    const { radius, spacing } = WINDOW_BOLT;
+
+    const at = [];
+    const row = (from, to, place) => {
+      const n = Math.max(1, Math.round((to - from) / spacing));
+      for (let i = 0; i <= n; i++) at.push(place(from + ((to - from) * i) / n));
+    };
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, topY]);
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, bottomY]);
+    const sideY = left.object3d.position.y;
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [leftX, y]);
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [rightX, y]);
+
+    const parts = at.map(([x, y]) => {
+      const bolt = new THREE.CylinderGeometry(radius, radius * 1.15, 0.025, 6);
+      bolt.rotateX(Math.PI / 2);
+      bolt.translate(x, y, z + 0.0125);
+      return bolt;
+    });
+    const merged = this._own(mergeGeometries(parts));
+    for (const g of parts) g.dispose();
+    const bolts = new THREE.Mesh(merged, material);
+    bolts.name = 'WindowBolts';
+    bolts.receiveShadow = true;
+    this.root.object3d.add(bolts);
   }
 
   /** The glass itself, as much as is drawn of it: a thin film of dust and

@@ -54,7 +54,7 @@
 
 ## Reported, not yet reproduced
 
-From the meeting notes (`docs/2026-09-09-CGV-meeting-3.md`). These haven't been checked since.
+From the 2026-09-09 team meeting. These haven't been checked since.
 
 | ID | Bug | Reported by | Notes |
 |---|---|---|---|

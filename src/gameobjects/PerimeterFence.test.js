@@ -314,6 +314,21 @@ describe('the yard block — a fence that keeps the player on the airlock side',
     expect(total).toBeCloseTo(perimeter);
   });
 
+  it('can start its side runs further out than the rect (sideStart), the rect itself unchanged', () => {
+    const rect = yardRect();
+    const sideStart = rect.minZ + 2.5;
+    const world = new FakeWorld();
+    const fence = createPerimeterFence({ rect, openSides: ['S'], world, sideStart });
+    expect(fence.rect).toEqual(rect);
+    const sides = fence.colliders.filter(c => c.halfExtents().z > c.halfExtents().x);
+    expect(sides).toHaveLength(2);
+    for (const c of sides) {
+      const start = c.translation().z - c.halfExtents().z;
+      expect(start).toBeCloseTo(sideStart);
+      expect(c.translation().z + c.halfExtents().z).toBeCloseTo(rect.maxZ);
+    }
+  });
+
   it('the default is still the full perimeter, every side fenced', () => {
     const fence = createPerimeterFence({ world: new FakeWorld() });
     expect(fence.rect).toEqual(perimeterRect());

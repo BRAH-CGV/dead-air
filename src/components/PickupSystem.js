@@ -19,8 +19,11 @@ import { keyName } from '../app/keyNames.js';
 // target each physics step, so it still knocks against things.
 //
 // The held object is a real physics body — it can bump into things, be pushed
-// by the player walking, and falls when dropped. Mouse wheel scrolling
-// adjusts the hold distance while carrying.
+// by the player walking, and falls when dropped. It is held as far along the
+// view as it was when picked up (within the Pickupable's reach). With a mouse
+// wheel (engine.input.hasWheel, from the first scroll on) the wheel moves it
+// in and out from there. Without one — a laptop's touchpad — it eases to the
+// Pickupable's restHoldDistance (1 m) while nothing is in the way.
 //
 // Prompt coordination with InteractionSystem:
 //   - While carrying, the carried body is excluded from InteractionSystem's
@@ -48,6 +51,13 @@ const SPRING_DAMPING = 25;
 /** Mouse wheel step size in metres per tick. */
 const SCROLL_STEP = 0.1;
 
+/** How fast (m/s) a carried item eases to its rest distance. */
+const SETTLE_SPEED = 1;
+
+/** Lagging further than this behind the hand (m), the item is held up by
+ *  something — the easing waits rather than push the hand into it. */
+const SETTLE_LAG = 0.25;
+
 // Pre-allocated scratch vectors to avoid per-frame allocations.
 const _target = new THREE.Vector3();
 const _disp   = new THREE.Vector3();
@@ -70,6 +80,18 @@ const ROTATE_GAIN = 12;
 /** Cap on that angular velocity (rad/s), so a big error can't whip. */
 const MAX_SPIN = 20;
 
+/** Further than this from the hand (metres) and the item is stuck behind
+ *  something: it snaps back (#77). */
+const SNAP_DISTANCE = 1.5;
+
+/** Seconds it has to stay that far before it counts as stuck — an item
+ *  picked up from across the room starts far away and flies in. */
+const STUCK_TIME = 0.5;
+
+/** Seconds a snapped item stays out of collision, so it can't wedge again
+ *  the moment it lands in the hand. */
+const SNAP_GHOST_TIME = 1;
+
 export class PickupSystem extends Component {
   // ── External references (set by scene wiring) ──
   /** @type {InteractionSystem|null} */
@@ -87,6 +109,12 @@ export class PickupSystem extends Component {
    *  camera × this, so it turns with the player. */
   holdRotation = new THREE.Quaternion();
 
+  /** Seconds left with the held item's collision off after a snap back. */
+  _ghostTime = 0;
+
+  /** Seconds the held item has been further than SNAP_DISTANCE from the hand. */
+  _farTime = 0;
+
   // ──────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────
@@ -99,6 +127,9 @@ export class PickupSystem extends Component {
     this.heldPickupable = null;
     pickupable.held = false;
     this._setLookLocked(false);
+    // Solid again straight away — a dropped ghost would fall through the floor.
+    this._setGhost(pickupable.gameObject, false);
+    pickupable.gameObject?.rigidBody?.enableCcd?.(false);
 
     // Restore normal physics so the object falls / sits.
     const go = pickupable.gameObject;
@@ -126,6 +157,7 @@ export class PickupSystem extends Component {
 
     pickupable.held = true;
     this.heldPickupable = pickupable;
+    this._farTime = 0;
 
     // Make the body dynamic with no gravity and high damping so it floats.
     const go = pickupable.gameObject;
@@ -135,10 +167,24 @@ export class PickupSystem extends Component {
       go.rigidBody.setAngularDamping(5.0, true);
       go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
       go.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      // Continuous collision while carried: the hold spring can whip a small
+      // item fast enough to step clean through a thin surface (#76).
+      go.rigidBody.enableCcd?.(true);
+    }
+
+    // Hold it as far away as it already is. A set arm length yanked it to
+    // that distance on the first step — down through the desk it sat on,
+    // or into the wall behind it.
+    const engine = this._getEngine();
+    const t = go?.rigidBody?.translation?.();
+    if (engine?.camera && t) {
+      this._view(engine.camera);
+      const depth = _disp.set(t.x, t.y, t.z).sub(_camPos).dot(_camFwd);
+      pickupable.holdDistance = THREE.MathUtils.clamp(
+        depth, pickupable.minHoldDistance, pickupable.maxHoldDistance);
     }
 
     // Hold it at the angle it was picked up at, relative to the camera.
-    const engine = this._getEngine();
     const r = go?.rigidBody?.rotation?.();
     _bodyQuat.set(r?.x ?? 0, r?.y ?? 0, r?.z ?? 0, r?.w ?? 1);
     if (engine?.camera) engine.camera.getWorldQuaternion(_camQuat);
@@ -212,8 +258,7 @@ export class PickupSystem extends Component {
     if (!go?.rigidBody) return;
 
     // Target = camera position + camera forward * holdDistance
-    engine.camera.getWorldPosition(_camPos);
-    _camFwd.set(0, 0, -1).applyQuaternion(engine.camera.quaternion);
+    this._view(engine.camera);
     _target.copy(_camPos).addScaledVector(_camFwd, this.heldPickupable.holdDistance);
 
     // Current body position
@@ -221,6 +266,33 @@ export class PickupSystem extends Component {
 
     // Displacement from current to target
     _disp.set(_target.x - t.x, _target.y - t.y, _target.z - t.z);
+
+    // No wheel to move it with: ease the hand to the rest distance, while
+    // the item keeps up with it.
+    const held = this.heldPickupable;
+    if (!engine.input?.hasWheel && _disp.length() < SETTLE_LAG) {
+      const step = SETTLE_SPEED * _dt;
+      const off = held.restHoldDistance - held.holdDistance;
+      held.holdDistance += THREE.MathUtils.clamp(off, -step, step);
+    }
+
+    // Collision back on once the snap's grace second has run out.
+    if (this._ghostTime > 0) {
+      this._ghostTime -= _dt;
+      if (this._ghostTime <= 0) this._setGhost(go, false);
+    }
+
+    // Stuck behind something, too far from the hand (#77): snap it back and
+    // let it pass through things for a moment so it can't wedge again.
+    this._farTime = _disp.length() > SNAP_DISTANCE ? this._farTime + _dt : 0;
+    if (this._farTime >= STUCK_TIME) {
+      this._farTime = 0;
+      go.rigidBody.setTranslation?.({ x: _target.x, y: _target.y, z: _target.z }, true);
+      go.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      go.rigidBody.resetForces(false);
+      this._setGhost(go, true);
+      return;
+    }
 
     // Spring + damping, tuned in acceleration space: F = m · (k·disp − c·v).
     // Scaling by mass lets any carried object settle identically — a fixed
@@ -280,6 +352,12 @@ export class PickupSystem extends Component {
     return this.interactionSystem?.currentPickupable ?? null;
   }
 
+  /** Where the view starts and points: fills _camPos and _camFwd. */
+  _view(camera) {
+    camera.getWorldPosition(_camPos);
+    _camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  }
+
   /** The world rotation the held object is steered to: camera × holdRotation.
    *  @param {THREE.Quaternion} out
    *  @returns {THREE.Quaternion} out */
@@ -307,6 +385,15 @@ export class PickupSystem extends Component {
     }
     const speed = Math.min(angle * ROTATE_GAIN, MAX_SPIN) / s;
     body.setAngvel({ x: _err.x * speed, y: _err.y * speed, z: _err.z * speed }, true);
+  }
+
+  /** Turn the item's collision off (a snap back) or on again. */
+  _setGhost(go, ghost) {
+    if (!ghost && this._ghostTime <= 0 && !this._ghosted) return;
+    this._ghosted = ghost;
+    this._ghostTime = ghost ? SNAP_GHOST_TIME : 0;
+    const colliders = go?.colliders ?? (go?.collider ? [go.collider] : []);
+    for (const collider of colliders) collider.setEnabled?.(!ghost);
   }
 
   /** Freeze or free the player's view while the held object is turned. */
