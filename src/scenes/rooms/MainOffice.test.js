@@ -391,7 +391,7 @@ describe('MainOffice', () => {
 
     // A grow light over each tier — glows, not light sources.
     const glows = [];
-    rack.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
+    rack.object3d.traverse(o => { if (o.isMesh && o.name.startsWith('GrowLight') && o.material.emissive?.getHex()) glows.push(o); });
     expect(glows.length).toBe(2);
     expect(new THREE.Box3().setFromObject(rack.object3d).max.y).toBeLessThan(1.9);
 

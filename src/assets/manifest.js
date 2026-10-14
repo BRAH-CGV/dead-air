@@ -216,15 +216,10 @@ const PLACED = {
     physics: 'kinematic',
   },
   // The food corner's grow rack (GrowRack.js): the ceiling light, hung as a
-  // UV grow light, and the fantasy tree recoloured green and cut down to a
-  // 0.35 m plant, its feet on the floor.
+  // UV grow light.
   'model:light-ceiling': {
     type: 'model',
     url: 'assets/models/light-ceiling.glb',
-  },
-  'model:grow-plant': {
-    type: 'model',
-    url: 'assets/models/grow-plant.glb',
   },
   // The airlock's suit locker, and the bedroom's lockers.
   'model:locker': {

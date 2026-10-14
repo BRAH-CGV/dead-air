@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { populateGrowRack, GROW_RACK, UV_LIGHT } from './GrowRack.js';
 
 /** A cached-model stand-in: a Group holding one mesh with its own material,
- *  sized like the real thing (fixture 0.12 × 0.068 × 0.8 m, plant 0.18 × 0.35 m). */
+ *  sized like the real fixture (0.12 × 0.068 × 0.8 m). */
 function fakeAssets() {
   const model = (name, size, material) => {
     const root = new THREE.Group();
@@ -13,12 +13,10 @@ function fakeAssets() {
     return root;
   };
   const fixtureMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0xffffff, emissiveIntensity: 2.3 });
-  const plantMaterial = new THREE.MeshStandardMaterial({ color: 0x44aa44 });
   const models = {
     'model:light-ceiling': model('fixture', [0.12, 0.068, 0.8], fixtureMaterial),
-    'model:grow-plant': model('plant', [0.18, 0.35, 0.19], plantMaterial),
   };
-  return { get: key => ({ scene: models[key] }), fixtureMaterial, plantMaterial };
+  return { get: key => ({ scene: models[key] }), fixtureMaterial };
 }
 
 function build(assets = fakeAssets()) {
@@ -101,13 +99,12 @@ describe('GrowRack', () => {
     expect(top[1]).toBeLessThan(tiers.get(1));
   });
 
-  it('grows two plants in every tray, from the recoloured tree, each its own height', () => {
-    const { plants, assets } = build();
-    expect(plants.length).toBeGreaterThan(0);
+  it('grows two of our own plants in every tray: stems, leaves and fruit, each instanced once', () => {
+    const { plants } = build();
+    expect(plants.map(p => p.name)).toEqual(['GrowPlants_stems', 'GrowPlants_leaves', 'GrowPlants_fruit']);
     for (const p of plants) {
       expect(p.isInstancedMesh).toBe(true);
       expect(p.count).toBe(12);
-      expect(p.material).not.toBe(assets.plantMaterial);
     }
     const m = new THREE.Matrix4();
     const heights = new Set();
@@ -116,8 +113,8 @@ describe('GrowRack', () => {
       plants[0].getMatrixAt(i, m);
       m.decompose(p, q, s);
       heights.add(s.y.toFixed(3));
-      expect(s.y).toBeGreaterThan(1.1);          // bigger than the 0.35 m model
-      expect(s.y).toBeLessThan(1.6);
+      expect(s.y).toBeGreaterThan(0.8);
+      expect(s.y).toBeLessThan(1.2);
     }
     expect(heights.size).toBeGreaterThan(3);
   });
@@ -159,8 +156,9 @@ describe('GrowRack', () => {
   it('falls back to a glowing strip per tier when the models are not loaded', () => {
     const { target, fixtures, plants } = build({ get: key => { throw new Error(`'${key}' is not loaded`); } });
     expect(fixtures).toBeNull();
-    expect(plants).toEqual([]);
-    const glows = meshes(target).filter(o => o.material.emissive?.getHex());
+    expect(plants.length).toBe(3);                               // the plants need no model
+    const glows = meshes(target).filter(o => o.name.startsWith('GrowLight'));
+    for (const g of glows) expect(g.material.emissive.getHex()).toBe(UV_LIGHT.color);
     expect(glows.map(g => g.name).sort()).toEqual(['GrowLight_1', 'GrowLight_2']);
   });
 
@@ -169,12 +167,12 @@ describe('GrowRack', () => {
     expect(owned).toContain(fixtures.material);
     expect(owned).toContain(plants[0].material);
     expect(owned).toContain(fixtures);
+    for (const p of plants) expect(owned).toContain(p.geometry);   // built here, so freed here
   });
 
   it('never owns the cached geometry, which other copies share', () => {
     const { owned, assets } = build();
     const geometries = new Set();
-    assets.get('model:grow-plant').scene.traverse(o => o.isMesh && geometries.add(o.geometry));
     assets.get('model:light-ceiling').scene.traverse(o => o.isMesh && geometries.add(o.geometry));
     for (const g of geometries) expect(owned).not.toContain(g);
   });

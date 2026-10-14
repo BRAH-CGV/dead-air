@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { flattenModelParts } from '../core/ModelUtils.js';
+import { buildGrowPlant } from './GrowPlant.js';
 
 // The food corner's grow rack: a two-tier steel rack of soil trays, each tier
 // under a row of UV grow lights, two plants to a tray.
@@ -10,16 +11,16 @@ import { flattenModelParts } from '../core/ModelUtils.js';
 //   • The grow lights are the ceiling light model (`model:light-ceiling`),
 //     flipped to hang face-down, one over each tray, with its glow coloured UV.
 //     One InstancedMesh.
-//   • The plants are `model:grow-plant`: the fantasy tree, recoloured green and
-//     cut down to 0.35 m. Two InstancedMeshes (stems, leaves) for all twelve.
+//   • The plants are our own cherry-tomato plants (GrowPlant.js), built once
+//     and instanced: three InstancedMeshes (stems, leaves, fruit) for all twelve.
 //   • No real lights: the light count is compiled into every lit shader. The
 //     fixtures glow and the plants carry a faint UV wash of emissive, both
 //     found by the PowerGrid, so a power cut darkens them.
 //
 // Everything is built relative to the rack's middle, the way MainOffice's
-// GrowBeds body sits. The models come from the AssetManager's cache and are
-// shared with every other copy: their geometry is never freed here, and their
-// materials are cloned before they are tinted.
+// GrowBeds body sits. The light model comes from the AssetManager's cache and
+// is shared with every other copy: its geometry is never freed here, and its
+// material is cloned before it is tinted.
 
 /** Metres. `size` is the rack's footprint and height; `tiers` the heights of
  *  the two shelf boards from the floor; `trayZ` the three trays along it. */
@@ -33,10 +34,10 @@ export const GROW_RACK = {
 
 /** The grow lights' glow, and the faint wash they leave on the plants. */
 export const UV_LIGHT = { color: 0x8a2eff, intensity: 1.4 };
-const PLANT_WASH = { color: 0x4b1a8a, intensity: 0.25 };
+const PLANT_WASH = { color: 0x4b1a8a, intensity: 0.12 };
 
-/** Plants are 0.35 m as authored; each grows to between these multiples. */
-const PLANT_SCALE = [1.2, 1.45];
+/** Each plant grows to between these multiples of GROW_PLANT.height. */
+const PLANT_SCALE = [0.9, 1.1];
 
 const BOARD = 0.04;        // shelf board thickness
 const TRAY_RISE = 0.07;    // tray centre above its board
@@ -186,7 +187,15 @@ export function populateGrowRack(target, { assets, own }) {
   }
 
   // ── The plants: two to a tray, each its own height and way round. ──
-  const plantParts = flattenModelParts('model:grow-plant', assets);
+  const plant = buildGrowPlant({ seed });
+  const plantMaterial = {
+    stems:  { roughness: 0.8 },
+    leaves: { roughness: 0.65, side: THREE.DoubleSide },
+    fruit:  { roughness: 0.3 },
+  };
+  const plantParts = Object.keys(plantMaterial).map(name => ({
+    kind: name, geometry: own(plant[name]), matrix: new THREE.Matrix4(),
+  }));
   const rand = rng(seed);
   const plantMatrices = [];
   const q = new THREE.Quaternion();
@@ -198,19 +207,19 @@ export function populateGrowRack(target, { assets, own }) {
         const along = (i - (plantsPerTray - 1) / 2) * 0.5 + (rand() - 0.5) * 0.08;
         const s = PLANT_SCALE[0] + rand() * (PLANT_SCALE[1] - PLANT_SCALE[0]);
         plantMatrices.push(new THREE.Matrix4().compose(
-          new THREE.Vector3((rand() - 0.5) * 0.1, shelf + SOIL_TOP - ROOT_SINK - half, z + along),
+          new THREE.Vector3((rand() - 0.5) * 0.03, shelf + SOIL_TOP - ROOT_SINK - half, z + along),
           q.setFromAxisAngle(up, rand() * Math.PI * 2),
           scale.setScalar(s),
         ));
       }
     }
   }
-  const plants = instancedAll('GrowPlants', plantParts, plantMatrices, part => {
-    const m = own((Array.isArray(part.material) ? part.material[0] : part.material).clone());
-    m.emissive.setHex(PLANT_WASH.color);
-    m.emissiveIntensity = PLANT_WASH.intensity;
-    return m;
-  }, { castShadow: false });
+  const plants = instancedAll('GrowPlants', plantParts, plantMatrices, part => own(new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    emissive: PLANT_WASH.color,
+    emissiveIntensity: PLANT_WASH.intensity,
+    ...plantMaterial[part.kind],
+  })), { castShadow: false });
 
   return { fixtures: fixtures ?? null, plants };
 
@@ -226,7 +235,7 @@ export function populateGrowRack(target, { assets, own }) {
     const composed = new THREE.Matrix4();
     parts.forEach((part, p) => {
       const mesh = own(new THREE.InstancedMesh(part.geometry, makeMaterial(part), matrices.length));
-      mesh.name = p === 0 ? name : `${name}_${p}`;
+      mesh.name = part.kind ? `${name}_${part.kind}` : p === 0 ? name : `${name}_${p}`;
       matrices.forEach((m, i) => mesh.setMatrixAt(i, composed.multiplyMatrices(m, part.matrix)));
       mesh.instanceMatrix.needsUpdate = true;
       mesh.castShadow = castShadow;

@@ -210,15 +210,6 @@ by DJMaesen (bumstrum) is licensed under Creative Commons Attribution
 | **Used for** | Dead / exterior tree foliage |
 | **Modifications** | None recorded |
 
-The grow rack's plant is made from the same model:
-
-| | |
-|---|---|
-| **File** | `public/assets/models/grow-plant.glb` |
-| **Manifest key** | `model:grow-plant` |
-| **Used for** | Plants in the office's grow rack |
-| **Modifications** | Trunk, fern and leaf meshes only; foliage copied round the crown for a bushier plant; textures recoloured green and converted to metal/roughness; scaled to 0.35 m, feet on the floor |
-
 ### Low poly dead tree
 
 "Low Poly: Dead Tree"
