@@ -189,6 +189,14 @@ const UFO_HOVER_HEIGHT = 35;
  *  `glass` is how much of it the window's smudges show by (WindowGlass). */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
+/** The main menu's shot (_buildMenuShot, #115): over the office computer,
+ *  out of the window at the dish. `eye` is office-local metres, just behind
+ *  the desk and above its screen. It looks at a point `look` m up the tower,
+ *  `lead` m along x from it, so the dish sits right of centre, clear of the
+ *  menu panel on the left. A narrower `fov` than the player's keeps the
+ *  dish big; the window frames it at any screen shape from 4:3 to 21:9. */
+const MENU_SHOT = { eye: [0.15, 1.35, -1.9], look: 3.5, lead: -6, fov: 60 };
+
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
  *  the corner's two walls, and down from the ceiling. Outdoors: how far off
  *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
@@ -253,6 +261,7 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._buildMenuShot();
     this._addSecurityCameras();
     this._addWindDust();
     this._spawnPlayer();
@@ -1074,6 +1083,24 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
+  }
+
+  /** The camera the main menu is drawn through (`menuCamera`, #115): over
+   *  the office computer, looking out of the window at the dish. App hands
+   *  it to `engine.viewCamera` while the main menu is up and fits its
+   *  aspect and far plane to the game camera's, so the shot stays the same
+   *  wherever the player wakes. It belongs to no GameObject: nothing moves
+   *  it, so its matrices are set once here. */
+  _buildMenuShot() {
+    const [ox, oy, oz] = this.rooms.MainOffice.position;
+    const [ex, ey, ez] = MENU_SHOT.eye;
+    const camera = new THREE.PerspectiveCamera(MENU_SHOT.fov, 16 / 9, 0.1, this.engine.camera?.far ?? 1000);
+    camera.name = 'MenuShot';
+    camera.position.set(ox + ex, oy + ey, oz + ez);
+    const tower = this.satellite.object3d.position;
+    camera.lookAt(tower.x + MENU_SHOT.lead, MENU_SHOT.look, tower.z);
+    camera.updateMatrixWorld();
+    this.menuCamera = camera;
   }
 
   // ──────────────────────────────────────────

@@ -31,6 +31,8 @@ function makeScene() {
   return {
     gameController, nights,
     nightClock: { timeString: '3:14 AM' },
+    /** The main menu's own shot (#115). */
+    menuCamera: { aspect: 1, far: 1000, updateProjectionMatrix: vi.fn() },
   };
 }
 
@@ -51,7 +53,8 @@ function memoryStorage() {
 function makeEngine() {
   const sceneListeners = new Set();
   const engine = {
-    camera: { fov: 75, far: 1000, updateProjectionMatrix: vi.fn() },
+    camera: { fov: 75, far: 1000, aspect: 16 / 9, updateProjectionMatrix: vi.fn() },
+    viewCamera: null,
     renderer: { toneMappingExposure: 1, shadowMap: { enabled: true }, setPixelRatio: vi.fn() },
     playerController: makeController(),
     perfStats: { show: vi.fn(), hide: vi.fn() },
@@ -71,6 +74,7 @@ function makeEngine() {
     activeScene: makeScene(),
     onSceneLoaded: vi.fn((cb) => { sceneListeners.add(cb); return () => sceneListeners.delete(cb); }),
     loadScene: vi.fn(() => {
+      engine.viewCamera = null;   // as the real one does
       engine.activeScene = makeScene();
       engine.playerController = makeController();
       for (const l of [...sceneListeners]) l(engine.activeScene);
@@ -168,6 +172,68 @@ describe('App', () => {
 
     it('writes station status lines in the corner', () => {
       expect(document.getElementById('menu-status').textContent).toContain('STATION: STANDBY');
+    });
+  });
+
+  describe('the menu shot (#115)', () => {
+    it("draws the main menu through the scene's menu camera, not the player's", () => {
+      expect(engine.viewCamera).toBe(engine.activeScene.menuCamera);
+    });
+
+    it('fits the shot to the window: the aspect and far plane of the game camera', () => {
+      const shot = engine.activeScene.menuCamera;
+      expect(shot.aspect).toBe(16 / 9);
+      expect(shot.far).toBe(engine.camera.far);
+      engine.camera.aspect = 2;   // the Engine's own resize listener ran first
+      window.dispatchEvent(new Event('resize'));
+      expect(shot.aspect).toBe(2);
+      expect(shot.updateProjectionMatrix).toHaveBeenCalled();
+    });
+
+    it('follows the render distance setting while the menu is up', () => {
+      const shot = engine.activeScene.menuCamera;
+      app.settings.set('renderDistance', 600);
+      expect(engine.camera.far).toBeGreaterThanOrEqual(600);
+      expect(shot.far).toBe(engine.camera.far);
+    });
+
+    it("hands the frame back to the player's eyes when the game starts", async () => {
+      await startGame();
+      expect(engine.viewCamera).toBeNull();
+    });
+
+    it("keeps the game's view on the pause menu", async () => {
+      await startGame();
+      lock.lose();
+      expect(app.flow.state).toBe('paused');
+      expect(engine.viewCamera).toBeNull();
+    });
+
+    it("leaves a security camera's picture alone", async () => {
+      await startGame();
+      const lens = { aspect: 1, far: 1000, updateProjectionMatrix: vi.fn() };
+      engine.viewCamera = lens;
+      lock.lose();
+      expect(engine.viewCamera).toBe(lens);
+    });
+
+    it("goes back to the new scene's shot on the way back to the main menu", async () => {
+      await startGame();
+      lock.lose();
+      const old = engine.activeScene.menuCamera;
+      await click('quit');
+      await click('confirm');
+      expect(engine.activeScene.menuCamera).not.toBe(old);
+      expect(engine.viewCamera).toBe(engine.activeScene.menuCamera);
+    });
+
+    it('leaves the view alone in a scene without a menu shot', async () => {
+      const e2 = makeEngine();
+      delete e2.activeScene.menuCamera;
+      const a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage() });
+      await a2.start();
+      expect(e2.viewCamera).toBeNull();
+      a2.dispose();
     });
   });
 

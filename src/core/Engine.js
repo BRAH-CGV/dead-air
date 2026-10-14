@@ -61,9 +61,10 @@ export class Engine {
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
   /** A camera to draw the frame through instead of the player's — a
-   *  security camera on the monitor (CameraTerminal). The player's camera
-   *  keeps the ears (audioListener) and the interaction ray; only the
-   *  picture moves. Cleared on every scene load.
+   *  security camera on the monitor (CameraTerminal), or the main menu's
+   *  shot (App, the scene's `menuCamera`). The player's camera keeps the
+   *  ears (audioListener) and the interaction ray; only the picture moves.
+   *  Cleared on every scene load.
    *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
   /** Optional post-processing pass (e.g. RedOut). When set, preRender()
