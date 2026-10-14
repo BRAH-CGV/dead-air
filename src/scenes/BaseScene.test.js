@@ -600,6 +600,9 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
     expect(scene.nap.rest).toBe(rest);
     expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
+    // The nap's "[E] Wake up" line, over the lids (#nap-hint).
+    expect(typeof scene.nap.hint?.show).toBe('function');
+    expect(typeof scene.nap.hint?.hide).toBe('function');
   });
 
   it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {

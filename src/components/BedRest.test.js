@@ -122,13 +122,13 @@ describe('BedRest', () => {
       expect(asleep).toHaveBeenCalledOnce();
     });
 
-    it('the lids close slowly over it, written after the fatigue effects (late update), and stay shut', () => {
+    it('the lids close slowly over it, written after the fatigue effects (late update), and shut', () => {
       const { rest, overlay } = rig;
       rest.lieDown(() => {});
       run(rig, T.lieDown * 0.7);
       expect(lastLid(overlay)).toBeGreaterThan(0);
       expect(lastLid(overlay)).toBeLessThan(1);
-      run(rig, T.lieDown);
+      run(rig, T.lieDown * 0.3 + 0.05);                   // just asleep: before the first peek
       expect(lastLid(overlay)).toBe(1);
       expect(overlay.set.mock.calls.at(-1)[0]).toBe(0);   // no tunnel in bed
     });

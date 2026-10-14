@@ -214,6 +214,11 @@ describe('BedTransition', () => {
       expect(bed.phase).toBe('asleep');            // still asleep
     });
 
+    it('the first comes soon after the eyes shut, so even a short nap (a 30-minute one is ~1.7 s) gets one', () => {
+      expect(T.peek.first[1]).toBeLessThanOrEqual(1.5);
+      expect(T.peek.first[0]).toBeGreaterThan(0.3);     // a moment of black first
+    });
+
     it('comes again, and again', () => {
       const { bed } = asleep();
       let opened = 0;

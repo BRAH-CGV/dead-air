@@ -72,6 +72,7 @@ import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { BedRest } from '../components/BedRest.js';
+import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
@@ -1546,6 +1547,8 @@ export class BaseScene extends Scene {
       engine:     this.engine,
       rest:       this.bedRest ?? null,
       hud:        this.hud,
+      // Over the closed lids (#nap-hint): the HUD is under them.
+      hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),
         restless:        ufoBusy,

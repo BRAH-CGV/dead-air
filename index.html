@@ -164,6 +164,21 @@
         pointer-events: none;
         z-index: 100;
       }
+      /* A nap's way out ("[E] Wake up", Nap.js): over the closed lids,
+         which cover the HUD; under the white-out and the screen fade. */
+      #nap-hint {
+        display: none;
+        position: fixed;
+        left: 50%;
+        bottom: 12%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 101;
+        font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.08em;
+        color: #8898a8;
+        text-shadow: 0 1px 3px #000;
+      }
       #fatigue-lids::before,
       #fatigue-lids::after {
         content: "";
@@ -594,7 +609,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv, #nap-hint) {
         visibility: hidden !important;
       }
 
@@ -729,6 +744,7 @@
     <div id="crosshair"></div>
 
     <!-- HUD (hidden until gameplay starts) -->
+    <div id="nap-hint"></div>
     <div id="hud">
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>

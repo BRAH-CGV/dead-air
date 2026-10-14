@@ -41,17 +41,18 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   /** Press E (a fresh press: the last one was let go). */
   engine.press = () => { engine.held = true; engine.consumed = false; };
   const hud = { setPrompt: vi.fn() };
+  const hint = { show: vi.fn(), hide: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
-    controller, engine, hud, hooks, rest,
+    controller, engine, hud, hooks, rest, hint,
     alarms: [
       { test: () => state.power, message: 'The power went out.' },
       { test: () => state.ufo,   message: 'Something on the radar woke you.' },
       { test: () => state.eyes,  message: 'You feel watched.' },
     ],
   });
-  return { nap, controller, engine, rest, hud, hooks, state };
+  return { nap, controller, engine, rest, hud, hooks, state, hint };
 }
 
 describe('Nap', () => {
@@ -207,6 +208,78 @@ describe('Nap', () => {
     expect(rest.getUp).toHaveBeenCalledWith('calm');
     expect(hud.setPrompt).not.toHaveBeenCalled(); // you know why you're up
     expect(engine.consumed).toBe(true);           // the bunk doesn't take it as a new nap
+  });
+
+  describe('the way out: E wakes you, and the screen says so', () => {
+    it('while napping, "[E] Wake up" shows over the closed lids', () => {
+      const { nap, hint } = rig;
+      expect(hint.show).not.toHaveBeenCalled();
+      nap.start();
+      expect(hint.show).toHaveBeenCalledWith(NAP.wakeHint);
+      expect(NAP.wakeHint).toMatch(/^\[E\] Wake up/);
+    });
+
+    it('from the moment you lie down: E works then too', () => {
+      const r = makeRig({ instant: false });
+      r.nap.start();
+      expect(r.hint.show).toHaveBeenCalled();
+      r.engine.held = false;
+      r.engine.press();
+      r.nap.onUpdate(0.016);
+      expect(r.nap.napping).toBe(false);
+      expect(r.rest.getUp).toHaveBeenCalledWith('calm');
+    });
+
+    it('gone the moment you wake, whatever woke you', () => {
+      for (const wake of [
+        r => { r.engine.held = false; r.engine.press(); r.nap.onUpdate(0.016); },   // E
+        r => { r.state.power = true; r.nap.onUpdate(0.016); },                       // an alarm
+        r => { r.controller.nightClock.currentTime = 9; r.nap.onUpdate(0.016); },    // past the alarm clock
+        r => { r.controller.state = 'morning'; r.nap.onUpdate(0.016); },             // 6 AM
+        r => { r.controller.state = 'gameOver'; r.nap.onUpdate(0.016); },            // a failed night
+        r => r.nap.onDestroy(),                                                      // torn down
+      ]) {
+        const r = makeRig();
+        r.nap.start(1);
+        r.hint.hide.mockClear();
+        wake(r);
+        expect(r.nap.napping).toBe(false);
+        expect(r.hint.hide).toHaveBeenCalled();
+      }
+    });
+  });
+
+  describe('the half-open eyes (a peek): the night holds still while you look', () => {
+    it('runs at real time while the eyes are half open, and fast again once they shut', () => {
+      const { nap, engine, rest } = rig;
+      rest.peeking = false;
+      nap.start();
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(NAP.timeScale);
+      rest.peeking = true;
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(1);
+      rest.peeking = false;
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(NAP.timeScale);
+    });
+
+    it('not before the eyes have shut: getting in stays at real time', () => {
+      const r = makeRig({ instant: false });
+      r.rest.peeking = false;
+      r.nap.start();
+      r.nap.onUpdate(0.016);
+      expect(r.engine.timeScale).toBe(1);
+    });
+
+    it('so the alarm cannot cut the scene short: the clock barely moves through it', () => {
+      const { nap, controller, rest } = rig;
+      controller.nightClock.currentTime = 1;
+      nap.start(0.5);
+      rest.peeking = true;
+      nap.onUpdate(0.016);
+      expect(nap.napping).toBe(true);
+    });
   });
 
   describe('the alarm', () => {

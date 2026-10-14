@@ -38,10 +38,12 @@ export const BED_TRANSITION = Object.freeze({
   calm: Object.freeze({ open: 0.8, sitUp: 0.65, standUp: 0.6 }),
   startled: Object.freeze({ open: 0.07, sitUp: 0.3, standUp: 0.4 }),
   /** The half-open eyes while asleep, real seconds: the first after
-   *  `first`, then one every `every`; each opens over `open` to `lid`
+   *  `first` — soon, since a 30-minute nap is ~1.7 s of real time, and the
+   *  nap holds the night at real time while the eyes are open — then one
+   *  every `every`; each opens over `open` to `lid`
    *  (0 open … 1 shut), holds for `hold`, and shuts over `close`. */
   peek: Object.freeze({
-    first: [2, 4], every: [6, 11], open: 1, hold: [2.5, 4], close: 0.6, lid: 0.5,
+    first: [0.6, 1.2], every: [6, 11], open: 1, hold: [2.5, 4], close: 0.6, lid: 0.5,
   }),
 });
 

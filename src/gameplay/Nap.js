@@ -29,6 +29,13 @@ import { Component } from '../core/Component.js';
 // straight back up; the night was never sped up. Without a BedRest the nap
 // freezes the player and runs fast at once (tests, a bare scene).
 //
+// While the eyes are half open (BedRest.peeking) the night runs at real
+// time, so the scene plays at the speed it is seen and an alarm can't cut
+// it short; once they shut it races on again.
+//
+// The lids black the screen out, HUD and all, so for the whole nap a line
+// over them (`hint`, NAP.wakeHint) says E wakes you.
+//
 // `hooks.restless()` refuses a nap outright (the UFO already on its way).
 //
 //   const nap = gameplayGO.addComponent(new Nap({
@@ -48,6 +55,8 @@ export const NAP = {
   lengths: [0.5, 1, 2, 3, null],
   /** What the alarm says. */
   alarmMessage: 'Your alarm went off.',
+  /** Shown over the closed lids for the whole nap: the way out. */
+  wakeHint: '[E] Wake up',
 };
 
 export class Nap extends Component {
@@ -68,10 +77,11 @@ export class Nap extends Component {
    * @param {{ setPrompt: (text: string) => void }} [opts.hud]
    * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean }} [opts.hooks]
    * @param {{ test: () => boolean, message: string }[]} [opts.alarms]
+   * @param {{ show(text: string): void, hide(): void }|null} [opts.hint]  Over the lids: "[E] Wake up".
    */
-  constructor({ controller, engine, rest = null, hud = null, hooks = {}, alarms = [] }) {
+  constructor({ controller, engine, rest = null, hud = null, hooks = {}, alarms = [], hint = null }) {
     super();
-    Object.assign(this, { controller, engine, rest, hud, hooks, alarms });
+    Object.assign(this, { controller, engine, rest, hud, hooks, alarms, hint });
     this._armed = alarms.map(() => false);   // which alarms can still go off
     this._messageLeft = 0;                    // real seconds the wake-up line has left
   }
@@ -94,8 +104,14 @@ export class Nap extends Component {
     this._armed = this.alarms.map(a => !a.test());
     // The press that lay you down isn't the one that wakes you.
     this.engine.consumeAction?.('interact');
+    this.hint?.show(NAP.wakeHint);
     // Only once the eyes are shut does the night speed up.
-    const fastForward = () => { if (this.napping) this.engine.timeScale = NAP.timeScale; };
+    this._asleep = false;
+    const fastForward = () => {
+      if (!this.napping) return;
+      this._asleep = true;
+      this.engine.timeScale = NAP.timeScale;
+    };
     if (this.rest) {
       this.rest.lieDown(fastForward);
     } else {
@@ -126,6 +142,8 @@ export class Nap extends Component {
       // handed straight back.
       if (state === 'morning') return this.wake();
       if (state !== 'playing') return this._abandon();
+      // Eyes half open: the night holds to real time while you look.
+      if (this._asleep) this.engine.timeScale = this.rest?.peeking ? 1 : NAP.timeScale;
       if (this.wakeAt !== null && this.controller.nightClock?.currentTime >= this.wakeAt) {
         return this.wake(NAP.alarmMessage);
       }
@@ -157,7 +175,9 @@ export class Nap extends Component {
 
   _stop() {
     this.napping = false;
+    this._asleep = false;
     this.engine.timeScale = 1;
+    this.hint?.hide();
   }
 
   onDestroy() {
