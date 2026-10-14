@@ -15,7 +15,7 @@ import { GameObject } from '../core/GameObject.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { Stamina } from './Stamina.js';
-import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, SLEEP_DEMON_DUCK, SLEEP_DEMON_DREAD, sightRay } from './SleepDemon.js';
+import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, SLEEP_DEMON_DUCK, SLEEP_DEMON_DREAD, NAP_WATCH, sightRay } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
 import { SLEEP_DEMON_DEATH as D } from './SleepDemonDeath.js';
 
@@ -840,6 +840,16 @@ describe('sightRay', () => {
     expect(excludeBody).toBe(body);
   });
 
+  it('can look past one collider too: the bunk, for a sleeper whose eye is inside it', () => {
+    const body = { handle: 7 };
+    const bunk = { handle: 3 };
+    const castRay = vi.fn(() => null);
+    sightRay({ castRay }, body, bunk)(eye, ahead, 10);
+    const [, , , , , excludeCollider, excludeBody] = castRay.mock.calls[0];
+    expect(excludeCollider).toBe(bunk);
+    expect(excludeBody).toBe(body);
+  });
+
   it('nothing in the way: Infinity', () => {
     expect(sightRay({ castRay: () => null })(eye, ahead, 10)).toBe(Infinity);
   });
@@ -1201,5 +1211,146 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
     expect(controller.fail).toHaveBeenCalledTimes(1);
     controller.startNight(1, { retry: true });
     expect(camera.position.y).toBeCloseTo(EYE, 9);
+  });
+});
+
+describe('SleepDemon while you nap: through half-open eyes', () => {
+  const PILLOW = 0.62;
+  let camera, figure, stamina, controller, sleeper, rayHit, realDt, demon, footstep;
+
+  const visible = () => figure.object3d.visible;
+  /** Frames of `seconds` real time; the update is handed the nap's 15× game time. */
+  function run(seconds, frame = 1 / 60) {
+    for (let t = 0; t < seconds - 1e-9; t += frame) {
+      realDt = frame;
+      demon.onUpdate(frame * 15);
+    }
+  }
+  const flat = v => new THREE.Vector3(v.x, 0, v.z);
+  const fromEye = () => flat(figure.object3d.position).distanceTo(flat(camera.position));
+
+  beforeEach(() => {
+    // Lying on the pillow, looking out into the room (−z).
+    camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
+    camera.position.set(0, PILLOW, 0);
+    camera.lookAt(0, PILLOW + 1, -10);
+    camera.updateMatrixWorld(true);
+    figure = createMonsterFigure({ name: 'SleepDemon', ...SLEEP_DEMON_FIGURE });
+    stamina = new Stamina();                // wide awake: it comes for sleepers anyway
+    controller = fakeController();
+    sleeper = {
+      active: true, asleep: true, peeking: false,
+      // One corner behind the bunk (out of view), one out in the room.
+      watchSpots: () => [new THREE.Vector3(6, 0, 6), new THREE.Vector3(1.5, 0, -4)],
+    };
+    rayHit = vi.fn(() => Infinity);
+    footstep = fakeSound();
+    realDt = 1 / 60;
+    demon = new SleepDemon({
+      controller, stamina, figure, camera, rayHit, sleeper,
+      realDt: () => realDt,
+      sounds: { footstep },
+      rand: () => 0,
+    });
+    demon.onStart();
+  });
+
+  it('with the eyes shut there is nothing to see', () => {
+    run(5);
+    expect(visible()).toBe(false);
+  });
+
+  it('when the eyes come half open it is there, in a corner of the room in view, just watching', () => {
+    sleeper.peeking = true;
+    run(1 / 60);
+    expect(visible()).toBe(true);
+    const feet = figure.object3d.position;
+    expect(feet.x).toBeCloseTo(1.5);       // the corner in view, not the one behind the bunk
+    expect(feet.z).toBeCloseTo(-4);
+    expect(figure.eyes[0].material.opacity).toBeGreaterThan(0.5);   // plainly there
+    const facing = new THREE.Vector3(0, 0, 1).applyQuaternion(figure.object3d.quaternion);
+    const toEye = flat(camera.position).sub(flat(feet)).normalize();
+    expect(facing.dot(toEye)).toBeGreaterThan(0.99);
+  });
+
+  it('it creeps toward the bed at a slow walk in real time — not the nap\'s fifteen-times time', () => {
+    sleeper.peeking = true;
+    run(1 / 60);
+    const start = fromEye();
+    run(2);
+    const crept = start - fromEye();
+    expect(crept).toBeCloseTo(2 * NAP_WATCH.creep, 1);
+    expect(NAP_WATCH.creep).toBeLessThan(0.6);              // slowly
+    expect(footstep.play).toHaveBeenCalled();               // and is heard
+  });
+
+  it('never all the way to the bed', () => {
+    sleeper.peeking = true;
+    run(60);
+    expect(fromEye()).toBeCloseTo(NAP_WATCH.floor, 1);
+  });
+
+  it('the eyes shut again: gone; the next time they open it is where it had got to', () => {
+    sleeper.peeking = true;
+    run(3);
+    const reached = fromEye();
+    sleeper.peeking = false;
+    run(1 / 60);
+    expect(visible()).toBe(false);
+    run(5);
+    sleeper.peeking = true;
+    run(1 / 60);
+    expect(visible()).toBe(true);
+    expect(fromEye()).toBeCloseTo(reached, 1);
+  });
+
+  it('with no corner in view it does not show', () => {
+    sleeper.watchSpots = () => [new THREE.Vector3(6, 0, 6)];
+    sleeper.peeking = true;
+    run(1);
+    expect(visible()).toBe(false);
+  });
+
+  it('looks out through its own sight ray for a sleeper (napRayHit): from inside the bunk the ordinary one hits the bunk', () => {
+    rayHit.mockImplementation(() => 0);                  // from the pillow, the bunk is in the way of everything
+    const clear = vi.fn(() => Infinity);
+    const sleeping = new SleepDemon({
+      controller, stamina, figure, camera, rayHit, napRayHit: clear, sleeper,
+      realDt: () => realDt, sounds: { footstep }, rand: () => 0,
+    });
+    sleeping.onStart();
+    sleeper.peeking = true;
+    sleeping.onUpdate(0.25);
+    sleeping.onUpdate(0.25);
+    expect(visible()).toBe(true);
+    expect(clear).toHaveBeenCalled();
+    expect(fromEye()).toBeLessThan(flat(new THREE.Vector3(1.5, 0, -4)).length());   // and creeps, too
+  });
+
+  it('a corner with something in the way is no good either', () => {
+    rayHit.mockImplementation((from, dir) => (dir.y < -0.5 ? Infinity : 1));
+    sleeper.peeking = true;
+    run(1);
+    expect(visible()).toBe(false);
+  });
+
+  it('never kills a sleeper, whatever the stamina, and its own rules wait', () => {
+    stamina.value = 0;
+    run(20);
+    expect(controller.fail).not.toHaveBeenCalled();
+    expect(demon.deathPhase).toBe('idle');
+    expect(demon.logic.around).toBe(false);
+  });
+
+  it('out of bed, gone, and back to its own rules from the start', () => {
+    sleeper.peeking = true;
+    run(1);
+    sleeper.active = sleeper.peeking = sleeper.asleep = false;
+    run(1 / 60);
+    expect(visible()).toBe(false);
+    // A fresh nap starts from a corner again.
+    sleeper.active = sleeper.peeking = true;
+    run(1 / 60);
+    expect(figure.object3d.position.z).toBeCloseTo(-4);
   });
 });

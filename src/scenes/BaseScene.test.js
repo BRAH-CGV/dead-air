@@ -593,12 +593,16 @@ describe('BaseScene gameplay loop', () => {
     for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
   }
 
-  it('one bed animation, shared: the bunk and the nap both know it', () => {
+  it('one bed animation, shared: the bunk, the nap and the demon all know it', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const rest = gameplay.getComponent(BedRest);
     expect(rest).toBe(scene.bedRest);
     expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
     expect(scene.nap.rest).toBe(rest);
+    expect(scene.sleepDemon.sleeper).toBe(rest);
+    // It watches on the real clock, and sees past the bunk the pillow is in.
+    expect(scene.sleepDemon.realDt()).toBe(engine.realDt);
+    expect(typeof scene.sleepDemon.napRayHit).toBe('function');
     expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
     // The nap's "[E] Wake up" line, over the lids (#nap-hint).
     expect(typeof scene.nap.hint?.show).toBe('function');

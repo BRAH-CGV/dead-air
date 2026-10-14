@@ -1365,6 +1365,12 @@ export class BaseScene extends Scene {
       overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
       fade:            this.screenFade ?? null,
       listener:        engine.audioListener ?? null,
+      // In bed its rules wait; through the half-open eyes of a nap it
+      // watches, on the real clock, seen from inside the bunk's box.
+      sleeper:         this.bedRest ?? null,
+      realDt:          () => engine.realDt,
+      napRayHit:       sightRay(engine.world, engine.player?.rigidBody ?? null,
+        this.rooms.LivingQuarters.bed?.gameObject?.collider ?? null),
     }));
   }
 
@@ -1385,9 +1391,10 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   // Getting into and out of the bunk (BedRest)
   // ──────────────────────────────────────────
-  /** The view to the pillow and back, the lids, the peeks. It writes the
-   *  lids last (its late update).
-   *  The bunk and the nap are handed it. */
+  /** The view to the pillow and back, the lids, the peeks. Built before the
+   *  fatigue effects and the demon, so within a frame the demon sees where
+   *  it got to; it writes the lids last (its late update). The bunk, the nap
+   *  and the demon are handed it. */
   _addBedRest() {
     const { engine } = this;
     const bed = this.rooms.LivingQuarters.bed;
