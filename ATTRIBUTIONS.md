@@ -707,6 +707,39 @@ One beep, mixed by us from three Freesound recordings, all Creative Commons 0 �
 | **Used for** | The signal lamp's beep, once with every light-up (`ScannerAlertSound`) |
 | **Modifications** | The three recordings cut, layered and mixed down into one short beep; pitch and level varied slightly, at random, while the lamp flashes for the UFO |
 
+### Small electronic motor
+
+"Small Electronic Motor" (Pixabay sound 60771), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-small-electronic-motor-60771.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/camera-servo.mp3` |
+| **Manifest key** | `sfx:camera-servo` |
+| **Used for** | A security camera's pan motor, looped faintly while it turns (`CameraTerminal`) |
+| **Modifications** | Cut to its loud first 7 s (0.12–7.1 s), at MPEG frame boundaries with no re-encode; renamed |
+
+### TV static
+
+"TV Static" (Pixabay sound 7019), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-tv-static-7019.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/camera-static.mp3` |
+| **Manifest key** | `sfx:camera-static` |
+| **Used for** | The security monitor's static, looped while a feed comes in (`CameraTerminal`) |
+| **Modifications** | Cut to its first 4 s, at MPEG frame boundaries with no re-encode; renamed |
+
+### Spotlight
+
+"Spotlight" (Pixabay sound 91359), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spotlight-91359.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.wav` |
+| **Manifest key** | `sfx:camera-spotlight`, `sfx:camera-spotlight-off` |
+| **Used for** | A security camera's flash coming on, and going off (`CameraTerminal`) |
+| **Modifications** | Renamed. The off sound is made from it: its first 0.7 s, slowed to 0.8× (lower in pitch) and faded out after 0.25 s, rendered to WAV |
+
 ### Drive box knocks
 
 Three clips, cut by us from two Freesound recordings, both Creative Commons 0 — free to use, attribution not required, credited here anyway: "Cardboard Box Table.wav" by FlirtFM (https://freesound.org/people/FlirtFM/sounds/491094/) and "boxes small cardboard of junk and parts grab slide pickup put down on wood shelves rattle.wav" by kyles (https://freesound.org/people/kyles/sounds/452569/).
