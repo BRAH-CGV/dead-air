@@ -103,7 +103,7 @@ export class BedRest extends Component {
   /** Lying with the lids down, peeks included. */
   get asleep() { return this.transition.asleep; }
 
-  /** The eyes half open while asleep: what the Sleep Demon shows itself in. */
+  /** The eyes half open while asleep: where the Sleep Demon shows itself, on a nap it watches. */
   get peeking() { return this.transition.peeking; }
 
   /** Where the demon stands to watch a sleeper (the bunk's). */

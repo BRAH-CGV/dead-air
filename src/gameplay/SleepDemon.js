@@ -76,13 +76,15 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // Hidden, out of view, outside the shift or on a new night, it lets go.
 //
 // While the player is in bed (the sleeper, BedRest: getting in, asleep,
-// getting out) its rules wait and it never kills. Instead, whenever the
-// sleeper's eyes come half open (a peek), it is there: standing in a corner
-// of the room in view of the pillow (the bunk's watch spots), plainly
-// visible, facing the bed, just watching — and creeping toward it at a slow
-// walk (NAP_WATCH), on the real clock, so through a nap's fast-forwarded
-// night it still looks like a slow walk. Never all the way to the bed. The
-// eyes shut and it is gone; the next peek finds it where it had got to.
+// getting out) its rules wait and it never kills. And now and then — one
+// nap in ten (NAP_WATCH.chance, rolled as the player lies down) — it
+// watches: whenever the sleeper's eyes come half open (a peek), it is there,
+// standing in a corner of the room in view of the pillow (the bunk's watch
+// spots), plainly visible, facing the bed, just watching — and creeping
+// toward it at a slow walk (NAP_WATCH), on the real clock, so through a
+// nap's fast-forwarded night it still looks like a slow walk. Never all the
+// way to the bed. The eyes shut and it is gone; the next peek finds it where
+// it had got to. On the other naps the peeks show an empty room.
 // Out of bed, its rules start over.
 //
 // At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
@@ -112,10 +114,11 @@ export const SLEEP_DEMON_FIGURE = Object.freeze({ height: 1.8, radius: 0.26 });
  *  steps. Standing still it makes no sound. */
 const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
 
-/** Watching a sleeper (the half-open eyes of a nap): how there it is, the
- *  metres a second it creeps toward the bed (a slow walk, in real time),
+/** Watching a sleeper (the half-open eyes of a nap): the share of naps it
+ *  watches (rolled once per nap, as the player lies down), how there it is,
+ *  the metres a second it creeps toward the bed (a slow walk, in real time),
  *  and the nearest it comes, level metres from the eye. */
-export const NAP_WATCH = Object.freeze({ presence: 0.85, creep: 0.3, floor: 1.6 });
+export const NAP_WATCH = Object.freeze({ chance: 0.1, presence: 0.85, creep: 0.3, floor: 1.6 });
 
 /** The walk-down's grip: the share of the player's speed it leaves them
  *  while it walks in on them. The breathing and the heartbeat floor come
@@ -223,6 +226,7 @@ export class SleepDemon extends Component {
    * @param {(() => number)|null} [opts.realDt]  The frame's real seconds (engine.realDt).
    * @param {((from: THREE.Vector3, dir: THREE.Vector3, max: number) => number)|null} [opts.napRayHit]
    *        The sight ray for a sleeper: one that sees past the bunk the eye lies in. rayHit when left out.
+   * @param {() => number} [opts.random]  Whether it watches a nap (below NAP_WATCH.chance). rand when left out.
    */
   constructor({
     controller, stamina, figure, camera = null, terminal = null, rayHit = () => Infinity,
@@ -230,7 +234,7 @@ export class SleepDemon extends Component {
     tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
     ambience = null,
     player = null, overlay = null, fade = null, listener = null, deathTuning = SLEEP_DEMON_DEATH,
-    fatigue = null, sleeper = null, realDt = null, napRayHit = null,
+    fatigue = null, sleeper = null, realDt = null, napRayHit = null, random = rand,
   }) {
     super();
     Object.assign(this, {
@@ -243,9 +247,12 @@ export class SleepDemon extends Component {
     this.sleeper = sleeper;
     this.realDt = realDt;
     this.napRayHit = napRayHit;
-    /** In bed: its rules set aside. And whether it has found its corner this
-     *  time in bed (it keeps the ground it crept between peeks). */
+    this.random = random;
+    /** In bed: its rules set aside. Whether it watches this time in bed
+     *  (rolled as the player lies down), and whether it has found its
+     *  corner (it keeps the ground it crept between peeks). */
     this._napping = false;
+    this._napWatched = false;
     this._napPlaced = false;
     Object.assign(this, { player, overlay, fade, listener, deathTuning });
     /** What the death took over, to give back: the camera's pose, the drop
@@ -712,10 +719,12 @@ export class SleepDemon extends Component {
 
   // ── A sleeper ──
 
-  /** A frame in bed: nothing of its rules, and through a peek, watching. */
+  /** A frame in bed: nothing of its rules, and through a peek of a watched
+   *  nap, watching. */
   _napWatch(dt) {
     if (!this._napping) {
       this._napping = true;
+      this._napWatched = this.random() < NAP_WATCH.chance;
       this._napPlaced = false;
       this.logic.start();
       this._hide();
@@ -727,7 +736,7 @@ export class SleepDemon extends Component {
       this._duck(1);
     }
     const o = this.figure.object3d;
-    if (!this.sleeper.peeking) {
+    if (!this._napWatched || !this.sleeper.peeking) {
       if (o.visible) this._hide();
       this._hushStep();
       this._stepIn = 0;

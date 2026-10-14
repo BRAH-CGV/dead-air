@@ -1353,4 +1353,65 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     run(1 / 60);
     expect(figure.object3d.position.z).toBeCloseTo(-4);
   });
+
+  describe('only now and then: one nap in ten', () => {
+    /** A demon whose nap rolls come from `rolls`, in turn (0 once they run out). */
+    function rolling(...rolls) {
+      const random = vi.fn(() => rolls.shift() ?? 0);
+      const d = new SleepDemon({
+        controller, stamina, figure, camera, rayHit, sleeper,
+        realDt: () => realDt, sounds: { footstep }, rand: () => 0, random,
+      });
+      d.onStart();
+      return d;
+    }
+    /** Lie down, then a nap's worth of peeks: open, shut, open … Whether it was ever seen. */
+    function nap(d, peeks = 5) {
+      sleeper.active = true;
+      sleeper.peeking = false;
+      let seen = false;
+      for (let i = 0; i < peeks; i++) {
+        sleeper.peeking = true;
+        for (let t = 0; t < 3; t += 1 / 60) { realDt = 1 / 60; d.onUpdate(0.25); seen ||= visible(); }
+        sleeper.peeking = false;
+        for (let t = 0; t < 1; t += 1 / 60) { realDt = 1 / 60; d.onUpdate(0.25); seen ||= visible(); }
+      }
+      sleeper.active = false;
+      d.onUpdate(1 / 60);
+      return seen;
+    }
+
+    it('is rare', () => {
+      expect(NAP_WATCH.chance).toBeCloseTo(0.1);
+    });
+
+    it('an unwatched nap never shows it, at any peek, nor makes a sound', () => {
+      const d = rolling(NAP_WATCH.chance);           // the roll misses: anything from the chance up
+      expect(nap(d, 8)).toBe(false);
+      expect(footstep.play).not.toHaveBeenCalled();
+    });
+
+    it('a watched one does', () => {
+      const d = rolling(NAP_WATCH.chance / 2);
+      expect(nap(d)).toBe(true);
+    });
+
+    it('rolled once per nap, as the player lies down: the peeks of one nap never change their mind', () => {
+      const d = rolling(0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      expect(nap(d, 8)).toBe(false);
+      expect(d.random).toHaveBeenCalledTimes(1);
+      // The next nap rolls again (0 from here on: watched).
+      expect(nap(d)).toBe(true);
+      expect(d.random).toHaveBeenCalledTimes(2);
+    });
+
+    it('rand still rolls it when no random is given', () => {
+      const d = new SleepDemon({
+        controller, stamina, figure, camera, rayHit, sleeper,
+        realDt: () => realDt, sounds: { footstep }, rand: () => 0.99,
+      });
+      d.onStart();
+      expect(nap(d)).toBe(false);
+    });
+  });
 });
