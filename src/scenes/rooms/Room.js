@@ -81,8 +81,10 @@ export class Room {
     this.doors = [];
 
     this._openingBySide = new Map();
-    /** Every piece of wall the shell built, for the lining to face.
-     *  @type {{side:string, a0:number, a1:number, y0:number, y1:number}[]} */
+    /** Every piece of wall the shell built, for the lining to face. `face`,
+     *  where given, is the plane of a wall face that isn't one of this room's
+     *  own walls (a corridor's open end, against the next room's wall).
+     *  @type {{side:string, a0:number, a1:number, y0:number, y1:number, face?:number}[]} */
     this._wallPieces = [];
   }
 
@@ -166,9 +168,9 @@ export class Room {
 
     const { gap } = LINING, origin = this.position;
     const rect = { x0: -sizeX / 2, x1: sizeX / 2, z0: -sizeZ / 2, z1: sizeZ / 2 };
-    const walls = this._wallPieces.map(({ side, a0, a1, y0, y1 }) => {
-      const inner = this._wallPlane(side) - SIDES[side].sign * (this.wallThick / 2 + gap);
-      return wallQuad(side, a0, a1, y0, y1, inner, origin);
+    const walls = this._wallPieces.map(({ side, a0, a1, y0, y1, face }) => {
+      const surface = face ?? this._wallPlane(side) - SIDES[side].sign * this.wallThick / 2;
+      return wallQuad(side, a0, a1, y0, y1, surface - SIDES[side].sign * gap, origin);
     });
     const sheets = [
       ['Lining_Walls',   walls,                                           materials.wall],

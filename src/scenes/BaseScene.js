@@ -344,7 +344,11 @@ export class BaseScene extends Scene {
     // The airlock's open end sits on the office's front outer wall face,
     // centred on the front doorway — the office doorway is its way in.
     const airlock = new Airlock(engine);
-    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontDoor = office.openings.find(o => o.side === 'front');
+    const frontDoorX = office.position[0] + frontDoor.offset;
+    // The office's front wall shows inside the airlock, round that doorway:
+    // the airlock lines it, as neither room's own walls cover it.
+    airlock.openEndDoorways = { back: { width: frontDoor.width, height: frontDoor.height } };
     const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
     airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
 

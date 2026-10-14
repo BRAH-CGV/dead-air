@@ -307,6 +307,11 @@ describe('BaseScene', () => {
     }
   });
 
+  it('tells the airlock of the office\'s front doorway, so the wall it butts against is lined round it', () => {
+    const front = scene.rooms.MainOffice.openings.find(o => o.side === 'front');
+    expect(scene.rooms.Airlock.openEndDoorways).toEqual({ back: { width: front.width, height: front.height } });
+  });
+
   it('the generator is a raycastable Interactable that switches the power grid', () => {
     const generator = sceneRoot.find('Outside').find('Generator');
     const interactable = generator.getComponent(Interactable);
