@@ -2,7 +2,7 @@ import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
-import { cursorToSky } from '../gameobjects/DishRig.js';
+import { cursorToSky, skyToCursor } from '../gameobjects/DishRig.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -28,6 +28,13 @@ import { cursorToSky } from '../gameobjects/DishRig.js';
 // held. One 60 fps frame moves 0.375° of sky, so a tap can stop inside a
 // signal's 12° acceptance.
 const CURSOR_RATE = DISH_SLEW_RATE / (Math.PI / 2);
+
+/** The dish's parked pose — the cursor starts here so opening the computer
+ *  for the first time doesn't slew the tower. Must match BaseScene's park
+ *  angles. */
+const PARK_YAW   = Math.PI / 4;          // 45°
+const PARK_PITCH = -55 * Math.PI / 180;  // −55°
+const _parkCursor = skyToCursor(PARK_YAW, PARK_PITCH);
 
 /** Shown while the radar cursor sits on the UFO's blob. */
 export const ANOMALY_WARNING = '⚠ EXTREME ELECTRICAL ANOMALY DETECTED — turn off power to avoid further damage';
@@ -69,8 +76,8 @@ export class ComputerTerminal extends Component {
    *  y -1..+1 (down..up). The disc's centre (0, 0) is the zenith and its rim
    *  the horizon — straight down from the centre is the horizon out of the
    *  window. Clamped to the unit circle so the cursor stays in the radar. */
-  _cursorX = 0;
-  _cursorY = 0;
+  _cursorX = _parkCursor.x;
+  _cursorY = _parkCursor.y;
 
   /** Edge-trigger for the interact key (prevent re-entry while held). */
   _interactHeld = false;

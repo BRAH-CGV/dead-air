@@ -24,7 +24,7 @@ vi.mock('@dimforge/rapier3d', () => {
   };
 });
 
-import { MainOffice } from './MainOffice.js';
+import { MainOffice, WINDOW_CORNER_RADIUS } from './MainOffice.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
@@ -696,6 +696,34 @@ describe('MainOffice window frame', () => {
     // Sill at 0.475 m, top at 2.825 m, in the back wall's plane.
     expect(pane.object3d.position.y).toBeCloseTo(1.65);
     expect(pane.object3d.position.z).toBeCloseTo(-5);
+  });
+
+  it('rounds the window\'s corners inside: a curved steel fillet in each, through the wall', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const fillets = room.root.object3d.getObjectByName('WindowFillets');
+    expect(fillets).toBeDefined();
+    const { width, height, sill } = room.openings.find(o => o.side === 'back');
+    fillets.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(fillets);
+    // Within the opening, reaching into each corner.
+    expect(box.min.x).toBeCloseTo(-width / 2, 3);
+    expect(box.max.x).toBeCloseTo(width / 2, 3);
+    expect(box.min.y).toBeCloseTo(sill, 3);
+    expect(box.max.y).toBeCloseTo(sill + height, 3);
+    // As deep as the wall.
+    expect(box.max.z - box.min.z).toBeCloseTo(room.wallThick, 3);
+    // But the middle of each side of the opening is clear.
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, sill + 0.02, 0), new THREE.Vector3(0, 0, -1));
+    expect(ray.intersectObject(fillets, true)).toHaveLength(0);
+    expect(WINDOW_CORNER_RADIUS).toBeGreaterThan(0.2);
+  });
+
+  it('bolts the window frame: a row of bolt heads round it, facing the room', () => {
+    const room = new MainOffice(makeEngine());
+    room.build();
+    const bolts = room.root.object3d.getObjectByName('WindowBolts');
+    expect(bolts?.isMesh).toBe(true);
   });
 
   it('frame parts are static boxes centred on their pivots', () => {
