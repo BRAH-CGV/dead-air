@@ -34,6 +34,10 @@ export class SignalTarget {
   /** True if the player chose to delete — discarded, does not count. */
   deleted = false;
 
+  /** True for the anomalous (red) signal — drawn red, scans itself, and
+   *  corrupts whatever drive it is saved to. Set by EvilSignal. */
+  evil = false;
+
   /** Fraction of the night shift (0..1) at which this signal starts
    *  fading in. Set by SignalManager when the night is generated. */
   appearAt = 0;
@@ -61,8 +65,9 @@ export class SignalTarget {
    * @param {number} [opts.appearAt]
    * @param {number} [opts.fadeSeconds=3]
    * @param {number} [opts.visibleSeconds=15]
+   * @param {boolean} [opts.evil=false]
    */
-  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, payloadUrl = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15 }) {
+  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, payloadUrl = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15, evil = false }) {
     this.id = id;
     this.yaw = yaw;
     this.pitch = pitch;
@@ -72,6 +77,7 @@ export class SignalTarget {
     this.appearAt = appearAt;
     this.fadeSeconds = fadeSeconds;
     this.visibleSeconds = visibleSeconds;
+    this.evil = evil;
   }
 
   /** True if the signal has been resolved (either saved or deleted). */

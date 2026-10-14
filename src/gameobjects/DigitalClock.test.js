@@ -35,11 +35,12 @@ describe('clockDigits', () => {
     }
   });
 
-  it('never reads :60: the last moments of an hour stay on :59', () => {
+  it('never reads :60: the last half-minute shows :59, exact hours roll over', () => {
     expect(clockDigits(0.995)).toEqual([1, 2, 5, 9]);      // 12:59:42 → 12:59
     expect(clockDigits(5.999)).toEqual([null, 5, 5, 9]);
-    expect(clockDigits(11.9999)).toEqual([1, 1, 5, 9]);    // 11:59:59 → 11:59
-    expect(clockDigits(12)).toEqual([1, 2, 0, 0]);         // noon is 12:00, not 0:00
+    expect(clockDigits(11.9999)).toEqual([1, 1, 5, 9]);    // 11:59:59 → 11:59, not 0:00
+    expect(clockDigits(1)).toEqual([null, 1, 0, 0]);       // 1:00 sharp
+    expect(clockDigits(12)).toEqual([1, 2, 0, 0]);         // noon, not 0:00
   });
 });
 

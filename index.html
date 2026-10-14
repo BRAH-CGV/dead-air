@@ -537,6 +537,29 @@
         transition: opacity 1.5s ease;
       }
       .whiteout-message.is-shown { opacity: 1; }
+
+      /* Evil signal DELETE warning — flashing red text at random positions. */
+#delete-warning {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 101;
+        overflow: hidden;
+        opacity: 0;
+        transition: opacity 5s ease-in;
+      }
+#delete-warning.is-active { opacity: 1; }
+      .delete-text {
+        position: absolute;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        color: #ff1111;
+        text-shadow: 0 0 8px #ff0000, 0 0 20px #cc0000;
+        opacity: 0;
+        white-space: nowrap;
+        user-select: none;
+        transition: none;
+      }
     </style>
   </head>
   <body>
@@ -578,6 +601,9 @@
     <div id="breaker-panel"></div>
 
     <div id="whiteout"><div class="whiteout-message"></div></div>
+    
+        <!-- Evil signal DELETE warning (flashing red text) -->
+    <div id="delete-warning"></div>
 
     <div id="loading">
       <div id="loading-track"><div id="loading-bar"></div></div>
