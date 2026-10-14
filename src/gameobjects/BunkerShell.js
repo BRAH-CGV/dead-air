@@ -33,9 +33,14 @@ import { GameObject } from '../core/GameObject.js';
 //
 // It stands wholly outside the rooms, so nothing indoors changes; the void
 // between it and the corridors' outer walls is closed by the roof and never
-// seen. Unlit nowhere, fog nowhere (like the rest of the building, see
-// BaseScene._keepFogOutside), solid to the player (a convex hull per slope
-// — too steep to climb, so the fence still holds).
+// seen. Fog nowhere (like the rest of the building, see
+// BaseScene._keepFogOutside), and solid to the player: a convex hull per
+// slope — not the slope's own shape but a sheer face at its toe, standing
+// `climbGuard` over the roof. Rapier's character controller counts any
+// upward-facing contact as ground, however steep, so against a sloped hull
+// every jump landed a little higher and the player walked up onto the roof.
+// The slope recedes from the toe as it rises, so the player, stopped there,
+// never reaches it: it is only seen.
 //
 // The concrete is baked at build into small DataTextures (no files): one
 // laid out up the slope — dirt at the foot, rust and grime streaks hanging
@@ -61,6 +66,9 @@ export const BUNKER = {
   /** Pale, sun-bleached concrete; a dark rust; steel for the louvres. */
   colors: { concrete: 0xc9c3b6, roof: 0x8f8a80, rust: 0x7a4422, steel: 0x2b2a27 },
   seed: 7,
+  /** Metres the slopes' colliders stand above the roof: out of reach of a
+   *  jump from anything in the yard (the buggy's roof included). */
+  climbGuard: 1.5,
 };
 
 /** A window's embrasure (metres). `splay` is how far the opening widens by
@@ -147,10 +155,13 @@ export function shellFaces({
       normal: [...e.normal], edge: e,
     });
 
-    // The hull: the face, and the same points pulled back onto the wall line.
+    // The hull: the ground the slope stands on, wall line to toe, stood up
+    // sheer to `climbGuard` over the roof — never the slope itself, which a
+    // jump would walk up (see the header).
     const back = ([x, z], d) => [x - e.normal[0] * d, z - e.normal[1] * d];
-    const face = [[a0, 0, batter], [b0, 0, batter], [b1, height, shoulder], [a1, height, shoulder]];
-    hulls.push(face.flatMap(([p, y, d]) => [at(p, y), at(back(p, d), y)]));
+    const top = height + BUNKER.climbGuard;
+    const foot = [a0, b0];
+    hulls.push([0, top].flatMap(y => foot.flatMap(p => [at(p, y), at(back(p, batter), y)])));
 
     for (const end of [false, true]) {
       if (!capped(e, end)) continue;
@@ -421,8 +432,8 @@ export function createBunkerShell({ engine, outline, height, roofProps = [], lou
   };
   go.resources = resources;
   go.disposeResources = () => { for (const r of resources) r.dispose(); resources.length = 0; };
-  /** One box per slope — the ground it stands on, toe to wall, floor to
-   *  roof — for the wind dust to keep out of. */
+  /** One box per slope — the ground it stands on, toe to wall, from the
+   *  floor up past the roof — for the wind dust to keep out of. */
   go.cutouts = () => faces.hulls.map(points => new THREE.Box3().setFromPoints(points.map(p => new THREE.Vector3(...p))));
   return go;
 }

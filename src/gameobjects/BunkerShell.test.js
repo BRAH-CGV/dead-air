@@ -114,10 +114,31 @@ describe('shellFaces', () => {
     expect(Math.min(...zs)).toBeCloseTo(-3 - 0.4);   // the brow over the window
   });
 
-  it('gives each slope a solid hull: its face and the wall line behind it', () => {
+  it('gives each slope a solid hull: from the wall line out to the toe', () => {
     const { hulls } = shellFaces({ outline: square, ...opts });
     expect(hulls).toHaveLength(4);
     for (const points of hulls) expect(points).toHaveLength(8);
+  });
+
+  it('stands each hull sheer at the toe and well above the roof, so no jump can land on the slope', () => {
+    // The character controller counts any upward-facing contact as ground, a
+    // 67° slope included: jumping against a sloped collider walks up it.
+    const { hulls, slopes } = shellFaces({ outline: square, ...opts });
+    hulls.forEach((points, i) => {
+      const [nx] = slopes[i].normal;
+      const out = p => (nx !== 0 ? Math.abs(p[0]) - 5 : Math.abs(p[2]) - 3);
+      const top = Math.max(...points.map(p => p[1]));
+      expect(top).toBeGreaterThanOrEqual(H + BUNKER.climbGuard - 1e-9);
+      // Every point is either on the wall line or out at the toe — at every height.
+      for (const p of points) {
+        const d = out(p);
+        expect(Math.abs(d) < 1e-6 || Math.abs(d - opts.batter) < 1e-6, `${p}`).toBe(true);
+      }
+      // And the toe reaches from the ground to the top.
+      const toe = points.filter(p => Math.abs(out(p) - opts.batter) < 1e-6);
+      expect(Math.min(...toe.map(p => p[1]))).toBe(0);
+      expect(Math.max(...toe.map(p => p[1]))).toBeCloseTo(top);
+    });
   });
 });
 
