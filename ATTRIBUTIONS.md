@@ -82,7 +82,7 @@ by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/bunk-bed.glb` |
 | **Manifest key** | `model:bunk-bed` |
 | **Used for** | Crew quarters bunk bed |
-| **Modifications** | None recorded |
+| **Modifications** | Base-colour texture edited: red blood marks painted out of the mattress |
 
 
 ### Locker
@@ -97,7 +97,7 @@ by Ottto3d is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/locker.glb` |
 | **Manifest key** | `model:locker` |
 | **Used for** | Metal storage locker prop |
-| **Modifications** | None recorded |
+| **Modifications** | Base-colour texture recoloured from rust to painted grey-blue metal |
 
 ### Metal barrel
 
@@ -329,7 +329,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
-| **Modifications** | None recorded |
+| **Modifications** | Bin base-colour texture recoloured from rust to galvanised grey |
 
 ### Crate
 
