@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Sandstorm, SANDSTORM, scheduleStorms, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
@@ -23,11 +23,8 @@ describe('scheduleStorms', () => {
     }
   });
 
-  it('two a night: as often as the old six-hour night had one', () => {
-    expect(SANDSTORM.perNight).toBe(2);
-    // The old night: one storm blowing somewhere in 0:30 … 5:54, 5.4 hours.
-    const [from, to] = SANDSTORM.stormHours;
-    expect((to - from) / SANDSTORM.perNight).toBeCloseTo(5.4, 0);
+  it('one a night (#107): two left no time for the tension to build', () => {
+    expect(SANDSTORM.perNight).toBe(1);
   });
 
   it('blows after dark, in order, never overlapping, and is over before 6 AM', () => {
@@ -45,13 +42,12 @@ describe('scheduleStorms', () => {
     }
   });
 
-  it('one in each half of the night: the evening and the small hours', () => {
+  it('any time after dark: from the evening to the small hours', () => {
     const early = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
     const late  = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0.999 });
     expect(clockHour(early[0].start)).toBeCloseTo(SANDSTORM.stormHours[0]);
-    expect(clockHour(late[0].start)).toBeLessThan(0.7);
-    expect(clockHour(early[1].start)).toBeGreaterThanOrEqual(0.7 - 1e-9);
-    expect(clockHour(late[1].start)).toBeGreaterThan(3);
+    expect(clockHour(early[0].start)).toBeLessThan(-4);   // before 8 PM
+    expect(clockHour(late[0].start)).toBeGreaterThan(2);  // after 2 AM
   });
 });
 
@@ -220,12 +216,18 @@ describe('Sandstorm', () => {
     expect(storm.level).toBe(1);
   });
 
-  it('blows for about an hour and a half of clock time', () => {
+  it('blows for about three hours of clock time (#107: they were too short)', () => {
     for (const r of [0, 0.5, 0.999]) {
-      const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r * 0.5 })[0];
-      expect(s.duration / HOUR).toBeGreaterThan(1.25);
-      expect(s.duration / HOUR).toBeLessThan(1.75);
+      const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r })[0];
+      expect(s.duration / HOUR).toBeGreaterThan(2.4);
+      expect(s.duration / HOUR).toBeLessThan(3.6);
     }
+  });
+
+  it('a summoned storm blows as long', () => {
+    const { storm } = makeRig({ night: 1, random: () => 0 });
+    storm.summon();
+    expect(storm._storm.duration / HOUR).toBeCloseTo(SANDSTORM.durationHours[0]);
   });
 
   it('dies down when the shift ends, and a new night starts calm', () => {
@@ -341,7 +343,21 @@ describe('Sandstorm — always after the UFO', () => {
   });
 });
 
-describe('Sandstorm — two storms a night', () => {
+describe('Sandstorm — two storms a night, if perNight goes back to two', () => {
+  // One a night for now (#107), but the queue still takes more: it is the
+  // one number to change.
+  let perNight;
+  beforeEach(() => { perNight = SANDSTORM.perNight; SANDSTORM.perNight = 2; });
+  afterEach(() => { SANDSTORM.perNight = perNight; });
+
+  it('fits two of the longer storms after dark, one in each half, never overlapping', () => {
+    for (const r of [0, 0.5, 0.999]) {
+      const [a, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r });
+      expect(b.start).toBeGreaterThanOrEqual(a.start + a.duration);
+      expect(clockHour(b.start + b.duration)).toBeLessThanOrEqual(SANDSTORM.stormHours[1] + 1e-9);
+    }
+  });
+
   it('blows the first, falls calm, then blows the second, each its own storm', () => {
     const { storm } = makeRig({ night: 2, random: () => 0 });
     const [a, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });

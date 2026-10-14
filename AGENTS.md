@@ -98,7 +98,7 @@ src/
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
-│   ├── Sandstorm.js     # Random dust storms from night 2: wind sound, fog, sky, dust
+│   ├── Sandstorm.js     # One long dust storm a night: wind sound, fog, sky, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
@@ -225,7 +225,7 @@ playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (n
    └──6 AM, quota missed──▶ gameOver ──[E]──▶ playing (same night, reset)
 ```
 
-**Rates, not counts.** Things happen as often per real minute as on the old five-minute night, so the longer night has more of them: `SIGNALS_PER_NIGHT` 10 (was 5) over the same share of the night, two storms (`SANDSTORM.perNight`, was one). The quota is 1.5× the old 3, 4, 5: 5, 6, 8 (`QUOTA_SCALE`); night 3's 8 fills a drive box. The UFO still comes once, on night 3.
+**Rates, not counts.** Things happen as often per real minute as on the old five-minute night, so the longer night has more of them: `SIGNALS_PER_NIGHT` 10 (was 5) over the same share of the night. Storms are the exception: one a night, as before, but twice as long (see Sandstorms). The quota is 1.5× the old 3, 4, 5: 5, 6, 8 (`QUOTA_SCALE`); night 3's 8 fills a drive box. The UFO still comes once, on night 3.
 
 Meeting the quota early does **not** end the shift — the core loop is "meet the quota, then survive until morning". The story reason there is no day shift: the Sun drowns the faint signals and heats up the dust storms.
 
@@ -343,7 +343,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 ### Sandstorms
 
-`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings two dust storms every night (`perNight`), night 1 included (the dust eyes stay away until night 2). They blow after dark, in `stormHours` (-4.5 … 5.9: 7:30 PM – 5:54 AM), split into equal parts with one storm wholly inside each, so one comes in the evening and one in the small hours and they never overlap. Each blows for about an hour and a half of clock time (`durationHours`, 1.3–1.7), building up and dying down over `rampSeconds` (`stormLevel`). The schedule follows the clock's own length and start (`scheduleStorms`); the next storm comes up when the last has blown over (a new `stormId`). For testing, `summon()` (the **K** key, to go before release) starts one at once, on any night, standing in for the next storm that hasn't started. `sandstorm.level` (0 … 1) is what the dust eyes read.
+`Sandstorm` (on `GameplaySystems`, after `Daylight`) brings one long dust storm every night (`perNight`), night 1 included (the dust eyes stay away until night 2). It blows after dark, somewhere wholly inside `stormHours` (-4.5 … 5.9: 7:30 PM – 5:54 AM), for about three hours of clock time (`durationHours`, 2.5–3.5; 125–175 real seconds), building up and dying down over `rampSeconds` (`stormLevel`). One long storm rather than two short ones (#107): two, each cutting the power, left no time for the tension to build. `perNight` is the one number to change: the stretch is split into that many equal parts with one storm wholly inside each, so they never overlap, and two of the longer storms still fit (a test keeps them fitting). The schedule follows the clock's own length and start (`scheduleStorms`); the next storm comes up when the last has blown over (a new `stormId`). For testing, `summon()` (the **K** key, to go before release) starts one at once, on any night, standing in for the next storm that hasn't started. `sandstorm.level` (0 … 1) is what the dust eyes read.
 
 - **Never with the UFO.** On a UFO night (`UFO.nights`) nothing is scheduled at random; instead a storm always follows the UFO, `afterUfoDelay` (10–30 s) after it has gone. Neither a scheduled storm nor K starts one while a visit is under way (`_ufoBusy`); a storm due then waits.
 - **Held.** While `sandstorm.held` is set (`DustEyes`, through a chase) the end keeps being pushed back past the die-down, so the storm stays at full until the player is away.
@@ -376,7 +376,7 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 ### Storm outages
 
-`StormOutage` (on `GameplaySystems`) takes the power out once every storm (`sandstorm.stormId`), at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
+`StormOutage` (on `GameplaySystems`) rolls `STORM_OUTAGE.chance` (50 %) as each storm comes up (`sandstorm.stormId`), so a storm is never a sure thing (#107). One that misses blows through with the lights steady. One that hits takes the power out once, at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
 
 ### Input system
 

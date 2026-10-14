@@ -7,10 +7,10 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
 // ─────────────────────────────────────────────
-// Every night brings two storms (SANDSTORM.perNight), one in each half of
-// the night, at random hours (night 1 too — the dust eyes stay away until
-// night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
-// down again. While it blows:
+// Every night brings one long storm (SANDSTORM.perNight), at a random hour
+// after dark (night 1 too — the dust eyes stay away until night 2; see
+// DustEyes). It builds up over `rampSeconds`, blows for about three hours of
+// clock time and dies down again. While it blows:
 //
 //   sound   none of its own. The wind outside is the Ambience's loop; the
 //           storm tells it how hard it is blowing (Ambience.setStorm), and
@@ -53,11 +53,13 @@ export const SANDSTORM = {
    *  midnight (7:30 PM is -4.5): 7:30 PM, after dark, to 5:54 AM. */
   stormHours: [-4.5, 5.9],
   /** Storms a night. The stretch is split into this many equal parts, one
-   *  storm somewhere wholly inside each: 5.2 hours apiece, as often as the
-   *  old six-hour night had its one (in 0:30 … 5:54). */
-  perNight: 2,
-  /** How long each blows, in clock hours — about an hour and a half. */
-  durationHours: [1.3, 1.7],
+   *  storm somewhere wholly inside each. One (#107): two a night, each
+   *  cutting the power, left no time for the tension to build between them.
+   *  Two still fit, with the longer storms, if it goes back up. */
+  perNight: 1,
+  /** How long each blows, in clock hours — about three: an hour and a half
+   *  was over before it had settled in (#107). */
+  durationHours: [2.5, 3.5],
   /** On a UFO night a storm always follows it, this long after it has gone
    *  (real seconds). */
   afterUfoDelay: [10, 30],
