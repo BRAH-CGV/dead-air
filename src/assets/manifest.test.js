@@ -33,6 +33,12 @@ describe('manifest', () => {
     }
   });
 
+  it('preloads the grow rack\'s UV fixture and plant, which the office builds from the cache', () => {
+    for (const key of ['model:light-ceiling', 'model:grow-plant']) {
+      expect(PRELOAD, key).toContain(key);
+    }
+  });
+
   it('catches a filename that drifts from its key', () => {
     // The rule is only worth having if it fails loudly.
     expect(validateManifest({

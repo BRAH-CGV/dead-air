@@ -10,6 +10,7 @@ import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
+import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { deskWingGeometry, deskWingOutline, WING } from './DeskWing.js';
 
@@ -53,8 +54,9 @@ const DRIVE_BOX_LAYOUT = [
 //     and the stand are render-only — a collider on the desk could stop the
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
-//   • The food corner, down the left wall: a two-tier rack of grow beds,
-//     then the dispenser and the bin, short of the doorway.
+//   • The food corner, down the left wall: a two-tier rack of grow beds
+//     under UV lights (GrowRack.js), then the dispenser and the bin, short
+//     of the doorway.
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
@@ -485,51 +487,14 @@ export class MainOffice extends Room {
     globe.addComponent(new GlobeSpin());
   }
 
-  /** Along the left wall, behind the dispenser: a rack of grow beds, two
-   *  tiers of three trays of soil and green, each tier under a strip of
-   *  grow light. The strips are glows, not lights: the light count is
-   *  compiled into every lit shader. One box is the collider — the whole
-   *  rack is solid to walk into — and the frame, trays and strips are drawn
-   *  on it. */
+  /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),
+   *  two tiers of three soil trays, each tier under UV grow lights, two
+   *  plants to a tray. One box is the collider — the whole rack is solid to
+   *  walk into — and the rack is drawn on it. */
   _buildGrowBeds() {
-    const size = [0.7, 1.6, 3.75];
+    const size = GROW_RACK.size;
     const go = this._addTurnedBox('GrowBeds', [-5.9 + size[0] / 2, size[1] / 2, -1.52], size, 0);
-
-    const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.6, metalness: 0.35 }));
-    const soil  = this._own(new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 1 }));
-    const green = this._own(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
-    const lamp  = this._own(new THREE.MeshStandardMaterial({
-      color: 0x241020, emissive: 0xff4fd8, emissiveIntensity: 1.4,
-    }));
-    const board  = this._own(new THREE.BoxGeometry(size[0], 0.04, size[2]));
-    const tray   = this._own(new THREE.BoxGeometry(0.52, 0.1, 1.05));
-    const leaves = this._own(new THREE.BoxGeometry(0.4, 0.14, 0.9));
-    const strip  = this._own(new THREE.BoxGeometry(0.06, 0.04, size[2] - 0.2));
-    const post   = this._own(new THREE.BoxGeometry(0.05, size[1], 0.05));
-
-    // Heights are from the floor; the rack's own origin is its middle.
-    const part = (geometry, material, x, y, z, name) => {
-      const mesh = new THREE.Mesh(geometry, material);
-      if (name) mesh.name = name;
-      mesh.position.set(x, y - size[1] / 2, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      go.object3d.add(mesh);
-    };
-
-    // Each tier: a board, three trays on it, the green in them, and a
-    // light strip 0.55 m above the board.
-    [0.33, 0.95].forEach((shelf, tier) => {
-      part(board, frame, 0, shelf, 0);
-      [-1.25, 0, 1.25].forEach((z, i) => {
-        part(tray, soil, 0, shelf + 0.07, z, `GrowBed_${tier * 3 + i + 1}`);
-        part(leaves, green, 0, shelf + 0.19, z);
-      });
-      part(strip, lamp, 0, shelf + 0.55, 0, `GrowLight_${tier + 1}`);
-    });
-
-    for (const x of [-(size[0] / 2 - 0.025), size[0] / 2 - 0.025]) {
-      for (const z of [-(size[2] / 2 - 0.025), size[2] / 2 - 0.025]) part(post, frame, x, size[1] / 2, z);
-    }
+    populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
   }
 
   /** Above the computer desk, where it reads from anywhere in the room. A
