@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { flattenModelParts } from '../core/ModelUtils.js';
 
 // The food corner's grow rack: a two-tier steel rack of soil trays, each tier
 // under a row of UV grow lights, two plants to a tray.
@@ -23,8 +24,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 /** Metres. `size` is the rack's footprint and height; `tiers` the heights of
  *  the two shelf boards from the floor; `trayZ` the three trays along it. */
 export const GROW_RACK = {
-  size: [0.7, 1.6, 3.75],
-  tiers: [0.28, 0.98],
+  size: [0.7, 1.75, 3.75],
+  tiers: [0.28, 1.02],
   trayZ: [-1.25, 0, 1.25],
   plantsPerTray: 2,
   seed: 7,
@@ -35,11 +36,12 @@ export const UV_LIGHT = { color: 0x8a2eff, intensity: 1.4 };
 const PLANT_WASH = { color: 0x4b1a8a, intensity: 0.25 };
 
 /** Plants are 0.35 m as authored; each grows to between these multiples. */
-const PLANT_SCALE = [0.8, 1.05];
+const PLANT_SCALE = [1.2, 1.45];
 
 const BOARD = 0.04;        // shelf board thickness
 const TRAY_RISE = 0.07;    // tray centre above its board
-const SOIL_TOP = 0.115;    // plants stand this far above the board
+const SOIL_TOP = 0.125;    // the soil's surface above the board
+const ROOT_SINK = 0.05;    // the plants' roots go this far into it
 
 /** Mulberry32: small, seedable, the same plants every build. */
 function rng(seed) {
@@ -53,27 +55,11 @@ function rng(seed) {
   };
 }
 
-/** Every mesh in a cached model with its transform relative to the model's
- *  root. A missing model gives none, so the caller can fall back. */
-function modelParts(assets, key) {
-  const model = assets?.get?.(key);
-  if (!model) return [];
-  model.updateMatrixWorld(true);
-  const inverse = new THREE.Matrix4().copy(model.matrixWorld).invert();
-  const parts = [];
-  model.traverse(o => {
-    if (!o.isMesh) return;
-    const material = Array.isArray(o.material) ? o.material[0] : o.material;
-    parts.push({ geometry: o.geometry, material, matrix: new THREE.Matrix4().multiplyMatrices(inverse, o.matrixWorld) });
-  });
-  return parts;
-}
-
 /**
  * Build the rack into `target`.
  * @param {THREE.Object3D} target  Where it goes: origin at the rack's middle.
  * @param {object} opts
- * @param {{ get(key: string): THREE.Object3D | undefined }} [opts.assets]
+ * @param {import('../core/AssetManager.js').AssetManager} [opts.assets]
  * @param {(resource: { dispose(): void }) => any} opts.own  Registers what it
  *   made to be freed with the room.
  * @returns {{ fixtures: THREE.InstancedMesh | null, plants: THREE.InstancedMesh[] }}
@@ -168,7 +154,7 @@ export function populateGrowRack(target, { assets, own }) {
   for (const tray of trays) target.add(tray);
 
   // ── The grow lights: the ceiling light, flipped, one over each tray. ──
-  const lightParts = modelParts(assets, 'model:light-ceiling');
+  const lightParts = flattenModelParts('model:light-ceiling', assets);
   const hangY = [tiers[1] - BOARD / 2, H - BOARD];               // the underside it hangs from, per tier
   const fixtureMatrices = [];
   hangY.forEach(y => {
@@ -179,7 +165,7 @@ export function populateGrowRack(target, { assets, own }) {
     }
   });
   const fixtures = instance('GrowLights', lightParts, fixtureMatrices, part => {
-    const m = own(part.material.clone());
+    const m = own((Array.isArray(part.material) ? part.material[0] : part.material).clone());
     m.emissive.setHex(UV_LIGHT.color);
     m.emissiveIntensity = UV_LIGHT.intensity;
     return m;
@@ -200,7 +186,7 @@ export function populateGrowRack(target, { assets, own }) {
   }
 
   // ── The plants: two to a tray, each its own height and way round. ──
-  const plantParts = modelParts(assets, 'model:grow-plant');
+  const plantParts = flattenModelParts('model:grow-plant', assets);
   const rand = rng(seed);
   const plantMatrices = [];
   const q = new THREE.Quaternion();
@@ -212,7 +198,7 @@ export function populateGrowRack(target, { assets, own }) {
         const along = (i - (plantsPerTray - 1) / 2) * 0.5 + (rand() - 0.5) * 0.08;
         const s = PLANT_SCALE[0] + rand() * (PLANT_SCALE[1] - PLANT_SCALE[0]);
         plantMatrices.push(new THREE.Matrix4().compose(
-          new THREE.Vector3((rand() - 0.5) * 0.1, shelf + SOIL_TOP - half, z + along),
+          new THREE.Vector3((rand() - 0.5) * 0.1, shelf + SOIL_TOP - ROOT_SINK - half, z + along),
           q.setFromAxisAngle(up, rand() * Math.PI * 2),
           scale.setScalar(s),
         ));
@@ -220,7 +206,7 @@ export function populateGrowRack(target, { assets, own }) {
     }
   }
   const plants = instancedAll('GrowPlants', plantParts, plantMatrices, part => {
-    const m = own(part.material.clone());
+    const m = own((Array.isArray(part.material) ? part.material[0] : part.material).clone());
     m.emissive.setHex(PLANT_WASH.color);
     m.emissiveIntensity = PLANT_WASH.intensity;
     return m;

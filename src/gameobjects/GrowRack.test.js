@@ -18,7 +18,7 @@ function fakeAssets() {
     'model:light-ceiling': model('fixture', [0.12, 0.068, 0.8], fixtureMaterial),
     'model:grow-plant': model('plant', [0.18, 0.35, 0.19], plantMaterial),
   };
-  return { get: key => models[key], fixtureMaterial, plantMaterial };
+  return { get: key => ({ scene: models[key] }), fixtureMaterial, plantMaterial };
 }
 
 function build(assets = fakeAssets()) {
@@ -84,7 +84,7 @@ describe('GrowRack', () => {
     for (let i = 0; i < fixtures.count; i++) {
       fixtures.getMatrixAt(i, m);
       box.copy(fixtures.geometry.boundingBox).applyMatrix4(m);
-      const tier = box.max.y > 0.4 ? 1 : 0;      // rack-local: origin is the rack's middle
+      const tier = box.max.y > 0.5 ? 1 : 0;      // rack-local: origin is the rack's middle
       tiers.set(tier, Math.min(tiers.get(tier) ?? Infinity, box.min.y));
     }
     const top = [0, 0];
@@ -116,10 +116,26 @@ describe('GrowRack', () => {
       plants[0].getMatrixAt(i, m);
       m.decompose(p, q, s);
       heights.add(s.y.toFixed(3));
-      expect(s.y).toBeGreaterThan(0.7);
-      expect(s.y).toBeLessThan(1.3);
+      expect(s.y).toBeGreaterThan(1.1);          // bigger than the 0.35 m model
+      expect(s.y).toBeLessThan(1.6);
     }
     expect(heights.size).toBeGreaterThan(3);
+  });
+
+  it('sinks every plant\'s roots into the soil, never floating above it', () => {
+    const { plants } = build();
+    const half = GROW_RACK.size[1] / 2;
+    const soil = GROW_RACK.tiers.map(shelf => shelf + 0.125 - half);   // the soil's surface, rack-local
+    const m = new THREE.Matrix4();
+    const box = new THREE.Box3();
+    plants[0].geometry.computeBoundingBox();
+    for (let i = 0; i < plants[0].count; i++) {
+      plants[0].getMatrixAt(i, m);
+      box.copy(plants[0].geometry.boundingBox).applyMatrix4(m);
+      const surface = soil.reduce((a, b) => (Math.abs(b - box.min.y) < Math.abs(a - box.min.y) ? b : a));
+      expect(box.min.y).toBeLessThan(surface - 0.03);
+      expect(box.min.y).toBeGreaterThan(surface - 0.1);       // still inside the tray
+    }
   });
 
   it('adds no light sources: the light count is compiled into every lit shader', () => {
@@ -141,7 +157,7 @@ describe('GrowRack', () => {
   });
 
   it('falls back to a glowing strip per tier when the models are not loaded', () => {
-    const { target, fixtures, plants } = build({ get: () => undefined });
+    const { target, fixtures, plants } = build({ get: key => { throw new Error(`'${key}' is not loaded`); } });
     expect(fixtures).toBeNull();
     expect(plants).toEqual([]);
     const glows = meshes(target).filter(o => o.material.emissive?.getHex());
@@ -158,8 +174,8 @@ describe('GrowRack', () => {
   it('never owns the cached geometry, which other copies share', () => {
     const { owned, assets } = build();
     const geometries = new Set();
-    assets.get('model:grow-plant').traverse(o => o.isMesh && geometries.add(o.geometry));
-    assets.get('model:light-ceiling').traverse(o => o.isMesh && geometries.add(o.geometry));
+    assets.get('model:grow-plant').scene.traverse(o => o.isMesh && geometries.add(o.geometry));
+    assets.get('model:light-ceiling').scene.traverse(o => o.isMesh && geometries.add(o.geometry));
     for (const g of geometries) expect(owned).not.toContain(g);
   });
 });
