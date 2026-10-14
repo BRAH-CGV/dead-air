@@ -534,6 +534,20 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/scanner-alert.mp3',
   },
+  // The corrupted drive sparking (EvilSignal): one of three, at random, on
+  // each hop.
+  'sfx:spark-1': {
+    type: 'audio',
+    url: 'assets/audio/spark-1.mp3',
+  },
+  'sfx:spark-2': {
+    type: 'audio',
+    url: 'assets/audio/spark-2.mp3',
+  },
+  'sfx:spark-3': {
+    type: 'audio',
+    url: 'assets/audio/spark-3.mp3',
+  },
   // The security monitor (CameraTerminal): a camera's pan motor, looped
   // while it turns (the loud first 7 s of the recording only); static,
   // looped while a feed comes in; and the clunk of its flash coming on, and

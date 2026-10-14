@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EvilSignal, EVIL } from './EvilSignal.js';
+import { EvilSignal, EVIL, SPARK_SOUNDS } from './EvilSignal.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 
@@ -27,7 +28,7 @@ function makeDrive() {
   };
 }
 
-function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
+function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice } = {}) {
   const controller = {
     state: 'playing',
     nightNumber: night,
@@ -65,12 +66,13 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
   const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
-  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
+  const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
+  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random, voice });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice };
 }
 
 /** The single red target in the manager's list. */
@@ -687,6 +689,61 @@ describe('EvilSignal redOut — last-moment red filter', () => {
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal sparks — sound', () => {
+  /** Infect a drive, then run one hop interval. */
+  function hopOnce(rig) {
+    rig.evil.summon();
+    rig.evil.hover(evilSig(rig.signalManager));
+    rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+  }
+
+  it('sparks with one of three clips, from the drive, on each hop', () => {
+    const drive = makeDrive();
+    drive.corrupted = true;
+    const rig = makeRig({ drive });
+    hopOnce(rig);
+    expect(rig.voice.play).toHaveBeenCalledTimes(1);
+    const [from, set, volume] = rig.voice.play.mock.calls[0];
+    expect(from).toBe(drive);
+    expect(set.keys).toEqual(SPARK_SOUNDS.clips);
+    expect(SPARK_SOUNDS.clips).toHaveLength(3);
+    expect(volume).toBeGreaterThan(0);
+  });
+
+  it('is louder as the countdown runs out', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    hopOnce(rig);
+    const first = rig.voice.play.mock.calls[0][2];
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
+    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    const lateCalls = rig.voice.play.mock.calls;
+    expect(lateCalls.at(-1)[2]).toBeGreaterThan(first);
+    expect(lateCalls.at(-1)[2]).toBeLessThanOrEqual(1);
+  });
+
+  it('is silent when the drive is wiped, and lets go of its voice with the scene', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    hopOnce(rig);
+    drive.setEjected();
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.driveHopSeconds * 3);
+    expect(rig.voice.play).not.toHaveBeenCalled();
+    rig.evil.onDestroy();
+    expect(rig.voice.dispose).toHaveBeenCalled();
+  });
+
+  it('has its clips ready before the first hop', () => {
+    for (const key of SPARK_SOUNDS.clips) {
+      expect(ASSETS[key], key).toMatchObject({ type: 'audio', url: `assets/audio/${key.slice(4)}.mp3` });
+      expect(PRELOAD, key).toContain(key);
+    }
   });
 });
 

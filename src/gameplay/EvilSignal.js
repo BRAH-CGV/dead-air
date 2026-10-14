@@ -3,6 +3,7 @@ import { SignalTarget } from './SignalTarget.js';
 import { VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 import { DriveSparks, SPARKS } from './DriveSparks.js';
+import { ClipVoice, clipSet } from '../components/ClipVoice.js';
 import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 
 // ─────────────────────────────────────────────
@@ -75,6 +76,15 @@ export const EVIL = {
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
   id: -1,
+};
+
+/** The corrupted drive sparking: one of three clips, at random, from the
+ *  drive on each hop (when the burst of sparks flies). They start at
+ *  `minLevel` of `volume` and climb to it as the silence timer runs out. */
+export const SPARK_SOUNDS = {
+  clips: ['sfx:spark-1', 'sfx:spark-2', 'sfx:spark-3'],
+  volume: 0.7,
+  minLevel: 0.5,
 };
 
 export class EvilSignal extends Component {
@@ -170,13 +180,17 @@ export class EvilSignal extends Component {
    * @param {import('./DriveManager.js').DriveManager} [opts.driveManager]
    * @param {import('../gameobjects/Satellite.js').Satellite} [opts.satellite]
    * @param {() => number} [opts.random]
+   * @param {{ play: Function, dispose: Function }} [opts.voice]  Plays the
+   *        sparks; a ClipVoice when left out.
    */
   constructor({
     controller = null, signalManager = null, terminal = null,
-    driveManager = null, satellite = null, random = Math.random,
+    driveManager = null, satellite = null, random = Math.random, voice = new ClipVoice(),
   } = {}) {
     super();
     Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, random });
+    this._voice = voice;
+    this._sparkClips = clipSet(SPARK_SOUNDS.clips);
   }
 
   onStart() {
@@ -184,6 +198,7 @@ export class EvilSignal extends Component {
   }
 
   onDestroy() {
+    this._voice.dispose();
     this._release();
     this._offNight?.();
     this._offNight = null;
@@ -350,6 +365,10 @@ export class EvilSignal extends Component {
             this._kickDrive(corrupted, kickStrength);
             this._sparks?.burst(
               SPARKS.burstCount[0] + (Math.random() * (SPARKS.burstCount[1] - SPARKS.burstCount[0])) | 0,
+            );
+            this._voice.play(
+              corrupted, this._sparkClips,
+              SPARK_SOUNDS.volume * (SPARK_SOUNDS.minLevel + (1 - SPARK_SOUNDS.minLevel) * Math.min(doomFraction, 1)),
             );
           }
         }
