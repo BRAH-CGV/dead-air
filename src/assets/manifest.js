@@ -250,6 +250,13 @@ const PLACED = {
     scale: 0.25,
     physics: 'static',
   },
+  // The security cameras' monitor on the office desk's left wing: the
+  // bottom-left screen of wall-screen.glb, cut out, 0.46 m wide, facing +z,
+  // its foot on the floor, its screen glowing.
+  'model:camera-monitor': {
+    type: 'model',
+    url: 'assets/models/camera-monitor.glb',
+  },
   // The bedroom's desk. Modelled around its centre at 1.0 × 0.9 × 2.0 m;
   // 0.88 takes it to a 1.76 × 0.88 m desk with its top at 0.79 m. Its
   // drawers face +x, its long side runs along z.

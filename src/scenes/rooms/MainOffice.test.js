@@ -288,34 +288,46 @@ describe('MainOffice', () => {
     expect(Math.hypot(pos.x - 0.65, pos.z + 2.26)).toBeGreaterThan(0.25);
   });
 
-  it('stands the security-camera monitor on the left wing, turned to the seat, solid for the interact ray', () => {
+  it('stands the security-camera monitor on the left wing, square to the wing, solid for the interact ray', () => {
     const monitor = room.root.find('CameraMonitor');
     expect(monitor).not.toBeNull();
     expect(room.cameraMonitor).toBe(monitor);
+
+    // The real model (the bottom-left screen of wall-screen.glb), drawn only:
+    // the collider below is what the interact ray lands on.
+    const model = room.root.find('CameraMonitorModel');
+    expect(model.physicsAssetKey).toBe('model:camera-monitor');
+    expect(model.rigidBody).toBeFalsy();
+    expect(model.object3d.position.toArray()).toEqual(
+      [monitor.object3d.position.x, 0.864, monitor.object3d.position.z]);   // on the wing's top
+    expect(model.object3d.rotation.y).toBeCloseTo(monitor.object3d.rotation.y);
+    // The screen is a vital function, like the terminal's glow: it stays lit
+    // through a blow-out (PowerGrid reads `unbreakable`).
+    expect(model.object3d.userData.unbreakable).toBe(true);
 
     // On the left wing's top, well in from its edges.
     const { top, centre } = deskWingOutline(-1, { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95 });
     const pos = monitor.object3d.position;
     expect(Math.hypot(pos.x - centre[0], pos.z - centre[1])).toBeLessThan(0.15);
-    const box = new THREE.Box3().setFromObject(monitor.object3d);
-    expect(box.min.y).toBeCloseTo(0.864, 2);               // standing on the top
+    const half = monitor.collider.halfExtents();
+    expect(pos.y - half.y).toBeCloseTo(0.864, 2);                    // standing on the top
+    const yaw = monitor.object3d.rotation.y;
     const xs = top.map(p => p[0]);
-    expect(box.max.x).toBeLessThan(Math.max(...xs));
-    expect(box.min.x).toBeGreaterThan(Math.min(...xs));
+    for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+      const x = pos.x + Math.cos(yaw) * sx * half.x + Math.sin(yaw) * sz * half.z;
+      expect(x).toBeLessThan(Math.max(...xs));
+      expect(x).toBeGreaterThan(Math.min(...xs));
+    }
 
-    // Its screen looks back toward the seat (in front of the desk, +z, to the right).
+    // Its screen faces straight out of the wing's front edge, square to the
+    // wing (which is turned 45°): toward the front of the room and the seat.
     const facing = new THREE.Vector3(0, 0, 1).applyEuler(monitor.object3d.rotation);
-    expect(facing.x).toBeGreaterThan(0.5);
-    expect(facing.z).toBeGreaterThan(0.3);
+    expect(facing.x).toBeCloseTo(Math.SQRT1_2);
+    expect(facing.z).toBeCloseTo(Math.SQRT1_2);
 
     // Something for the interact ray to land on: its own fixed body.
     expect(monitor.rigidBody.isFixed()).toBe(true);
     expect(engine._bodyToGO.get(monitor.rigidBody.handle)).toBe(monitor);
-
-    // The screen is a vital function, like the terminal's glow: it stays lit
-    // through a blow-out (PowerGrid reads `unbreakable`).
-    const screen = monitor.object3d.getObjectByName('CameraMonitorScreen');
-    expect(screen.userData.unbreakable).toBe(true);
     // No Interactable of its own: the scene attaches the CameraTerminal's.
     expect(monitor.getComponent(Interactable)).toBeNull();
   });

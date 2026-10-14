@@ -371,6 +371,15 @@ by ribot02 is licensed under Creative Commons Attribution
 | **Used for** | Wall-mounted retro CRT/monitor screens |
 | **Modifications** | None recorded |
 
+The security-camera monitor is cut from the same model:
+
+| | |
+|---|---|
+| **File** | `public/assets/models/camera-monitor.glb` |
+| **Manifest key** | `model:camera-monitor` |
+| **Used for** | The security-camera monitor on the office desk |
+| **Modifications** | The bottom-left screen only, cut out of the bank of four; turned to face +z, scaled to 0.46 m wide, stood on the floor; screen given a faint glow |
+
 ### Interior door
 
 "Aluminum door" (https://sketchfab.com/3d-models/aluminum-door-4200759a99154a9fbc6c74fd132371cb)
