@@ -237,6 +237,12 @@ const PLACED = {
     url: 'assets/models/dish-tower.glb',
     physics: 'kinematic',
   },
+  // The food corner's grow rack (GrowRack.js): the ceiling light, hung as a
+  // UV grow light.
+  'model:light-ceiling': {
+    type: 'model',
+    url: 'assets/models/light-ceiling.glb',
+  },
   // The airlock's suit locker, and the bedroom's lockers.
   'model:locker': {
     type: 'model',
@@ -264,6 +270,40 @@ const PLACED = {
     type: 'model',
     url: 'assets/models/trash-bin.glb',
     scale: 0.25,
+    physics: 'static',
+  },
+  // The power switch in the yard. Modelled 4.5 m long around a point below
+  // its middle; 0.44 takes it to a 2.0 × 1.24 × 0.89 m diesel set, wheels
+  // on the ground. Its control panel is on its −z side.
+  'model:generator': {
+    type: 'model',
+    url: 'assets/models/generator.glb',
+    scale: 0.44,
+    origin: 'floor',
+    physics: 'static',
+  },
+  // The security cameras' monitor on the office desk's left wing: the
+  // bottom-left screen of wall-screen.glb, cut out, 0.6 m wide, facing +z,
+  // its foot on the floor, its screen dark as if switched off.
+  'model:camera-monitor': {
+    type: 'model',
+    url: 'assets/models/camera-monitor.glb',
+  },
+  // The bedroom's desk. Modelled around its centre at 1.0 × 0.9 × 2.0 m;
+  // 0.88 takes it to a 1.76 × 0.88 m desk with its top at 0.79 m. Its
+  // drawers face +x, its long side runs along z.
+  'model:simple-desk': {
+    type: 'model',
+    url: 'assets/models/simple-desk.glb',
+    scale: 0.88,
+    origin: 'floor',
+    physics: 'static',
+  },
+  // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
+  // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
+  'model:bigger-shelf': {
+    type: 'model',
+    url: 'assets/models/bigger-shelf.glb',
     physics: 'static',
   },
   'model:shelf': {
@@ -591,16 +631,6 @@ const PLACED = {
  * @type {Record<string, ModelEntry>}
  */
 const LIBRARY = {
-  'model:blast-door-closed': {
-    type: 'model',
-    url: 'assets/models/blast-door-closed.glb',
-    physics: 'static',
-  },
-  'model:blast-door-open': {
-    type: 'model',
-    url: 'assets/models/blast-door-open.glb',
-    physics: 'static',
-  },
   'model:server-console': {
     type: 'model',
     url: 'assets/models/server-console.glb',
@@ -611,23 +641,9 @@ const LIBRARY = {
     url: 'assets/models/server-rack-tall.glb',
     physics: 'static',
   },
-  'model:couch': {
-    type: 'model',
-    url: 'assets/models/couch.glb',
-    physics: 'static',
-  },
   'model:barrel': {
     type: 'model',
     url: 'assets/models/barrel.glb',
-    physics: 'static',
-  },
-  'model:soap-dispenser': {
-    type: 'model',
-    url: 'assets/models/soap-dispenser.glb',
-  },
-  'model:vending-machine': {
-    type: 'model',
-    url: 'assets/models/vending-machine.glb',
     physics: 'static',
   },
   'model:bush': {
@@ -642,20 +658,6 @@ const LIBRARY = {
   'model:door-interior': {
     type: 'model',
     url: 'assets/models/door-interior.glb',
-    physics: 'static',
-  },
-  'model:generator': {
-    type: 'model',
-    url: 'assets/models/generator.glb',
-    physics: 'static',
-  },
-  'model:light-ceiling': {
-    type: 'model',
-    url: 'assets/models/light-ceiling.glb',
-  },
-  'model:simple-desk': {
-    type: 'model',
-    url: 'assets/models/simple-desk.glb',
     physics: 'static',
   },
   'model:wall-light': {

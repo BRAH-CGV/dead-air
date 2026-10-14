@@ -11,6 +11,7 @@ import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
+import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
@@ -48,14 +49,15 @@ const DRIVE_BOX_LAYOUT = [
 //   • The station: the desk top carries on into an angled wing each side
 //     (`DeskWing_*`, see DeskWing.js), drawn with the desk's own material
 //     so it reads as one piece of furniture. On the left one stands the
-//     security-camera monitor (a placeholder box; the scene attaches its
-//     CameraTerminal). On the right one stand a digital clock and a globe
+//     security-camera monitor (camera-monitor.glb, square to the wing; the
+//     scene attaches its CameraTerminal). On the right one stand a digital clock and a globe
 //     on its stand; [E] on the globe gives it a spin (GlobeSpin). The clock
 //     and the stand are render-only — a collider on the desk could stop the
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
-//   • The food corner, down the left wall: a two-tier rack of grow beds,
-//     then the dispenser and the bin, short of the doorway.
+//   • The food corner, down the left wall: a two-tier rack of grow beds
+//     under UV lights (GrowRack.js), then the dispenser and the bin, short
+//     of the doorway.
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
@@ -95,8 +97,9 @@ const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: 
  *  turns to face. */
 const SEAT = [0, -1.45];
 
-/** The security-camera monitor on the left wing: casing width, height, depth. */
-const CAMERA_MONITOR = [0.42, 0.36, 0.36];
+/** The security-camera monitor on the left wing (camera-monitor.glb):
+ *  width, height, depth. */
+const CAMERA_MONITOR = [0.6, 0.379, 0.331];
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -449,38 +452,22 @@ export class MainOffice extends Room {
     }
   }
 
-  /** The security cameras' monitor, a placeholder: a dark casing on the
-   *  left wing's top, its screen turned to the seat. The casing is the
-   *  collider the interact ray lands on; BaseScene attaches the
-   *  CameraTerminal and its Interactable, as it does the computer's. The
-   *  screen is a vital function like the terminal's glow — with the
-   *  generator running it stays lit through a blow-out. */
+  /** The security cameras' monitor on the left wing's top: the bottom-left
+   *  screen of wall-screen.glb, cut out as camera-monitor.glb. It is turned
+   *  square to the wing — the wing is set at 45°, so the screen looks
+   *  straight out of its front edge, toward the front of the room. A box
+   *  the size of the model is the collider the interact ray lands on;
+   *  BaseScene attaches the CameraTerminal and its Interactable to it, as it
+   *  does the computer's. The model is drawn only. Its screen is dark glass,
+   *  as if switched off, until it is given something to show. */
   _buildCameraMonitor() {
     const [w, h, d] = CAMERA_MONITOR;
     const [cx, cz] = deskWingOutline(-1, DESK).centre;
-    const yaw = Math.atan2(SEAT[0] - cx, SEAT[1] - cz);   // its front (+z) to the seat
-    const casing = this._own(new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6, metalness: 0.3 }));
-    const go = this._addTurnedBox('CameraMonitor', [cx, DESK.top + h / 2, cz], [w, h, d], yaw, casing);
-
-    const screen = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(w - 0.08, h - 0.11, 0.01)),
-      this._own(new THREE.MeshStandardMaterial({
-        color: 0x0a0f12, emissive: 0x8fb4c8, emissiveIntensity: 0.55, roughness: 0.3,
-      })),
-    );
-    screen.name = 'CameraMonitorScreen';
-    screen.userData.unbreakable = true;
-    screen.position.set(0, 0.025, d / 2 + 0.005);
-    go.object3d.add(screen);
-
-    // A strip of tally lights under the screen, one per feed.
-    const led = this._own(new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
-    const dot = this._own(new THREE.BoxGeometry(0.012, 0.012, 0.006));
-    for (let i = 0; i < 6; i++) {
-      const mesh = new THREE.Mesh(dot, led);
-      mesh.position.set(-0.1 + i * 0.04, -h / 2 + 0.03, d / 2 + 0.003);
-      go.object3d.add(mesh);
-    }
+    const yaw = Math.PI / 4;   // its front (+z) square to the wing
+    const go = this._addTurnedBox('CameraMonitor', [cx, DESK.top + h / 2, cz], [w, h, d], yaw);
+    const model = this._spawnProp('model:camera-monitor', {
+      name: 'CameraMonitorModel', position: [cx, DESK.top, cz], rotationY: yaw, physics: 'none',
+    });
     this.cameraMonitor = go;
   }
 
@@ -509,51 +496,14 @@ export class MainOffice extends Room {
     globe.addComponent(new GlobeSpin());
   }
 
-  /** Along the left wall, behind the dispenser: a rack of grow beds, two
-   *  tiers of three trays of soil and green, each tier under a strip of
-   *  grow light. The strips are glows, not lights: the light count is
-   *  compiled into every lit shader. One box is the collider — the whole
-   *  rack is solid to walk into — and the frame, trays and strips are drawn
-   *  on it. */
+  /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),
+   *  two tiers of three soil trays, each tier under UV grow lights, two
+   *  plants to a tray. One box is the collider — the whole rack is solid to
+   *  walk into — and the rack is drawn on it. */
   _buildGrowBeds() {
-    const size = [0.7, 1.6, 3.75];
+    const size = GROW_RACK.size;
     const go = this._addTurnedBox('GrowBeds', [-5.9 + size[0] / 2, size[1] / 2, -1.52], size, 0);
-
-    const frame = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.6, metalness: 0.35 }));
-    const soil  = this._own(new THREE.MeshStandardMaterial({ color: 0x2a1c14, roughness: 1 }));
-    const green = this._own(new THREE.MeshStandardMaterial({ color: 0x2f6b3a, roughness: 0.9 }));
-    const lamp  = this._own(new THREE.MeshStandardMaterial({
-      color: 0x241020, emissive: 0xff4fd8, emissiveIntensity: 1.4,
-    }));
-    const board  = this._own(new THREE.BoxGeometry(size[0], 0.04, size[2]));
-    const tray   = this._own(new THREE.BoxGeometry(0.52, 0.1, 1.05));
-    const leaves = this._own(new THREE.BoxGeometry(0.4, 0.14, 0.9));
-    const strip  = this._own(new THREE.BoxGeometry(0.06, 0.04, size[2] - 0.2));
-    const post   = this._own(new THREE.BoxGeometry(0.05, size[1], 0.05));
-
-    // Heights are from the floor; the rack's own origin is its middle.
-    const part = (geometry, material, x, y, z, name) => {
-      const mesh = new THREE.Mesh(geometry, material);
-      if (name) mesh.name = name;
-      mesh.position.set(x, y - size[1] / 2, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      go.object3d.add(mesh);
-    };
-
-    // Each tier: a board, three trays on it, the green in them, and a
-    // light strip 0.55 m above the board.
-    [0.33, 0.95].forEach((shelf, tier) => {
-      part(board, frame, 0, shelf, 0);
-      [-1.25, 0, 1.25].forEach((z, i) => {
-        part(tray, soil, 0, shelf + 0.07, z, `GrowBed_${tier * 3 + i + 1}`);
-        part(leaves, green, 0, shelf + 0.19, z);
-      });
-      part(strip, lamp, 0, shelf + 0.55, 0, `GrowLight_${tier + 1}`);
-    });
-
-    for (const x of [-(size[0] / 2 - 0.025), size[0] / 2 - 0.025]) {
-      for (const z of [-(size[2] / 2 - 0.025), size[2] / 2 - 0.025]) part(post, frame, x, size[1] / 2, z);
-    }
+    populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
   }
 
   /** Above the computer desk, where it reads from anywhere in the room. A
