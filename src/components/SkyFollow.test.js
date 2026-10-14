@@ -93,4 +93,17 @@ describe('SkyFollow before the scene is wired up', () => {
 
     expect(() => follow.onLateUpdate(1 / 60)).not.toThrow();
   });
+
+  it('rides the camera the frame is drawn through, when that is not the player’s', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const cctv = new THREE.PerspectiveCamera();
+    cctv.position.set(16, 2.6, 1);
+    cctv.updateMatrixWorld();
+
+    const { go, follow } = buildSky(camera);
+    go.scene.userData.engine.renderCamera = cctv;
+    follow.onLateUpdate(1 / 60);
+
+    expect(go.object3d.position.toArray()).toEqual([16, 2.6, 1]);
+  });
 });

@@ -238,5 +238,95 @@ describe('ShadowScheduler', () => {
       shadows.release();
       expect(shadows._bodyPoses.size).toBe(0);
     });
+
+    // A light with a range lights nothing past it, so a body moving out
+    // there can't change its map. Carrying a drive across the office must
+    // not redraw every corridor's lamp (six passes each), every frame (#87).
+    describe('only the lights that reach the body', () => {
+      /** The scene above, its lamp given a range of 8 m. */
+      function ranged() {
+        const s = scene();
+        s.lamp.distance = 8;
+        return s;
+      }
+      const at = (b, x, z = 0) => { b.object3d.position.set(x, 0, z); b.object3d.updateMatrixWorld(true); };
+
+      it('leaves a ranged lamp alone while a body moves out of its reach — the moon still redraws', () => {
+        const { root, moon, lamp } = ranged();
+        const shadows = new ShadowScheduler();
+        shadows.adopt(root);
+        const drive = body(root);
+        at(drive, 20);
+        const bodies = new Map([[1, drive]]);
+        shadows.update(bodies);
+        rendered(moon, lamp);
+
+        at(drive, 21);
+        shadows.update(bodies);
+        expect(moon.shadow.needsUpdate).toBe(true);
+        expect(lamp.shadow.needsUpdate).toBe(false);
+      });
+
+      it('redraws it for a body moving within its reach', () => {
+        const { root, moon, lamp } = ranged();
+        const shadows = new ShadowScheduler();
+        shadows.adopt(root);
+        const drive = body(root);
+        at(drive, 3);
+        const bodies = new Map([[1, drive]]);
+        shadows.update(bodies);
+        rendered(moon, lamp);
+
+        at(drive, 3.5);
+        shadows.update(bodies);
+        expect(lamp.shadow.needsUpdate).toBe(true);
+      });
+
+      it('redraws it for a body that has just left, so the old shadow goes with it', () => {
+        const { root, moon, lamp } = ranged();
+        const shadows = new ShadowScheduler();
+        shadows.adopt(root);
+        const drive = body(root);
+        at(drive, 6);
+        const bodies = new Map([[1, drive]]);
+        shadows.update(bodies);
+        rendered(moon, lamp);
+
+        at(drive, 30);
+        shadows.update(bodies);
+        expect(lamp.shadow.needsUpdate).toBe(true);
+      });
+
+      it("counts the body's size: one whose edge is within reach redraws it", () => {
+        const { root, moon, lamp } = ranged();
+        const shadows = new ShadowScheduler();
+        shadows.adopt(root);
+        const crate = body(root);                        // a 1 m cube: corners 0.87 m out
+        at(crate, 8.12);                                 // centre 8.5 m from the lamp
+        const bodies = new Map([[1, crate]]);
+        shadows.update(bodies);
+        rendered(moon, lamp);
+
+        at(crate, 8.12, 0.05);
+        shadows.update(bodies);
+        expect(lamp.shadow.needsUpdate).toBe(true);
+      });
+
+      it('a body first seen out of reach is not drawn into a ranged map', () => {
+        const { root, moon, lamp } = ranged();
+        const shadows = new ShadowScheduler();
+        shadows.adopt(root);
+        const bodies = new Map();
+        shadows.update(bodies);
+        rendered(moon, lamp);
+
+        const box = body(root);
+        at(box, 40);
+        bodies.set(7, box);
+        shadows.update(bodies);
+        expect(moon.shadow.needsUpdate).toBe(true);
+        expect(lamp.shadow.needsUpdate).toBe(false);
+      });
+    });
   });
 });

@@ -60,7 +60,15 @@ export class Engine {
   /** @type {PhysicsDebug} */ physicsDebug;
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
+  /** A camera to draw the frame through instead of the player's — a
+   *  security camera on the monitor (CameraTerminal). The player's camera
+   *  keeps the ears (audioListener) and the interaction ray; only the
+   *  picture moves. Cleared on every scene load.
+   *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
+  /** Optional post-processing pass (e.g. RedOut). When set, preRender()
+   *  redirects the scene render to a target and postRender() composites.
+   *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -148,6 +156,9 @@ export class Engine {
     // TESTING ONLY — remove before release: bring a dust eye now, with a
     // storm if none is blowing (BaseScene).
     summonEyes:  'KeyJ',
+    // TESTING ONLY — remove before release: put the evil signal in the sky
+    // (BaseScene).
+    summonEvil:  'KeyG',
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -176,6 +187,15 @@ export class Engine {
   onPauseChange(listener) {
     this._pauseListeners.add(listener);
     return () => this._pauseListeners.delete(listener);
+  }
+
+  /** The camera the frame is drawn through: the debug fly camera (the
+   *  player's, carried off) while it flies, else the view camera if one is
+   *  set, else the player's. Things that ride the eye — the sky dome, the
+   *  wind dust — follow this one. */
+  get renderCamera() {
+    if (this.debugCamera?.active) return this.camera;
+    return this.viewCamera ?? this.camera;
   }
 
   /** Whether the debug keys may act right now. */
@@ -331,6 +351,10 @@ export class Engine {
         const coming = this.activeScene.dustEyes.summon();
         console.log(coming ? '[DEBUG] Dust eye summoned in the yard' : '[DEBUG] Dust eye not summoned — no shift, the UFO is over the base, or the yard is full');
       }
+      if (e.code === this.keyBinds.summonEvil && this.activeScene?.evilSignal) {
+        const came = this.activeScene.evilSignal.summon();
+        console.log(came ? '[DEBUG] Evil signal summoned' : '[DEBUG] Evil signal not summoned — one is already up, or no shift is');
+      }
       if (e.code === this.keyBinds.nextNight && nights) {
         if (nights.isLastNight()) nights.setNight(1);
         else nights.advance();
@@ -396,6 +420,17 @@ export class Engine {
       onStage: (label, fraction) => this.loadingScreen.setStage(label, fraction),
     });
 
+    // Post-processing shaders live outside the main scene graph, so the
+    // WarmUp pass above never sees them. Compile them here while the
+    // loading screen still covers the canvas.
+    this.postProcess?.warmUp();
+
+    // Pre-compile the render-target shader variants. Three.js needs
+    // separate programs for render-target output (no tone mapping, linear
+    // colour space). Without this the first preRender recompiles every lit
+    // material — a multi-second stall on lower-end hardware.
+    await this.postProcess?.preCompile?.(this.scene, this.camera);
+
     // ── Kick off the loop — still behind the loading screen ──
     // The first frames after that are the JIT, the physics world and the
     // gameplay systems finding their feet. The loop runs under the overlay
@@ -449,6 +484,7 @@ export class Engine {
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
     this._teardownScene();
+    this.viewCamera = null;
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this);
@@ -804,7 +840,9 @@ export class Engine {
     if (this.levelEditor?.enabled) this.shadows.invalidate();
     // The moving bodies too: a carried or knocked object's shadow follows it.
     this.shadows.update(this.rigidBodyMap);
-    this.renderer.render(this.scene, this.camera);
+    this.postProcess?.preRender();
+    this.renderer.render(this.scene, this.renderCamera);
+    this.postProcess?.postRender();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);

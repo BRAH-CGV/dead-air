@@ -83,6 +83,16 @@ export class Corridor extends Room {
 
     const light = new THREE.PointLight(0xcfd8e3, 6.0, 8, 1.4);
     light.position.set(0, this.height - 0.3, 0);
+    // A light without a shadow lights everything in its 8 m that faces it,
+    // walls or not: the yard beside the corridor and the next room's floor
+    // shone as brightly as the corridor (#87). The walls keep it in only as
+    // shadow casters. The map is small — it only has to hold a passage — and
+    // frozen like every other (Engine.shadows). The near plane comes in under
+    // the ceiling (0.3 m up), or the ceiling isn't in the map at all.
+    light.castShadow = true;
+    light.shadow.mapSize.set(256, 256);
+    light.shadow.camera.near = 0.1;
+    light.shadow.normalBias = 0.02;   // as the office's ceiling light: no acne
     lightGO.object3d.add(light);
 
     const fixture = new THREE.Mesh(

@@ -178,6 +178,7 @@ DEFAULT_NIGHTS = {
 ### Phase 9: Lighting and atmosphere per room
 
 - Done: `RoomTransitionSystem.onRoomChange` is hooked in `BaseScene._spawnPlayer` and calls `_applyRoomFog`, which sets `scene.fog.density` from a per-room table (`ROOM_FOG_DENSITY`) — dense in ServerRoom (0.05), light in LivingQuarters (0.008), the office/corridor/outside default (0.02) everywhere else, including `room === null`.
+- Since removed: no room changes the fog any more. A room that wrote its own density showed as the storm flickering or fading through the office window at its doorway (#73), so the rooms' surfaces take no fog and there is one density everywhere (`OUTDOOR_FOG_DENSITY`). See AGENTS.md, Sandstorms → Fog.
 - Tests added in `BaseScene.test.js`:
   - fog density changes on entering ServerRoom and LivingQuarters, and returns to the base value back in MainOffice or in a corridor/outside;
   - Fullbright hides every light and swaps every `MeshStandardMaterial` mesh across all three rooms, and restores both on disable.

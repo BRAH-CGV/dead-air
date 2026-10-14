@@ -58,6 +58,16 @@ export function rapierModule() {
           };
           return d;
         },
+        // BunkerShell's slopes. Records the points; real Rapier returns null
+        // for a set it can't hull, which this never does.
+        convexHull: (points) => {
+          const d = {
+            points, sensor: false,
+            setSensor(v) { d.sensor = v; return d; },
+            setFriction(v) { d.friction = v; return d; },
+          };
+          return d;
+        },
         // MarsTerrain's ground. Records its shape so tests can check the grid
         // and the footprint without a real physics world; the heights array is
         // kept by reference rather than copied, since it is 257 x 257 floats.

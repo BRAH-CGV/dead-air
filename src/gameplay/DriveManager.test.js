@@ -12,7 +12,8 @@ function makeMockDrive(held = false) {
     name: `Drive_${Math.random().toString(36).slice(2, 6)}`,
     components: [pickupable],
     saved: false,
-    setSaved(v) { this.saved = v; },
+    corrupted: false,
+    setSaved(v, { corrupted = false } = {}) { this.saved = v; this.corrupted = v && corrupted; },
     getComponent(Type) {
       return this.components.find(c => c instanceof Type) ?? null;
     },
@@ -152,6 +153,63 @@ describe('DriveManager', () => {
     expect(dm.ejectDrive()).toBeNull();
   });
 
+  // ── Eject with impulse (evil signal) ──
+
+  it('ejectInsertedDrive returns null when no drive is inserted', () => {
+    const dm = new DriveManager();
+    expect(dm.ejectInsertedDrive()).toBeNull();
+  });
+
+  it('ejectInsertedDrive detaches via the snap socket and applies a random kick', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    const detach = vi.fn();
+    const setLinvel = vi.fn();
+    const setAngvel = vi.fn();
+    d._snapOwner = { detach, reject: vi.fn() };
+    d.rigidBody = { setLinvel, setAngvel };
+    dm.addDrive(d);
+    dm.insertDrive(d);
+
+    const ejected = dm.ejectInsertedDrive();
+    expect(ejected).toBe(d);
+    expect(detach).toHaveBeenCalledWith(d);
+    expect(dm.insertedDrive).toBeNull();
+    expect(setLinvel).toHaveBeenCalledTimes(1);
+    expect(setAngvel).toHaveBeenCalledTimes(1);
+    // The socket is told to reject the drive so it doesn't re-snap.
+    expect(d._snapOwner.reject).toHaveBeenCalledWith(d);
+    // The upward component is always positive (the drive flies up, not down).
+    const linvel = setLinvel.mock.calls[0][0];
+    expect(linvel.y).toBeGreaterThan(0);
+  });
+
+  it('ejectInsertedDrive works without a rigidBody (no physics yet)', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    const detach = vi.fn();
+    d._snapOwner = { detach, reject: vi.fn() };
+    // No rigidBody — the drive hasn't been _init'd yet.
+    dm.addDrive(d);
+    dm.insertDrive(d);
+
+    const ejected = dm.ejectInsertedDrive();
+    expect(ejected).toBe(d);
+    expect(detach).toHaveBeenCalledWith(d);
+  });
+
+  it('ejectInsertedDrive works without a snap owner (drive not in a slot)', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    // No _snapOwner — the drive is inserted in the manager but not snapped.
+    dm.addDrive(d);
+    dm.insertDrive(d);
+
+    const ejected = dm.ejectInsertedDrive();
+    expect(ejected).toBe(d);
+    expect(dm.insertedDrive).toBeNull();
+  });
+
   // ── Save ──
 
   it('saveToDrive increments the signal count on the drive', () => {
@@ -178,6 +236,34 @@ describe('DriveManager', () => {
     expect(d.saved).toBe(false);
     dm.saveToDrive();
     expect(d.saved).toBe(true);
+  });
+
+  // ── Save (the red one) ──
+
+  it('saveEvilToDrive marks the inserted drive saved and corrupted', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    expect(dm.saveEvilToDrive()).toBe(1);
+    expect(d.saved).toBe(true);
+    expect(d.corrupted).toBe(true);
+    expect(dm.signalsOnDrive).toBe(1);
+  });
+
+  it('saveEvilToDrive is a no-op without an inserted drive', () => {
+    const dm = new DriveManager();
+    expect(dm.saveEvilToDrive()).toBe(0);
+    expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('a corrupted drive still reads as having a signal', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveEvilToDrive();
+    expect(dm.insertedDriveHasSignal).toBe(true);
   });
 
   // ── insertedDriveHasSignal ──
@@ -220,6 +306,19 @@ describe('DriveManager', () => {
     expect(result).toBe(true);
     expect(d.saved).toBe(false);
     expect(dm.signalsOnDrive).toBe(0);
+  });
+
+  it('clearInsertedDriveSignal wipes a corrupted drive back to blank', () => {
+    const dm = new DriveManager();
+    const d = makeMockDrive();
+    dm.addDrive(d);
+    dm.insertDrive(d);
+    dm.saveEvilToDrive();
+    expect(d.corrupted).toBe(true);
+
+    expect(dm.clearInsertedDriveSignal()).toBe(true);
+    expect(d.saved).toBe(false);
+    expect(d.corrupted).toBe(false);
   });
 
   it('clearInsertedDriveSignal is a no-op without an inserted drive', () => {

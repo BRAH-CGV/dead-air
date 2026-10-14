@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Room } from './Room.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -46,10 +47,11 @@ const DRIVE_BOX_LAYOUT = [
 // real assets are found. Everything usable before is usable still.
 //   • The station: the desk top carries on into an angled wing each side
 //     (`DeskWing_*`, see DeskWing.js), drawn with the desk's own material
-//     so it reads as one piece of furniture. The left wing is empty for
-//     now. On the right one stand a digital clock and a globe on its
-//     stand; [E] on the globe gives it a spin (GlobeSpin). The clock and
-//     the stand are render-only — a collider on the desk could stop the
+//     so it reads as one piece of furniture. On the left one stands the
+//     security-camera monitor (a placeholder box; the scene attaches its
+//     CameraTerminal). On the right one stand a digital clock and a globe
+//     on its stand; [E] on the globe gives it a spin (GlobeSpin). The clock
+//     and the stand are render-only — a collider on the desk could stop the
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
 //   • The food corner, down the left wall: a two-tier rack of grow beds,
@@ -75,6 +77,12 @@ const DRIVE_BOX_LAYOUT = [
 const WINDOW_MULLION_X = 1.42;
 const WINDOW_CROSSBAR_Y = 1.65;
 const WINDOW_BAR = 0.08;
+/** The window's corners are rounded, a quarter circle of this radius (m):
+ *  a steel fillet through the wall in each (_buildWindowFrame), and the
+ *  bunker's embrasure outside follows the same curve (BunkerShell). */
+export const WINDOW_CORNER_RADIUS = 0.45;
+/** Bolt heads round the inside of the frame: radius, and spacing along it. */
+const WINDOW_BOLT = { radius: 0.018, spacing: 0.5 };
 
 /** The computer desk, as MainOffice seats it, read off retro-computer.glb
  *  at its 0.016 spawn scale: its centre; the half-width of its side panels
@@ -82,6 +90,13 @@ const WINDOW_BAR = 0.08;
  *  kneehole side) and back; and the height of its top, where the drive
  *  reader rests. The wings and what stands on them are placed from these. */
 const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95, top: 0.864 };
+
+/** Where the player stands to use the desk (x, z): what the wing monitor
+ *  turns to face. */
+const SEAT = [0, -1.45];
+
+/** The security-camera monitor on the left wing: casing width, height, depth. */
+const CAMERA_MONITOR = [0.42, 0.36, 0.36];
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -92,6 +107,10 @@ export class MainOffice extends Room {
 
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
+
+  /** The security-camera monitor on the desk's left wing. The scene hangs
+   *  the CameraTerminal on it. @type {GameObject|null} */
+  cameraMonitor = null;
 
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
@@ -193,6 +212,7 @@ export class MainOffice extends Room {
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);
+    this._buildCameraMonitor();
     this._buildDeskClock();
     this._buildGlobe();
 
@@ -429,6 +449,41 @@ export class MainOffice extends Room {
     }
   }
 
+  /** The security cameras' monitor, a placeholder: a dark casing on the
+   *  left wing's top, its screen turned to the seat. The casing is the
+   *  collider the interact ray lands on; BaseScene attaches the
+   *  CameraTerminal and its Interactable, as it does the computer's. The
+   *  screen is a vital function like the terminal's glow — with the
+   *  generator running it stays lit through a blow-out. */
+  _buildCameraMonitor() {
+    const [w, h, d] = CAMERA_MONITOR;
+    const [cx, cz] = deskWingOutline(-1, DESK).centre;
+    const yaw = Math.atan2(SEAT[0] - cx, SEAT[1] - cz);   // its front (+z) to the seat
+    const casing = this._own(new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.6, metalness: 0.3 }));
+    const go = this._addTurnedBox('CameraMonitor', [cx, DESK.top + h / 2, cz], [w, h, d], yaw, casing);
+
+    const screen = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(w - 0.08, h - 0.11, 0.01)),
+      this._own(new THREE.MeshStandardMaterial({
+        color: 0x0a0f12, emissive: 0x8fb4c8, emissiveIntensity: 0.55, roughness: 0.3,
+      })),
+    );
+    screen.name = 'CameraMonitorScreen';
+    screen.userData.unbreakable = true;
+    screen.position.set(0, 0.025, d / 2 + 0.005);
+    go.object3d.add(screen);
+
+    // A strip of tally lights under the screen, one per feed.
+    const led = this._own(new THREE.MeshBasicMaterial({ color: 0xff3a2a }));
+    const dot = this._own(new THREE.BoxGeometry(0.012, 0.012, 0.006));
+    for (let i = 0; i < 6; i++) {
+      const mesh = new THREE.Mesh(dot, led);
+      mesh.position.set(-0.1 + i * 0.04, -h / 2 + 0.03, d / 2 + 0.003);
+      go.object3d.add(mesh);
+    }
+    this.cameraMonitor = go;
+  }
+
   /** A digital clock where the desk top meets the right wing, turned to
    *  the seat: placed by eye in the level editor. The scene runs it off the
    *  NightClock like the one on the wall. */
@@ -524,6 +579,71 @@ export class MainOffice extends Room {
       ['WindowFrame_Crossbar',      [0, WINDOW_CROSSBAR_Y, -4.82],    [8.5, 0.06, 0.12]],
     ];
     for (const [name, position, size] of parts) this._addStaticBox(name, position, size, frame);
+    this._buildWindowFillets(frame);
+    this._buildWindowBolts(frame);
+  }
+
+  /** A curved fillet in each corner of the opening, through the wall: from
+   *  inside, the window reads as a hatch in a hardened wall — rounded like
+   *  a ship's port — rather than a cut in a partition. Seen only; the glass
+   *  collider (`BackWindow`) still fills the whole opening. */
+  _buildWindowFillets(material) {
+    const { width, height, offset = 0, sill } = this.openings.find(o => o.side === 'back');
+    const r = WINDOW_CORNER_RADIUS, t = this.wallThick;
+    // The top-right corner's fillet, the corner at the origin; mirrored
+    // into the other three.
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -r);
+    shape.lineTo(0, 0);
+    shape.lineTo(-r, 0);
+    shape.absarc(-r, -r, r, Math.PI / 2, 0, true);
+    const geometry = this._own(new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 10 }));
+
+    const group = new THREE.Group();
+    group.name = 'WindowFillets';
+    group.position.set(offset, 0, this._wallPlane('back') - t / 2);
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(sx * width / 2, sy > 0 ? sill + height : sill, 0);
+      mesh.scale.set(sx, sy, 1);   // three flips the winding for a mirrored mesh
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    this.root.object3d.add(group);
+  }
+
+  /** Bolt heads round the frame, on its face toward the room, one mesh. */
+  _buildWindowBolts(material) {
+    const top = this.root.find('WindowFrame_Top'), left = this.root.find('WindowFrame_Left');
+    const [tw, th, td] = top._originalSize, [, lh] = left._originalSize;
+    const z = top.object3d.position.z + td / 2;
+    const { y: topY } = top.object3d.position, bottomY = this.root.find('WindowFrame_Bottom').object3d.position.y;
+    const leftX = left.object3d.position.x, rightX = this.root.find('WindowFrame_Right').object3d.position.x;
+    const { radius, spacing } = WINDOW_BOLT;
+
+    const at = [];
+    const row = (from, to, place) => {
+      const n = Math.max(1, Math.round((to - from) / spacing));
+      for (let i = 0; i <= n; i++) at.push(place(from + ((to - from) * i) / n));
+    };
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, topY]);
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, bottomY]);
+    const sideY = left.object3d.position.y;
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [leftX, y]);
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [rightX, y]);
+
+    const parts = at.map(([x, y]) => {
+      const bolt = new THREE.CylinderGeometry(radius, radius * 1.15, 0.025, 6);
+      bolt.rotateX(Math.PI / 2);
+      bolt.translate(x, y, z + 0.0125);
+      return bolt;
+    });
+    const merged = this._own(mergeGeometries(parts));
+    for (const g of parts) g.dispose();
+    const bolts = new THREE.Mesh(merged, material);
+    bolts.name = 'WindowBolts';
+    bolts.receiveShadow = true;
+    this.root.object3d.add(bolts);
   }
 
   /** The glass itself, as much as is drawn of it: a thin film of dust and
