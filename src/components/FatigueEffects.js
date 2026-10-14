@@ -19,9 +19,10 @@ import { FatigueLogic, tunnel, heartbeat } from '../gameplay/Fatigue.js';
 // and their own breathing comes in over it. Eased both ways, and let go by
 // itself outside the shift.
 //
-// Every night that starts resets the logic's timers; outside 'playing'
-// everything settles — eyes open, lights steady, the heart quiet. The fly
-// camera sees the scene clear.
+// Every night that starts resets the logic's timers; outside 'playing',
+// and while the player is in bed (isResting: BedRest, through a nap), everything
+// settles — eyes open, lights steady, the heart quiet, no yawns. BedRest
+// writes the lids itself then. The fly camera sees the scene clear.
 // ─────────────────────────────────────────────
 
 /** Manifest key behind each sound. All placeholders for the sound owner to
@@ -47,12 +48,16 @@ export class FatigueEffects extends Component {
    * @param {{set(tunnel: number, eyelid: number): void, clear?(): void}|null} [opts.overlay]  FatigueOverlay
    * @param {{setFactor(key: string, value: number): void}|null} [opts.grid]  PowerGrid
    * @param {() => boolean} [opts.isFrozen]  The debug fly camera is on.
+   * @param {() => boolean} [opts.isResting]  In bed: getting in, asleep or getting out.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from FATIGUE_SOUNDS when left out.
    * @param {() => number} [opts.rand]
    */
-  constructor({ stamina, controller, overlay = null, grid = null, isFrozen = () => false, sounds = null, rand = Math.random }) {
+  constructor({
+    stamina, controller, overlay = null, grid = null, isFrozen = () => false, isResting = () => false,
+    sounds = null, rand = Math.random,
+  }) {
     super();
-    Object.assign(this, { stamina, controller, overlay, grid, isFrozen, sounds });
+    Object.assign(this, { stamina, controller, overlay, grid, isFrozen, isResting, sounds });
     this.logic = new FatigueLogic({ rand, onYawn: () => this._yawn() });
     this._heart = 0;     // the heartbeat's level as last written, in hundredths
     this._breath = 0;    // the breathing's, likewise
@@ -77,7 +82,7 @@ export class FatigueEffects extends Component {
   }
 
   onUpdate(dt) {
-    const playing = this.controller.state === 'playing';
+    const playing = this.controller.state === 'playing' && !this.isResting();
     const v = this.stamina.value;
     if (playing) this.logic.update(dt, v);
     else this.logic.reset();

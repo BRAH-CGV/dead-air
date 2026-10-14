@@ -593,7 +593,7 @@ describe('BaseScene gameplay loop', () => {
     for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
   }
 
-  it('one bed animation, shared: the bunk, the nap and the demon all know it', () => {
+  it('one bed animation, shared: the bunk, the nap, the demon and the fatigue effects all know it', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const rest = gameplay.getComponent(BedRest);
     expect(rest).toBe(scene.bedRest);
@@ -607,6 +607,10 @@ describe('BaseScene gameplay loop', () => {
     // The nap's "[E] Wake up" line, over the lids (#nap-hint).
     expect(typeof scene.nap.hint?.show).toBe('function');
     expect(typeof scene.nap.hint?.hide).toBe('function');
+    expect(scene.fatigueEffects.isResting()).toBe(false);
+    rest.lieDown();
+    expect(scene.fatigueEffects.isResting()).toBe(true);
+    rest.cancel();
   });
 
   it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {

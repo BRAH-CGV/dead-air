@@ -1385,6 +1385,7 @@ export class BaseScene extends Scene {
       overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
       grid:       this.power,
       isFrozen:   () => !!engine.debugCamera?.active,
+      isResting:  () => !!this.bedRest?.active,
     }));
   }
 

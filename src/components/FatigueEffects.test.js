@@ -179,6 +179,21 @@ describe('FatigueEffects', () => {
     expect(sounds.yawn.play).not.toHaveBeenCalled();
   });
 
+  it('in bed (a nap, the bed animation): it all settles — no yawns or blinks through a fast-forwarded night, the heart quiet', () => {
+    let resting = true;
+    const quiet = new FatigueEffects({ stamina, controller, overlay, grid, sounds, isResting: () => resting, rand: () => 0 });
+    quiet.onStart();
+    stamina.value = 0.05;
+    for (let t = 0; t < 60; t += 0.05) quiet.onUpdate(0.05);
+    expect(sounds.yawn.play).not.toHaveBeenCalled();
+    expect(sounds.heartbeat.isPlaying).toBe(false);
+    expect(overlay.set).toHaveBeenLastCalledWith(0, 0);
+    expect(grid.setFactor).toHaveBeenLastCalledWith('dread', 1);
+    resting = false;
+    quiet.onUpdate(0.016);
+    expect(sounds.heartbeat.isPlaying).toBe(true);    // up again, as tired as before
+  });
+
   it('a new night starts the clocks again: no yawn until tiredness sets in anew', () => {
     stamina.value = 0.4;
     run(1);
