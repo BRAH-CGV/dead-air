@@ -67,6 +67,9 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
+import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
+import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
+import { CameraOverlay } from '../ui/CameraOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -180,6 +183,19 @@ const UFO_HOVER_HEIGHT = 35;
  *  `glass` is how much of it the window's smudges show by (WindowGlass). */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
+/** The security cameras (_addSecurityCameras), in metres. Indoors: in from
+ *  the corner's two walls, and down from the ceiling. Outdoors: how high on
+ *  the wall, and how far off its face (the bracket's plate). Pan ranges are
+ *  radians either way; `reach` is how far each one's flash carries. */
+const SECURITY_CAMERAS = {
+  room:    { inset: 0.2, drop: 0.25, aimHeight: 0.4, panRange: 0.75, reach: 11 },
+  outside: { height: 2.6, offWall: 0.02, panRange: 1.1, reach: 25 },
+  yard:    { inFromFence: 1.5, panRange: 1.0, reach: 25 },
+  /** The monitor's map: metres of ground shown round the base, [across,
+   *  down] — wide enough across that the end-wall cameras read as outside. */
+  mapMargin: [6, 1.5],
+};
+
 
 export class BaseScene extends Scene {
   /** @type {{MainOffice: MainOffice, ServerRoom: ServerRoom, LivingQuarters: LivingQuarters, Airlock: Airlock}} */
@@ -229,11 +245,13 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._addSecurityCameras();
     this._addWindDust();
     this._spawnPlayer();
     this._keepFogOutside();
     this._addPower();
     this._addGameplaySystems();
+    this._addCameraTerminal();
     this._addUfo();
     this._addSandstorm();
     this._buildOcclusion();
@@ -255,6 +273,13 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
+    // Off the monitor first: the frame goes back to the player's eyes, and
+    // the zones a camera asked for go back to the airlock's choice.
+    this.cameraTerminal?.exit();
+    this.cameraOverlay?.hide();
+    this._offCameraState?.();
+    this._offCameraPause?.();
+    for (const cam of this.securityCameras ?? []) cam.dispose();
     this._offNightStart?.();
     this._offNightReset?.();
     this._offSuitHud?.();
@@ -909,6 +934,192 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Security cameras (watched from the monitor on the desk's left wing)
+  // ──────────────────────────────────────────
+  /** Six cameras, placed off the rooms and the fence so they follow a
+   *  redesign:
+   *    • one in each side room, looking down across it: high in the
+   *      living quarters' outer back corner (its top left, as seen from the
+   *      desk), and high in the middle of the server room's back wall;
+   *    • one on the outside of each end wall, about its middle, looking out;
+   *    • two in the fenced yard, on the building's front near each end of
+   *      the fence, looking out across it.
+   *  The room ones hang in their rooms, so they go undrawn with the
+   *  furnishings; the outdoor ones stand under Outside, for the occlusion
+   *  sort. Each says which zones its picture needs: from indoors the yard
+   *  (and the scenery no one is meant to see) has been left undrawn, and the
+   *  monitor shows static until it is in.
+   *
+   *  A bracket turned off square to its wall stands on a wedge
+   *  (SecurityCamera `mount`), so none of them hangs in the air.
+   *
+   *  The flash they share is built here too, at zero, so the boot warm-up
+   *  compiles every lit shader with it counted. It hangs on the scene root
+   *  — off the grid, and never under a room the occlusion sort can hide. */
+  _addSecurityCameras() {
+    const { rooms } = this;
+    const R = SECURITY_CAMERAS.room, O = SECURITY_CAMERAS.outside, Y = SECURITY_CAMERAS.yard;
+    const cams = [];
+    // A wedge is drawn in the wall it is fixed to: inside, the room's lining
+    // (its plain wall if the lining's textures aren't loaded); outside, the
+    // shell. Both the room's, shared — never freed by the camera.
+    const innerWall = room => room.root.object3d.getObjectByName('Lining_Walls')?.material ?? room.material;
+    const place = (parent, spec, origin = [0, 0, 0]) => {
+      const local = v => v.map((c, i) => c - origin[i]);
+      // The mount is in the same space: a corner's (x, z), or a wall's plane.
+      const { mount } = spec;
+      const localMount = mount?.corner ? { ...mount, corner: [mount.corner[0] - origin[0], mount.corner[1] - origin[2]] }
+        : mount?.wall ? { ...mount, wall: { axis: mount.wall.axis, at: mount.wall.at - origin[mount.wall.axis === 'x' ? 0 : 2] } }
+        : null;
+      const cam = new SecurityCamera({
+        ...spec, name: `SecurityCamera_${cams.length + 1}`,
+        position: local(spec.position), target: local(spec.target), mount: localMount,
+      });
+      parent.addChild(cam);
+      cams.push(cam);
+    };
+
+    // The living quarters: high in the far back corner, on a wedge.
+    {
+      const room = rooms.LivingQuarters, b = room.bounds(), t = room.wallThick;
+      const corner = [b.min.x + t, b.min.z + t];   // the inner faces of the end and back walls
+      place(room.root, {
+        label: 'LIVING QUARTERS', panRange: R.panRange, zones: ['interior'], flashReach: R.reach,
+        position: [corner[0] + R.inset, room.position[1] + room.height - R.drop, corner[1] + R.inset],
+        target: [room.position[0], R.aimHeight, room.position[2]],
+        mount: { corner, material: innerWall(room) },
+      }, room.position);
+    }
+    // The server room: high in the middle of the back wall, straight down the room.
+    {
+      const room = rooms.ServerRoom, b = room.bounds(), t = room.wallThick;
+      const wall = b.min.z + t;
+      place(room.root, {
+        label: 'SERVER ROOM', panRange: R.panRange, zones: ['interior'], flashReach: R.reach,
+        position: [room.position[0], room.position[1] + room.height - R.drop, wall + O.offWall],
+        target: [room.position[0], R.aimHeight, room.position[2]],
+        mount: { wall: { axis: 'z', at: wall }, material: innerWall(room) },
+      }, room.position);
+    }
+
+    // Outside each end wall, about its middle, looking out.
+    for (const [room, label, side] of [[rooms.LivingQuarters, 'EXTERIOR — QUARTERS END', -1], [rooms.ServerRoom, 'EXTERIOR — SERVER END', 1]]) {
+      const b = room.bounds();
+      const x = (side < 0 ? b.min.x : b.max.x) + side * O.offWall;
+      const z = (b.min.z + b.max.z) / 2;
+      place(this._outside, {
+        label, panRange: O.panRange, zones: ['yard', 'unseen'], flashReach: O.reach,
+        position: [x, O.height, z], target: [x + side * 15, 0, z],
+        mount: { wall: { axis: 'x', at: side < 0 ? b.min.x : b.max.x }, material: room.material },
+      });
+    }
+
+    // In the fenced yard: on the end rooms' front walls, in from each end of
+    // the fence, looking across to the middle of the yard's far side.
+    const { rect } = this.fence;
+    for (const [room, label, side] of [[rooms.LivingQuarters, 'YARD — QUARTERS SIDE', -1], [rooms.ServerRoom, 'YARD — SERVER SIDE', 1]]) {
+      const x = side < 0 ? rect.minX + Y.inFromFence : rect.maxX - Y.inFromFence;
+      const front = room.bounds().max.z;
+      place(this._outside, {
+        label, panRange: Y.panRange, zones: ['yard', 'unseen'], flashReach: Y.reach,
+        position: [x, O.height, front + O.offWall],
+        target: [rect.x, 0, rect.maxZ - 2],
+        mount: { wall: { axis: 'z', at: front }, material: room.material },
+      });
+    }
+    this.securityCameras = cams;
+    this.cameraMap = this._cameraMap(cams);
+
+    const flashGO = new GameObject('CameraFlash');
+    flashGO.object3d.userData.offGrid = true;
+    const flash = new THREE.SpotLight(CAMERA_FLASH.color, 0, R.reach, CAMERA_FLASH.angle, CAMERA_FLASH.penumbra, CAMERA_FLASH.decay);
+    flash.name = 'CameraFlash';
+    flash.castShadow = false;
+    flashGO.object3d.add(flash, flash.target);
+    this._sceneRoot.addChild(flashGO);
+    this.cameraFlash = flash;
+  }
+
+  /** The monitor's map, as CameraOverlay.setMap wants it: every room and
+   *  corridor's shell from above, the fenced yard as an outline, and each
+   *  camera where it hangs — all in world x / z. */
+  _cameraMap(cams) {
+    // Short: the side rooms are narrow on the map, with camera buttons on their walls.
+    const NAMES = { MainOffice: 'OFFICE', LivingQuarters: 'QTRS', ServerRoom: 'SRVR', Airlock: 'A/L' };
+    const block = (b, label) => ({ label, x0: b.min.x, z0: b.min.z, x1: b.max.x, z1: b.max.z });
+    const { minX, maxX, minZ, maxZ } = this.fence.rect;
+    return {
+      margin: SECURITY_CAMERAS.mapMargin,
+      rooms: [
+        // The yard first, so the building is drawn over its overlap.
+        { label: 'YARD', x0: minX, z0: minZ, x1: maxX, z1: maxZ, outline: true },
+        ...Object.values(this.corridors).map(c => block(c.bounds(), '')),
+        ...Object.values(this.rooms).map(r => block(r.bounds(), NAMES[r.name] ?? r.name)),
+      ],
+      cameras: cams.map((cam, i) => {
+        const p = cam.object3d.getWorldPosition(new THREE.Vector3());
+        // Which way it faces at rest, level: the map puts its square that
+        // side of the wall, so a room camera's is inside, the others' out.
+        cam.object3d.updateWorldMatrix(true, true);
+        const d = cam.lens.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
+        return { label: String(i + 1), x: p.x, z: p.z, dir: [d.x, d.z] };   // a numbered button, FNAF style
+      }),
+    };
+  }
+
+  /** The monitor's CameraTerminal: on the generator like the computer, and
+   *  let go of on any end to the shift (a game over, the morning). Built
+   *  after the gameplay systems, which it reads; the occlusion zones come
+   *  last of all, so they are read when used. */
+  _addCameraTerminal() {
+    const monitor = this.rooms.MainOffice.cameraMonitor;
+    this.cameraOverlay = new CameraOverlay();
+    this.cameraOverlay.setMap(this.cameraMap);
+    this.cameraTerminal = new CameraTerminal({
+      cameras:   this.securityCameras,
+      flash:     this.cameraFlash,
+      overlay:   this.cameraOverlay,
+      crosshair: this.engine.crosshair,
+      sounds: {
+        servo:     this._sound('sfx:camera-servo'),
+        static:    this._sound('sfx:camera-static'),
+        spotlight:    this._sound('sfx:camera-spotlight'),
+        spotlightOff: this._sound('sfx:camera-spotlight-off'),
+      },
+      hooks: {
+        setViewZones: zones => this.portal?.setViewZones(zones),
+        isReady:      zone => this.zones?.isReady(zone) ?? true,
+        // The mouse goes to the page, for the map — as for the breaker panel.
+        // Taken off the monitor by the shift ending (a game over, the
+        // morning), the pointer lock isn't asked back: there was no click.
+        holdPlayer: (held) => {
+          if (held || this.gameController?.state === 'playing') return this._usePanel(held);
+          this.engine.uiHasMouse = false;
+          this.engine.crosshair?.show();
+          this._setPlayerLocked(false);
+        },
+      },
+    });
+    if (monitor) {
+      monitor.addComponent(this.cameraTerminal);
+      monitor.addComponent(createCameraInteractable(this.cameraTerminal));
+    } else {
+      console.warn('[BaseScene] no CameraMonitor in MainOffice — security cameras not attached');
+    }
+
+    this.cameraTerminal.setPowered(this.power.on);
+    this._offPower.push(this.power.onChange(grid => this.cameraTerminal.setPowered(grid.on)));
+    this._offCameraState = this.gameController.onStateChange((state) => {
+      if (state !== 'playing') this.cameraTerminal.exit();
+    });
+    // Paused, nothing updates but the audio clock runs on: hush the loops.
+    // The first frame after resuming starts whatever is still wanted.
+    this._offCameraPause = this.engine.onPauseChange?.((paused) => {
+      if (paused) this.cameraTerminal.silence();
+    });
+  }
+
+  // ──────────────────────────────────────────
   // Power (the generator outside feeds the base)
   // ──────────────────────────────────────────
   /** Every lamp in the rooms, the corridors and on the dish pad goes on one
@@ -1226,7 +1437,9 @@ export class BaseScene extends Scene {
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
       hooks: {
-        listenerPosition: out => engine.camera.getWorldPosition(out),
+        // The grit is wrapped round the eye the frame is drawn from — a
+        // security camera's, on the monitor (Engine.renderCamera).
+        listenerPosition: out => (engine.renderCamera ?? engine.camera).getWorldPosition(out),
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,

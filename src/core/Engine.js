@@ -60,6 +60,11 @@ export class Engine {
   /** @type {PhysicsDebug} */ physicsDebug;
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
+  /** A camera to draw the frame through instead of the player's — a
+   *  security camera on the monitor (CameraTerminal). The player's camera
+   *  keeps the ears (audioListener) and the interaction ray; only the
+   *  picture moves. Cleared on every scene load.
+   *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
   /** Optional post-processing pass (e.g. RedOut). When set, preRender()
    *  redirects the scene render to a target and postRender() composites.
@@ -179,6 +184,15 @@ export class Engine {
   onPauseChange(listener) {
     this._pauseListeners.add(listener);
     return () => this._pauseListeners.delete(listener);
+  }
+
+  /** The camera the frame is drawn through: the debug fly camera (the
+   *  player's, carried off) while it flies, else the view camera if one is
+   *  set, else the player's. Things that ride the eye — the sky dome, the
+   *  wind dust — follow this one. */
+  get renderCamera() {
+    if (this.debugCamera?.active) return this.camera;
+    return this.viewCamera ?? this.camera;
   }
 
   /** Whether the debug keys may act right now. */
@@ -466,6 +480,7 @@ export class Engine {
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
     this._teardownScene();
+    this.viewCamera = null;
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this);
@@ -822,7 +837,7 @@ export class Engine {
     // The moving bodies too: a carried or knocked object's shadow follows it.
     this.shadows.update(this.rigidBodyMap);
     this.postProcess?.preRender();
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.renderCamera);
     this.postProcess?.postRender();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.

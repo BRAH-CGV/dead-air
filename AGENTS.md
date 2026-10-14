@@ -80,6 +80,7 @@ src/
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
 │   ├── Daylight.js      # dawnFactor(hour, state) → sky uDawn, lights, fog; turns the sky, aims the moonlight
 │   ├── Bed.js           # Interactable: sleep in the morning → next night
+│   ├── CameraTerminal.js # The security monitor: view through a camera, pan, flash, static
 │   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
@@ -88,6 +89,7 @@ src/
 │   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
+│   ├── SecurityCamera.js # Wall-mounted CCTV placeholder: bracket, panning head, lens camera
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
 │   ├── NightClock.js    # 12:00 → 6:00 AM over one shift
@@ -98,7 +100,8 @@ src/
 │   ├── Sandstorm.js     # Random dust storms from night 2: wind sound, fog, sky, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
-│   └── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
+│   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
+│   └── CameraFeed.js    # Which camera is on screen, its pan, flash, and static timing (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
@@ -115,6 +118,7 @@ src/
 │   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
+│   ├── CameraOverlay.js # The security monitor's label, hints and static (#cctv)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
 │   └── menu/
 │       ├── MenuView.js  # Draws every menu screen into #menu; emits intents
@@ -305,6 +309,32 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
   - **Back to the spawn.** A retry starts the night over from the beginning: the controller tells its night-start listeners `{ retry: true }`, and `BaseScene._respawn` takes the suit off and `FirstPersonController.teleport`s the player to the spawn, facing the window. A new night after sleeping doesn't move you.
   - **The E is used up.** The retry calls `engine.consumeAction('interact')`, so that press can't also reach whatever the player died looking at. Before this, dying at the generator meant the retry's E switched the freshly restored power straight back off.
 - **Every night start** (`controller.onNightStart`) repairs the bulbs and breakers, switches the generator on, closes a breaker panel left open, clears the white-out and schedules the next visit.
+
+### Security cameras
+
+A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMonitor`); `BaseScene._addCameraTerminal` hangs a `CameraTerminal` and its Interactable on it ("[E] Use the security cameras"). Six `SecurityCamera`s, placed by `BaseScene._addSecurityCameras` off the rooms' bounds and the fence (tuning in `SECURITY_CAMERAS`):
+
+| # | Label | Where |
+|---|---|---|
+| 1 | LIVING QUARTERS | the left room, high in its outer back corner (top left from the desk) |
+| 2 | SERVER ROOM | the right room, high in the middle of its back wall, straight down the room |
+| 3 | EXTERIOR — QUARTERS END | outside the left end wall, about its middle, looking out |
+| 4 | EXTERIOR — SERVER END | outside the right end wall, about its middle, looking out |
+| 5 | YARD — QUARTERS SIDE | in the fenced yard, on the building's front by the left end of the fence |
+| 6 | YARD — SERVER SIDE | the same by the right end |
+
+- **The picture** is the game's own frame drawn through the camera's lens: `engine.viewCamera` (cleared on every scene load); `engine.renderCamera` is what the frame is drawn through (the fly camera wins). The player's camera keeps the ears and the interaction ray. The sky dome, the wind dust and the storm grit follow `renderCamera`.
+- **Mounting.** A bracket turned off square to its wall stands on a wedge (`SecurityCamera` `mount`: a corner's x/z, or one wall's plane), so it never hangs in the air: the living-quarters corner camera and the two yard cameras have one. On a single wall, a turned bracket is also stood off until its nearer edge just touches the wall. Square ones (server room, the end walls) get none. A wedge is drawn in the material of the wall it is on (`mount.material`): the room's lining indoors, the room's shell outside.
+- **Pan limits** (`SecurityCamera.panLimits`, [right, left]). Within `panRange`, and for a mounted camera never so far round that the lens — 28 cm out on the head, at the end of a 12 cm arm — swings behind a wall's face (`CAMERA_CLEARANCE.lens`, 10 cm), which put the picture inside the building: the angled yard cameras could see into the quarters. On a single wall the view also stops `CAMERA_CLEARANCE.view` (75°) off square, past which it only looks along the wall. So a turned yard camera pans further away from its wall than toward it. A scene test pans every camera through its limits and checks the lens stays in its room, or out of every shell.
+- **Controls:** A/D or ←/→ pan (within the camera's `panLimits`; each keeps where it was left), W/S or ↑/↓ step, 1–6 jump, F the flash, Q or Esc back to the desk. The player is held still meanwhile.
+- **The map**, bottom left (`CameraOverlay.setMap`, built by `BaseScene._cameraMap`): the rooms, corridors and fenced yard from above, back (the window) at the top, and a numbered button per camera where it hangs, pushed off its wall the way the camera faces (`dir`) by just enough to clear it — wholly inside its room for a room camera, wholly outside for the rest (`CAMERA_SQUARE`, 26 px, sets the square's size and the push). `SECURITY_CAMERAS.mapMargin` keeps 6 m of ground either side, so the end-wall cameras read as outside. Clicking one switches to it. While watching, the mouse is handed to the page (`BaseScene._usePanel`, as for the breaker panel); `#cctv` takes the clicks so one beside the map doesn't relock the pointer.
+- **The picture's look** is CSS on `#cctv`: scanlines crawling slowly down and a faint band rolling through every 7 s (still under `prefers-reduced-motion`), and a dark edge.
+- **Sound** (`CAMERA_SOUNDS` levels): `sfx:camera-servo` loops faintly while a camera actually turns (not against its end stop); `sfx:camera-static` loops while a picture comes in; `sfx:camera-spotlight` plays as the flash comes on and `sfx:camera-spotlight-off` as it goes out, whatever puts it out (F, a switch, leaving); going out cuts the on clunk short. The off sound is made from the on clip: its head, slowed to 0.8× and faded (a WAV, as there is no mp3 encoder in the toolchain). From the monitor, not placed in the world. A pause calls `cameraTerminal.silence()` (the audio clock runs on); the next frame restarts what is still wanted. The servo clip is only the loud first 7 s of its recording, cut at MPEG frame boundaries; the static is its first 4 s.
+- **Static.** Every switch shows static (`CCTV.minStatic`, 0.25 s), and for as long as the zones the camera sees aren't ready: from indoors the `yard` and `unseen` zones are undrawn, so the outdoor cameras ask `AirlockPortal.setViewZones` for them and wait on `zones.isReady` (`CCTV.maxStatic`, 2 s, at most). Back at the desk they go again.
+- **The flash** is one `SpotLight` (`scene.cameraFlash`) for every camera, built with the scene at intensity 0 and moved to the camera on screen. It goes out on F, on a switch, and on leaving the monitor. It lives on the scene root (a light under a room the occlusion sort hides would drop out of the light count) and casts no shadow, so it shines through walls within its `reach`.
+- **Power:** like the computer, it needs the generator; a power cut or any end to the shift (game over, morning) takes the player off the monitor.
+
+- **Occlusion while watching.** Only an outdoor camera on screen draws the yard; leaving the monitor (or switching to a room camera) hides it again, and the frame at the desk is the same before and after (measured: 111 draw calls, 1.69 M triangles). Of those, the vegetation is ~1.35 M — nearly all of it the instances the sort finds visible from both the window and the yard, which no zone hides. That predates the cameras; if the frame rate needs it, that is the place to cut.
 
 ### Sandstorms
 

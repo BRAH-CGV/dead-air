@@ -462,6 +462,26 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/scanner-alert.mp3',
   },
+  // The security monitor (CameraTerminal): a camera's pan motor, looped
+  // while it turns (the loud first 7 s of the recording only); static,
+  // looped while a feed comes in; and the clunk of its flash coming on, and
+  // going off (made from the same clip: its head, slowed and faded).
+  'sfx:camera-servo': {
+    type: 'audio',
+    url: 'assets/audio/camera-servo.mp3',
+  },
+  'sfx:camera-static': {
+    type: 'audio',
+    url: 'assets/audio/camera-static.mp3',
+  },
+  'sfx:camera-spotlight': {
+    type: 'audio',
+    url: 'assets/audio/camera-spotlight.mp3',
+  },
+  'sfx:camera-spotlight-off': {
+    type: 'audio',
+    url: 'assets/audio/camera-spotlight-off.wav',
+  },
   // A loose prop knocked against something (ImpactSound): one of its clips,
   // picked at random. Two for a drive box put down or dropped, and one of
   // its own for being picked up, docked and undocked; four for a drive,

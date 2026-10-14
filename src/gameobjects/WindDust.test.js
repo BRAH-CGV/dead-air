@@ -311,6 +311,16 @@ describe('WindDustMotion', () => {
     expect(uniforms.uCenter.value.toArray()).toEqual([-20, 3, 40]);
   });
 
+  it('gathers round the camera the frame is drawn through (a security camera on the monitor)', () => {
+    const { dust, motion, uniforms } = build();
+    const cctv = new THREE.PerspectiveCamera();
+    cctv.position.set(-16, 2.6, 1);
+    cctv.updateMatrixWorld();
+    dust.scene.userData.engine.renderCamera = cctv;
+    motion.onLateUpdate(1 / 60);
+    expect(uniforms.uCenter.value.toArray()).toEqual([-16, 2.6, 1]);
+  });
+
   it('never moves the object itself: the clouds hold their place in the world', () => {
     const { motion, mesh, camera } = build();
     camera.position.set(-20, 3, 40);

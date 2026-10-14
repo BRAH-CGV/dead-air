@@ -426,8 +426,9 @@ export class WindDustMotion extends Component {
     if (!engine) return;
 
     // getWorldPosition, not .position: the camera rides the player, or the
-    // scene root under the debug fly camera.
-    engine.camera?.getWorldPosition(u.uCenter.value);
+    // scene root under the debug fly camera. The one the frame is drawn
+    // through — a security camera's, on the monitor (Engine.renderCamera).
+    (engine.renderCamera ?? engine.camera)?.getWorldPosition(u.uCenter.value);
 
   }
 
