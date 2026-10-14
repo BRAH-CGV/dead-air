@@ -606,6 +606,8 @@ The `shape` above is model-local, so it rides the spawn rotation and the numbers
 
 A model authored in metres and spawned without an extra `scale` wouldn't need the native-units column — write `shape` sizes directly, as the general rule above says. It only shows up here because this particular download needed rescaling. When the real desk model lands (or `UCX_` proxies get added to this one), re-derive this from its actual geometry — it's fitted to the current stand-in's measured bounds, not to any future replacement.
 
+**The top (#76).** Those three boxes stop at 0.73 m and at the kneehole's back edge, so a drive dropped on the tray's front or its 45° corners fell into the desk. The top is now its own parts, read off the `.glb`'s vertices and flush with what is drawn: the shelf behind the tray and the pillar tops (0.86 m — the drive reader sits on the right one), the keyboard tray and its rims (0.75 m), the keys, the two 45° corners (rotated boxes) and the monitor's two steps. They are written in desk-local metres and converted by `deskBox` / `deskPair` (÷ `DESK_UNIT`, 0.016), and every part is solid to everything. Two rules: **nothing over the well** (the first fix was one slab over the whole top, which held drives up over the open kneehole), and **nothing new below 0.72 m**, so the crouch still fits under the tray. The angled wings each side are solid under all of their top, floor to desk top: a box under the square and a small hull for the wedge beside the desk (`deskWingSolids`, on one body by `MainOffice._addSolid`). Not one hull of the whole wing: Rapier made next to no contacts against the left one, and drives sank through it. Tests in `manifest.test.js` and `MainOffice.test.js` pin all of this.
+
 ## Commands
 
 ```bash

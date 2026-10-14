@@ -96,6 +96,20 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 // the real thing means dropping the file into public/assets/ and changing the
 // `url` below — nothing else moves.
 
+// retro-computer.glb is modelled ~100 units wide and has no manifest `scale`:
+// every spawn applies 0.016 to land it at 1.6 m. Its collider parts are written
+// below in desk-local metres and converted to the model's own units here.
+const DESK_UNIT = 0.016;
+const deskBox = (size, position, rotationY = 0) => ({
+  type: 'box',
+  size: size.map(v => v / DESK_UNIT),
+  position: position.map(v => v / DESK_UNIT),
+  ...(rotationY && { rotation: [0, rotationY, 0] }),
+});
+/** A part and its mirror image on the desk's other side (x → −x). */
+const deskPair = (size, [x, y, z], rotationY = 0) =>
+  [deskBox(size, [x, y, z], rotationY), deskBox(size, [-x, y, z], -rotationY)];
+
 /**
  * What the game puts on screen today. These are fetched up front, so the
  * loading bar is only ever as long as this object.
@@ -157,31 +171,39 @@ const PLACED = {
     material: { side: 'front', depthWrite: true, transmission: 0 },
     // Tier 3 compound: a solid auto box blocks the under-desk hiding
     // mechanic. The model is a solid cabinet (not a table on 4 open legs),
-    // indented on one face only.
+    // indented on one face only. Desk-local metres (+Z is the kneehole's
+    // side, toward the chair); `deskBox` converts them to the model's units.
     //
-    // Measured directly in the level editor (F2, box primitives placed
-    // against the rendered model, positions/sizes read off their transform
-    // and handed back) rather than guessed — two guesses in a row from the
-    // raw mesh data got the shape wrong (open on 3 sides, then a top slab
-    // that still blocked walking up to it while standing). No separate top
-    // lid: the back part is tall enough on its own, and the kneehole (+Z,
-    // roughly the front half of the depth) has no ceiling at all, so a
-    // standing player can walk up to it before needing to crouch further
-    // toward the back/sides.
+    // The body, floor to 0.73 m, was measured in the level editor (F2): a
+    // back region and two side walls, with the kneehole (+Z) open.
     //
-    // This model has no manifest-level `scale`, so its measured bounds are
-    // in its native ~100-wide space, not metres — every spawn (MainOffice,
-    // OfficeScene) applies 0.016 on top to land at the real 1.6 m width.
-    // The editor gave real-metre, world-space numbers; converted here by
-    // subtracting the desk's spawn position [0,0,-2.55], undoing its 180°
-    // spawn rotation (x,z each negate), then dividing by 0.016.
+    // The top (#76) is read off the .glb's own vertices, flush with what is
+    // drawn, so things set on the desk rest on it. The top is not a slab: in
+    // front of the keyboard tray, between two rims, a well drops open to the
+    // floor — that is the kneehole, and nothing covers it. A slab over the
+    // whole top (the first fix) was an invisible shelf over the well where
+    // the player stands, and the body alone left the tray's front and its
+    // 45° corners hollow. Every part is solid to everything: the player, the
+    // drives and their boxes. Nothing new reaches below 0.72 m, so the
+    // crouch (0.65 m) still fits under the tray.
     physics: {
       body: 'static',
       shape: [
-        { type: 'box', size: [93.0625, 45.625, 21.25], position: [3.75, 23.125, -14.375] },  // back region, 1.489×0.730×0.340 m @ local (0.06, 0.37, -0.23)
-        { type: 'box', size: [15.625, 45.625, 50],     position: [41.875, 23.125, 0] },      // right side wall, 0.250×0.730×0.800 m @ local (0.67, 0.37, 0)
-        { type: 'box', size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0] },     // left side wall, 0.250×0.730×0.800 m @ local (-0.67, 0.37, 0)
-        // Front (+Z, roughly z > -0.06 m) is deliberately open — no part — for the kneehole.
+        deskBox([1.489, 0.730, 0.340], [0.06, 0.37, -0.23]),       // back region
+        ...deskPair([0.250, 0.730, 0.800], [0.67, 0.37, 0]),        // side walls
+        deskBox([1.12, 0.14, 0.21], [0, 0.79, -0.295]),            // shelf behind the tray, 0.86
+        deskBox([1.12, 0.03, 0.27], [0, 0.735, -0.055]),           // keyboard tray, 0.75, to its front edge
+        deskBox([0.80, 0.06, 0.18], [0, 0.75, -0.04]),             // the keys on it, 0.78
+        ...deskPair([0.24, 0.14, 0.80], [0.68, 0.79, 0]),           // pillar tops, 0.86 (the drive reader sits on the right)
+        ...deskPair([0.08, 0.03, 0.24], [0.52, 0.735, 0.20]),       // rims beside the well, 0.75
+        ...deskPair([0.04, 0.03, 0.08], [0.54, 0.735, 0.36]),       // … and their front ends
+        // The tray's front corners, cut at 45° from (0.40, 0.08) to (0.48,
+        // 0.16): a turned box whose inner face is the cut.
+        ...deskPair([0.15 * Math.SQRT2, 0.03, 0.10], [0.4754, 0.735, 0.0846], -Math.PI / 4),
+        // The monitor, its sloping top (1.00 at the back, 1.10 at the
+        // screen) in two steps.
+        deskBox([0.48, 0.305, 0.07], [0, 0.8725, -0.365]),
+        deskBox([0.48, 0.36, 0.07], [0, 0.90, -0.295]),
       ],
     },
   },
