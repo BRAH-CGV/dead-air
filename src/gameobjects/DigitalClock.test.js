@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { DigitalClock, clockDigits, SEGMENTS } from './DigitalClock.js';
-import { NightClock } from '../gameplay/NightClock.js';
+import { NightClock, SHIFT } from '../gameplay/NightClock.js';
 
 /** The segments of digit `index` (0 = tens of hours … 3 = minutes) that are lit, as letters a–g. */
 function lit(clock, index) {
@@ -15,32 +15,36 @@ function lit(clock, index) {
 const sorted = s => [...s].sort().join('');
 
 describe('clockDigits', () => {
-  it('reads a night-clock hour as a 12-hour time: tens of hours, hours, tens of minutes, minutes', () => {
-    expect(clockDigits(0)).toEqual([1, 2, 0, 0]);          // 12:00
-    expect(clockDigits(0.5)).toEqual([1, 2, 3, 0]);        // 12:30
-    expect(clockDigits(1.75)).toEqual([null, 1, 4, 5]);    //  1:45 — no leading zero
-    expect(clockDigits(6)).toEqual([null, 6, 0, 0]);       //  6:00
-    expect(clockDigits(13.25)).toEqual([null, 1, 1, 5]);   //  1:15 pm
+  it('reads a night-clock hour as a 24-hour time: tens of hours, hours, tens of minutes, minutes', () => {
+    expect(clockDigits(-6)).toEqual([1, 8, 0, 0]);         // 18:00, the shift starts
+    expect(clockDigits(-0.5)).toEqual([2, 3, 3, 0]);       // 23:30
+    expect(clockDigits(0)).toEqual([0, 0, 0, 0]);          // 00:00, midnight
+    expect(clockDigits(1.75)).toEqual([0, 1, 4, 5]);       // 01:45 — a leading zero, as a 24-hour clock has
+    expect(clockDigits(6)).toEqual([0, 6, 0, 0]);          // 06:00, the shift ends
+    expect(clockDigits(13.25)).toEqual([1, 3, 1, 5]);      // 13:15
   });
 
   it('keeps time with the HUD: the minute gone, like a real clock (#61)', () => {
     // The HUD shows NightClock.formatTime, which floors (it used to round,
-    // and showed "1:60" for it). The wall clock has to agree with it.
-    expect(clockDigits(0.0084)).toEqual([1, 2, 0, 0]);     // 12:00:30 → still 12:00
-    expect(clockDigits(1.9999)).toEqual([null, 1, 5, 9]);  // never 1:60
-    for (let hour = 0; hour <= 6; hour += 1 / 977) {
-      const hud = NightClock.formatTime(hour).split(' ')[0];           // "H:MM"
+    // and showed "1:60" for it). The desk clock has to agree with it: the
+    // same minute, on its own 24-hour face.
+    expect(clockDigits(0.0084)).toEqual([0, 0, 0, 0]);     // 00:00:30 → still 00:00
+    expect(clockDigits(1.9999)).toEqual([0, 1, 5, 9]);     // never 01:60
+    for (let hour = SHIFT.startHour; hour <= SHIFT.endHour; hour += 1 / 977) {
+      const [, h, mm, half] = NightClock.formatTime(hour).match(/^(\d+):(\d\d) (AM|PM)$/);
+      const hud = `${String(Number(h) % 12 + (half === 'PM' ? 12 : 0)).padStart(2, '0')}:${mm}`;
       const [h10, h1, m10, m1] = clockDigits(hour);
-      expect(`${h10 ?? ''}${h1}:${m10}${m1}`, `hour ${hour}`).toBe(hud);
+      expect(`${h10}${h1}:${m10}${m1}`, `hour ${hour}`).toBe(hud);
     }
   });
 
   it('never reads :60: the last half-minute shows :59, exact hours roll over', () => {
-    expect(clockDigits(0.995)).toEqual([1, 2, 5, 9]);      // 12:59:42 → 12:59
-    expect(clockDigits(5.999)).toEqual([null, 5, 5, 9]);
-    expect(clockDigits(11.9999)).toEqual([1, 1, 5, 9]);    // 11:59:59 → 11:59, not 0:00
-    expect(clockDigits(1)).toEqual([null, 1, 0, 0]);       // 1:00 sharp
-    expect(clockDigits(12)).toEqual([1, 2, 0, 0]);         // noon, not 0:00
+    expect(clockDigits(0.995)).toEqual([0, 0, 5, 9]);      // 00:59:42 → 00:59
+    expect(clockDigits(5.999)).toEqual([0, 5, 5, 9]);
+    expect(clockDigits(-0.0001)).toEqual([2, 3, 5, 9]);    // 23:59:59 → 23:59, not 24:00
+    expect(clockDigits(1)).toEqual([0, 1, 0, 0]);          // 01:00 sharp
+    expect(clockDigits(12)).toEqual([1, 2, 0, 0]);         // noon
+    expect(clockDigits(24)).toEqual([0, 0, 0, 0]);         // a day round is midnight again
   });
 });
 
@@ -68,22 +72,19 @@ describe('DigitalClock', () => {
     expect(face.max.x).toBeLessThan(box.max.x);
   });
 
-  it('shows 12:00 before anyone hands it a clock', () => {
+  it('shows 00:00 before anyone hands it a clock', () => {
     const clock = new DigitalClock();
-    expect(sorted(lit(clock, 0))).toBe(sorted(SEGMENTS[1]));
-    expect(sorted(lit(clock, 1))).toBe(sorted(SEGMENTS[2]));
-    expect(sorted(lit(clock, 2))).toBe(sorted(SEGMENTS[0]));
-    expect(sorted(lit(clock, 3))).toBe(sorted(SEGMENTS[0]));
+    for (let d = 0; d < 4; d++) expect(sorted(lit(clock, d))).toBe(sorted(SEGMENTS[0]));
   });
 
-  it('an unlit segment is all but black: 1:00 must not read as 8:88', () => {
+  it('an unlit segment is all but black: 01:00 must not read as 88:88', () => {
     const clock = new DigitalClock();
     clock.showTime(1);
     const colors = clock.display.geometry.getAttribute('color');
     const reds = [];
     for (let v = 0; v < 4 * 7 * 4; v += 4) reds.push(colors.getX(v));
     const lit = reds.filter(r => r > 0.5), unlit = reds.filter(r => r <= 0.5);
-    expect(lit.length).toBe(2 + 6 + 6);                     // 1, 0, 0
+    expect(lit.length).toBe(6 + 2 + 6 + 6);                 // 0, 1, 0, 0
     expect(Math.max(...unlit)).toBeLessThan(0.05);
     // And a lit one is red, not salmon. Vertex colours are linear: sRGB
     // red at full with a little green is far less than that once converted.
@@ -93,11 +94,17 @@ describe('DigitalClock', () => {
     expect(colors.getZ(first)).toBeLessThan(0.06);
   });
 
-  it('lights the segments of the time it is shown, and blanks the leading digit', () => {
+  it('lights the segments of the time it is shown, the leading zero included', () => {
     const clock = new DigitalClock();
-    clock.showTime(4.5);                                    // 4:30
-    expect(lit(clock, 0)).toBe('');
+    clock.showTime(4.5);                                    // 04:30
+    expect(sorted(lit(clock, 0))).toBe(sorted(SEGMENTS[0]));
     expect(sorted(lit(clock, 1))).toBe(sorted(SEGMENTS[4]));
+    expect(sorted(lit(clock, 2))).toBe(sorted(SEGMENTS[3]));
+    expect(sorted(lit(clock, 3))).toBe(sorted(SEGMENTS[0]));
+
+    clock.showTime(-1.5);                                   // 22:30, before midnight
+    expect(sorted(lit(clock, 0))).toBe(sorted(SEGMENTS[2]));
+    expect(sorted(lit(clock, 1))).toBe(sorted(SEGMENTS[2]));
     expect(sorted(lit(clock, 2))).toBe(sorted(SEGMENTS[3]));
     expect(sorted(lit(clock, 3))).toBe(sorted(SEGMENTS[0]));
   });

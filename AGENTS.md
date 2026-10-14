@@ -86,6 +86,7 @@ src/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
+│   ├── DigitalClock.js  # The desk's seven-segment clock, in 24-hour time
 │   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
@@ -214,7 +215,7 @@ The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSyste
 
 ### Shift and day
 
-A night is one twelve-hour shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD and on the office's `WallClock`. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
+A night is one twelve-hour shift: `NightClock` runs 6:00 PM → 6:00 AM, sunset to sunrise, over `NIGHT_SECONDS` (600 s, ten real minutes: 50 s an in-game hour, the pace the old midnight-to-6 night had), shown on the HUD ("6:00 PM"), on the office's `WallClock` and on the desk's `DigitalClock`, which reads 24-hour time (18:00 → 06:00, with the leading zero). The desk clock floors to the minute gone, as the HUD does, so the two never disagree. Hours count from midnight, so the clock runs -6 → 6 (`SHIFT`: `startHour` -6, `darkHour` -5, `endHour` 6); `formatTime` wraps them for display. Nothing comes before dark (`SHIFT.darkHour`, 7 PM): the Sun drowns the faint signals, and the threats keep to the night too.
 
 `GameController` owns the state:
 
