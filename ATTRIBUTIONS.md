@@ -456,6 +456,27 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **Used for** | The UFO threat — the saucer that comes once a night (`Ufo`) |
 | **Modifications** | Renamed from `bob_lazar_ufo.glb`; scaled ×5 in the manifest |
 
+### Sleep Demon — ⚠ non-commercial license, ripped game asset
+
+"The Boiled One: Horror Game - Boiled One"
+(https://sketchfab.com/3d-models/the-boiled-one-horror-game-boiled-one-64ce66c413fe4e5e92a48e8e02a83590)
+by MG Rips (MG_GameRips) is licensed under **Creative Commons
+Attribution-NonCommercial** (http://creativecommons.org/licenses/by-nc/4.0/).
+The character is from the horror game "The Boiled One".
+
+⚠ Two things to know. The licence is non-commercial, like the soap dispenser:
+fine for a university project, but it has to be replaced if the game is ever
+sold or monetised. And the uploader ripped the model from a game they did not
+make, so they may not have the right to license it at all. Found by Bruno;
+not yet decided as a team.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/sleep-demon.glb` |
+| **Manifest key** | `model:sleep-demon` |
+| **Used for** | The Sleep Demon's body, drawn as a pitch-black shade (`MonsterFigure`) |
+| **Modifications** | Baked by `scripts/bake-sleep-demon.mjs`: bind pose baked in, rig, textures, eyes, gums, teeth and the head card dropped, decimated from 18,396 to 3,000 triangles, scaled to 1.8 m, eye and mouth markers added. Our own eyes and grin are drawn on it |
+
 ## Sounds
 
 ### Gas mask breathing
@@ -602,6 +623,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Manifest key** | `sfx:monster-bite` |
 | **Used for** | A dust eye catching the player (`DustEyes`) |
 | **Modifications** | Renamed |
+
+### Young tired male yawns
+
+"Young tired male yawns" (https://mixkit.co/free-sound-effects/yawn/) from Mixkit is used under the Mixkit Sound Effects Free License (https://mixkit.co/license/#sfxFree) — free to use in a game, attribution not required, credited here anyway. Downloaded as `mixkit-young-tired-male-yawns-2278.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/yawn.mp3` |
+| **Manifest key** | `sfx:yawn` |
+| **Used for** | The tired player's yawns (`FatigueEffects`) |
+| **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
 
 ### Pressure release
 

@@ -53,6 +53,9 @@ export class FirstPersonController extends Component {
     this.ctrl = rapierCtrl;
 
     this.speed         = opts.speed         ?? 5;
+    /** Public: a multiplier on the walk speed — a threat can slow the
+     *  player down (the Sleep Demon's walk-down). 1 is full speed. */
+    this.speedScale    = opts.speedScale    ?? 1;
     this.jumpForce     = opts.jumpForce     ?? 4;
     this.sensitivity   = opts.sensitivity   ?? 0.002;
     /** Mouse up looks down. Yaw is never inverted. */
@@ -308,7 +311,9 @@ export class FirstPersonController extends Component {
     // ── Source-style horizontal velocity ──
     // Friction only runs while grounded — the air keeps momentum.
     if (this.grounded) this._applyFriction(dt);
-    const wishSpeed = this._wish ? (this.crouched ? this.crouchSpeed : this.speed) : 0;
+    const wishSpeed = this._wish
+      ? (this.crouched ? this.crouchSpeed : this.speed) * this.speedScale
+      : 0;
     this._accelerate(
       this._wishDir, wishSpeed,
       this.grounded ? this.accel : this.airAccel, dt,

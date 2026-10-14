@@ -11,7 +11,7 @@ import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ShadowScheduler } from './ShadowScheduler.js';
 import { FrameSettle } from './FrameSettle.js';
-import { warmUp } from './WarmUp.js';
+import { warmUp, precompile } from './WarmUp.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
@@ -99,10 +99,17 @@ export class Engine {
    *  them) but nothing steps or updates — the clock, the dish, the airlock
    *  and every enemy freeze without knowing why. Set through setPaused(). */
   paused = false;
-  /** How fast the game's clock runs: 1 is normal, below 1 slows everything
-   *  the simulation sees (physics, the night clock, every threat) — the
-   *  journal reads in slowed time. The frame and its input don't slow. */
+
+  /** How fast game time runs: the updates are handed frameDt × timeScale.
+   *  A nap sets it above 1 (Nap.js) to fast-forward the night; the journal
+   *  sets it below 1 (Journal.js), so it reads in slowed time. Physics keeps
+   *  real time either way, since many more steps a frame would only cost
+   *  frames. The frame and its input never change speed. */
   timeScale = 1;
+  /** Real seconds in the frame being simulated, whatever timeScale is: for
+   *  what must keep real speed through a nap (getting into and out of bed,
+   *  what the player sees while half awake). */
+  realDt = 0;
   /** Gates every debug key (` F2 V B I N F4). The app layer sets it from the
    *  DEVELOPER setting; on by default so a bare Engine keeps its tools. */
   devTools = true;
@@ -401,7 +408,8 @@ export class Engine {
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
-    this.loadScene(BaseScene);
+    // Not compiled here: warmUp, below, does that and more.
+    this.loadScene(BaseScene, { compile: false });
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
@@ -482,8 +490,13 @@ export class Engine {
    *  physics bodies, colliders, and root-object bookkeeping), then builds
    *  the new scene and initialises its root objects.
    *
-   *  @param {typeof import('./Scene.js').Scene} SceneClass */
-  loadScene(SceneClass) {
+   *  Then every shader it can draw with is compiled, the hidden things'
+   *  included (precompile), unless `compile` is false — the boot, whose
+   *  warmUp does it behind the loading screen.
+   *
+   *  @param {typeof import('./Scene.js').Scene} SceneClass
+   *  @param {{ compile?: boolean }} [opts] */
+  loadScene(SceneClass, { compile = true } = {}) {
     // ── Tear down the old scene ──
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
@@ -508,6 +521,21 @@ export class Engine {
     this.levelEditor?.onSceneRebuilt?.();
 
     for (const listener of [...this._sceneLoadedListeners]) listener(this.activeScene);
+
+    // After the listeners: the settings they apply (shadows on or off) are
+    // part of every lit shader's key.
+    if (compile) {
+      this.compileScene().catch((err) => console.warn('[Engine] precompile failed:', err));
+    }
+  }
+
+  /** Compile every shader the active scene can draw with, hidden objects
+   *  included, in the background. A rebuilt scene's old programs went with
+   *  its old materials; without this, each thing that starts hidden (the
+   *  Sleep Demon, the dust eyes, the UFO) compiled on the frame it first
+   *  showed. @returns {Promise<void>} */
+  compileScene() {
+    return precompile({ renderer: this.renderer, scene: this.scene, camera: this.camera });
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping
@@ -780,14 +808,18 @@ export class Engine {
 
     // Paused: the clock above still moves (no spike on resume), the frame
     // still renders, and nothing in between runs.
-    if (!this.paused) this._simulate(frameDt * this.timeScale);
+    if (!this.paused) this._simulate(frameDt, frameDt * this.timeScale);
 
     this._renderFrame(frameDt);
   };
 
   /** One frame of simulation: fixed steps, interpolation, the debug camera,
-   *  then the variable and late updates. Skipped while paused. */
-  _simulate(frameDt) {
+   *  then the variable and late updates. Skipped while paused. Physics and
+   *  the fly camera run on real time, the updates on game time.
+   *  @param {number} frameDt  Real seconds this frame.
+   *  @param {number} [gameDt=frameDt]  Game seconds (scaled by timeScale). */
+  _simulate(frameDt, gameDt = frameDt) {
+    this.realDt = frameDt;
     // ── Fixed update (physics) ──
     this._accumulator += frameDt;
     while (this._accumulator >= Engine.FIXED_DT) {
@@ -828,10 +860,10 @@ export class Engine {
     }
 
     // ── Variable update ──
-    for (const obj of this._rootObjects) obj._update(frameDt);
+    for (const obj of this._rootObjects) obj._update(gameDt);
 
     // ── Late update (post-update, camera, etc.) ──
-    for (const obj of this._rootObjects) obj._lateUpdate(frameDt);
+    for (const obj of this._rootObjects) obj._lateUpdate(gameDt);
   }
 
   /** Draw the frame and consume one-frame input — runs paused or not. */

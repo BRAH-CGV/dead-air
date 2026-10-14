@@ -27,6 +27,9 @@ import { Component } from '../core/Component.js';
 // `lit` says whether the bulb is shining this frame, for whoever wants to
 // act on each light-up (ScannerAlertSound beeps on it).
 //
+// It blinks on real time (engine.realDt), so a nap's fast-forward doesn't
+// set it — and its beep — racing.
+//
 // Placeholder until a proper warning-lamp model is sourced. It owns its
 // geometry and material; dispose() frees them.
 // ─────────────────────────────────────────────
@@ -37,10 +40,12 @@ const FRANTIC_MIN = 0.03;
 const FRANTIC_MAX = 0.11;
 const FRANTIC_GAIN = 2;
 
-/** Drives the bulb each frame. */
+/** Drives the bulb each frame, on real time: a nap hands the updates 15×
+ *  the frame (engine.timeScale), and a lamp — and its beep — racing at 15×
+ *  is no lamp at all. With no engine (a bare lamp) it takes what it's given. */
 class SignalAlertLightBlink extends Component {
   onUpdate(dt) {
-    this.gameObject._tick(dt);
+    this.gameObject._tick(this.scene?.userData?.engine?.realDt ?? dt);
   }
 }
 
