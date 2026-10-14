@@ -288,7 +288,20 @@ by felixawani is licensed under Creative Commons Attribution
 |---|---|
 | **File** | `public/assets/models/simple-desk.glb` |
 | **Manifest key** | `model:simple-desk` |
-| **Used for** | Office desk prop |
+| **Used for** | The bedroom's desk |
+| **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
+
+### Storage rack
+
+"Worn Metal Rack" (https://polyhaven.com/a/worn_metal_rack) from Poly Haven,
+released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bigger-shelf.glb` |
+| **Manifest key** | `model:bigger-shelf` |
+| **Used for** | The bedroom's storage racks |
 | **Modifications** | None recorded |
 
 ### Generator

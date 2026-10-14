@@ -250,6 +250,23 @@ const PLACED = {
     scale: 0.25,
     physics: 'static',
   },
+  // The bedroom's desk. Modelled around its centre at 1.0 × 0.9 × 2.0 m;
+  // 0.88 takes it to a 1.76 × 0.88 m desk with its top at 0.79 m. Its
+  // drawers face +x, its long side runs along z.
+  'model:simple-desk': {
+    type: 'model',
+    url: 'assets/models/simple-desk.glb',
+    scale: 0.88,
+    origin: 'floor',
+    physics: 'static',
+  },
+  // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
+  // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
+  'model:bigger-shelf': {
+    type: 'model',
+    url: 'assets/models/bigger-shelf.glb',
+    physics: 'static',
+  },
   'model:shelf': {
     type: 'model',
     url: 'assets/models/shelf.glb',
@@ -607,11 +624,6 @@ const LIBRARY = {
   'model:generator': {
     type: 'model',
     url: 'assets/models/generator.glb',
-    physics: 'static',
-  },
-  'model:simple-desk': {
-    type: 'model',
-    url: 'assets/models/simple-desk.glb',
     physics: 'static',
   },
   'model:wall-light': {
