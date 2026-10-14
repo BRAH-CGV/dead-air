@@ -125,8 +125,9 @@ describe('BaseScene security cameras', () => {
       const p = worldPos(cam);
       const b = scene.rooms[roomName].bounds();
       expect(scene._isOutside(p)).toBe(true);
-      const face = side < 0 ? b.min.x : b.max.x;
-      expect(Math.abs(p.x - face)).toBeLessThan(0.3);
+      // On the bunker's roof band, out past the end wall it covers.
+      const face = (side < 0 ? b.min.x : b.max.x) + side * scene.bunker.fascia.out;
+      expect(Math.abs(p.x - face)).toBeLessThan(0.1);
       expect(Math.abs(p.z - (b.min.z + b.max.z) / 2)).toBeLessThan(1);
       // Looking out, away from the building.
       expect(Math.sign(lookDir(cam).x)).toBe(side);
@@ -149,11 +150,23 @@ describe('BaseScene security cameras', () => {
       expect(p.z).toBeLessThan(maxZ);
       expect(scene._isOutside(p)).toBe(true);
       expect(Math.sign(p.x)).toBe(side);
-      // Looking out across the yard, toward its middle.
+      // Looking straight out across the yard, square to the building.
+      cam.setPan(0);
+      cam.object3d.updateMatrixWorld(true);
       const d = lookDir(cam);
       expect(d.z).toBeGreaterThan(0.3);
-      expect(Math.sign(d.x)).toBe(-side);
+      expect(Math.abs(d.x)).toBeLessThan(1e-6);
       expect(cam.zones).toContain('yard');
+      // And able to turn all the way round each way, to look along the building.
+      expect(cam.panLimits[0]).toBeCloseTo(-Math.PI / 2, 5);
+      expect(cam.panLimits[1]).toBeCloseTo(Math.PI / 2, 5);
+      for (const yaw of cam.panLimits) {
+        cam.setPan(yaw);
+        cam.object3d.updateMatrixWorld(true);
+        const along = lookDir(cam).setY(0).normalize();
+        expect(Math.abs(along.x)).toBeGreaterThan(0.999);
+      }
+      cam.setPan(0);
     };
 
     it('the quarters side (left)', () => yard('YARD — QUARTERS SIDE', -1));
@@ -194,14 +207,14 @@ describe('BaseScene security cameras', () => {
     }
   });
 
-  it('the angled yard cameras sit on wedges too', () => {
+  it('the yard cameras are square to the band, so need no wedge', () => {
     for (const label of ['YARD — QUARTERS SIDE', 'YARD — SERVER SIDE']) {
-      expect(byLabel[label].object3d.getObjectByName('CameraWedge'), label).toBeDefined();
+      expect(byLabel[label].object3d.getObjectByName('CameraWedge'), label).toBeUndefined();
     }
   });
 
-  it('each wedge is the colour of the wall it is on: the lining inside, the shell outside', () => {
-    const lq = scene.rooms.LivingQuarters, sr = scene.rooms.ServerRoom;
+  it('each wedge is the colour of the wall it is on', () => {
+    const lq = scene.rooms.LivingQuarters;
     // Not loaded under test, the lining falls back to the room's own wall material.
     const inner = lq.root.object3d.getObjectByName('Lining_Walls')?.material ?? lq.material;
     const wedge = label => byLabel[label].object3d.getObjectByName('CameraWedge');
@@ -210,8 +223,6 @@ describe('BaseScene security cameras', () => {
     const indoor = wedge('LIVING QUARTERS').material;
     expect(indoor.color.getHex()).toBe(inner.color.getHex());
     expect(indoor.map).toBe(inner.map);
-    expect(wedge('YARD — QUARTERS SIDE').material).toBe(lq.material);
-    expect(wedge('YARD — SERVER SIDE').material).toBe(sr.material);
   });
 
   it('hands the overlay a map: the rooms, the corridors, the yard and every camera', () => {

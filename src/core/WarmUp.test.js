@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { warmUp, collectTextures } from './WarmUp.js';
+import { warmUp, collectTextures, precompile } from './WarmUp.js';
 
 // ─────────────────────────────────────────────
 // WarmUp  –  pay every first-use GPU cost behind the loading screen
@@ -107,5 +107,42 @@ describe('warmUp', () => {
     renderer.compile = vi.fn();
     await warmUp({ renderer, scene: root, camera: new THREE.PerspectiveCamera(), nextFrame });
     expect(renderer.compile).toHaveBeenCalled();
+  });
+});
+
+// A rebuilt scene (Retry, Restart night, Main menu) has no loading screen to
+// hide behind: its old programs went with the old materials, and anything
+// that starts hidden (the Sleep Demon, the dust eyes, the UFO) compiled on
+// the frame it first showed — the freeze when the demon first appeared.
+describe('precompile', () => {
+  it('compiles every shader in the background, and draws and uploads nothing', async () => {
+    const { root } = scene();
+    const { renderer } = fakeRenderer();
+    const camera = new THREE.PerspectiveCamera();
+    await precompile({ renderer, scene: root, camera });
+    expect(renderer.compileAsync).toHaveBeenCalledWith(root, camera);
+    expect(renderer.render).not.toHaveBeenCalled();
+    expect(renderer.initTexture).not.toHaveBeenCalled();
+  });
+
+  it('leaves hidden objects hidden — three compiles them anyway, and a shown one would be on screen while it waits', async () => {
+    const { root } = scene();
+    const hidden = root.children[0];
+    hidden.visible = false;
+    const { renderer } = fakeRenderer();
+    const seen = [];
+    renderer.compileAsync = vi.fn(async () => { seen.push(hidden.visible); });
+    await precompile({ renderer, scene: root, camera: new THREE.PerspectiveCamera() });
+    expect(seen).toEqual([false]);
+    expect(hidden.visible).toBe(false);
+  });
+
+  it('copes with a renderer that has no compileAsync, or none at all', async () => {
+    const { root } = scene();
+    const camera = new THREE.PerspectiveCamera();
+    const renderer = { compile: vi.fn() };
+    await precompile({ renderer, scene: root, camera });
+    expect(renderer.compile).toHaveBeenCalledWith(root, camera);
+    await expect(precompile({ renderer: {}, scene: root, camera })).resolves.toBeUndefined();
   });
 });

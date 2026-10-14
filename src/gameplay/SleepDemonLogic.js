@@ -17,12 +17,16 @@
 //   face                                                        smiles ─▶ the kill
 //
 // Looked at — any of it within the frame's look cone of the centre of the
-// view (focusAngleFor) — it fades away where it stood, and fades in again
-// `goneFor` later on the other side. It always shows outside the cone, so
-// it only ever appears where the eye isn't quite looking. Below `holdBelow`
-// it no longer fades from a look; below `walkBelow` it walks in on the
-// player, seen or not. At `smileBelow` it smiles, and keeps it through the
-// kill. At empty it takes the player.
+// view (focusAngleFor), the look resting there for `lookHold` — it fades
+// away where it stood, and fades in again `goneFor` later on the other
+// side. A quick sweep of the view across it doesn't count, but a glance is
+// remembered for `doubleTakeWindow`: look back in time and the two add up
+// (the double take). Walking up to it does the same as a look: the player
+// closing in by `nearCloser` to within `nearFade`, with all of it in view.
+// It always shows outside the cone, so it only ever appears where the eye
+// isn't quite looking. Below `holdBelow` it no longer fades from either;
+// below `walkBelow` it walks in on the player, seen or not. At `smileBelow`
+// it smiles, and keeps it through the kill. At empty it takes the player.
 //
 // Unseen — turned away from, out of the frustum, or the terminal's screen
 // up — it creeps (sneakSpeedFor), no nearer than creepFloorFor(stamina):
@@ -36,9 +40,10 @@
 // behind them.
 //
 // The scene is injected: lookAngle() says where the view is from it,
-// place() fades it in at a spot, approach() steps it in, hide() fades it
-// away. SleepDemon (the component) maps them onto the camera, the physics
-// and the figure.
+// gap() how far off it stands now and wholeInView() whether all of it is
+// on screen, place() fades it in at a spot, approach() steps it in, hide()
+// fades it away. SleepDemon (the component) maps them onto the camera, the
+// physics and the figure.
 // ─────────────────────────────────────────────
 
 const DEG = Math.PI / 180;
@@ -61,6 +66,17 @@ export const SLEEP_DEMON = Object.freeze({
    *  stamina, closing to 15° at `holdBelow` (10 %). */
   focusFar: 40 * DEG,
   focusNear: 15 * DEG,
+  /** Seconds the look must rest inside the cone to send it away: a quick
+   *  sweep of the view across it doesn't. */
+  lookHold: 0.5,
+  /** Seconds a glance is remembered: a look back within it carries on
+   *  from the glance (the double take). */
+  doubleTakeWindow: 2,
+  /** Walking up to it sends it away as a look does: the player closing in
+   *  by `nearCloser` metres since it last stood (its own creep and where
+   *  it landed never count) to within `nearFade`, with all of it in view. */
+  nearFade: 2.5,
+  nearCloser: 0.25,
   /** Below this it no longer fades from a look: it stands, and stares. */
   holdBelow: 0.10,
   /** Below this it walks in on the player, seen or not. */
@@ -248,8 +264,11 @@ export class SleepDemonLogic {
    * @param {object} [opts]
    * @param {() => number|null} [opts.lookAngle]  radians from the centre of the
    *        view; Infinity out of view, null while the view is covered
-   * @param {(spot: {distance: number, side: number, edge: number, focus: number, ambush?: boolean}) => boolean} [opts.place]
-   *        fades it in at a spot (ambush: out of sight); false: no room there
+   * @param {(spot: {distance: number, side: number, edge: number, focus: number, ambush?: boolean}) => boolean|number} [opts.place]
+   *        fades it in at a spot (ambush: out of sight); false: no room there.
+   *        A number is the metres it really stands off (a wall cut it short).
+   * @param {() => number} [opts.gap]  metres from the player's eye to it, now
+   * @param {() => boolean} [opts.wholeInView]  all of it inside the view
    * @param {() => void} [opts.hide]  fades it away
    * @param {() => void} [opts.onKill]
    * @param {() => number} [opts.rand]
@@ -264,10 +283,13 @@ export class SleepDemonLogic {
     lookAngle = () => Infinity, place = () => true, hide = () => {}, onKill = () => {},
     rand = Math.random, tuning = SLEEP_DEMON,
     approach = () => false, playerDrift = () => 0,
+    gap = () => Infinity, wholeInView = () => false,
   } = {}) {
     Object.assign(this, { lookAngle, place, hide, onKill, rand, tuning });
     this.approach = approach;
     this.playerDrift = playerDrift;
+    this.gap = gap;
+    this.wholeInView = wholeInView;
     this.start();
   }
 
@@ -285,6 +307,7 @@ export class SleepDemonLogic {
     this._crept = false;
     this._killed = false;
     this.distance = Infinity;
+    this._forgetLook();
     this._endWalk();
   }
 
@@ -319,10 +342,12 @@ export class SleepDemonLogic {
 
     if (this.shown) {
       const angle = this.lookAngle();
+      const looked = this._looked(dt, Number.isFinite(angle) && angle < this.focus);
+      this._gapFrom = Math.max(this._gapFrom, this.gap());
       if (Number.isFinite(angle)) {
         // Seen.
         this._stuck = 0;
-        if (angle < this.focus && stamina >= t.holdBelow) {
+        if (stamina >= t.holdBelow && (looked || this._walkedUp())) {
           this._vanish();
           this.side = -this.side;
           this._gone = this._goneFor(stamina);
@@ -366,12 +391,15 @@ export class SleepDemonLogic {
       spot.distance = Math.min(spot.distance, Math.max(t.minDistance, this.distance));
     }
     for (const side of [this.side, -this.side]) {
-      if (!this.place({ ...spot, side })) continue;
-      this.distance = spot.distance;
+      const at = this.place({ ...spot, side });
+      if (!at) continue;
+      this.distance = typeof at === 'number' ? at : spot.distance;
       this.side = side;
       this.shown = true;
       this.ambush = ambush;
       this._stuck = 0;
+      this._gapFrom = this.gap();           // the player closes in from here
+      this._forgetLook();
       return;
     }
     this.ambush = false;
@@ -385,6 +413,33 @@ export class SleepDemonLogic {
     this.ambush = false;
     this._crept = false;                    // a banishment gives the creep back
     this.hide();
+  }
+
+  /** The look on it this frame: the seconds it has rested there, a glance
+   *  kept for doubleTakeWindow after the look leaves. True once they reach
+   *  lookHold. */
+  _looked(dt, on) {
+    const t = this.tuning;
+    if (on) {
+      this._lookFor += dt;
+      this._lookedAgo = 0;
+      return this._lookFor >= t.lookHold - 1e-9;
+    }
+    if (this._lookFor > 0 && (this._lookedAgo += dt) > t.doubleTakeWindow) this._forgetLook();
+    return false;
+  }
+
+  _forgetLook() {
+    this._lookFor = 0;
+    this._lookedAgo = 0;
+  }
+
+  /** The player has walked up to it: within nearFade, closer by nearCloser
+   *  than since it last stood, all of it in view. */
+  _walkedUp() {
+    const t = this.tuning;
+    const gap = this.gap();
+    return gap < t.nearFade && this._gapFrom - gap >= t.nearCloser && this.wholeInView();
   }
 
   _goneFor(stamina) {
@@ -405,8 +460,10 @@ export class SleepDemonLogic {
     const room = this.distance + drift - floor;
     const step = Math.max(0, Math.min(speed * dt + drift, room));
     const at = this.approach(step, unseen);
-    if (at !== false) this.distance = at;
-    return at === false ? false : step;
+    if (at === false) return false;
+    this.distance = at;
+    this._gapFrom = this.gap();             // its own step is no player closing in
+    return step;
   }
 
   /** Seen, below walkBelow: it walks in on the player, down to arm's length. */

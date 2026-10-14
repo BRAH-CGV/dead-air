@@ -11,7 +11,7 @@ import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ShadowScheduler } from './ShadowScheduler.js';
 import { FrameSettle } from './FrameSettle.js';
-import { warmUp } from './WarmUp.js';
+import { warmUp, precompile } from './WarmUp.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
@@ -402,7 +402,8 @@ export class Engine {
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
-    this.loadScene(BaseScene);
+    // Not compiled here: warmUp, below, does that and more.
+    this.loadScene(BaseScene, { compile: false });
 
     // Hidden until ` is pressed, and costs nothing while hidden.
     this.physicsDebug = new PhysicsDebug(this.scene, this.world);
@@ -483,8 +484,13 @@ export class Engine {
    *  physics bodies, colliders, and root-object bookkeeping), then builds
    *  the new scene and initialises its root objects.
    *
-   *  @param {typeof import('./Scene.js').Scene} SceneClass */
-  loadScene(SceneClass) {
+   *  Then every shader it can draw with is compiled, the hidden things'
+   *  included (precompile), unless `compile` is false — the boot, whose
+   *  warmUp does it behind the loading screen.
+   *
+   *  @param {typeof import('./Scene.js').Scene} SceneClass
+   *  @param {{ compile?: boolean }} [opts] */
+  loadScene(SceneClass, { compile = true } = {}) {
     // ── Tear down the old scene ──
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
@@ -509,6 +515,21 @@ export class Engine {
     this.levelEditor?.onSceneRebuilt?.();
 
     for (const listener of [...this._sceneLoadedListeners]) listener(this.activeScene);
+
+    // After the listeners: the settings they apply (shadows on or off) are
+    // part of every lit shader's key.
+    if (compile) {
+      this.compileScene().catch((err) => console.warn('[Engine] precompile failed:', err));
+    }
+  }
+
+  /** Compile every shader the active scene can draw with, hidden objects
+   *  included, in the background. A rebuilt scene's old programs went with
+   *  its old materials; without this, each thing that starts hidden (the
+   *  Sleep Demon, the dust eyes, the UFO) compiled on the frame it first
+   *  showed. @returns {Promise<void>} */
+  compileScene() {
+    return precompile({ renderer: this.renderer, scene: this.scene, camera: this.camera });
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping

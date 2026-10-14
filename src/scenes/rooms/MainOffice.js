@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Room } from './Room.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -117,6 +118,12 @@ export class RationDispenser extends Interactable {
 const WINDOW_MULLION_X = 1.42;
 const WINDOW_CROSSBAR_Y = 1.65;
 const WINDOW_BAR = 0.08;
+/** The window's corners are rounded, a quarter circle of this radius (m):
+ *  a steel fillet through the wall in each (_buildWindowFrame), and the
+ *  bunker's embrasure outside follows the same curve (BunkerShell). */
+export const WINDOW_CORNER_RADIUS = 0.45;
+/** Bolt heads round the inside of the frame: radius, and spacing along it. */
+const WINDOW_BOLT = { radius: 0.018, spacing: 0.5 };
 
 /** The computer desk, as MainOffice seats it, read off retro-computer.glb
  *  at its 0.016 spawn scale: its centre; the half-width of its side panels
@@ -593,6 +600,71 @@ export class MainOffice extends Room {
       ['WindowFrame_Crossbar',      [0, WINDOW_CROSSBAR_Y, -4.82],    [8.5, 0.06, 0.12]],
     ];
     for (const [name, position, size] of parts) this._addStaticBox(name, position, size, frame);
+    this._buildWindowFillets(frame);
+    this._buildWindowBolts(frame);
+  }
+
+  /** A curved fillet in each corner of the opening, through the wall: from
+   *  inside, the window reads as a hatch in a hardened wall — rounded like
+   *  a ship's port — rather than a cut in a partition. Seen only; the glass
+   *  collider (`BackWindow`) still fills the whole opening. */
+  _buildWindowFillets(material) {
+    const { width, height, offset = 0, sill } = this.openings.find(o => o.side === 'back');
+    const r = WINDOW_CORNER_RADIUS, t = this.wallThick;
+    // The top-right corner's fillet, the corner at the origin; mirrored
+    // into the other three.
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -r);
+    shape.lineTo(0, 0);
+    shape.lineTo(-r, 0);
+    shape.absarc(-r, -r, r, Math.PI / 2, 0, true);
+    const geometry = this._own(new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 10 }));
+
+    const group = new THREE.Group();
+    group.name = 'WindowFillets';
+    group.position.set(offset, 0, this._wallPlane('back') - t / 2);
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(sx * width / 2, sy > 0 ? sill + height : sill, 0);
+      mesh.scale.set(sx, sy, 1);   // three flips the winding for a mirrored mesh
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    this.root.object3d.add(group);
+  }
+
+  /** Bolt heads round the frame, on its face toward the room, one mesh. */
+  _buildWindowBolts(material) {
+    const top = this.root.find('WindowFrame_Top'), left = this.root.find('WindowFrame_Left');
+    const [tw, th, td] = top._originalSize, [, lh] = left._originalSize;
+    const z = top.object3d.position.z + td / 2;
+    const { y: topY } = top.object3d.position, bottomY = this.root.find('WindowFrame_Bottom').object3d.position.y;
+    const leftX = left.object3d.position.x, rightX = this.root.find('WindowFrame_Right').object3d.position.x;
+    const { radius, spacing } = WINDOW_BOLT;
+
+    const at = [];
+    const row = (from, to, place) => {
+      const n = Math.max(1, Math.round((to - from) / spacing));
+      for (let i = 0; i <= n; i++) at.push(place(from + ((to - from) * i) / n));
+    };
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, topY]);
+    row(-tw / 2 + 0.1, tw / 2 - 0.1, x => [x, bottomY]);
+    const sideY = left.object3d.position.y;
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [leftX, y]);
+    row(sideY - lh / 2 + th + 0.2, sideY + lh / 2 - th - 0.2, y => [rightX, y]);
+
+    const parts = at.map(([x, y]) => {
+      const bolt = new THREE.CylinderGeometry(radius, radius * 1.15, 0.025, 6);
+      bolt.rotateX(Math.PI / 2);
+      bolt.translate(x, y, z + 0.0125);
+      return bolt;
+    });
+    const merged = this._own(mergeGeometries(parts));
+    for (const g of parts) g.dispose();
+    const bolts = new THREE.Mesh(merged, material);
+    bolts.name = 'WindowBolts';
+    bolts.receiveShadow = true;
+    this.root.object3d.add(bolts);
   }
 
   /** The glass itself, as much as is drawn of it: a thin film of dust and

@@ -20,6 +20,13 @@
 //      ones behind the camera and the ones an occlusion zone will show later.
 //
 //   await warmUp({ renderer, scene, camera, onStage: (label, f) => … });
+//
+// A rebuilt scene (Retry, Restart night, Main menu) has no loading screen,
+// and its old programs went with the old materials. precompile() is the
+// first step alone, run by Engine.loadScene under the rebuild's fade: the
+// visible things would compile on the first frame anyway, but the hidden
+// ones (the Sleep Demon, the dust eyes, the UFO) only on the frame each
+// first showed — a freeze in the middle of the night.
 // ─────────────────────────────────────────────
 
 /** Textures uploaded per frame — small enough that the bar keeps moving. */
@@ -63,8 +70,9 @@ export async function warmUp({
   scene.updateMatrixWorld(true);
 
   // ── 1. Shaders ──
-  // Hidden objects first: compile skips them, and an occlusion zone that is
-  // hidden now is drawn later.
+  // Hidden objects shown: an occlusion zone that is hidden now is drawn
+  // later. (three's compile reaches hidden meshes anyway; it is the lights
+  // it gathers only from visible objects, and those are never shown.)
   onStage('Compiling shaders…', 0);
   const restore = showAll(scene);
   try {
@@ -98,6 +106,21 @@ export async function warmUp({
     restoreVisible();
   }
   await nextFrame();
+}
+
+/**
+ * Every shader program the scene can draw with, hidden objects included,
+ * compiled in the background where the driver allows. Nothing is drawn or
+ * uploaded, and nothing hidden is shown: three's compile walks every mesh,
+ * visible or not.
+ * @param {object} opts
+ * @param {import('three').WebGLRenderer} opts.renderer
+ * @param {import('three').Scene} opts.scene
+ * @param {import('three').Camera} opts.camera
+ */
+export async function precompile({ renderer, scene, camera }) {
+  if (renderer?.compileAsync) await renderer.compileAsync(scene, camera);
+  else renderer?.compile?.(scene, camera);
 }
 
 /** Show every hidden object; returns a function that hides them again.

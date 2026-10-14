@@ -21,6 +21,7 @@ import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { hiddenFromRegion } from '../systems/Sightlines.js';
 import { Ufo } from '../gameobjects/Ufo.js';
+import { BUNKER } from '../gameobjects/BunkerShell.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { EvilSignal } from '../gameplay/EvilSignal.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
@@ -1522,7 +1523,7 @@ describe('BaseScene dust eyes keep out of things', () => {
     expect(scene.dustEyes.occluders.some(b => b.minX === office.min.x && b.maxZ === office.max.z)).toBe(true);
   });
 
-  it('count the airlock as solid, with its hatch as the one way in', () => {
+  it('count the airlock as solid, slopes and all, with its hatch as the one way in', () => {
     const engine = makeSceneEngine();
     const scene = new BaseScene(engine);
     scene.build();
@@ -1530,7 +1531,9 @@ describe('BaseScene dust eyes keep out of things', () => {
     const hatch = worldPos(scene.rooms.Airlock.hatch);
     const box = scene.dustEyes.obstacles.find(b => b.door);
     expect(box).toBeTruthy();
-    expect(box.minX).toBeCloseTo(shell.min.x);
+    // Out to the bunker's slopes either side of it, which a chase goes round.
+    expect(box.minX).toBeCloseTo(shell.min.x - BUNKER.batter);
+    expect(box.maxX).toBeCloseTo(shell.max.x + BUNKER.batter);
     expect(box.maxZ).toBeCloseTo(shell.max.z);
     expect(box.door.x).toBeCloseTo(hatch.x);
     expect(box.door.z).toBeCloseTo(hatch.z);
