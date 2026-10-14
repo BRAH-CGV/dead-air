@@ -2,7 +2,11 @@
 // NightClock  –  In-game time progression
 // ─────────────────────────────────────────────
 // Tracks the passage of a single night. Real seconds are mapped to in-game
-// hours (e.g. 300 real seconds = 6 in-game hours → 50 s per hour).
+// hours: the shift (SHIFT) runs from sunset, 6:00 PM, to sunrise, 6:00 AM, over
+// NIGHT_SECONDS (600) real seconds → 50 s per hour.
+//
+// Hours are on a 24-hour clock that runs through midnight as 0: 6 PM is -6,
+// so the hour climbs steadily all shift. formatTime wraps it for display.
 //
 // Standalone class — not a Component. Driven by GameController.update(dt).
 //
@@ -11,6 +15,15 @@
 //   onHourChange(hour)    – when an integer hour boundary is crossed
 //   onNightEnd()          – once, when finished becomes true
 // ─────────────────────────────────────────────
+
+/** Real seconds in one shift, 6:00 PM → 6:00 AM: ten minutes. */
+export const NIGHT_SECONDS = 600;
+
+/** The shift on the clock, in hours from midnight (6 PM is -6): one
+ *  twelve-hour shift, sunset to sunrise. `darkHour` is when dusk has gone:
+ *  the Sun set at the start of the shift, and an hour later the sky is dark
+ *  enough for the faint signals — and the things that come with the dark. */
+export const SHIFT = Object.freeze({ startHour: -6, darkHour: -5, endHour: 6 });
 
 export class NightClock {
   /** Real seconds elapsed this night. */
@@ -33,7 +46,7 @@ export class NightClock {
   onNightEnd = null;
 
   /** @param {{ startHour?: number, endHour?: number, nightDuration?: number }} opts */
-  constructor({ startHour = 0, endHour = 6, nightDuration = 300 } = {}) {
+  constructor({ startHour = SHIFT.startHour, endHour = SHIFT.endHour, nightDuration = NIGHT_SECONDS } = {}) {
     this.startHour = startHour;
     this.endHour = endHour;
     this.nightDuration = nightDuration;
