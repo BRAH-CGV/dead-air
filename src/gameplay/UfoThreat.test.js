@@ -173,7 +173,7 @@ function makeSound() {
   };
 }
 
-/** `summon`: start the visit at once (the U key), so timings below count
+/** `summon`: start the visit at once (the console's `ufo`), so timings below count
  *  from zero; off, it waits for the night's random time. */
 function makeRig({ outside = false, exposed = false, summon = true, night = 3 } = {}) {
   const listeners = new Set();
@@ -270,7 +270,7 @@ describe('UfoThreat', () => {
     expect(radar.threat?.active ?? false).toBe(false);
   });
 
-  it('the U key still summons it on any night, for testing', () => {
+  it('the console\'s ufo still summons it on any night, for testing', () => {
     const { threat } = makeRig({ summon: false, night: 1 });
     expect(threat.summon()).toBe(true);
     run(threat, 0.2);
@@ -288,7 +288,7 @@ describe('UfoThreat', () => {
     expect(ufo.appear).toHaveBeenCalledTimes(1);
   });
 
-  it('summon() (the U key) starts a visit now, instead of at its random time', () => {
+  it('summon() (the console\'s ufo) starts a visit now, instead of at its random time', () => {
     const { threat } = makeRig({ summon: false });
     run(threat, 1);
     expect(threat.summon()).toBe(true);

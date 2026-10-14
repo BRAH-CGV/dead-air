@@ -174,7 +174,7 @@ const PLACED = {
     // indented on one face only. Desk-local metres (+Z is the kneehole's
     // side, toward the chair); `deskBox` converts them to the model's units.
     //
-    // The body, floor to 0.73 m, was measured in the level editor (F2): a
+    // The body, floor to 0.73 m, was measured in the level editor: a
     // back region and two side walls, with the kneehole (+Z) open.
     //
     // The top (#76) is read off the .glb's own vertices, flush with what is

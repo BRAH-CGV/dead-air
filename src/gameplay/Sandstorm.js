@@ -37,12 +37,12 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // that, so it hands back exactly what the night would have had.
 //
 // Never with the UFO: on its nights (UFO.nights) there is no storm at
-// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the K key starts one mid-visit.
+// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the console's `storm` starts one mid-visit.
 //
 // `held` keeps it blowing at full for as long as it is set — DustEyes sets
 // it through a chase, so the storm can't die down until the player is away.
 //
-// For testing, summon() — the K key — starts one at once, on any night.
+// For testing, summon() — the dev console's `storm` — starts one at once, on any night.
 // Rooms don't know about gameplay, and this doesn't know about rooms: the
 // scene hands it one hook, where the ear is, for the grit.
 // ─────────────────────────────────────────────
@@ -233,7 +233,7 @@ export class Sandstorm extends Component {
   }
 
   /**
-   * Start one now rather than at its random time — the K debug key. Only
+   * Start one now rather than at its random time — the dev console's `storm`. Only
    * during a shift, and not over one already blowing.
    * @returns {boolean} whether a storm started
    */
@@ -295,7 +295,7 @@ export class Sandstorm extends Component {
       this._followUfo();
       if (this._blownOver() && !this.held && this._queue.length) this._next();
       const s = this._storm;
-      // Due during a UFO visit (the U key, on another night): it waits.
+      // Due during a UFO visit (the console's `ufo`, on another night): it waits.
       if (s && this._ufoBusy() && this.level === 0 && this._elapsed >= s.start) s.start = this._elapsed;
       // Held: the end is pushed back so it never gets inside the die-down.
       if (s && this.held && this.level > 0) {

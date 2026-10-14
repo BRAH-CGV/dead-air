@@ -90,6 +90,15 @@ export class NightClock {
     }
   }
 
+  /** Jump to an hour of the shift (the dev console's `time`), clamped to it.
+   *  The clock runs on from there; reaching endHour still ends the night on
+   *  the next update. @param {number} hour */
+  setTime(hour) {
+    const time = Math.min(this.endHour, Math.max(this.startHour, hour));
+    this.elapsed = (time - this.startHour) / (this.endHour - this.startHour) * this.nightDuration;
+    this.currentTime = time;
+  }
+
   pause()  { this.paused = true; }
   resume() { this.paused = false; }
 

@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────
 
 /** The gameplay actions the player can rebind, in the order the UI lists
- *  them. The debug binds stay fixed and are never listed. */
+ *  them. */
 export const REBINDABLE = ['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld'];
 
 /** Labels for the rebind rows. */
@@ -40,20 +40,17 @@ export function keyName(code) {
   return code;
 }
 
-// Escape belongs to the pause menu and the browser; ` and F-keys to the
-// debug tools and the browser; Q / Enter to the computer terminal.
-const ALWAYS_RESERVED = new Set([
+// Escape belongs to the pause menu and the browser; ` to the developer
+// console; F-keys to the browser; Q / Enter to the computer terminal.
+const RESERVED = new Set([
   'Escape', 'Backquote', 'KeyQ', 'Enter', 'NumpadEnter',
   ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
 ]);
-// Engine.keyBinds debugFly / fullbright / nextNight / perfStats.
-const DEBUG_RESERVED = new Set(['KeyV', 'KeyB', 'KeyN', 'KeyI']);
 
 /** Whether a key may not be bound to a gameplay action.
- *  @param {string} code
- *  @param {{ devTools?: boolean }} [opts] */
-export function isReserved(code, { devTools = false } = {}) {
-  return ALWAYS_RESERVED.has(code) || (devTools && DEBUG_RESERVED.has(code));
+ *  @param {string} code */
+export function isReserved(code) {
+  return RESERVED.has(code);
 }
 
 /**
@@ -65,13 +62,12 @@ export function isReserved(code, { devTools = false } = {}) {
  * @param {Record<string, string>} binds
  * @param {string} action
  * @param {string} code
- * @param {{ devTools?: boolean }} [opts]
  * @returns {{ ok: true, changes: Record<string, string>, swappedWith: string|null }
  *          | { ok: false, reason: string }}
  */
-export function rebind(binds, action, code, { devTools = false } = {}) {
+export function rebind(binds, action, code) {
   if (!REBINDABLE.includes(action)) return { ok: false, reason: `${action} can't be rebound` };
-  if (isReserved(code, { devTools })) return { ok: false, reason: `${keyName(code)} is reserved` };
+  if (isReserved(code)) return { ok: false, reason: `${keyName(code)} is reserved` };
 
   const old = binds[action];
   if (old === code) return { ok: true, changes: {}, swappedWith: null };

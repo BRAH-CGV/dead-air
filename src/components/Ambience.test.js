@@ -27,7 +27,7 @@ function fakeSound() {
 const box = (x0, x1) => new THREE.Box3(new THREE.Vector3(x0, 0, -2), new THREE.Vector3(x1, 3, 2));
 
 /** office [0,6] ── passage [6,10] ── server [10,16], ears at `ear`. */
-function build({ sounds, x = 3, volumes, testKeys, outside = null } = {}) {
+function build({ sounds, x = 3, volumes, testTracks, outside = null } = {}) {
   const ear = new THREE.Vector3(x, 1, 0);
   const mix = new AmbienceMix({
     zones: [{ box: box(0, 6), track: 'centre' }, { box: box(10, 16), track: 'server' }],
@@ -39,7 +39,7 @@ function build({ sounds, x = 3, volumes, testKeys, outside = null } = {}) {
   if (outside) sounds[outside] ??= fakeSound();
   const go = new GameObject('Ambience');
   const ambience = go.addComponent(new Ambience({
-    mix, music: MUSIC, sounds, volumes, testKeys,
+    mix, music: MUSIC, sounds, volumes, testTracks,
     listenerPosition: out => out.copy(ear),
   }));
   ambience.onStart();
@@ -304,45 +304,53 @@ describe('Ambience tension music', () => {
   });
 });
 
-describe('Ambience test keys', () => {
-  // Testing only: there is nothing on this branch to raise the tension yet,
-  // and two candidate tracks to compare.
+describe('Ambience test music (the dev console)', () => {
+  // Testing only: two tracks to compare under the game, swung in by name.
   const TRIAL = 'trial';
 
-  function buildWithKeys() {
+  function buildWithTracks() {
     const sounds = { centre: fakeSound(), server: fakeSound(), [MUSIC]: fakeSound(), [TRIAL]: fakeSound() };
-    return build({ sounds, testKeys: { KeyM: MUSIC, Comma: TRIAL } });
+    return build({ sounds, testTracks: { spooky: MUSIC, trial: TRIAL } });
   }
 
-  it('swings a key\'s track in on one press and back out on the next', () => {
-    const { ambience, sounds } = buildWithKeys();
-    ambience.onKeyDown({ code: 'KeyM' });
+  it('swings a track fully in by name, and out again on null', () => {
+    const { ambience, sounds } = buildWithTracks();
+    expect(ambience.testMusic('spooky')).toBe(true);
     expect(ambience.tension).toBe(1);
+    expect(ambience.testTrack).toBe('spooky');
     run(ambience, 20);
     expect(sounds[MUSIC].volume).toBe(1);
     expect(sounds[TRIAL].play).not.toHaveBeenCalled();
 
-    ambience.onKeyDown({ code: 'KeyM' });
+    ambience.testMusic(null);
     expect(ambience.tension).toBe(0);
+    expect(ambience.testTrack).toBe(null);
     run(ambience, 20);
     expect(sounds[MUSIC].isPlaying).toBe(false);
   });
 
-  it('plays the other track on the other key', () => {
-    const { ambience, sounds } = buildWithKeys();
-    ambience.onKeyDown({ code: 'Comma' });
+  it('asking for the track already in keeps it in', () => {
+    const { ambience } = buildWithTracks();
+    ambience.testMusic('spooky');
+    ambience.testMusic('spooky');
+    expect(ambience.tension).toBe(1);
+  });
+
+  it('plays the other track by its name', () => {
+    const { ambience, sounds } = buildWithTracks();
+    ambience.testMusic('trial');
     run(ambience, 20);
     expect(sounds[TRIAL].isPlaying).toBe(true);
     expect(sounds[TRIAL].volume).toBe(1);
     expect(sounds[MUSIC].play).not.toHaveBeenCalled();
   });
 
-  it('crossfades from one track to the other when the keys are swapped', () => {
-    const { ambience, sounds } = buildWithKeys();
-    ambience.onKeyDown({ code: 'KeyM' });
+  it('crossfades from one track to the other', () => {
+    const { ambience, sounds } = buildWithTracks();
+    ambience.testMusic('spooky');
     run(ambience, 20);
 
-    ambience.onKeyDown({ code: 'Comma' });
+    ambience.testMusic('trial');
     expect(ambience.tension).toBe(1);
     run(ambience, 1);
     expect(sounds[MUSIC].isPlaying).toBe(true);
@@ -352,34 +360,26 @@ describe('Ambience test keys', () => {
     run(ambience, 20);
     expect(sounds[MUSIC].isPlaying).toBe(false);
     expect(sounds[TRIAL].volume).toBe(1);
-
-    // The key of the track now playing is the one that lets go.
-    ambience.onKeyDown({ code: 'Comma' });
-    expect(ambience.tension).toBe(0);
   });
 
-  it('ignores other keys, and a key held down', () => {
-    const { ambience } = buildWithKeys();
-    ambience.onKeyDown({ code: 'KeyN' });
+  it('refuses a name it has no track for', () => {
+    const { ambience } = buildWithTracks();
+    expect(ambience.testMusic('polka')).toBe(false);
     expect(ambience.tension).toBe(0);
-
-    ambience.onKeyDown({ code: 'KeyM' });
-    ambience.onKeyDown({ code: 'KeyM', repeat: true });
-    expect(ambience.tension).toBe(1);
   });
 
   it('leaves a real threat holding its own tension', () => {
-    const { ambience } = buildWithKeys();
+    const { ambience } = buildWithTracks();
     ambience.setTension(0.5, 'stalker');
-    ambience.onKeyDown({ code: 'KeyM' });
+    ambience.testMusic('spooky');
     expect(ambience.tension).toBe(1);
-    ambience.onKeyDown({ code: 'KeyM' });
+    ambience.testMusic(null);
     expect(ambience.tension).toBe(0.5);
   });
 
-  it('does nothing without test keys', () => {
+  it('does nothing without test tracks', () => {
     const { ambience } = build();
-    ambience.onKeyDown({ code: 'KeyM' });
+    expect(ambience.testMusic('spooky')).toBe(false);
     expect(ambience.tension).toBe(0);
   });
 

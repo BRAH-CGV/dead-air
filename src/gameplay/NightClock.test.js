@@ -168,6 +168,52 @@ describe('NightClock', () => {
   });
 });
 
+describe('setTime (the dev console)', () => {
+  const opts = { startHour: 0, endHour: 6, nightDuration: 300 };
+
+  it('jumps to an hour, and the clock runs on from there', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(3);
+    expect(clock.currentTime).toBe(3);
+    expect(clock.timeString).toBe('3:00 AM');
+    clock.update(25);   // half an hour at 50 s an hour
+    expect(clock.currentTime).toBeCloseTo(3.5);
+  });
+
+  it('goes back as well as forward', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(4);
+    clock.setTime(2);
+    expect(clock.timeString).toBe('2:00 AM');
+    expect(clock.elapsed).toBeCloseTo(100);
+  });
+
+  it('stays within the shift', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(-3);
+    expect(clock.currentTime).toBe(0);
+    clock.setTime(9);
+    expect(clock.currentTime).toBe(6);
+  });
+
+  it('follows the clock\'s own hours', () => {
+    const clock = new NightClock({ startHour: -6, endHour: 6, nightDuration: 600 });
+    clock.setTime(-2);
+    expect(clock.timeString).toBe('10:00 PM');
+    expect(clock.elapsed).toBeCloseTo(200);
+  });
+
+  it('the end of the shift still ends the night on the next update', () => {
+    const clock = new NightClock(opts);
+    const end = vi.fn();
+    clock.onNightEnd = end;
+    clock.setTime(6);
+    expect(clock.finished).toBe(false);
+    clock.update(0.01);
+    expect(end).toHaveBeenCalledOnce();
+  });
+});
+
 describe('shift length', () => {
   it('is ten real minutes by default (NIGHT_SECONDS)', () => {
     expect(NIGHT_SECONDS).toBe(600);
