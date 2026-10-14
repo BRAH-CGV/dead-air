@@ -51,7 +51,11 @@ import { FirstPersonController } from '../components/FirstPersonController.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
+import { EvilSignal } from '../gameplay/EvilSignal.js';
+import { DOOM_LIGHT_COLOR, DOOM_LIGHT_MAX_DISTANCE } from '../gameobjects/Drive.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
+import { DeleteWarning } from '../ui/DeleteWarning.js';
+import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
@@ -510,6 +514,28 @@ export class BaseScene extends Scene {
 
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
+
+    // The red signal (the next threat, in early): it scans itself, pins
+    // the dish when no drive is in, and corrupts the drive it is saved to
+    // — a red drive never counts towards the quota. Summoned with G until
+    // it gets a night of its own.
+    this.evilSignal = new EvilSignal({
+      controller:    this.gameController,
+      signalManager: this.signalManager,
+      terminal:      this.terminal,
+      driveManager:  this.driveManager,
+      satellite:     this.satellite,
+    });
+    gameplayGO.addComponent(this.evilSignal);
+    this.terminal.evilSignal = this.evilSignal;
+
+    // Shared doom PointLight — created once at scene build, moved to the
+    // corrupted drive each frame by EvilSignal. Never added/removed so the
+    // scene's light count stays fixed (no shader recompiles).
+    const doomLight = new THREE.PointLight(DOOM_LIGHT_COLOR, 0, DOOM_LIGHT_MAX_DISTANCE);
+    doomLight.name = 'DoomLight';
+    gameplayGO.object3d.add(doomLight);
+    this.evilSignal.doomLight = doomLight;
 
     // Wire the drive manager to the office's drive reader slot.
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
@@ -1313,6 +1339,13 @@ export class BaseScene extends Scene {
     };
 
     this.whiteOut = new WhiteOut();
+    this.evilSignal.whiteOut = this.whiteOut;
+    this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
+    this.evilSignal.deleteWarning = new DeleteWarning();
+    this._redOut = new RedOut();
+    this._redOut.attach(this.engine);
+    this.engine.postProcess = this._redOut;
+    this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
       grid:        this.power,
