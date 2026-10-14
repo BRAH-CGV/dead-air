@@ -5,6 +5,7 @@ import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { GameObject } from '../core/GameObject.js';
 import { Interactable } from './Interactable.js';
 import { CCTV } from '../gameplay/CameraFeed.js';
+import { SIGNAL } from '../gameplay/CameraTransition.js';
 
 // ─────────────────────────────────────────────
 // CameraTerminal  –  the security monitor on the desk's left wing
@@ -25,8 +26,8 @@ function makeEngine() {
 
 function fakeOverlay() {
   return {
-    show: vi.fn(), hide: vi.fn(), setCamera: vi.fn(), setLive: vi.fn(),
-    setFlash: vi.fn(), setHint: vi.fn(), tick: vi.fn(), onSelect: null,
+    show: vi.fn(), hide: vi.fn(), setCamera: vi.fn(), setConnecting: vi.fn(),
+    setFlash: vi.fn(), setHint: vi.fn(), onSelect: null,
   };
 }
 
@@ -206,29 +207,100 @@ describe('CameraTerminal', () => {
     });
   });
 
-  describe('static', () => {
+  describe('the switch', () => {
     beforeEach(() => terminal.enter());
 
-    it('shows static, then the picture once the camera’s zones are in', () => {
+    it('plays a switch, then goes idle once the camera’s zones are in', () => {
       frame();
-      expect(overlay.setLive).toHaveBeenLastCalledWith(false);
-      run(CCTV.minStatic + 0.05);
-      expect(overlay.setLive).toHaveBeenLastCalledWith(true);
+      expect(terminal.transition.active).toBe(true);
+      run(CCTV.minStatic + SIGNAL.drop + SIGNAL.resolve + 0.1);
+      expect(terminal.feed.live).toBe(true);
+      expect(terminal.transition.phase).toBe('idle');
     });
 
-    it('a yard camera stays static until the yard has loaded', () => {
+    it('a yard camera holds the frozen frame until the yard has loaded, however long', () => {
       frame(['Digit2']);
-      run(CCTV.minStatic * 2);
-      expect(overlay.setLive).toHaveBeenLastCalledWith(false);
+      run(CCTV.minStatic * 4);
+      expect(terminal.transition.phase).toBe('wait');
+      expect(terminal.transition.frozen).toBe(true);
       ready.add('yard'); ready.add('unseen');
       frame();
-      expect(overlay.setLive).toHaveBeenLastCalledWith(true);
+      expect(terminal.transition.phase).toBe('resolve');
     });
 
-    it('draws new noise every frame', () => {
-      overlay.tick.mockClear();
-      run(0.1);
-      expect(overlay.tick.mock.calls.length).toBeGreaterThan(3);
+    it('a long wait says CONNECTING, and stops saying it once the picture is in', () => {
+      frame(['Digit2']);
+      run(SIGNAL.drop + SIGNAL.longWait + 0.1);
+      expect(overlay.setConnecting).toHaveBeenLastCalledWith(true);
+      ready.add('yard'); ready.add('unseen');
+      frame();
+      expect(overlay.setConnecting).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  describe('the switch, drawn (CameraSignalPass)', () => {
+    let signal;
+    /** A pass stand-in: holds the switch until the frame is "drawn". */
+    function fakeSignal() {
+      const pass = {
+        pending: null,
+        capture: vi.fn(fn => { pass.pending = fn; }),
+        cancel: vi.fn(() => { pass.pending = null; }),
+        set: vi.fn(), tick: vi.fn(),
+        draw() { const fn = pass.pending; pass.pending = null; fn?.(); },
+      };
+      return pass;
+    }
+
+    beforeEach(() => {
+      signal = fakeSignal();
+      terminal.signal = signal;
+    });
+
+    it('sitting down covers the screen with blank grain at once: no frozen desk, nothing to capture', () => {
+      terminal.enter();
+      expect(signal.capture).not.toHaveBeenCalled();
+      expect(terminal.transition.blank).toBe(true);
+      expect(terminal.transition.active).toBe(true);
+      // The cover is handed to the pass before the frame is drawn, so the
+      // camera can go on screen at once underneath it.
+      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
+      expect(engine.viewCamera).toBe(cameras[0].lens);
+      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['interior']);
+    });
+
+    it('a switch captures the old camera first, keeping its zones drawn for that frame', () => {
+      terminal.enter();
+      frame(['Digit2']);
+      expect(engine.viewCamera).toBe(cameras[0].lens);
+      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['interior']);
+      signal.draw();
+      expect(engine.viewCamera).toBe(cameras[1].lens);
+      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['yard', 'unseen']);
+    });
+
+    it('the label changes at once; only the picture waits for its frame', () => {
+      terminal.enter();
+      frame(['Digit2']);
+      expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 1, count: 2, label: 'YARD' });
+    });
+
+    it('hands the timeline to the pass every frame, with the frame time', () => {
+      terminal.enter();
+      frame();
+      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
+      expect(signal.tick).toHaveBeenLastCalledWith(1 / 60);
+    });
+
+    it('leaving before the frame is drawn drops the switch: the player’s eyes stay', () => {
+      terminal.enter();
+      frame(['Digit2']);
+      frame(['KeyQ']);
+      expect(signal.cancel).toHaveBeenCalled();
+      signal.draw();
+      expect(engine.viewCamera).toBeNull();
+      expect(terminal.transition.active).toBe(false);
+      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
     });
   });
 
@@ -313,18 +385,28 @@ describe('CameraTerminal', () => {
   });
 
   describe('sound', () => {
-    it('static hisses while the picture comes in, and stops once it is through', () => {
+    it('the hiss follows the picture: up through the wait, dying away as it resolves, gone after', () => {
       terminal.enter();
-      frame();
+      frame(['Digit2']);                         // the yard: a wait
+      run(SIGNAL.drop + 0.3);
       expect(sounds.static.isPlaying).toBe(true);
-      run(CCTV.minStatic + 0.05);
+      expect(sounds.static.volume).toBeCloseTo(CAMERA_SOUNDS.static, 2);
+      ready.add('yard'); ready.add('unseen');
+      frame();
+      run(SIGNAL.hissOut + 0.1);                // a short tail, not a long fade
       expect(sounds.static.isPlaying).toBe(false);
+    });
+
+    it('is quiet: a hiss under the picture', () => {
+      expect(CAMERA_SOUNDS.static).toBeLessThanOrEqual(0.2);
     });
 
     it('a switch brings the hiss back', () => {
       terminal.enter();
-      run(CCTV.minStatic + 0.05);
+      run(CCTV.minStatic + SIGNAL.drop + SIGNAL.resolve + 0.3);
+      expect(sounds.static.isPlaying).toBe(false);
       frame(['Digit2']);
+      run(0.1);
       expect(sounds.static.isPlaying).toBe(true);
     });
 
@@ -394,7 +476,9 @@ describe('CameraTerminal', () => {
 
     it('silence() stops the loops (the game paused: nothing updates, the audio clock runs on)', () => {
       terminal.enter();
-      frame();
+      frame(['Digit2']);                         // a wait, so a hiss
+      run(0.2);
+      expect(sounds.static.isPlaying).toBe(true);
       terminal.silence();
       expect(sounds.static.isPlaying).toBe(false);
       frame();                                   // resumed, still coming in

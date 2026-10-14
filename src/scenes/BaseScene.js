@@ -61,6 +61,7 @@ import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { CameraSignalPass } from '../core/CameraSignalPass.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -308,6 +309,12 @@ export class BaseScene extends Scene {
     // the zones a camera asked for go back to the airlock's choice.
     this.cameraTerminal?.exit();
     this.cameraOverlay?.hide();
+    if (this.cameraSignal) {
+      const passes = this.engine.screenPasses;
+      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
+      this.cameraSignal.dispose();
+      this.cameraSignal = null;
+    }
     this._offCameraState?.();
     this._offCameraPause?.();
     for (const cam of this.securityCameras ?? []) cam.dispose();
@@ -1246,7 +1253,17 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
+    // The switch, drawn over the frame: the old picture frozen and degraded
+    // while the new camera loads. Needs the renderer; headless (tests) the
+    // terminal switches at once.
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this.cameraSignal = new CameraSignalPass();
+      this.cameraSignal.attach(renderer);
+      screenPasses.push(this.cameraSignal);
+    }
     this.cameraTerminal = new CameraTerminal({
+      signal:    this.cameraSignal ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,

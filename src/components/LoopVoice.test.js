@@ -109,6 +109,32 @@ describe('LoopVoice placed on a host', () => {
   });
 });
 
+describe('LoopVoice fades and silence', () => {
+  it('comes in and goes out at the rates it is given', () => {
+    const quick = new LoopVoice({ sound: fakeSound(), rateUp: 30, rateDown: 30 });
+    const slow = new LoopVoice({ sound: fakeSound(), rateUp: 2, rateDown: 2 });
+    for (const v of [quick, slow]) v.set(0.5, 0.05);
+    expect(quick.sound.volume).toBeGreaterThan(slow.sound.volume);
+
+    const out = fakeSound();
+    const voice = new LoopVoice({ sound: out, rateUp: 30, rateDown: 2 });
+    run(voice, 0.5, 1);
+    voice.set(0, 0.1);
+    expect(out.volume).toBeGreaterThan(0.2);    // still well up after 0.1 s: a slow fade out
+  });
+
+  it('silence() stops the loop at once, and it can start again', () => {
+    const sound = fakeSound();
+    const voice = new LoopVoice({ sound });
+    run(voice, 0.4);
+    voice.silence();
+    expect(sound.isPlaying).toBe(false);
+    voice.set(0.4, 1 / 60);
+    expect(sound.isPlaying).toBe(true);
+    expect(sound.volume).toBeLessThan(0.1);      // from the bottom: it swells back in
+  });
+});
+
 describe('LoopVoice', () => {
   it('is silent, and not playing, at level 0', () => {
     const sound = fakeSound();

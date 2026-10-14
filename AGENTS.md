@@ -49,6 +49,7 @@ src/
 │   ├── ShadowScheduler.js # Shadow maps redrawn only when a light/caster moves, or on invalidate()
 │   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen; precompile() for a rebuild
 │   ├── ShadowSides.js   # sealAgainst: make a building solid to one light's shadow map
+│   ├── CameraSignalPass.js # The CCTV switch drawn over the frame: the old picture frozen, degraded, resolved out of grain
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── app/                 # The menus around the game (see "App flow and menus")
 │   ├── App.js           # Glue: AppFlow ↔ Engine ↔ MenuView ↔ PointerLock ↔ SettingsStore
@@ -115,7 +116,8 @@ src/
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
-│   └── CameraFeed.js    # Which camera is on screen, its pan, flash, and static timing (pure)
+│   ├── CameraFeed.js    # Which camera is on screen, its pan, flash, and when the picture is live (pure)
+│   └── CameraTransition.js # A camera switch as one timeline: drop → wait → resolve, for picture and hiss (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
@@ -133,7 +135,7 @@ src/
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
 │   ├── FatigueOverlay.js # A tired player's tunnel vignette and eyelids (#fatigue)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
-│   ├── CameraOverlay.js # The security monitor's label, hints and static (#cctv)
+│   ├── CameraOverlay.js # The security monitor's label, hints, map and CONNECTING (#cctv)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
 │   └── menu/
 │       ├── MenuView.js  # Draws every menu screen into #menu; emits intents
@@ -408,8 +410,11 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 - **Controls:** A/D or ←/→ pan (within the camera's `panLimits`; each keeps where it was left), W/S or ↑/↓ step, 1–6 jump, F the flash, Q or Esc back to the desk. The player is held still meanwhile.
 - **The map**, bottom left (`CameraOverlay.setMap`, built by `BaseScene._cameraMap`): the rooms, corridors and fenced yard from above, back (the window) at the top, and a numbered button per camera where it hangs, pushed off its wall the way the camera faces (`dir`) by just enough to clear it — wholly inside its room for a room camera, wholly outside for the rest (`CAMERA_SQUARE`, 26 px, sets the square's size and the push). `SECURITY_CAMERAS.mapMargin` keeps 6 m of ground either side, so the end-wall cameras read as outside. Clicking one switches to it. While watching, the mouse is handed to the page (`BaseScene._usePanel`, as for the breaker panel); `#cctv` takes the clicks so one beside the map doesn't relock the pointer.
 - **The picture's look** is CSS on `#cctv`: scanlines crawling slowly down and a faint band rolling through every 7 s (still under `prefers-reduced-motion`), and a dark edge.
-- **Sound** (`CAMERA_SOUNDS` levels): `sfx:camera-servo` loops faintly while a camera actually turns (not against its end stop); `sfx:camera-static` loops while a picture comes in; `sfx:camera-spotlight` plays as the flash comes on and `sfx:camera-spotlight-off` as it goes out, whatever puts it out (F, a switch, leaving); going out cuts the on clunk short. The off sound is made from the on clip: its head, slowed to 0.8× and faded (a WAV, as there is no mp3 encoder in the toolchain). From the monitor, not placed in the world. A pause calls `cameraTerminal.silence()` (the audio clock runs on); the next frame restarts what is still wanted. The servo clip is only the loud first 7 s of its recording, cut at MPEG frame boundaries; the static is its first 4 s.
-- **Static.** Every switch shows static (`CCTV.minStatic`, 0.25 s), and for as long as the zones the camera sees aren't ready: from indoors the `yard` and `unseen` zones are undrawn, so the outdoor cameras ask `AirlockPortal.setViewZones` for them and wait on `zones.isReady` (`CCTV.maxStatic`, 2 s, at most). Back at the desk they go again.
+- **Sound** (`CAMERA_SOUNDS` levels): `sfx:camera-servo` loops faintly while a camera actually turns (not against its end stop); `sfx:camera-static` hisses with the switch (`CameraTransition.hiss`: full from the cut, a 0.04 s tail once the picture is live; through a `LoopVoice` that follows it within a frame or two; leaving the monitor or a pause cuts it at once), at most 0.18; `sfx:camera-spotlight` plays as the flash comes on and `sfx:camera-spotlight-off` as it goes out, whatever puts it out (F, a switch, leaving); going out cuts the on clunk short. The off sound is made from the on clip: its head, slowed to 0.8× and faded (a WAV, as there is no mp3 encoder in the toolchain). From the monitor, not placed in the world. A pause calls `cameraTerminal.silence()` (the audio clock runs on); the next frame restarts what is still wanted. The servo clip is only the loud first 7 s of its recording, cut at MPEG frame boundaries; the static is its first 4 s.
+- **The switch** (`CameraTransition`, drawn by `CameraSignalPass`). A switch freezes the screen as it stands and degrades it (sitting down has nothing worth freezing, so its cover is the same grain over black, behind the monitor's overlay, and the first camera goes on at once underneath): a tear as it drops (`drop`, 0.08 s), then held, rolling slowly and drained of colour under dim, cool grain (`wait`) for as long as the new camera's zones are loading; then the live picture resolves out of the grain with one tear band sweeping down (`resolve`, 0.18 s). A wait past `SIGNAL.longWait` (0.6 s) shows CONNECTING (`CameraOverlay.setConnecting`). The static hiss (`transition.hiss`) is at full from the cut and drops out over `SIGNAL.hissOut` (0.04 s) once the picture is live, ahead of the grain: tied to the switch, without a soft swell or fade. With reduced motion there is no tear or roll, only the grain. Tuning is `SIGNAL` in `CameraTransition.js`.
+  - **The gate.** `CameraFeed.live` is the only one: nothing undrawn ever shows. Every switch waits at least `CCTV.minStatic` (0.12 s, covered by the frozen frame), and for as long as the zones the camera sees aren't ready: from indoors the `yard` and `unseen` zones are undrawn, so the outdoor cameras ask `AirlockPortal.setViewZones` for them and wait on `zones.isReady` (`CCTV.maxStatic`, 2 s, at most). Back at the desk they go again.
+  - **One frame late, on purpose.** The screen can only be read straight after it is drawn, so the pass copies it in its `render()` (one `copyFramebufferToTexture` into a `FramebufferTexture`, after the frame and after RedOut's composite), and only then does the terminal switch the camera and its zones (`_showCamera` → `_applyCamera`). Leaving first drops the switch (`cancel`).
+  - **Cost.** One GPU copy per switch, and one full-screen quad only while a switch plays (`engine.screenPasses`, drawn after each frame; emptied on every scene load). Nothing per pixel on the CPU (the old 160×90 noise canvas is gone); at the desk, nothing. Shader compiled and texture allocated as the scene is built.
 - **The flash** is one `SpotLight` (`scene.cameraFlash`) for every camera, built with the scene at intensity 0 and moved to the camera on screen. It goes out on F, on a switch, and on leaving the monitor. It lives on the scene root (a light under a room the occlusion sort hides would drop out of the light count) and casts no shadow, so it shines through walls within its `reach`.
 - **Power:** like the computer, it needs the generator; a power cut or any end to the shift (game over, morning) takes the player off the monitor.
 

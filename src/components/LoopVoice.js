@@ -21,8 +21,8 @@ import { loopable } from './GeneratorSound.js';
 // after, since the audio clock runs on while the game doesn't.
 // ─────────────────────────────────────────────
 
-/** Rate (per second) the level eases at, and the level that counts as
- *  having arrived. */
+/** Rate (per second) the level eases at, by default, and the level that
+ *  counts as having arrived. */
 const RATE = 3;
 const SETTLED = 2e-3;
 
@@ -35,12 +35,17 @@ export class LoopVoice {
    * @param {{refDistance?: number, rolloff?: number}} [opts.placed]  Play
    *        from the host, with this falloff: full volume within
    *        `refDistance` metres, inverse beyond.
+   * @param {number} [opts.rateUp=3]  How fast (per second) the level rises
+   *        to a higher one; 8 is a swell of about a tenth of a second.
+   * @param {number} [opts.rateDown=3]  The same, falling.
    * @param {number} [opts.detune=0]  Cents to play below (negative) or
    *        above the clip's own pitch; 100 to a semitone. Below also runs
    *        it slower.
    */
-  constructor({ key = null, sound, placed = null, detune = 0 } = {}) {
+  constructor({ key = null, sound, placed = null, detune = 0, rateUp = RATE, rateDown = RATE } = {}) {
     this.key = key;
+    this.rateUp = rateUp;
+    this.rateDown = rateDown;
     this.detune = detune;
     this.placed = placed;
     this.sound = sound;
@@ -67,7 +72,8 @@ export class LoopVoice {
     }
 
     const target = Math.max(level, 0);
-    let next = this._level + (target - this._level) * (1 - Math.exp(-RATE * dt));
+    const rate = target > this._level ? this.rateUp : this.rateDown;
+    let next = this._level + (target - this._level) * (1 - Math.exp(-rate * dt));
     if (Math.abs(target - next) < SETTLED) next = target;
     this._level = next;
 
@@ -78,6 +84,14 @@ export class LoopVoice {
       sound.stop();
     }
     return true;
+  }
+
+  /** Stop at once, with the level back at the bottom: the next set() swells
+   *  in from nothing. For a pause or leaving, where there are no frames to
+   *  fade over. */
+  silence() {
+    this._level = 0;
+    if (this.sound?.isPlaying) this.sound.stop();
   }
 
   /** Stop at once and let go. */
