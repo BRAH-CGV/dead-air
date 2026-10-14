@@ -569,16 +569,6 @@ const PLACED = {
  * @type {Record<string, ModelEntry>}
  */
 const LIBRARY = {
-  'model:blast-door-closed': {
-    type: 'model',
-    url: 'assets/models/blast-door-closed.glb',
-    physics: 'static',
-  },
-  'model:blast-door-open': {
-    type: 'model',
-    url: 'assets/models/blast-door-open.glb',
-    physics: 'static',
-  },
   'model:server-console': {
     type: 'model',
     url: 'assets/models/server-console.glb',
@@ -589,23 +579,9 @@ const LIBRARY = {
     url: 'assets/models/server-rack-tall.glb',
     physics: 'static',
   },
-  'model:couch': {
-    type: 'model',
-    url: 'assets/models/couch.glb',
-    physics: 'static',
-  },
   'model:barrel': {
     type: 'model',
     url: 'assets/models/barrel.glb',
-    physics: 'static',
-  },
-  'model:soap-dispenser': {
-    type: 'model',
-    url: 'assets/models/soap-dispenser.glb',
-  },
-  'model:vending-machine': {
-    type: 'model',
-    url: 'assets/models/vending-machine.glb',
     physics: 'static',
   },
   'model:bush': {
