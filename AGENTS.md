@@ -47,7 +47,7 @@ src/
 │   ├── DebugCamera.js   # Free-fly noclip camera (V to toggle)
 │   ├── Fullbright.js    # Unlit debug lighting (B to toggle)
 │   ├── ShadowScheduler.js # Shadow maps redrawn only when a light/caster moves, or on invalidate()
-│   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen
+│   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen; precompile() for a rebuild
 │   ├── ShadowSides.js   # sealAgainst: make a building solid to one light's shadow map
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── app/                 # The menus around the game (see "App flow and menus")
@@ -480,7 +480,7 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 
 **Menu music** (`MenuMusic`, `src/app/`). `sfx:interior-base-ambient-music` loops under the main menu and the Settings and Credits opened from it, and fades out when the game starts; the pause and end screens keep the game's own sound. It belongs to the app, not the scene: the scene is paused under the menu, so nothing there is updated, and the fades are gain ramps scheduled on the audio clock instead of per-frame. Once started it is never stopped, only faded to zero, so there is never a second copy. Chrome keeps audio suspended until a gesture, so App wakes it on the first click or key on the menu; if that first gesture is New game, the music isn't heard that time. Level and fade times are `MENU_MUSIC`.
 
-**Main-menu invariant.** The main menu always sits over a freshly built scene that has never ticked, so New game is just "unpause". Leaving a game (Main menu, Retry, Restart night, the end of the run) goes through `App.rebuild()` under a fade. It turns off the fly camera and fullbright, unsubscribes the old controller, calls `engine.loadScene(...)`, and Restart / Retry then call `nights.setNight(n)` (the same path as the N key). That is the "restart without refresh" path. Anything that hangs listeners on page elements or the window must remove them in its scene's `dispose()` (see `SignalReviewPanel.dispose`, `RadarOverlay.dispose`), or restarts stack them.
+**Main-menu invariant.** The main menu always sits over a freshly built scene that has never ticked, so New game is just "unpause". Leaving a game (Main menu, Retry, Restart night, the end of the run) goes through `App.rebuild()` under a fade. It turns off the fly camera and fullbright, unsubscribes the old controller, calls `engine.loadScene(...)`, and Restart / Retry then call `nights.setNight(n)` (the same path as the N key). A rebuild has no loading screen, so `loadScene` compiles every shader the new scene can draw with, hidden things included (`engine.compileScene()`, after the settings are applied), under the fade. Before that, each thing that starts hidden (the Sleep Demon, the dust eyes, the UFO) compiled on the frame it first showed, a freeze mid-night. That is the "restart without refresh" path. Anything that hangs listeners on page elements or the window must remove them in its scene's `dispose()` (see `SignalReviewPanel.dispose`, `RadarOverlay.dispose`), or restarts stack them.
 
 **`engine.onSceneLoaded(listener)`** fires after every `loadScene`, App's or not (F4, the editor's switcher). App uses it to re-apply settings, because `buildPlayer` and `BaseScene` recreate the controller and the moon light with hard-coded values, and to follow the new `GameController` through `onStateChange(state, previous)`.
 
