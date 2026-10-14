@@ -721,14 +721,37 @@ describe('EvilSignal hum — the countdown', () => {
     // Subtle: never more than a faint level, even at the end.
     expect(late).toBeLessThanOrEqual(HUM.volume);
     expect(HUM.volume).toBeLessThanOrEqual(0.2);
+    // A real climb, if a gentle one: the end is at least half as loud again.
+    expect(HUM.minLevel).toBeLessThanOrEqual(0.5);
     expect(early).toBeGreaterThanOrEqual(HUM.volume * HUM.minLevel * 0.99);
   });
 
-  it('is handed the host it is heard from, and the frame time', () => {
-    const rig = makeRig({ drive: makeDrive() });
+  it('is heard from the corrupted drive, at the frame time', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
     infect(rig);
     rig.evil.onUpdate(0.25);
-    expect(rig.hum.set.mock.calls.at(-1)[1]).toBe(0.25);
+    const [, dt, host] = rig.hum.set.mock.calls.at(-1);
+    expect(dt).toBe(0.25);
+    expect(host).toBe(drive);
+  });
+
+  it('fades out where the drive was, rather than jumping to the player', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    infect(rig);
+    rig.evil.onUpdate(0.25);
+    drive.setEjected();
+    rig.evil.onUpdate(0.1);
+    expect(rig.hum.set.mock.calls.at(-1)[2]).toBe(drive);
+  });
+
+  it('is pitched down', () => {
+    expect(HUM.detune).toBeLessThan(0);
+  });
+
+  it('is placed on the drive, not all around you', () => {
+    expect(HUM.placed.refDistance).toBeGreaterThan(0);
   });
 
   it('goes away when the drive is wiped, the shift ends, or the scene is torn down', () => {

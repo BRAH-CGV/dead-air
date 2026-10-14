@@ -90,11 +90,17 @@ export const SPARK_SOUNDS = {
 
 /** The hum under the countdown: a very faint loop for as long as a corrupted
  *  drive is out, from `minLevel` of `volume` at the start up to `volume` as
- *  the silence timer runs out. Kept low: it is there to be half noticed. */
+ *  the silence timer runs out. Kept low: it is there to be half noticed.
+ *  It sounds from the drive itself, full within `placed.refDistance` metres
+ *  and fainter beyond, so it leads you to it. */
 export const HUM = {
   key: 'sfx:evil-hum',
-  volume: 0.12,
-  minLevel: 0.6,
+  volume: 0.2,
+  minLevel: 0.35,
+  placed: { refDistance: 3, rolloff: 1 },
+  /** Cents below the recording's pitch (100 to a semitone); also runs it
+   *  slower: 0.89× at −200. */
+  detune: -200,
 };
 
 export class EvilSignal extends Component {
@@ -198,7 +204,7 @@ export class EvilSignal extends Component {
   constructor({
     controller = null, signalManager = null, terminal = null,
     driveManager = null, satellite = null, random = Math.random, voice = new ClipVoice(),
-    hum = new LoopVoice({ key: HUM.key }),
+    hum = new LoopVoice({ key: HUM.key, placed: HUM.placed, detune: HUM.detune }),
   } = {}) {
     super();
     Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, random });
@@ -206,6 +212,8 @@ export class EvilSignal extends Component {
     this._hum = hum;
     /** What the hum should be this frame, set by the countdown. */
     this._humLevel = 0;
+    /** The drive the hum comes from: the corrupted one, and where it fades out. */
+    this._humHost = null;
     this._sparkClips = clipSet(SPARK_SOUNDS.clips);
   }
 
@@ -285,7 +293,7 @@ export class EvilSignal extends Component {
   onUpdate(dt) {
     this._humLevel = 0;
     this._step(dt);
-    this._hum.set(this._humLevel, dt, this.gameObject);
+    this._hum.set(this._humLevel, dt, this._humHost ?? this.gameObject);
   }
 
   /** One frame of the red signal; sets `_humLevel` while a drive is out. */
@@ -356,6 +364,7 @@ export class EvilSignal extends Component {
         // Ramp the doom glow: 0 at the start, 1 when the timer expires.
         const doomFraction = 1 - (this._silenceTimer / EVIL.silenceSeconds);
         corrupted.setDoomGlow?.(doomFraction);
+        this._humHost = corrupted;
         this._humLevel = HUM.volume * (HUM.minLevel + (1 - HUM.minLevel) * Math.min(Math.max(doomFraction, 0), 1));
         this._lastCorruptedDrive = corrupted;
 

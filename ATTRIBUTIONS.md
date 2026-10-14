@@ -758,12 +758,14 @@ Three spark clips, cut by us from a mix of two Freesound recordings, both used u
 
 ### Evil signal hum
 
+"mechanical hum.wav" (https://freesound.org/people/patchytherat/sounds/531562/) by patchytherat on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
 | | |
 |---|---|
 | **File** | `public/assets/audio/evil-hum.mp3` |
 | **Manifest key** | `sfx:evil-hum` |
 | **Used for** | The faint hum while a corrupted drive's countdown runs (`EvilSignal`) |
-| **Title / author / licence** | TODO — fill in the source, or mark it as our own |
+| **Modifications** | Cut to a short clip; crossfaded into a seamless loop at load |
 
 ### Base ambience (room tone loops)
 

@@ -29,6 +29,86 @@ function host() {
 
 const run = (voice, level, seconds = 3) => { for (let t = 0; t < seconds; t += 1 / 60) voice.set(level, 1 / 60); };
 
+/** Stand-ins for the audio classes, so a built sound can be inspected. */
+vi.mock('three', async importOriginal => {
+  const three = await importOriginal();
+  class Audio extends three.Object3D {
+    constructor(listener) { super(); this.listener = listener; this.isPlaying = false; this.volume = 0; }
+    setBuffer(b) { this.buffer = b; }
+    setLoop(l) { this.loop = l; }
+    setVolume(v) { this.volume = v; }
+    setRefDistance(d) { this.refDistance = d; }
+    setRolloffFactor(r) { this.rolloff = r; }
+    setDetune(c) { this.detune = c; }
+    play() { this.isPlaying = true; }
+    stop() { this.isPlaying = false; }
+    pause() { this.isPlaying = false; }
+    disconnect() {}
+  }
+  class PositionalAudio extends Audio {}
+  return { ...three, Audio, PositionalAudio };
+});
+
+/** A host whose engine has the clip in its cache. */
+function loadedHost(name) {
+  const go = new GameObject(name);
+  go.scene = { userData: { engine: {
+    audioListener: { context: { createBuffer: () => ({ copyToChannel() {} }) } },
+    assets: {
+      has: key => key === 'sfx:hum',
+      get: () => ({ numberOfChannels: 1, sampleRate: 48000, getChannelData: () => new Float32Array(48000) }),
+    },
+  } } };
+  return go;
+}
+
+describe('LoopVoice placed on a host', () => {
+  it('sounds from the host itself, and moves with it', () => {
+    const drive = loadedHost('Drive');
+    const voice = new LoopVoice({ key: 'sfx:hum', placed: { refDistance: 3, rolloff: 1 } });
+    voice.set(0.1, 1 / 60, drive);
+    expect(voice.sound.parent).toBe(drive.object3d);
+    expect(voice.sound.refDistance).toBe(3);
+    expect(voice.sound.rolloff).toBe(1);
+  });
+
+  it('follows to another host when a different one is named, and stays put at level 0', () => {
+    const a = loadedHost('A');
+    const b = loadedHost('B');
+    const voice = new LoopVoice({ key: 'sfx:hum', placed: { refDistance: 3 } });
+    voice.set(0.1, 1 / 60, a);
+    voice.set(0.1, 1 / 60, b);
+    expect(voice.sound.parent).toBe(b.object3d);
+    voice.set(0, 1 / 60, a);          // fading out: not dragged back
+    expect(voice.sound.parent).toBe(b.object3d);
+  });
+
+  it('takes the sound off the host when disposed', () => {
+    const drive = loadedHost('Drive');
+    const voice = new LoopVoice({ key: 'sfx:hum', placed: { refDistance: 3 } });
+    voice.set(0.1, 1 / 60, drive);
+    const sound = voice.sound;
+    voice.dispose();
+    expect(sound.parent).toBeNull();
+  });
+
+  it('plays pitched down by the cents asked, and at its own pitch otherwise', () => {
+    const low = new LoopVoice({ key: 'sfx:hum', detune: -400 });
+    low.set(0.1, 1 / 60, loadedHost('A'));
+    expect(low.sound.detune).toBe(-400);
+    const plain = new LoopVoice({ key: 'sfx:hum' });
+    plain.set(0.1, 1 / 60, loadedHost('B'));
+    expect(plain.sound.detune ?? 0).toBe(0);
+  });
+
+  it('is not placed unless asked', () => {
+    const voice = new LoopVoice({ key: 'sfx:hum' });
+    const host = loadedHost('Host');
+    voice.set(0.1, 1 / 60, host);
+    expect(voice.sound.parent).toBeNull();
+  });
+});
+
 describe('LoopVoice', () => {
   it('is silent, and not playing, at level 0', () => {
     const sound = fakeSound();

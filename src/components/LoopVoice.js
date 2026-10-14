@@ -6,7 +6,7 @@ import { loopable } from './GeneratorSound.js';
 // ─────────────────────────────────────────────
 // For a sound that is a state, not an event, like the evil drive's hum:
 //
-//   const voice = new LoopVoice({ key: 'sfx:evil-hum' });
+//   const voice = new LoopVoice({ key: 'sfx:evil-hum', placed: { refDistance: 3 } });
 //   voice.set(0.3, dt, gameObject);   // each frame it is wanted
 //   voice.set(0, dt);                 // each frame it isn't
 //
@@ -14,7 +14,9 @@ import { loopable } from './GeneratorSound.js';
 // (`rate`), so a hum comes up and goes away instead of switching, and at
 // zero the loop is stopped and starts from its top next time.
 //
-// Not placed in the world: it is all around you. The loop is made seamless
+// Not placed in the world unless `placed` is given: then it is a point
+// source on the GameObject named in set(), and moves with it (a different
+// one named while it is wanted takes it over). The loop is made seamless
 // at load (loopable). A pause calls pause() on the sound and resumes it
 // after, since the audio clock runs on while the game doesn't.
 // ─────────────────────────────────────────────
@@ -30,9 +32,17 @@ export class LoopVoice {
    * @param {string} [opts.key]  Manifest key of the clip.
    * @param {THREE.Audio|null} [opts.sound]  Built from `key` when left out.
    *        Null: silent.
+   * @param {{refDistance?: number, rolloff?: number}} [opts.placed]  Play
+   *        from the host, with this falloff: full volume within
+   *        `refDistance` metres, inverse beyond.
+   * @param {number} [opts.detune=0]  Cents to play below (negative) or
+   *        above the clip's own pitch; 100 to a semitone. Below also runs
+   *        it slower.
    */
-  constructor({ key = null, sound } = {}) {
+  constructor({ key = null, sound, placed = null, detune = 0 } = {}) {
     this.key = key;
+    this.detune = detune;
+    this.placed = placed;
     this.sound = sound;
     this._level = 0;
     this._paused = false;
@@ -52,6 +62,9 @@ export class LoopVoice {
     if (level <= 0 && this._level <= 0) return !!this.sound;
     const sound = this._ready(gameObject);
     if (!sound) return false;
+    if (this.placed && level > 0 && gameObject?.object3d && sound.parent !== gameObject.object3d) {
+      gameObject.object3d.add(sound);
+    }
 
     const target = Math.max(level, 0);
     let next = this._level + (target - this._level) * (1 - Math.exp(-RATE * dt));
@@ -76,6 +89,7 @@ export class LoopVoice {
     if (!sound) return;
     if (sound.isPlaying) sound.stop();
     try { sound.disconnect?.(); } catch (_) { /* never connected */ }
+    sound.removeFromParent?.();
   }
 
   // ── Internals ─────────────────────────────
@@ -92,10 +106,15 @@ export class LoopVoice {
     if (!engine) return null;
     const { audioListener, assets } = engine;
     if (!audioListener || !assets?.has?.(this.key)) return (this.sound = null);
-    const audio = new THREE.Audio(audioListener);
+    const audio = this.placed ? new THREE.PositionalAudio(audioListener) : new THREE.Audio(audioListener);
+    if (this.placed) {
+      audio.setRefDistance(this.placed.refDistance ?? 1);
+      audio.setRolloffFactor(this.placed.rolloff ?? 1);
+    }
     audio.setBuffer(loopable(assets.get(this.key), audioListener.context));
     audio.setLoop(true);
     audio.setVolume(0);
+    if (this.detune) audio.setDetune(this.detune);
     return (this.sound = audio);
   }
 
