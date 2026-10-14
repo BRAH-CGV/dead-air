@@ -1584,6 +1584,9 @@ export class BaseScene extends Scene {
       // …and the wind: the storm has no recording of its own. It blows the
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
+      // The moons are lost in the dust, and their light with them.
+      moon:     this.moonLight,
+      ambient:  this.ambientLight,
       hooks: {
         // The grit is wrapped round the eye the frame is drawn from — a
         // security camera's, on the monitor (Engine.renderCamera).

@@ -1368,6 +1368,11 @@ describe('BaseScene dust eyes', () => {
     expect(scene.sandstorm.ufo).toBe(scene.ufoThreat);
   });
 
+  it('hands the storm the moonlight and the night\'s ambient light to dim', () => {
+    expect(scene.sandstorm.moon).toBe(scene.moonLight);
+    expect(scene.sandstorm.ambient).toBe(scene.ambientLight);
+  });
+
   it('builds its eyes up front, hidden, on the scene root', () => {
     expect(scene.dustEyes.slots.length).toBeGreaterThanOrEqual(2);
     for (const { go } of scene.dustEyes.slots) {

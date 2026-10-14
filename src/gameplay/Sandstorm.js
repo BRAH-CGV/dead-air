@@ -19,6 +19,8 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 //           ._keepFogOutside), so it fills the view through the office
 //           window and out in the yard, never a room.
 //   sky     dimmed toward dust: the stars and moons are lost (MarsSky.setStorm).
+//   light   the moonlight all but blotted out, and the night's ambient fill
+//           dimmed, so the office window no longer lets in a clear night.
 //   dust    streaming grit around the player — outside, and past the office
 //           window (DustStorm, which is cut out of the building so no grain
 //           blows through a room).
@@ -27,10 +29,10 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // changed the fog showed as the storm flickering or fading through the
 // window at its doorway.
 //
-// The fog is shared with Daylight (colour). The storm never keeps its own
-// copy of "the clear fog": each frame it notices whatever someone else wrote
-// since its last write and lays itself on top of that, so it hands back
-// exactly what the night would have had.
+// The fog and the lights are shared with Daylight (colour, intensity). The
+// storm never keeps its own copy of "the clear night": each frame it notices
+// whatever someone else wrote since its last write and lays itself on top of
+// that, so it hands back exactly what the night would have had.
 //
 // Never with the UFO: on its nights (UFO.nights) there is no storm at
 // random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the K key starts one mid-visit.
@@ -71,6 +73,13 @@ export const SANDSTORM = {
    *  yellow (0x4b2d19). Tests pin both. */
   dustColor: 0x51280c,
   fogTint: 0.85,
+  /** The share of the moonlight the dust lets through at full strength: the
+   *  moons are gone from the sky (MarsSky.setStorm), so their light nearly
+   *  goes with them. */
+  moonlight: 0.15,
+  /** The share of the night's ambient fill left at full strength. Gentler,
+   *  as it fills the rooms too, and they have lamps of their own. */
+  ambientLight: 0.6,
   /** Wind speed in m/s, for the streaming dust. */
   windSpeed: 9,
 };
@@ -149,16 +158,20 @@ export class Sandstorm extends Component {
    *        WindDustMotion: one storm level drives the clouds too.
    * @param {{ setStorm: (k: number) => void }} [opts.ambience]  The scene's
    *        Ambience: the storm's wind is its outside loop, blown harder.
+   * @param {THREE.Light} [opts.moon]     The moonlight (the morning sun), dimmed
+   *        to `SANDSTORM.moonlight` at full strength.
+   * @param {THREE.Light} [opts.ambient]  The night's ambient fill, dimmed to
+   *        `SANDSTORM.ambientLight`.
    * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
    * @param {number} [opts.nightHours=6]      Clock hours in it.
    * @param {() => number} [opts.random]
    */
   constructor({
     controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, ambience = null,
-    nightDuration = 300, nightHours = 6, random = Math.random,
+    moon = null, ambient = null, nightDuration = 300, nightHours = 6, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, random });
+    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, moon, ambient, nightDuration, nightHours, random });
 
     this._elapsed = 0;       // seconds of 'playing' this night
     this._storm = null;      // { start, duration } in _elapsed, or null
@@ -171,6 +184,10 @@ export class Sandstorm extends Component {
     this._baseDensity = 0;
     this._wroteDensity = null;
     this._dustColor = new THREE.Color(SANDSTORM.dustColor);
+    // Each light as someone else last left it, and what we last wrote over it.
+    this._lights = [[moon, 'moonlight'], [ambient, 'ambientLight']]
+      .filter(([light]) => light)
+      .map(([light, share]) => ({ light, share, base: light.intensity, wrote: null }));
     this._off = null;
   }
 
@@ -253,6 +270,7 @@ export class Sandstorm extends Component {
 
     const ear = this.hooks.listenerPosition(_ear);
     this._applyFog();
+    this._applyLights();
     this.ambience?.setStorm?.(this.level);
     this.sky?.setStorm?.(this.level);
     this.clouds?.setStorm?.(this.level);
@@ -274,6 +292,16 @@ export class Sandstorm extends Component {
 
     this._wroteDensity = fog.density;
     this._wroteColor.copy(fog.color);
+  }
+
+  /** The moonlight and the ambient fill, dimmed over whatever the night (or
+   *  the dawn) left them at. Calm, that is exactly what they were. */
+  _applyLights() {
+    for (const l of this._lights) {
+      if (l.light.intensity !== l.wrote) l.base = l.light.intensity;
+      l.light.intensity = l.base * (1 + (SANDSTORM[l.share] - 1) * this.level);
+      l.wrote = l.light.intensity;
+    }
   }
 
   /** The storm's wind: along the one wind axis the clouds and grass share. */
