@@ -314,8 +314,8 @@ by AnaCi (zuciwien) is licensed under Creative Commons Attribution
 |---|---|
 | **File** | `public/assets/models/generator.glb` |
 | **Manifest key** | `model:generator` |
-| **Used for** | Backup generator prop |
-| **Modifications** | None recorded |
+| **Used for** | The base's generator, in the fenced yard: the power switch |
+| **Modifications** | Scaled to 0.44 and stood on the ground at load (manifest `scale`, `origin`) |
 
 ### Metal chair
 

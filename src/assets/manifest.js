@@ -250,6 +250,16 @@ const PLACED = {
     scale: 0.25,
     physics: 'static',
   },
+  // The power switch in the yard. Modelled 4.5 m long around a point below
+  // its middle; 0.44 takes it to a 2.0 × 1.24 × 0.89 m diesel set, wheels
+  // on the ground. Its control panel is on its −z side.
+  'model:generator': {
+    type: 'model',
+    url: 'assets/models/generator.glb',
+    scale: 0.44,
+    origin: 'floor',
+    physics: 'static',
+  },
   // The security cameras' monitor on the office desk's left wing: the
   // bottom-left screen of wall-screen.glb, cut out, 0.6 m wide, facing +z,
   // its foot on the floor, its screen dark as if switched off.
@@ -626,11 +636,6 @@ const LIBRARY = {
   'model:door-interior': {
     type: 'model',
     url: 'assets/models/door-interior.glb',
-    physics: 'static',
-  },
-  'model:generator': {
-    type: 'model',
-    url: 'assets/models/generator.glb',
     physics: 'static',
   },
   'model:wall-light': {

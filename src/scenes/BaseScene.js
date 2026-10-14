@@ -921,15 +921,18 @@ export class BaseScene extends Scene {
     // lintel. Position and heading placed by hand in the level editor (F2).
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). In the
-    // far corner of the fenced yard, on the side away from the buggy — a walk
-    // out into the storm to cut the power, along the wire. Read off the
-    // fence, so it follows the yard. _addPower() puts its switch on it.
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it.
     const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
     const [insetX, insetZ] = GENERATOR_CORNER_INSET;
     const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this._addStandIn('Generator', 'generator.glb',
-      [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
   }
 
@@ -1691,31 +1694,6 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
-  }
-
-  /** Solid box standing in for a model that hasn't been sourced yet. */
-  _addStandIn(name, file, position, size, color) {
-    const { world } = this.engine;
-    const go = new GameObject(name);
-    go.object3d.position.set(...position);
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(...size)),
-      this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.3 })),
-    );
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...position));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2), body);
-    go.rigidBody = body;
-    go.collider  = collider;
-    go.colliders = [collider];
-    go._originalSize = [...size];
-    go.placeholderFor = file;
-    this.engine._bodyToGO?.set(body.handle, go);
-
-    this._outside.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────
