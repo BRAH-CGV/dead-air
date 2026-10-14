@@ -1332,6 +1332,21 @@ export class BaseScene extends Scene {
    *  itself: a pitch-black shade no light shows, and it casts none — a solid
    *  shadow under a faint figure gave it away — so moving it never redraws
    *  the frozen shadow maps. */
+  /** The screens at the desk that fill the view: the terminal's radar or
+   *  review and the security monitor. Whichever is up is the state; 'idle'
+   *  while neither is. Read every frame, so it allocates nothing. */
+  _screens() {
+    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    return {
+      get state() {
+        for (let i = 0; i < screens.length; i++) {
+          if (screens[i].state !== 'idle') return screens[i].state;
+        }
+        return 'idle';
+      },
+    };
+  }
+
   _addSleepDemon() {
     const { engine } = this;
     // Its body is the baked model (sleep-demon.glb); without it (a test's
@@ -1347,7 +1362,7 @@ export class BaseScene extends Scene {
       stamina:         this.stamina,
       figure,
       camera:          engine.camera ?? null,
-      terminal:        this.terminal,
+      terminal:        this._screens(),
       rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
       isFrozen:        () => !!engine.debugCamera?.active,
       flashlight:      engine.player?.getComponent(Flashlight) ?? null,

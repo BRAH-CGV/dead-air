@@ -160,7 +160,18 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
 
   it("watches the player's camera, and the terminal's screen covers the view", () => {
     expect(scene.sleepDemon.camera).toBe(engine.camera);
-    expect(scene.sleepDemon.terminal).toBe(scene.terminal);
+    expect(scene.sleepDemon.terminal.state).toBe('idle');
+    scene.terminal.state = 'radar';
+    expect(scene.sleepDemon.terminal.state).toBe('radar');
+    scene.terminal.state = 'idle';
+  });
+
+  it('the security monitor covers the view too: nobody is watching the room through it', () => {
+    expect(scene.cameraTerminal).toBeTruthy();
+    scene.cameraTerminal.state = 'viewing';
+    expect(scene.sleepDemon.terminal.state).toBe('viewing');
+    scene.cameraTerminal.state = 'idle';
+    expect(scene.sleepDemon.terminal.state).toBe('idle');
   });
 
   it("is handed the player's flashlight, which stutters while the beam is on it", () => {
