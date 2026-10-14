@@ -12,7 +12,7 @@ import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { deskWingGeometry, deskWingSolids } from './DeskWing.js';
+import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
 // The shelf collider (manifest) has five boards; these are their top
