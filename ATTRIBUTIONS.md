@@ -378,7 +378,7 @@ The security-camera monitor is cut from the same model:
 | **File** | `public/assets/models/camera-monitor.glb` |
 | **Manifest key** | `model:camera-monitor` |
 | **Used for** | The security-camera monitor on the office desk |
-| **Modifications** | The bottom-left screen only, cut out of the bank of four; turned to face +z, scaled to 0.46 m wide, stood on the floor; screen given a faint glow |
+| **Modifications** | The bottom-left screen only, cut out of the bank of four; turned to face +z, scaled to 0.6 m wide, stood on the floor; screen made dark glass, as if off |
 
 ### Interior door
 

@@ -92,7 +92,7 @@ const SEAT = [0, -1.45];
 
 /** The security-camera monitor on the left wing (camera-monitor.glb):
  *  width, height, depth. */
-const CAMERA_MONITOR = [0.46, 0.29, 0.254];
+const CAMERA_MONITOR = [0.6, 0.379, 0.331];
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -434,9 +434,8 @@ export class MainOffice extends Room {
    *  straight out of its front edge, toward the front of the room. A box
    *  the size of the model is the collider the interact ray lands on;
    *  BaseScene attaches the CameraTerminal and its Interactable to it, as it
-   *  does the computer's. The model is drawn only. Its screen glows (baked
-   *  into the model), a vital function like the terminal's glow: with the
-   *  generator running it stays lit through a blow-out. */
+   *  does the computer's. The model is drawn only. Its screen is dark glass,
+   *  as if switched off, until it is given something to show. */
   _buildCameraMonitor() {
     const [w, h, d] = CAMERA_MONITOR;
     const [cx, cz] = deskWingOutline(-1, DESK).centre;
@@ -445,7 +444,6 @@ export class MainOffice extends Room {
     const model = this._spawnProp('model:camera-monitor', {
       name: 'CameraMonitorModel', position: [cx, DESK.top, cz], rotationY: yaw, physics: 'none',
     });
-    model.object3d.userData.unbreakable = true;
     this.cameraMonitor = go;
   }
 

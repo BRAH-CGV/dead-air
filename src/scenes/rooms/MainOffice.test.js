@@ -301,9 +301,6 @@ describe('MainOffice', () => {
     expect(model.object3d.position.toArray()).toEqual(
       [monitor.object3d.position.x, 0.864, monitor.object3d.position.z]);   // on the wing's top
     expect(model.object3d.rotation.y).toBeCloseTo(monitor.object3d.rotation.y);
-    // The screen is a vital function, like the terminal's glow: it stays lit
-    // through a blow-out (PowerGrid reads `unbreakable`).
-    expect(model.object3d.userData.unbreakable).toBe(true);
 
     // On the left wing's top, well in from its edges.
     const { top, centre } = deskWingOutline(-1, { halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95 });
@@ -311,6 +308,7 @@ describe('MainOffice', () => {
     expect(Math.hypot(pos.x - centre[0], pos.z - centre[1])).toBeLessThan(0.15);
     const half = monitor.collider.halfExtents();
     expect(pos.y - half.y).toBeCloseTo(0.864, 2);                    // standing on the top
+    expect(half.x * 2).toBeGreaterThan(0.58);                         // a proper monitor, not a tablet
     const yaw = monitor.object3d.rotation.y;
     const xs = top.map(p => p[0]);
     for (const [sx, sz] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {

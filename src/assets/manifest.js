@@ -251,8 +251,8 @@ const PLACED = {
     physics: 'static',
   },
   // The security cameras' monitor on the office desk's left wing: the
-  // bottom-left screen of wall-screen.glb, cut out, 0.46 m wide, facing +z,
-  // its foot on the floor, its screen glowing.
+  // bottom-left screen of wall-screen.glb, cut out, 0.6 m wide, facing +z,
+  // its foot on the floor, its screen dark as if switched off.
   'model:camera-monitor': {
     type: 'model',
     url: 'assets/models/camera-monitor.glb',
