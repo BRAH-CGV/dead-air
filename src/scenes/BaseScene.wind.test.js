@@ -39,16 +39,15 @@ describe('BaseScene wind dust', () => {
     expect(scene.windDust.getComponent(WindDustMotion)).not.toBeNull();
   });
 
-  it('keeps the dust out of every room, corridor and the airlock', () => {
+  it('keeps the dust out of every room, corridor, the airlock and the bunker slopes', () => {
     const parts = [...Object.values(scene.rooms), ...Object.values(scene.corridors)];
+    const boxes = [...parts.map(part => [part.name, part.bounds()]), ...scene.bunker.cutouts().map((b, i) => [`slope ${i}`, b])];
     const { uBoxMin, uBoxMax } = scene.windDust.dustUniforms;
-    expect(uBoxMin.value).toHaveLength(parts.length);
-    for (const part of parts) {
-      const b = part.bounds();
+    expect(uBoxMin.value).toHaveLength(boxes.length);
+    for (const [name, b] of boxes) {
       // Each shell, whole: the shader keeps the dust out of it.
-      const i = uBoxMin.value.findIndex(min => min.distanceTo(b.min) < 1e-6);
-      expect(i, part.name).not.toBe(-1);
-      expect(uBoxMax.value[i].distanceTo(b.max), part.name).toBeLessThan(1e-6);
+      const i = uBoxMin.value.findIndex((min, j) => min.distanceTo(b.min) < 1e-6 && uBoxMax.value[j].distanceTo(b.max) < 1e-6);
+      expect(i, name).not.toBe(-1);
     }
     expect(scene.windDust.dustUniforms.uClearance.value).toBe(WIND_DUST.clearance);
   });
