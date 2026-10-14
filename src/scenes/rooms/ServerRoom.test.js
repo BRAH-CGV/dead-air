@@ -217,34 +217,37 @@ describe('ServerRoom', () => {
     expect(slot.snapDistance).toBe(0.25);
   });
 
-  it('the console Interactable clears the signal from the inserted drive in the slot', () => {
+  it('the console Interactable upgrades the signal level of the inserted drive in the slot', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     const slotBox = room.root.find('DriveSlot');
     const slot = slotBox.getComponent(DriveSlot);
     expect(interactable).not.toBeNull();
     expect(slot).not.toBeNull();
 
-    // Simulate a saved drive inserted in the slot.
-    const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
+    // Simulate a saved, level-1 drive inserted in the slot.
+    let level = 1;
+    const fakeDrive = { saved: true, corrupted: false, signalLevel: 1, canUpgradeLevel: true,
+      setSignalLevel(l) { level = l; this.signalLevel = l; } };
     slot._insertedDrive = fakeDrive;
 
-    // The prompt shows the delete option.
+    // The prompt shows the process option.
     interactable.refreshPrompt();
-    expect(interactable.promptLabel).toBe('[E] Delete signal');
+    expect(interactable.promptLabel).toBe('[E] Process signal');
 
-    // Interact to clear the signal.
+    // Interact to upgrade the signal.
     interactable.onInteract({});
-    expect(fakeDrive.saved).toBe(false);
+    expect(level).toBe(2);
 
-    // After clearing, the prompt should revert.
+    // After upgrading, canUpgradeLevel is false, so the prompt should revert.
+    fakeDrive.canUpgradeLevel = false;
     interactable.refreshPrompt();
-    expect(interactable.promptLabel).toBe('No signal to delete');
+    expect(interactable.promptLabel).toBe('No signal to process');
   });
 
-  it('the console shows "No signal to delete" when the slot has no drive', () => {
+  it('the console shows "No signal to process" when the slot has no drive', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     interactable.refreshPrompt();
-    expect(interactable.promptLabel).toBe('No signal to delete');
+    expect(interactable.promptLabel).toBe('No signal to process');
   });
 
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {

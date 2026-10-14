@@ -543,10 +543,11 @@ export class BaseScene extends Scene {
       driveSlot.bindDriveManager(this.driveManager);
     }
 
-    // Wire the server room's drive slot to watch the same drives.
-    // The slot works independently (no DriveManager) — the console's
+    // Wire the delete and processing console slots.
+    // Each slot works independently (no DriveManager) — the console's
     // Interactable checks the slot's insertedDrive for signals.
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.MainOffice?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
     // Wire the drive box dock in the airlock and the drive boxes on the
     // office shelf.
@@ -565,7 +566,8 @@ export class BaseScene extends Scene {
     for (const drive of office.drives) {
       this.driveManager.addDrive(drive);
       if (driveSlot) driveSlot.addDrive(drive);
-      if (serverSlot) serverSlot.addDrive(drive);
+      if (deleteSlot) deleteSlot.addDrive(drive);
+      if (processingSlot) processingSlot.addDrive(drive);
       for (const box of driveBoxes) box.addDrive?.(drive);
     }
 
@@ -582,9 +584,16 @@ export class BaseScene extends Scene {
         addDriveToRoom(drive);
       };
     }
-    if (serverSlot) {
-      const origOnRemoved = serverSlot.onDriveRemoved;
-      serverSlot.onDriveRemoved = (drive) => {
+    if (deleteSlot) {
+      const origOnRemoved = deleteSlot.onDriveRemoved;
+      deleteSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+    if (processingSlot) {
+      const origOnRemoved = processingSlot.onDriveRemoved;
+      processingSlot.onDriveRemoved = (drive) => {
         origOnRemoved?.(drive);
         addDriveToRoom(drive);
       };
@@ -683,11 +692,13 @@ export class BaseScene extends Scene {
    *  signals and positions. */
   _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.MainOffice?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
-    // Eject drives from reader and server slot (they keep their signal)
+    // Eject drives from reader and console slots (they keep their signal)
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
-    if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+    if (deleteSlot?.hasDrive) deleteSlot._ejectDrive(deleteSlot.insertedDrive);
+    if (processingSlot?.hasDrive) processingSlot._ejectDrive(processingSlot.insertedDrive);
 
     // Empty the dock: wipe the docked box's drives and release it.
     const box = this.rooms.Airlock.quotaDock?.empty();

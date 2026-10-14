@@ -139,12 +139,14 @@ export class DriveManager {
   }
 
   /** Save a signal to the inserted drive. Marks the drive as saved (turns
-   *  it green) so it cannot accept more signals until cleared.
+   *  it green/cyan depending on level) so it cannot accept more signals
+   *  until cleared.
+   *  @param {number} [signalIndex]  The signal's id in SignalManager.
    *  @returns {number} the new signalsOnDrive count */
-  saveToDrive() {
+  saveToDrive(signalIndex) {
     if (!this.insertedDrive) return this.signalsOnDrive;
     this.signalsOnDrive++;
-    this.insertedDrive.setSaved(true);
+    this.insertedDrive.setSaved(true, { signalIndex });
     return this.signalsOnDrive;
   }
 
@@ -166,6 +168,17 @@ export class DriveManager {
     if (!this.insertedDrive) return false;
     this.insertedDrive.setSaved(false);
     this.signalsOnDrive = 0;
+    return true;
+  }
+
+  /** Upgrade the inserted drive's signal to the next processing level.
+   *  Returns false if no drive is inserted, it has no signal, it is
+   *  corrupted, or it cannot be upgraded further.
+   *  @returns {boolean} true if the drive was upgraded */
+  upgradeInsertedDrive() {
+    const drive = this.insertedDrive;
+    if (!drive || !drive.canUpgradeLevel) return false;
+    drive.setSignalLevel(drive.signalLevel + 1);
     return true;
   }
 }

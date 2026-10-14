@@ -24,7 +24,7 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // ─────────────────────────────────────────────
 
 export class ServerRoom extends Room {
-  /** The server console with the "Delete signal" interactable.
+  /** The server console with the "Process signal" interactable.
    *  @type {import('../../core/GameObject.js').GameObject|null} */
   _serverConsole = null;
 
@@ -130,7 +130,7 @@ export class ServerRoom extends Room {
     // Console in the middle of the aisle, backed up to the back wall and
     // facing down it. Its footprint runs 0.24 m behind its origin.
     // The drive slot passively snaps in a drive when it comes close.
-    // The interactable deletes the signal from the inserted drive.
+    // The interactable upgrades the signal level of the inserted drive.
     const console_ = this._spawnProp('model:radar-terminal', {
       name: 'ServerConsole', position: [consoleAt[0], 0, consoleAt[1]], scale: 0.478,
     });
@@ -138,7 +138,7 @@ export class ServerRoom extends Room {
 
     // Drive slot on top of the console. The slot works independently —
     // no DriveManager needed. The console's Interactable checks the slot's
-    // insertedDrive for signals.
+    // insertedDrive for signals to upgrade.
     // The slot is a separate static box (like the MainOffice drive reader),
     // not a child of the scaled console model, so it keeps its own size.
     // It sits on the console's front ledge: 0.16 m left of the console's
@@ -149,7 +149,7 @@ export class ServerRoom extends Room {
       color: 0x1a1a1a,
       roughness: 0.7,
       metalness: 0.4,
-      emissive: 0x003311,
+      emissive: 0x003322,
       emissiveIntensity: 0.3,
     }));
     const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
@@ -168,27 +168,25 @@ export class ServerRoom extends Room {
     slotBox.addComponent(driveSlot);
     this._driveSlot = driveSlot;
 
+    // The processing interactable: upgrades a level-1 signal to level 2.
     const self = this;
     console_.addComponent(new class extends Interactable {
-      promptLabel = '[E] Delete signal';
+      promptLabel = '[E] Process signal';
       interactRange = 2;
 
-      // Check the console's drive slot for a drive with a signal.
-      _findDriveWithSignal() {
+      _findUpgradeableDrive() {
         const slot = self._driveSlot;
         if (!slot) return null;
         const drive = slot.insertedDrive;
-        if (drive?.saved) return drive;
+        if (drive?.canUpgradeLevel) return drive;
         return null;
       }
 
-      // The prompt follows the drive state — shows "No signal to delete"
-      // when there's nothing to clear.
       refreshPrompt() {
-        if (this._findDriveWithSignal()) {
-          this.promptLabel = '[E] Delete signal';
+        if (this._findUpgradeableDrive()) {
+          this.promptLabel = '[E] Process signal';
         } else {
-          this.promptLabel = 'No signal to delete';
+          this.promptLabel = 'No signal to process';
         }
       }
 
@@ -197,9 +195,9 @@ export class ServerRoom extends Room {
       }
 
       onInteract() {
-        const drive = this._findDriveWithSignal();
+        const drive = this._findUpgradeableDrive();
         if (drive) {
-          drive.setSaved(false);
+          drive.setSignalLevel(drive.signalLevel + 1);
         }
         this.refreshPrompt();
       }
