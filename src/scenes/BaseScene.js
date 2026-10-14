@@ -900,8 +900,17 @@ export class BaseScene extends Scene {
     this._adopt(this._outside, this.satellite);
     // Its drive while it slews, and the click as it settles.
     this.satellite.addComponent(new SatelliteSound());
-    this.satellite.targetYaw   = THREE.MathUtils.degToRad(45);
-    this.satellite.targetPitch = THREE.MathUtils.degToRad(-25);
+    // Park the dish at its demo pose: set the model sub-nodes and the rig
+    // to the same angles so it spawns already there instead of slewing on
+    // load. The neck mirrors game yaw (bearing g → neck.rotation.y = π − g).
+    const parkYaw   = THREE.MathUtils.degToRad(45);
+    const parkPitch = THREE.MathUtils.degToRad(-55);
+    if (this.satellite.neck) this.satellite.neck.object3d.rotation.y = Math.PI - parkYaw;
+    if (this.satellite.dish) this.satellite.dish.object3d.rotation.x = parkPitch;
+    this.satellite.rig.currentYaw   = parkYaw;
+    this.satellite.rig.currentPitch = parkPitch;
+    this.satellite.targetYaw   = parkYaw;
+    this.satellite.targetPitch = parkPitch;
 
     // The dishes of the neighbouring array nodes, lent to this station.
     // Too far away to be seen or heard, so they are simulated headless:
