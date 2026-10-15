@@ -334,7 +334,7 @@ export class RadarOverlay {
    *  fade-in opacity — a signal mid-fade shows as a ghost of its state. */
   _blipColor(sig) {
     const a = sig.opacity;
-    if (sig.evil)       return `rgba(255, 45, 45, ${((sig.saved || sig.deleted) ? 0.5 : 0.8) * a})`;   // hostile red, dim once resolved
+    if (sig.evil)       return `rgba(0, 220, 200, ${((sig.saved || sig.deleted) ? 0.5 : 0.8) * a})`;   // same cyan as ordinary, dim once resolved
     if (sig.saved)      return `rgba(80, 200, 80, ${0.5 * a})`;      // dim green
     if (sig.deleted)    return `rgba(200, 60, 60, ${0.5 * a})`;      // dim red
     if (sig.scanned)    return `rgba(180, 180, 60, ${0.7 * a})`;     // scanned but unresolved
@@ -344,7 +344,7 @@ export class RadarOverlay {
   /** RGB triplet for a signal's state colour — used by the ripple
    *  animation which applies its own alpha. */
   _blipRgb(sig) {
-    if (sig.evil)    return '255, 45, 45';
+    if (sig.evil)    return '0, 220, 200';
     if (sig.saved)   return '80, 200, 80';
     if (sig.deleted) return '200, 60, 60';
     if (sig.scanned) return '180, 180, 60';
@@ -623,10 +623,12 @@ export class RadarOverlay {
       const rgb = this._blipRgb(sig);
 
       // Stagger each signal's phase so the sky never pulses as one.
+      // Evil signals ripple inward (contracting) instead of outward.
       const offset = (i * 737) % RIPPLE_CYCLE;
-      const phase  = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
+      const raw    = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
+      const phase  = sig.evil ? 1 - raw : raw;
 
-      // The expanding ring — radius grows, alpha fades.
+      // The ring — radius grows (or shrinks for evil), alpha fades.
       const ringR   = phase * RIPPLE_MAX * s;
       const ringA   = (1 - phase) * 0.8 * sig.opacity;
       if (ringA > 0.01) {
