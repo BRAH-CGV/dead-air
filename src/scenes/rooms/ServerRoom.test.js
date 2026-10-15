@@ -311,6 +311,66 @@ describe('ServerRoom', () => {
     expect(interactable.promptLabel).toBe('[E] Processing console');
   });
 
+  it('has a signal delete console with a DriveSlot and delete Interactable', () => {
+    const console_ = room.root.find('DeleteConsole');
+    expect(console_).not.toBeNull();
+    expect(console_.physicsAssetKey).toBe('model:radar-terminal');
+
+    // The drive slot is a standalone static box (not a child of the scaled model).
+    const slotBox = room.root.find('DeleteDriveSlot');
+    expect(slotBox).not.toBeNull();
+    expect(slotBox.rigidBody.isFixed()).toBe(true);
+    const slot = slotBox.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    expect(slot.snapDistance).toBe(0.25);
+
+    // The room exposes the slot for BaseScene wiring.
+    expect(room.deleteDriveSlot).toBe(slot);
+
+    // The console has a delete Interactable.
+    const interactable = console_.getComponent(Interactable);
+    expect(interactable).not.toBeNull();
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+  });
+
+  it('the delete console drive slot is at position (1.960, 0.405, 2.577) with rotation (0, -90, 0)', () => {
+    const slotBox = room.root.find('DeleteDriveSlot');
+    expect(slotBox.object3d.position.x).toBeCloseTo(1.960);
+    expect(slotBox.object3d.position.y).toBeCloseTo(0.405);
+    expect(slotBox.object3d.position.z).toBeCloseTo(2.577);
+    expect(slotBox.object3d.rotation.x).toBeCloseTo(0);
+    expect(slotBox.object3d.rotation.y).toBeCloseTo(-Math.PI / 2);
+    expect(slotBox.object3d.rotation.z).toBeCloseTo(0);
+  });
+
+  it('the delete console Interactable clears the signal from the inserted drive', () => {
+    const interactable = room.root.find('DeleteConsole').getComponent(Interactable);
+    const slotBox = room.root.find('DeleteDriveSlot');
+    const slot = slotBox.getComponent(DriveSlot);
+
+    // Simulate a saved drive inserted in the slot.
+    const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
+    slot._insertedDrive = fakeDrive;
+
+    // The prompt shows the delete option.
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+
+    // Interact to clear the signal.
+    interactable.onInteract({});
+    expect(fakeDrive.saved).toBe(false);
+
+    // After clearing, the prompt should revert.
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
+  });
+
+  it('the delete console shows "No signal to delete" when the slot has no drive', () => {
+    const interactable = room.root.find('DeleteConsole').getComponent(Interactable);
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('No signal to delete');
+  });
+
   it('has a SightlineZone stub for the camera entity, somewhere inside the room (phase 10)', () => {
     const zone = room.root.children.find(c => c instanceof SightlineZone);
     expect(zone).toBeDefined();

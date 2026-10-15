@@ -159,12 +159,6 @@ export class MainOffice extends Room {
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
 
-  /** The signal delete console. @type {import('../../core/GameObject.js').GameObject|null} */
-  _deleteConsole = null;
-
-  /** The drive slot on the delete console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
-  _deleteDriveSlot = null;
-
   /** Physical drives in the room: the drives pre-seated in the drive
    *  boxes. @type {Drive[]} */
   drives = [];
@@ -195,9 +189,6 @@ export class MainOffice extends Room {
       ],
     });
   }
-
-  /** The drive slot on the delete console (for external wiring). */
-  get deleteDriveSlot() { return this._deleteDriveSlot; }
 
   buildDoors() {
     this.addDoor('ToAirlock',        'front', 'Airlock');
@@ -308,9 +299,6 @@ export class MainOffice extends Room {
     // pre-filled with seated drives.
     this._buildDriveStation();
     this._buildDriveBoxes();
-
-    // Signal delete console against the right wall.
-    this._buildDeleteConsole();
   }
 
   /** Where food comes from: a wall-mounted machine that dispenses rations
@@ -678,79 +666,4 @@ export class MainOffice extends Room {
     this.windowGlass.addLight(this.ceilingLight, 1 / (Math.PI * reach));
   }
 
-  /** Signal delete console against the right wall, forward of the server
-   *  room door. A radar-terminal model facing into the room, with a
-   *  standalone drive slot on its front ledge and an Interactable that
-   *  deletes the signal from the inserted drive. */
-  _buildDeleteConsole() {
-    // Console against the right wall, facing -x (into the room).
-    const consolePos = [5.5, 0, 1.0];
-    const console_ = this._spawnProp('model:radar-terminal', {
-      name: 'DeleteConsole', position: consolePos, rotationY: -Math.PI / 2, scale: 0.478,
-    });
-    this._deleteConsole = console_;
-
-    // Drive slot on the console's front ledge. Standalone static box,
-    // not a child of the scaled model, so it keeps its own size.
-    // The console faces -x, so the "front ledge" is on the -x side.
-    const slotSize = [0.12, 0.03, 0.15];
-    const slotPos = [consolePos[0] - 0.7, 0.405, consolePos[2] + 0.16];
-    const slotMat = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.7,
-      metalness: 0.4,
-      emissive: 0x003311,
-      emissiveIntensity: 0.3,
-    }));
-    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, slotMat);
-
-    // Tooltip on hover
-    const slotTooltip = new Interactable();
-    slotTooltip.promptLabel = 'Drive reader';
-    slotBox.addComponent(slotTooltip);
-
-    // DriveSlot component
-    const driveHeight = 0.02;
-    const driveSlot = new DriveSlot({
-      snapDistance: 0.25,
-      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
-    });
-    slotBox.addComponent(driveSlot);
-    this._deleteDriveSlot = driveSlot;
-
-    // Delete interactable on the console
-    const self = this;
-    console_.addComponent(new class extends Interactable {
-      promptLabel = '[E] Delete signal';
-      interactRange = 2;
-
-      _findDriveWithSignal() {
-        const slot = self._deleteDriveSlot;
-        if (!slot) return null;
-        const drive = slot.insertedDrive;
-        if (drive?.saved) return drive;
-        return null;
-      }
-
-      refreshPrompt() {
-        if (this._findDriveWithSignal()) {
-          this.promptLabel = '[E] Delete signal';
-        } else {
-          this.promptLabel = 'No signal to delete';
-        }
-      }
-
-      onHover() {
-        this.refreshPrompt();
-      }
-
-      onInteract() {
-        const drive = this._findDriveWithSignal();
-        if (drive) {
-          drive.setSaved(false);
-        }
-        this.refreshPrompt();
-      }
-    }());
-  }
 }

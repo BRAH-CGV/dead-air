@@ -705,7 +705,7 @@ export class BaseScene extends Scene {
     // Wire the delete and processing console slots.
     // Each slot works independently (no DriveManager) — the console's
     // Interactable checks the slot's insertedDrive for signals.
-    const deleteSlot = this.rooms.MainOffice?.deleteDriveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
     const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
     // Wire the processing screen to the ServerRoom console and the signal
@@ -866,7 +866,7 @@ export class BaseScene extends Scene {
    *  signals and positions. */
   _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
-    const deleteSlot = this.rooms.MainOffice?.deleteDriveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
     const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
     // Eject drives from reader and console slots (they keep their signal)

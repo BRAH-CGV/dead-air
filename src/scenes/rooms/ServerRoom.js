@@ -31,6 +31,12 @@ export class ServerRoom extends Room {
   /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
   _driveSlot = null;
 
+  /** The signal delete console. @type {import('../../core/GameObject.js').GameObject|null} */
+  _deleteConsole = null;
+
+  /** The drive slot on the delete console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
+  _deleteDriveSlot = null;
+
   /** The processing screen overlay (set by BaseScene). @type {import('../../ui/ProcessingScreen.js').ProcessingScreen|null} */
   _processingScreen = null;
 
@@ -59,6 +65,9 @@ export class ServerRoom extends Room {
 
   /** The drive slot on the console (for external wiring). */
   get driveSlot() { return this._driveSlot; }
+
+  /** The drive slot on the delete console (for external wiring). */
+  get deleteDriveSlot() { return this._deleteDriveSlot; }
 
   /** Wire the processing screen overlay. Called by BaseScene. */
   set processingScreen(screen) { this._processingScreen = screen; }
@@ -227,6 +236,9 @@ export class ServerRoom extends Room {
     this.root.addChild(new SightlineZone('SightlineZone', {
       position: [0, 1.5, -0.5], size: [4, 2, 5],
     }));
+
+    // Signal delete console.
+    this._buildDeleteConsole();
   }
 
   /** Glow-in-the-dark trim, a small blinking LED cluster, and a light that
@@ -283,5 +295,79 @@ export class ServerRoom extends Room {
     const glow = new THREE.PointLight(0x3a6bff, 0.9, 9, 1.2);
     glow.position.set(0.02, 1.63, 0.3);
     groupGO.object3d.add(glow);
+  }
+
+  /** Signal delete console. A radar-terminal model with a standalone
+   *  drive slot on its front ledge and an Interactable that deletes the
+   *  signal from the inserted drive. */
+  _buildDeleteConsole() {
+    const consolePos = [2.66, 0, 2.737];
+    const console_ = this._spawnProp('model:radar-terminal', {
+      name: 'DeleteConsole', position: consolePos, rotationY: -Math.PI / 2, scale: 0.478,
+    });
+    this._deleteConsole = console_;
+
+    // Drive slot on the console's front ledge. Standalone static box,
+    // not a child of the scaled model, so it keeps its own size.
+    const slotSize = [0.12, 0.03, 0.15];
+    const slotPos = [1.960, 0.405, 2.577];
+    const slotMat = this._own(new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      roughness: 0.7,
+      metalness: 0.4,
+      emissive: 0x003311,
+      emissiveIntensity: 0.3,
+    }));
+    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, slotMat);
+    slotBox.object3d.rotation.set(0, -Math.PI / 2, 0);
+
+    // Tooltip on hover
+    const slotTooltip = new Interactable();
+    slotTooltip.promptLabel = 'Drive reader';
+    slotBox.addComponent(slotTooltip);
+
+    // DriveSlot component
+    const driveHeight = 0.02;
+    const driveSlot = new DriveSlot({
+      snapDistance: 0.25,
+      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+    });
+    slotBox.addComponent(driveSlot);
+    this._deleteDriveSlot = driveSlot;
+
+    // Delete interactable on the console
+    const self = this;
+    console_.addComponent(new class extends Interactable {
+      promptLabel = '[E] Delete signal';
+      interactRange = 2;
+
+      _findDriveWithSignal() {
+        const slot = self._deleteDriveSlot;
+        if (!slot) return null;
+        const drive = slot.insertedDrive;
+        if (drive?.saved) return drive;
+        return null;
+      }
+
+      refreshPrompt() {
+        if (this._findDriveWithSignal()) {
+          this.promptLabel = '[E] Delete signal';
+        } else {
+          this.promptLabel = 'No signal to delete';
+        }
+      }
+
+      onHover() {
+        this.refreshPrompt();
+      }
+
+      onInteract() {
+        const drive = this._findDriveWithSignal();
+        if (drive) {
+          drive.setSaved(false);
+        }
+        this.refreshPrompt();
+      }
+    }());
   }
 }
