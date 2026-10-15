@@ -1117,6 +1117,17 @@ describe('App', () => {
       expect(engine.camera.rotation).toMatchObject({ x: 0, y: 2.5, z: 0 });
     });
 
+    it('quitting from a dream rebuilds the scene the dream wakes into (#101)', async () => {
+      class Home {}
+      class Dream { static returnTo = Home; }
+      engine.activeScene = Object.assign(Object.create(Dream.prototype), makeScene());
+      await startGame();
+      lock.lose();
+      await click('quit');
+      await click('confirm');
+      expect(engine.loadScene).toHaveBeenCalledWith(Home);
+    });
+
     it('credits name the team by name only, with no Discord handles', async () => {
       await click('credits');
       const text = document.getElementById('menu-panel').textContent;

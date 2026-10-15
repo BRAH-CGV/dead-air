@@ -23,6 +23,7 @@ import { Fullbright } from './Fullbright.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
+import { DreamScene } from '../scenes/DreamScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
 
@@ -342,6 +343,7 @@ export class Engine {
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
+    this.registerScene('DreamScene', DreamScene);
     // Not compiled here: warmUp, below, does that and more.
     this.loadScene(BaseScene, { compile: false });
 
@@ -430,7 +432,7 @@ export class Engine {
    *
    *  @param {typeof import('./Scene.js').Scene} SceneClass
    *  @param {{ compile?: boolean }} [opts] */
-  loadScene(SceneClass, { compile = true } = {}) {
+  loadScene(SceneClass, { compile = true, sceneOptions } = {}) {
     // ── Tear down the old scene ──
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
@@ -439,7 +441,7 @@ export class Engine {
     this.screenPasses = [];
 
     // ── Build the new one ──
-    this.activeScene = new SceneClass(this);
+    this.activeScene = new SceneClass(this, sceneOptions);
     this.activeScene.build();
 
     // Initialise every new root object (sets scene/world refs, adds to

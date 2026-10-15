@@ -161,6 +161,21 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
     }),
 
     {
+      name: 'dream', usage: 'dream [level]', help: 'Drop into the dream (1-3, default: tonight); waking comes back to this night',
+      run: ([arg]) => {
+        const Dream = engine.sceneRegistry?.get('DreamScene');
+        if (!Dream) throw new CommandError('No dream scene registered');
+        const night = engine.activeScene?.nights?.currentNight ?? 1;
+        let level = Math.min(night, 3);
+        if (arg !== undefined) {
+          level = /^[1-3]$/.test(arg) ? Number(arg) : NaN;
+          if (!level) throw new UsageError('Level must be 1-3');
+        }
+        engine.loadScene(Dream, { sceneOptions: { level, night } });
+        return `Dreaming, level ${level}: walk away from the base`;
+      },
+    },
+    {
       name: 'night', usage: 'night [n]', help: 'Jump to a night, or on to the next (wraps to 1)',
       run: ([arg]) => {
         const nights = system('nights', 'nights');

@@ -223,7 +223,10 @@ export class App {
     engine.uiHasMouse = false;
     this._offController?.();
     this._offController = null;
-    engine.loadScene(engine.activeScene.constructor);
+    // A dream (DreamScene) is not where a fresh night starts: rebuild the
+    // scene it wakes into.
+    const Scene = engine.activeScene.constructor;
+    engine.loadScene(Scene.returnTo ?? Scene);
     // The camera outlives the scene, and nothing ticks under the menu to
     // turn it back: face the way the fresh player does (beside the bunk,
     // looking at the desk — not world forward).
