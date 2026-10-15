@@ -37,6 +37,28 @@ describe('Stamina', () => {
     expect(s.value).toBe(1);
   });
 
+  it('outside, out in the cold in the suit, it drains STAMINA.outsidePace times as fast', () => {
+    expect(STAMINA.outsidePace).toBe(2);
+    const s = new Stamina({ drainPerSecond: 0.01 });
+    s.update(10, STAMINA.outsidePace);
+    expect(s.value).toBeCloseTo(0.8);
+  });
+
+  it('staring at the dust eyes takes STAMINA.stare a second on top of the drain', () => {
+    expect(STAMINA.stare).toBeGreaterThan(0);
+    const s = new Stamina({ drainPerSecond: 0.01 });
+    s.update(10, 1, STAMINA.stare);
+    expect(s.value).toBeCloseTo(1 - 0.1 - 10 * STAMINA.stare);
+    // A stare is felt: ten seconds of it cost more than a minute of the night.
+    expect(10 * STAMINA.stare).toBeGreaterThan(60 * drainForShift(600));
+  });
+
+  it('the paces compose: staring outside drains both ways', () => {
+    const s = new Stamina({ drainPerSecond: 0.01 });
+    s.update(5, STAMINA.outsidePace, STAMINA.stare);
+    expect(s.value).toBeCloseTo(1 - 5 * (0.01 * STAMINA.outsidePace + STAMINA.stare));
+  });
+
   it('restore adds an amount', () => {
     const s = new Stamina({ drainPerSecond: 0.1 });
     s.update(5);                        // 0.5

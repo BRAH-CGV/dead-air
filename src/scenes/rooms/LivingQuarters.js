@@ -10,7 +10,7 @@ import { Bed } from '../../components/Bed.js';
 //
 // The bunk is the bed: its Bed interactable (`room.bed`) is how the player
 // sleeps through the day. The scene wires the controller and fade into it.
-// Food is in the office — the ration dispenser lives there.
+// Coffee is in the office — the coffee machine lives there.
 //
 // ── Interior layout mock-up ──
 // The room is split in three with the furniture, using the models already

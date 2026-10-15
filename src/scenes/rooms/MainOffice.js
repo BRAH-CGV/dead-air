@@ -13,6 +13,7 @@ import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
@@ -40,7 +41,7 @@ const DRIVE_BOX_LAYOUT = [
 // (ambient, moon) belongs to the scene, not the room.
 //
 // Furnished for the job and nothing else: the computer desk facing the
-// window, a food-ration dispenser (the player eats here, between scans), a
+// window, a coffee machine (a couple of cups a night, between scans), a
 // bin, a shelf of spares, a poster.
 //
 // ── Interior layout mock-up ──
@@ -72,47 +73,9 @@ const DRIVE_BOX_LAYOUT = [
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
 //
-// The food-ration dispenser on the left wall is `rationDispenser`, a
-// RationDispenser; the scene hands it the stamina a ration restores.
+// The coffee machine on the left wall is `coffeeMachine`, a CoffeeMachine;
+// the scene hands it the stamina a cup restores.
 // ─────────────────────────────────────────────
-
-const RATION_READY = '[E] Take a food ration';
-const RATION_REFILLING = 'Dispenser refilling…';
-
-/** The dispenser's use: a ration restores stamina, then it refills for
- *  `cooldown` seconds. The prompt is a data field, so InteractionSystem
- *  re-shows it when it changes under the crosshair. */
-export class RationDispenser extends Interactable {
-  promptLabel = RATION_READY;
-  /** Set by the scene. @type {{restore(amount: number): void}|null} */
-  stamina = null;
-  /** Stamina per ration. */
-  amount = 0.35;
-  /** Seconds before the next ration. */
-  cooldown = 40;
-  /** Seconds left until it is ready again. */
-  refill = 0;
-  /** Called after each ration (the sound). */
-  onEat = null;
-
-  onUpdate(dt) {
-    if (this.refill > 0 && (this.refill -= dt) <= 0) this.reset();
-  }
-
-  onInteract() {
-    if (!this.stamina || this.refill > 0) return;
-    this.stamina.restore(this.amount);
-    this.refill = this.cooldown;
-    this.promptLabel = RATION_REFILLING;
-    this.onEat?.();
-  }
-
-  /** Ready again: a new or retried night. */
-  reset() {
-    this.refill = 0;
-    this.promptLabel = RATION_READY;
-  }
-}
 
 /** The bars across the window: mullions at ±x, the crossbar's height, and
  *  the mullions' width. The frame is built from them and the glass is cut
@@ -166,8 +129,8 @@ export class MainOffice extends Room {
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
 
-  /** On the VendingMachine, from buildProps(). @type {RationDispenser|null} */
-  rationDispenser = null;
+  /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
+  coffeeMachine = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -263,10 +226,10 @@ export class MainOffice extends Room {
     this._buildDeskClock();
     this._buildGlobe();
 
-    // Left wall, back to front: the grow beds, the ration dispenser and a
-    // bin for the wrappers, all short of the doorway.
+    // Left wall, back to front: the grow beds, the coffee machine and a
+    // bin for the cups, all short of the doorway.
     this._buildGrowBeds();
-    this._buildRationDispenser();
+    this._buildCoffeeMachine();
     this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 1.9] });
 
     // Right wall: spare parts on a shelf; a poster where the eye lands
@@ -301,14 +264,15 @@ export class MainOffice extends Room {
     this._buildDriveBoxes();
   }
 
-  /** Where food comes from: a wall-mounted machine that dispenses rations
-   *  of nutrient mush. Built here rather than imported — the downloaded
-   *  vending machine is a broken fragment. The body is the collider the
-   *  interact ray hits; the face details are plain meshes on it. */
-  _buildRationDispenser() {
+  /** The office's coffee: a tall drinks machine against the wall. Built
+   *  here rather than imported — the downloaded vending machine is a broken
+   *  fragment. The body is the collider the interact ray hits; the face
+   *  details are plain meshes on it. Its status screen shows what it is
+   *  doing (CoffeeMachine colours it); the cup goes in the bay below. */
+  _buildCoffeeMachine() {
     const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
     const size = [0.7, 1.9, 0.9];
-    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
+    const go = this._addStaticBox('CoffeeMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
 
     // Front face is +x, into the room; positions are relative to the body's
     // centre, 0.95 m up.
@@ -328,11 +292,11 @@ export class MainOffice extends Room {
     }));
 
     detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
-    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // dispense button
-    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
-    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
+    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // brew button
+    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // cup bay
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
 
-    this.rationDispenser = go.addComponent(new RationDispenser());
+    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small

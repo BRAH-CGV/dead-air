@@ -901,7 +901,7 @@ describe('BaseScene occlusion — the airlock decides which side is drawn', () =
   it('the interior zone holds the rooms\' furnishings', () => {
     const interior = zoneContents('interior');
     const office = scene.rooms.MainOffice.root.object3d;
-    for (const prop of ['ComputerDesk', 'VendingMachine', 'WindowFrame_Top']) {
+    for (const prop of ['ComputerDesk', 'CoffeeMachine', 'WindowFrame_Top']) {
       expect(interior.has(named(office, prop)), prop).toBe(true);
     }
   });
