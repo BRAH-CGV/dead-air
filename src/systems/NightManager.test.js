@@ -56,6 +56,21 @@ describe('NightManager', () => {
     expect(() => new NightManager().setNight(1.5)).toThrow(/night 1.5/);
   });
 
+  // Night 0 is the tutorial: a scene that has one asks for it.
+  it('minNight lets a run start before night 1', () => {
+    const nights = new NightManager({ minNight: 0, startNight: 0 });
+    expect(nights.currentNight).toBe(0);
+    expect(nights.minNight).toBe(0);
+    expect(nights.advance()).toBe(1);
+    expect(nights.setNight(0)).toBe(0);
+    expect(() => nights.setNight(-1)).toThrow(/night -1 \(0–3\)/);
+  });
+
+  it('minNight defaults to 1', () => {
+    expect(new NightManager().minNight).toBe(1);
+    expect(() => new NightManager().setNight(0)).toThrow(/night 0 \(1–3\)/);
+  });
+
   // Doors no longer open by night — the base is walkable from night 1, and
   // only the airlock gates the outside (on the EVA suit, not the calendar).
   it('no longer knows about rooms or doors', () => {

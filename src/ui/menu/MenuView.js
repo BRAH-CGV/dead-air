@@ -186,8 +186,8 @@ export class MenuView {
 
   // ── Screens ───────────────────────────────
 
-  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string }} m */
-  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '' }) {
+  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string, tutorial?: boolean }} m */
+  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '', tutorial = false }) {
     this._hint = h('div', { class: 'menu-hint', role: 'status' }, hint);
     return [
       h('h1', { class: 'menu-title' }, COPY.title, h('span', { class: 'menu-cursor', 'aria-hidden': 'true' })),
@@ -196,6 +196,7 @@ export class MenuView {
       h('nav', { class: 'menu-list' },
         option('newGame', 'New game'),
         continueNight ? option('continue', `Continue — Night ${continueNight}`) : null,
+        tutorial ? option('tutorial', 'Tutorial') : null,
         option('nightSelect', 'Select night'),
         option('settings', 'Settings'),
         option('credits', 'Credits'),
@@ -326,11 +327,12 @@ export class MenuView {
     ];
   }
 
-  /** @param {{ night: number, saved: number, required: number }} m */
-  _drawNightFailed({ night = 1, saved = 0, required = 0 }) {
+  /** @param {{ night: number, saved: number, required: number, minSignalLevel?: number }} m */
+  _drawNightFailed({ night = 1, saved = 0, required = 0, minSignalLevel = 1 }) {
+    const label = minSignalLevel >= 2 ? 'cyan drives' : 'drives';
     return [
       h('h2', { class: 'menu-heading is-danger' }, COPY.nightFailedTitle),
-      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} drives`),
+      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} ${label}`),
       h('nav', { class: 'menu-list' },
         option('retry', 'Retry night'),
         option('quit', 'Main menu'),

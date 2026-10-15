@@ -247,6 +247,24 @@ export class App {
     });
   }
 
+  /** The tutorial, night 0, on the fresh scene the menu sits over. It is
+   *  no part of a run: Continue is left as it was, and night 0 is never
+   *  saved (_onGameState). */
+  async _tutorial() {
+    this._wakeAudio();
+    const lock = this.pointerLock.request();   // inside the click, or it's refused
+    await this._run(async () => {
+      if (this.flow.needsRebuild) await this._fadeRebuild();
+      if (await this._lockHeld(lock)) {
+        this.engine.activeScene?.nights?.setNight(0);
+        this.flow.newGame();
+        this.engine.setPaused(false);
+      } else {
+        this._setHint(COPY.lockRefused);
+      }
+    });
+  }
+
   /** Continue: the night saved last time, on the fresh scene the menu sits
    *  over — no rebuild, just the night set (like `night` in the console) once the lock
    *  is ours. Set any earlier and a refused lock would leave New game
@@ -385,7 +403,8 @@ export class App {
    *  the lock released after it isn't read as a pause. */
   _onGameState(state) {
     if (state === 'playing') {
-      this._saveNight(this._currentNight());
+      const night = this._currentNight();
+      if (night >= 1) this._saveNight(night);   // night 0, the tutorial, isn't a run
       return;
     }
     if (state === 'gameOver') {
@@ -538,6 +557,7 @@ export class App {
     switch (action) {
       case 'newGame':  return this._newGame();
       case 'continue': return this._continue();
+      case 'tutorial': return this._tutorial();
       case 'nightSelect': return flow.openNightSelect();
       case 'selectNight': return this._startAtNight(Number(data.night));
       case 'resume':   return this._resume();
@@ -641,7 +661,10 @@ export class App {
   _model(screen) {
     switch (screen) {
       case 'main':
-        return { tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint };
+        return {
+          tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint,
+          tutorial: this.engine.activeScene?.nights?.minNight === 0,
+        };
       case 'nightSelect':
         return { maxNight: this._maxNight(), highest: this._highestNight(), hint: this._hint };
       case 'pause':

@@ -17,7 +17,7 @@ import { cursorToSky, skyToCursor } from '../gameobjects/DishRig.js';
 // cursor that the satellite dish "chases" with momentum.
 //
 // External references (set by OfficeScene during wiring):
-//   satellite, signalManager, hud, radar, reviewPanel, driveManager, evilSignal
+//   satellite, signalManager, hud, radar, driveManager, evilSignal
 // ─────────────────────────────────────────────
 
 /** @readonly */
@@ -56,8 +56,7 @@ export class ComputerTerminal extends Component {
   hud = null;
   /** @type {import('../ui/HUD.js').RadarOverlay|null} */
   radar = null;
-  /** @type {import('../ui/HUD.js').SignalReviewPanel|null} */
-  reviewPanel = null;
+
   /** @type {import('../gameplay/DriveManager.js').DriveManager|null} */
   driveManager = null;
   /** The red signal: hovering it scans it instantly (EvilSignal owns what
@@ -120,10 +119,6 @@ export class ComputerTerminal extends Component {
   /** Exit the terminal back to IDLE (Q key). */
   exit() {
     if (this.state === 'idle') return;
-    // If in review without a choice, leave signal scanned but unresolved.
-    if (this.state === 'review') {
-      this.reviewPanel?.hide();
-    }
     this._cleanupState();
     this._enterIdle();
   }
@@ -196,18 +191,15 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = closest;
   }
 
-  /** Save the currently reviewed signal (auto-called on review dismiss).
-   *  Marks the signal as resolved and the drive as saved (green). The quota
-   *  is NOT incremented here — it is counted by the drive box dock when
-   *  the player docks the drive box. */
+  /** Save the currently scanned signal. Marks the signal as resolved and
+   *  the drive as saved (green). The quota is NOT incremented here — it is
+   *  counted by the drive box dock when the player docks the drive box. */
   saveSignal() {
-    if (this.state !== 'review') return;
     const mgr = this.signalManager;
     if (!mgr || !this._hoveredSignal) return;
 
     mgr.saveSignal(this._hoveredSignal.id);
-    this.driveManager?.saveToDrive();
-    this._onSignalResolved();
+    this.driveManager?.saveToDrive(this._hoveredSignal.name);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -232,7 +224,6 @@ export class ComputerTerminal extends Component {
     this._setInputLocked(false);
     this.radar?.setWarning?.('');
     this.radar?.hide();
-    this.reviewPanel?.hide();
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     // Restore the first-person reticle now that the terminal is closed.
@@ -257,10 +248,6 @@ export class ComputerTerminal extends Component {
     }
     this.radar?.setInfo('');
     this._hoveredSignal = null;
-    // Check if a scan completed while terminal was closed
-    if (this.satellite?._scanComplete) {
-      this._enterReview();
-    }
   }
 
   _enterScanning() {
@@ -277,32 +264,11 @@ export class ComputerTerminal extends Component {
     this.radar?.setInfo('Scanning… keep dish aimed!');
   }
 
-  _enterReview() {
-    this.state = 'review';
-    if (this.satellite) {
-      this.satellite.isScanning = false;
-      this.satellite.scanTarget = null;
-      this.satellite.scanProgress = 0;
-      this.satellite._scanComplete = false;
-    }
-    this.radar?.hide();
-    this.hud?.setScanProgress(-1);
-
-    const sig = this._hoveredSignal;
-    if (sig) {
-      this.signalManager?.markScanned(sig.id);
-      // Show the signal image — the panel now has no save/delete choice.
-      // Dismissing it (Q) auto-saves the signal to the drive.
-      this.reviewPanel?.show(sig.payloadUrl);
-    }
-    this.radar?.setInfo('');
-  }
-
-  /** Called after save or delete in REVIEW — return to RADAR. */
+  /** Called after auto-save — clear hover and close the terminal: the
+   *  drive is full, so there is nothing left to scan from this seat. */
   _onSignalResolved() {
-    this.reviewPanel?.hide();
     this._hoveredSignal = null;
-    this._enterRadar();
+    this.exit();
   }
 
   /** Clean up any in-progress scan state without transitioning. */
@@ -327,10 +293,6 @@ export class ComputerTerminal extends Component {
 
     // ── Global: Q exits from any state ──
     if (engine.input.keys['KeyQ']) {
-      // In review, Q auto-saves the signal before exiting.
-      if (this.state === 'review') {
-        this.saveSignal();
-      }
       this.exit();
       return;
     }
@@ -389,9 +351,10 @@ export class ComputerTerminal extends Component {
     // ── SCANNING: background scan on Satellite, just check for completion ──
     if (this.state === 'scanning') {
       // Scan accumulation happens in Satellite._update (background)
-      // Just check if scan completed
+      // Just check if scan completed — auto-save and close the terminal.
       if (this.satellite?._scanComplete) {
-        this._enterReview();
+        this.saveSignal();
+        this._onSignalResolved();
         return;
       }
 
@@ -411,7 +374,6 @@ export class ComputerTerminal extends Component {
       return;
     }
 
-    // ── REVIEW: handled by SignalReviewPanel callbacks ──
   }
 
   /** Refresh the radar canvas with current state. */

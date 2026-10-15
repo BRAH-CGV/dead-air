@@ -35,14 +35,34 @@ describe('StaminaDrain', () => {
     expect(stamina.value).toBeCloseTo(0.9);
   });
 
-  it('holds it while the player is resting (a nap)', () => {
-    let resting = true;
-    drain = new StaminaDrain({ stamina, controller, hud, isResting: () => resting });
+  it('drains STAMINA.outsidePace times as fast while the player is outside', () => {
+    let outside = true;
+    drain = new StaminaDrain({ stamina, controller, isOutside: () => outside });
+    drain.onUpdate(10);
+    expect(stamina.value).toBeCloseTo(1 - 0.1 * STAMINA.outsidePace);
+    outside = false;
+    drain.onUpdate(10);
+    expect(stamina.value).toBeCloseTo(1 - 0.1 * STAMINA.outsidePace - 0.1);
+  });
+
+  it('takes STAMINA.stare a second more while the player stares at the dust eyes', () => {
+    let staring = true;
+    drain = new StaminaDrain({ stamina, controller, isStaring: () => staring });
+    drain.onUpdate(5);
+    expect(stamina.value).toBeCloseTo(1 - 0.05 - 5 * STAMINA.stare);
+    staring = false;
+    const v = stamina.value;
+    drain.onUpdate(5);
+    expect(stamina.value).toBeCloseTo(v - 0.05);
+  });
+
+  it('neither drains outside the shift', () => {
+    drain = new StaminaDrain({ stamina, controller, isOutside: () => true, isStaring: () => true });
+    controller.state = 'morning';
+    drain.onUpdate(10);
+    controller.state = 'gameOver';
     drain.onUpdate(10);
     expect(stamina.value).toBe(1);
-    resting = false;
-    drain.onUpdate(10);
-    expect(stamina.value).toBeCloseTo(0.9);
   });
 
   it('holds it in the morning and behind a failed night', () => {

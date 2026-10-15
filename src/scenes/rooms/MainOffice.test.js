@@ -34,7 +34,8 @@ vi.mock('@dimforge/rapier3d', () => {
   };
 });
 
-import { MainOffice, RationDispenser, WINDOW_CORNER_RADIUS } from './MainOffice.js';
+import { MainOffice, WINDOW_CORNER_RADIUS } from './MainOffice.js';
+import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
@@ -176,7 +177,7 @@ describe('MainOffice', () => {
     expect(childNames(room).filter(n => n.startsWith('SecurityCamera_'))).toEqual([]);
 
     const keys = engine.spawnModel.mock.calls.map(([key]) => key);
-    for (const gone of ['model:server-rack', 'model:radar-terminal', 'model:switchboard', 'model:security-camera']) {
+    for (const gone of ['model:server-rack', 'model:switchboard', 'model:security-camera']) {
       expect(keys, gone).not.toContain(gone);
     }
   });
@@ -469,13 +470,13 @@ describe('MainOffice', () => {
     expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
-  it('makes the dispenser usable: it is the room\'s RationDispenser', () => {
+  it('keeps the food dispenser, idle until the grow beds feed it (#109); the coffee is in the bedroom', () => {
     const use = room.root.find('VendingMachine').getComponent(Interactable);
-    expect(use).toBeInstanceOf(RationDispenser);
-    expect(use).toBe(room.rationDispenser);
-    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
-    expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to feed
-    expect(use.promptLabel).toMatch(/\[E\].*ration/i);
+    expect(use.promptLabel).toMatch(/food dispenser/i);
+    expect(use.promptLabel).not.toMatch(/\[E\]/);              // a label, nothing to do yet
+    expect(() => use.onInteract({})).not.toThrow();
+    expect(room.root.find('CoffeeMachine')).toBeNull();
+    expect(room.root.descendants().some(go => go.getComponent(CoffeeMachine))).toBe(false);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
@@ -663,6 +664,36 @@ describe('MainOffice', () => {
     }
   });
 
+  it("knows a point on the desk top or a wing from one on the floor or the shelf (the tutorial's box on the desk)", () => {
+    const at = (x, y, z) => room.root.object3d.localToWorld(new THREE.Vector3(x, y, z));
+    expect(room.isOnDesk(at(0, 0.93, -2.6))).toBe(true);       // the desk top
+    expect(room.isOnDesk(at(0.3, 0.81, -2.3))).toBe(true);     // the keyboard tray
+    expect(room.isOnDesk(at(1.4, 0.93, -2.15))).toBe(true);    // the right wing
+    expect(room.isOnDesk(at(-1.4, 0.93, -2.15))).toBe(true);   // the left wing
+    expect(room.isOnDesk(at(0, 0.06, -2.6))).toBe(false);      // under it, on the floor
+    expect(room.isOnDesk(at(0, 0.93, -1.2))).toBe(false);      // in front of it
+    expect(room.isOnDesk(at(5.68, 0.71, -2.17))).toBe(false);  // the shelf
+    for (const box of room.driveBoxes) {
+      expect(room.isOnDesk(box.object3d.getWorldPosition(new THREE.Vector3())), box.name).toBe(false);
+    }
+  });
+
+  it("marks the bare middle of the right wing's top, where the tutorial asks for the drive box", () => {
+    const spot = room.boxSpot;
+    expect(spot).toBeInstanceOf(THREE.Object3D);
+    expect(spot.parent).toBe(room.root.object3d);
+    const { position: p } = spot;
+    expect(p.y).toBeCloseTo(0.864);                        // on the top
+    // A drive box (0.32 × 0.28 m: half its diagonal is 0.21 m) wholly on it…
+    expect(onRightWing(p, 0.21)).toBe(true);
+    expect(room.isOnDesk(room.root.object3d.localToWorld(p.clone().setY(0.93)))).toBe(true);
+    // …and clear of the globe's base (r 0.124) and the clock.
+    for (const name of ['Globe', 'DeskClock']) {
+      const o = room.root.find(name).object3d.position;
+      expect(Math.hypot(o.x - p.x, o.z - p.z), name).toBeGreaterThan(0.21 + 0.143);
+    }
+  });
+
   it('DriveSlot component is configured with a snap offset for the reader surface', () => {
     const reader = room.driveReader;
     const slot = reader.getComponent(DriveSlot);
@@ -799,53 +830,6 @@ describe('MainOffice window frame', () => {
       const mesh = go.object3d.children.find(c => c.isMesh);
       expect(mesh.position.equals(new THREE.Vector3()), go.name).toBe(true);
     }
-  });
-});
-
-describe('MainOffice ration dispenser (night 1)', () => {
-  function make() {
-    const dispenser = new RationDispenser();
-    dispenser.stamina = { value: 0.3, restore(a) { this.value = Math.min(1, this.value + a); } };
-    return dispenser;
-  }
-
-  it('a ration gives back 0.35 stamina', () => {
-    const dispenser = make();
-    dispenser.onInteract({});
-    expect(dispenser.stamina.value).toBeCloseTo(0.65);
-  });
-
-  it('refills for 40 s after each ration, and says so', () => {
-    const dispenser = make();
-    dispenser.onInteract({});
-    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
-
-    dispenser.onInteract({});                                   // nothing while refilling
-    expect(dispenser.stamina.value).toBeCloseTo(0.65);
-
-    dispenser.onUpdate(39.9);
-    expect(dispenser.promptLabel).toBe('Dispenser refilling…');
-    dispenser.onUpdate(0.2);
-    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
-    dispenser.onInteract({});
-    expect(dispenser.stamina.value).toBeCloseTo(1);
-  });
-
-  it('tells the scene when the player eats', () => {
-    const dispenser = make();
-    dispenser.onEat = vi.fn();
-    dispenser.onInteract({});
-    dispenser.onInteract({});
-    expect(dispenser.onEat).toHaveBeenCalledTimes(1);
-  });
-
-  it('reset() has a ration ready for a new or retried night', () => {
-    const dispenser = make();
-    dispenser.onInteract({});
-    dispenser.reset();
-    expect(dispenser.promptLabel).toMatch(/\[E\].*ration/i);
-    dispenser.onInteract({});
-    expect(dispenser.stamina.value).toBeCloseTo(1);
   });
 });
 

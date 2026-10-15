@@ -40,8 +40,9 @@ const DRIVE_BOX_LAYOUT = [
 // (ambient, moon) belongs to the scene, not the room.
 //
 // Furnished for the job and nothing else: the computer desk facing the
-// window, a food-ration dispenser (the player eats here, between scans), a
-// bin, a shelf of spares, a poster.
+// window, the grow rack and the food dispenser beside it, a bin, a shelf of
+// spares, a poster. The coffee is in the bedroom (LivingQuarters): a cup
+// means leaving the desk.
 //
 // ── Interior layout mock-up ──
 // Placeholder shapes for the planned layout, to walk around in before the
@@ -56,14 +57,15 @@ const DRIVE_BOX_LAYOUT = [
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
 //   • The food corner, down the left wall: a two-tier rack of grow beds
-//     under UV lights (GrowRack.js), then the dispenser and the bin, short
-//     of the doorway.
+//     under UV lights (GrowRack.js), then the food dispenser and the bin,
+//     short of the doorway. The dispenser is idle for now: the crop is to
+//     feed it one day (#109).
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
 // Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
 // The side doorways sit toward the front, leaving the back half of the
-// side walls for the dispenser and the shelf.
+// side walls for the food corner and the shelf.
 //
 // A wall clock hangs right of the window, and a digital one stands on the desk.
 // The room builds them; the scene hands them the NightClock
@@ -71,48 +73,7 @@ const DRIVE_BOX_LAYOUT = [
 // gameplay. Same for the red signal lamp above the computer desk: the room
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
-//
-// The food-ration dispenser on the left wall is `rationDispenser`, a
-// RationDispenser; the scene hands it the stamina a ration restores.
 // ─────────────────────────────────────────────
-
-const RATION_READY = '[E] Take a food ration';
-const RATION_REFILLING = 'Dispenser refilling…';
-
-/** The dispenser's use: a ration restores stamina, then it refills for
- *  `cooldown` seconds. The prompt is a data field, so InteractionSystem
- *  re-shows it when it changes under the crosshair. */
-export class RationDispenser extends Interactable {
-  promptLabel = RATION_READY;
-  /** Set by the scene. @type {{restore(amount: number): void}|null} */
-  stamina = null;
-  /** Stamina per ration. */
-  amount = 0.35;
-  /** Seconds before the next ration. */
-  cooldown = 40;
-  /** Seconds left until it is ready again. */
-  refill = 0;
-  /** Called after each ration (the sound). */
-  onEat = null;
-
-  onUpdate(dt) {
-    if (this.refill > 0 && (this.refill -= dt) <= 0) this.reset();
-  }
-
-  onInteract() {
-    if (!this.stamina || this.refill > 0) return;
-    this.stamina.restore(this.amount);
-    this.refill = this.cooldown;
-    this.promptLabel = RATION_REFILLING;
-    this.onEat?.();
-  }
-
-  /** Ready again: a new or retried night. */
-  reset() {
-    this.refill = 0;
-    this.promptLabel = RATION_READY;
-  }
-}
 
 /** The bars across the window: mullions at ±x, the crossbar's height, and
  *  the mullions' width. The frame is built from them and the glass is cut
@@ -146,6 +107,20 @@ export function deskStation() {
  *  turns to face. */
 const SEAT = [0, -1.45];
 
+/** How high over the floor something on the desk or its wings is: above
+ *  the kneehole's 0.72 m and well short of the ceiling. */
+const ON_DESK_Y = [0.6, 1.6];
+
+/** [x, z] inside the polygon `pts` (even–odd rule). */
+function insidePolygon(x, z, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i], [xj, zj] = pts[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** The security-camera monitor on the left wing (camera-monitor.glb):
  *  width, height, depth. */
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
@@ -156,6 +131,13 @@ export class MainOffice extends Room {
 
   /** Stood on the desk's right wing by buildProps(). @type {DigitalClock|null} */
   deskClock = null;
+
+  _deskPoint = new THREE.Vector3();
+
+  /** The bare middle of the right wing's top, where the tutorial asks for
+   *  a drive box (the camera monitor has the left wing, the globe the
+   *  right's back corner). Marked by buildProps(). @type {THREE.Object3D|null} */
+  boxSpot = null;
 
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
@@ -173,9 +155,6 @@ export class MainOffice extends Room {
 
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
-
-  /** On the VendingMachine, from buildProps(). @type {RationDispenser|null} */
-  rationDispenser = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -196,6 +175,18 @@ export class MainOffice extends Room {
         { side: 'left',  width: 1.2, height: 2.2,  offset: 3.5 },
       ],
     });
+  }
+
+  /** A world point is over the computer desk or one of its wings, at the
+   *  height of something set down on them (the tutorial's drive box). */
+  isOnDesk(worldPoint) {
+    this.root.object3d.updateMatrixWorld();
+    const p = this.root.object3d.worldToLocal(this._deskPoint.copy(worldPoint));
+    if (p.y < ON_DESK_Y[0] || p.y > ON_DESK_Y[1]) return false;
+    const x = p.x - DESK.x;
+    if (Math.abs(x) <= DESK.halfW && p.z >= DESK.back && p.z <= DESK.front) return true;
+    return insidePolygon(x, p.z, deskWingOutline(1, DESK).top)
+        || insidePolygon(x, p.z, deskWingOutline(-1, DESK).top);
   }
 
   buildDoors() {
@@ -270,11 +261,12 @@ export class MainOffice extends Room {
     this._buildCameraMonitor();
     this._buildDeskClock();
     this._buildGlobe();
+    this._markBoxSpot();
 
-    // Left wall, back to front: the grow beds, the ration dispenser and a
-    // bin for the wrappers, all short of the doorway.
+    // Left wall, back to front: the grow beds, the food dispenser and a
+    // bin, all short of the doorway.
     this._buildGrowBeds();
-    this._buildRationDispenser();
+    this._buildFoodDispenser();
     this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 1.9] });
 
     // Right wall: spare parts on a shelf; a poster where the eye lands
@@ -309,11 +301,13 @@ export class MainOffice extends Room {
     this._buildDriveBoxes();
   }
 
-  /** Where food comes from: a wall-mounted machine that dispenses rations
-   *  of nutrient mush. Built here rather than imported — the downloaded
-   *  vending machine is a broken fragment. The body is the collider the
-   *  interact ray hits; the face details are plain meshes on it. */
-  _buildRationDispenser() {
+  /** Where food will come from: a machine that turns the grow beds' crop
+   *  into meals (#109). Until that is built it does nothing, and only says
+   *  what it is — stamina comes from the bedroom's coffee machine. Built
+   *  here rather than imported — the downloaded vending machine is a broken
+   *  fragment. The body is the collider the interact ray hits; the face
+   *  details are plain meshes on it. */
+  _buildFoodDispenser() {
     const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
     const size = [0.7, 1.9, 0.9];
     const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
@@ -340,7 +334,10 @@ export class MainOffice extends Room {
     detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 
-    this.rationDispenser = go.addComponent(new RationDispenser());
+    // A label under the crosshair, nothing to press yet.
+    const label = new Interactable();
+    label.promptLabel = 'Food dispenser — empty';
+    go.addComponent(label);
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small
@@ -542,6 +539,16 @@ export class MainOffice extends Room {
     globe.addComponent(new GlobeSpin());
   }
 
+  /** An empty node at the middle of the right wing's top, for the
+   *  tutorial's arrow: nothing is drawn there. */
+  _markBoxSpot() {
+    const [cx, cz] = deskWingOutline(1, DESK).centre;
+    this.boxSpot = new THREE.Object3D();
+    this.boxSpot.name = 'BoxSpot';
+    this.boxSpot.position.set(cx, DESK.top, cz);
+    this.root.object3d.add(this.boxSpot);
+  }
+
   /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),
    *  two tiers of three soil trays, each tier under UV grow lights, two
    *  plants to a tray. One box is the collider — the whole rack is solid to
@@ -673,4 +680,5 @@ export class MainOffice extends Room {
     const reach = this.ceilingLight.position.distanceTo(this.windowGlass.object3d.position);
     this.windowGlass.addLight(this.ceilingLight, 1 / (Math.PI * reach));
   }
+
 }

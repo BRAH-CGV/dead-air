@@ -3,8 +3,8 @@ import { SignalTarget } from './SignalTarget.js';
 // ─────────────────────────────────────────────
 // SignalManager  –  Night signal spawning and tracking
 // ─────────────────────────────────────────────
-// Generates random sky positions for each night, assigns payload images
-// from a pool, and tracks save/delete state. The required signal count
+// Generates random sky positions for each night, assigns signal names
+// from the registry, and tracks save/delete state. The required signal count
 // scales with night number.
 //
 // Signals are not all visible at the start of the shift: each one carries an appearAt shift
@@ -14,7 +14,7 @@ import { SignalTarget } from './SignalTarget.js';
 // often empty, and a missed window is gone for the night.
 //
 // Usage:
-//   const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: urls });
+//   const mgr = new SignalManager({ signalsPerNight: 5, signalNames: names });
 //   mgr.startNight(1);
 //   mgr.update(dt, nightClock);  // call each frame — appearance + fade
 //   mgr.markScanned(2);
@@ -35,6 +35,9 @@ export const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
  *  5, 6, 8 — clamped to signalsPerNight. Night 3's 8 fills a drive box. */
 const BASE_REQUIRED = 3;
 const QUOTA_SCALE = 1.5;
+
+/** Night 0, the tutorial: one signal, to learn the loop on. */
+export const TUTORIAL_QUOTA = 1;
 
 /** Signals in a night: at the rate the old five-minute night had them (one
  *  every ~42 s of their window), over the longer night. */
@@ -69,16 +72,16 @@ export class SignalManager {
   signalsPerNight;
 
   /** @type {string[]} */
-  payloadPool;
+  signalNames;
 
   /**
    * @param {Object} opts
    * @param {number} [opts.signalsPerNight=SIGNALS_PER_NIGHT]
-   * @param {string[]} [opts.payloadPool=[]]
+   * @param {string[]} [opts.signalNames=[]]
    */
-  constructor({ signalsPerNight = SIGNALS_PER_NIGHT, payloadPool = [] } = {}) {
+  constructor({ signalsPerNight = SIGNALS_PER_NIGHT, signalNames = [] } = {}) {
     this.signalsPerNight = signalsPerNight;
-    this.payloadPool = payloadPool;
+    this.signalNames = signalNames;
   }
 
   /** Generate a fresh set of signals for a new night. */
@@ -86,11 +89,11 @@ export class SignalManager {
     this.signals = [];
     this.required = Math.min(
       this.signalsPerNight,
-      Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
+      nightNumber === 0 ? TUTORIAL_QUOTA : Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
     );
 
     // Shuffle the pool for non-repeating assignment.
-    const shuffled = [...this.payloadPool];
+    const shuffled = [...this.signalNames];
     shuffleArray(shuffled);
     let poolIdx = 0;
 
@@ -105,9 +108,9 @@ export class SignalManager {
       const pitch = randomRange(PITCH_MIN, PITCH_MAX);
       const appearAt = APPEAR_START + slotWidth * (i + 0.2 + 0.6 * Math.random());
 
-      let payloadUrl = '';
+      let name = '';
       if (shuffled.length > 0) {
-        payloadUrl = shuffled[poolIdx % shuffled.length];
+        name = shuffled[poolIdx % shuffled.length];
         poolIdx++;
       }
 
@@ -115,7 +118,7 @@ export class SignalManager {
         id: i + 1,
         yaw,
         pitch,
-        payloadUrl,
+        name,
         appearAt,
         fadeSeconds: SIGNAL_FADE_SECONDS,
         visibleSeconds: VISIBLE_SECONDS,

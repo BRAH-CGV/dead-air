@@ -91,6 +91,14 @@ const run = (storm, seconds, step = 0.1) => {
 };
 
 describe('Sandstorm', () => {
+  // Night 0 is the tutorial, which summons its own storm when it is wanted.
+  it('brings no storm of its own on night 0', () => {
+    const { storm } = makeRig({ night: 0, random: () => 0.999 });
+    let most = 0;
+    for (let t = 0; t < NIGHT; t++) { storm.onUpdate(1); most = Math.max(most, storm.level); }
+    expect(most).toBe(0);
+  });
+
   it('blows on night 1 too, at its time', () => {
     const { storm } = makeRig({ night: 1, random: () => 0.999 });
     const s = scheduleStorms({ night: 1, nightDuration: NIGHT, random: () => 0.999 })[0];

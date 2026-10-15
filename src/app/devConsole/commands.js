@@ -20,6 +20,8 @@
 
 import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
+import { SignalTarget } from '../../gameplay/SignalTarget.js';
+import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
 
 /**
  * on|off (or a pair of words of its own) → true|false; nothing flips `current`.
@@ -171,7 +173,8 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           night = nights.isLastNight() ? 1 : nights.currentNight + 1;
         } else {
           night = /^\d+$/.test(arg) ? Number(arg) : NaN;
-          if (!(night >= 1 && night <= nights.maxNight)) throw new UsageError(`Night must be 1–${nights.maxNight}`);
+          const first = nights.minNight ?? 1;   // 0 where there is a tutorial
+          if (!(night >= first && night <= nights.maxNight)) throw new UsageError(`Night must be ${first}–${nights.maxNight}`);
           if (night === nights.currentNight) return `Already night ${night}`;
         }
         nights.setNight(night);
@@ -187,6 +190,28 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           throw new CommandError('UFO not summoned: a visit is under way, or no shift is');
         }
         return 'UFO summoned';
+      },
+    },
+    {
+      // Diagnosis: the morning's send-off cutscene on demand, box or not.
+      // It only dispatches in a morning; otherwise the buggy stays gone
+      // (parked under the ground) until the next night start. Everything is
+      // drawn first, unculled, so it can be watched from indoors too.
+      name: 'buggy', usage: 'buggy', help: 'Send the buggy off now, cutscene and all, everything drawn',
+      run: () => {
+        const sendOff = system('buggySendOff', 'buggy send-off');
+        if (sendOff.active) throw new CommandError('The buggy is already driving off');
+        const out = [];
+        const zones = engine.activeScene?.zones;
+        if (zones) {
+          // AirlockPortal sets the reveal every frame; this keeps it on.
+          engine.revealZones = true;
+          zones.revealAll(true);
+          out.push('Zones revealed: everything is drawn (zones hide culls again)');
+        }
+        sendOff.start();
+        out.push('Buggy sent off');
+        return out;
       },
     },
     {
@@ -257,6 +282,43 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
         }
         ambience.testMusic(name === 'off' ? null : name);
         return `Music: ${name}`;
+      },
+    },
+
+    {
+      name: 'signal', usage: 'signal [name]', help: 'Summon a signal blip on the radar (random if not specified)',
+      run: ([arg]) => {
+        const scene = tool(engine.activeScene, 'No scene');
+        const registry = scene.signalRegistry;
+        const signalManager = scene.signalManager;
+        if (!registry) throw new CommandError('No signal registry in this scene');
+        if (!signalManager) throw new CommandError('No signal manager in this scene');
+
+        const names = registry.names;
+        if (names.length === 0) throw new CommandError('No signals available');
+
+        const signalName = arg ?? names[Math.floor(Math.random() * names.length)];
+        if (!names.includes(signalName)) {
+          throw new UsageError(`No signal "${arg}": available: ${names.join(', ')}`);
+        }
+
+        // Create a signal target and add it to the manager.
+        const id = signalManager.signals.length + 1;
+        const yaw = Math.random() * Math.PI * 2 - Math.PI;
+        const pitch = PITCH_MIN + Math.random() * (PITCH_MAX - PITCH_MIN);
+        const target = new SignalTarget({
+          id,
+          yaw,
+          pitch,
+          name: signalName,
+          appearAt: 0,  // appear immediately
+          fadeSeconds: SIGNAL_FADE_SECONDS,
+          visibleSeconds: VISIBLE_SECONDS,
+        });
+        target.appeared = true;
+        signalManager.signals.push(target);
+
+        return `Signal summoned: ${signalName} (blip #${id})`;
       },
     },
 

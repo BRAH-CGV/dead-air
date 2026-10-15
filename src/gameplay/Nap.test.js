@@ -44,7 +44,7 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   const hud = { setPrompt: vi.fn() };
   const banner = { show: vi.fn() };
   const hint = { show: vi.fn(), hide: vi.fn() };
-  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
+  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false), watched: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
     controller, engine, banner, hooks, rest, hint,
@@ -249,22 +249,29 @@ describe('Nap', () => {
     });
   });
 
-  describe('the half-open eyes (a peek): the night holds still while you look', () => {
-    it('runs at real time while the eyes are half open, and fast again once they shut', () => {
-      const { nap, engine, rest } = rig;
-      rest.peeking = false;
+  describe('the demon\'s stretches: the night holds to real time while the demon is there', () => {
+    it('runs at real time while the demon stands watching, and fast again once it goes', () => {
+      const { nap, engine, hooks } = rig;
       nap.start();
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(1);
-      rest.peeking = false;
+      hooks.watched.mockReturnValue(false);
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
     });
 
-    it('not before the eyes have shut: getting in stays at real time', () => {
+    it('a nap nobody watches races all the way: the stretches alone hold nothing back', () => {
+      const { nap, engine, rest } = rig;
+      nap.start();
+      rest.peeking = true;
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(NAP.timeScale);
+    });
+
+    it('not before the darkness has closed: getting in stays at real time', () => {
       const r = makeRig({ instant: false });
       r.rest.peeking = false;
       r.nap.start();
@@ -272,11 +279,11 @@ describe('Nap', () => {
       expect(r.engine.timeScale).toBe(1);
     });
 
-    it('so the alarm cannot cut the scene short: the clock barely moves through it', () => {
-      const { nap, controller, rest } = rig;
+    it('so the alarm cannot cut the scene short: the clock barely moves through a stretch', () => {
+      const { nap, controller, hooks } = rig;
       controller.nightClock.currentTime = 1;
       nap.start(0.5);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(nap.napping).toBe(true);
     });
