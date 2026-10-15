@@ -3,18 +3,16 @@ import * as THREE from 'three';
 // ─────────────────────────────────────────────
 // RedOut  –  post-processing red filter for the evil signal's last second
 // ─────────────────────────────────────────────
-// Renders the scene to a render target, then draws a fullscreen quad with a
-// shader that strips the blue and green channels, leaving a luminance-
-// weighted red image. EvilSignal drives the intensity from 0 → 1 over the
-// last second of the silence timer, so the world drains to blood-red just
-// before the player dies.
+// A post-processing pass that strips the blue and green channels, leaving a
+// luminance-weighted red image.  EvilSignal drives the intensity from 0 → 1
+// over the last second of the silence timer, so the world drains to
+// blood-red just before the player dies.
 //
-// The shader material is built eagerly in attach() (so the WarmUp pass can
-// compile it) but the render target is created lazily on first use, keeping
-// memory flat until the effect is actually needed.
-//
-// The fullscreen quad lives in a private composite scene — never in the main
-// scene — so it is never rendered into the render target (no feedback loop).
+// Works as a pass inside a PostPipeline.  The pipeline manages render
+// targets; this pass only owns its shader material and fullscreen quad.
+// The shader material is built eagerly in build() (so the WarmUp pass can
+// compile it) but the effect stays dormant until setIntensity() pushes it
+// above zero.
 // ─────────────────────────────────────────────
 
 const VERT = /* glsl */ `
@@ -48,23 +46,19 @@ const FRAG = /* glsl */ `
 
 export class RedOut {
   _renderer = null;
-  _renderTarget = null;
   _material = null;
   _quad = null;
-  /** Private scene for the composite pass — keeps the quad out of the main
-   *  scene so it never ends up in the render target. */
   _scene = null;
   _camera = null;
   _intensity = 0;
 
-  /** Attach to an engine instance. Builds the shader material eagerly so
-   *  the WarmUp pass can compile it; the render target is deferred. */
-  attach(engine) {
-    this._renderer = engine.renderer;
+  /** Build the shader material.  Called once by PostPipeline.add(). */
+  build({ renderer }) {
+    this._renderer = renderer;
 
     this._material = new THREE.ShaderMaterial({
       uniforms: {
-        tDiffuse: { value: null },
+        tDiffuse:   { value: null },
         uIntensity: { value: 0 },
       },
       vertexShader: VERT,
@@ -80,46 +74,6 @@ export class RedOut {
     this._camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this._scene = new THREE.Scene();
     this._scene.add(this._quad);
-
-    // Eagerly create the render target so the GPU texture is allocated during
-    // the boot warm-up, not on first activation (which would stutter).
-    this._ensureRenderTarget();
-  }
-
-  /** Pre-compile the composite shader by doing a dummy render. Called by
-   *  the Engine right after the main WarmUp pass, while the loading screen
-   *  still covers the canvas. Without this the first activation compiles
-   *  the shader on the spot — a visible hitch.
-   *
-   *  Render to the screen (null target), not to the render target itself:
-   *  the quad samples tDiffuse, so rendering to the same target creates a
-   *  feedback dependency that can stall the GPU or defer compilation on
-   *  lower-end hardware. */
-  warmUp() {
-    if (!this._renderer || !this._renderTarget) return;
-    this._material.uniforms.tDiffuse.value = this._renderTarget.texture;
-    this._material.uniforms.uIntensity.value = 0;
-    // Render to the default framebuffer (screen), not the render target.
-    this._renderer.setRenderTarget(null);
-    this._renderer.render(this._scene, this._camera);
-  }
-
-  /** Pre-compile the render-target shader variants. Three.js compiles
-   *  separate shader programs for render-target output (no tone mapping,
-   *  linear colour space). Without this the first preRender recompiles
-   *  every lit material — a multi-second stall on lower-end hardware.
-   *  Called by Engine after warmUp, while the loading screen still shows.
-   *  @param {THREE.Scene} scene  @param {THREE.Camera} camera */
-  async preCompile(scene, camera) {
-    if (!this._renderer || !this._renderTarget) return;
-    const was = this._renderer.getRenderTarget?.() ?? null;
-    this._renderer.setRenderTarget(this._renderTarget);
-    await this._renderer.compileAsync(scene, camera);
-    this._renderer.setRenderTarget(null);
-    // The composite too, without drawing it (a rebuild has no loading
-    // screen over the canvas to hide a frame of it).
-    await this._renderer.compileAsync(this._scene, this._camera);
-    this._renderer.setRenderTarget(was);
   }
 
   /** Set the effect strength 0..1. 0 = no effect, 1 = full red. */
@@ -127,67 +81,48 @@ export class RedOut {
     this._intensity = Math.max(0, Math.min(1, v));
   }
 
-  /** True while the effect is non-zero. Engine checks this. */
+  /** True while the effect is non-zero. The pipeline checks this. */
   get active() { return this._intensity > 0.001; }
-
-  /** Called by Engine._renderFrame BEFORE renderer.render().
-   *  Redirects output to the render target when the effect is active. */
-  preRender() {
-    if (!this.active || !this._renderer) return;
-    this._ensureRenderTarget();
-    this._renderer.setRenderTarget(this._renderTarget);
-  }
-
-  /** Called by Engine._renderFrame AFTER the main render.
-   *  Composites the red-filtered image to screen. */
-  postRender() {
-    if (!this.active || !this._renderer) return;
-    this._material.uniforms.tDiffuse.value = this._renderTarget.texture;
-    this._material.uniforms.uIntensity.value = this._intensity;
-    this._renderer.setRenderTarget(null);
-    this._renderer.render(this._scene, this._camera);
-  }
 
   /** Clear the effect (called on night reset). */
   clear() { this._intensity = 0; }
 
-  /** Free the render target, geometry, and material. */
+  /** Composite: sample the scene texture and apply the red filter, writing
+   *  to the output target (null = screen). */
+  composite(inputTex, outputTarget, renderer) {
+    if (!this._material) return;
+    this._material.uniforms.tDiffuse.value = inputTex;
+    this._material.uniforms.uIntensity.value = this._intensity;
+    renderer.setRenderTarget(outputTarget);
+    renderer.render(this._scene, this._camera);
+  }
+
+  /** Compile the composite shader by doing a dummy render to screen. */
+  warmUp() {
+    if (!this._material || !this._renderer) return;
+    this._material.uniforms.tDiffuse.value = null;
+    this._material.uniforms.uIntensity.value = 0;
+    this._renderer.setRenderTarget(null);
+    this._renderer.render(this._scene, this._camera);
+  }
+
+  /** Compile the render-target output variants. */
+  async preCompile(renderer, targets) {
+    if (!this._material || !targets?.length) return;
+    this._material.uniforms.tDiffuse.value = targets[0].texture;
+    this._material.uniforms.uIntensity.value = 0;
+    renderer.setRenderTarget(targets.length > 1 ? targets[1] : null);
+    await renderer.compileAsync(this._scene, this._camera);
+    renderer.setRenderTarget(null);
+  }
+
+  /** Free GPU resources. */
   dispose() {
-    if (this._renderTarget) {
-      this._renderTarget.dispose();
-      this._renderTarget = null;
-    }
-    if (this._quad) {
-      this._quad.geometry.dispose();
-      this._quad = null;
-    }
-    if (this._material) {
-      this._material.dispose();
-      this._material = null;
-    }
-    if (this._scene) {
-      this._scene.clear();
-      this._scene = null;
-    }
+    if (this._quad) { this._quad.geometry.dispose(); this._quad = null; }
+    if (this._material) { this._material.dispose(); this._material = null; }
+    if (this._scene) { this._scene.clear(); this._scene = null; }
     this._camera = null;
     this._renderer = null;
     this._intensity = 0;
-  }
-
-  /** Create the render target on first use, or resize it if the window
-   *  has changed. */
-  _ensureRenderTarget() {
-    const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const h = typeof window !== 'undefined' ? window.innerHeight : 768;
-    if (this._renderTarget) {
-      if (this._renderTarget.width !== w || this._renderTarget.height !== h) {
-        this._renderTarget.setSize(w, h);
-      }
-      return;
-    }
-    this._renderTarget = new THREE.WebGLRenderTarget(w, h, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-    });
   }
 }

@@ -66,6 +66,8 @@ import { DOOM_LIGHT_COLOR, DOOM_LIGHT_MAX_DISTANCE } from '../gameobjects/Drive.
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
+import { PostPipeline } from '../core/PostPipeline.js';
+import { VisorRefraction } from '../core/VisorRefraction.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
 import { CameraSignalPass } from '../core/CameraSignalPass.js';
@@ -429,6 +431,7 @@ export class BaseScene extends Scene {
     }
     this._sounds.length = 0;
     this.whiteOut?.clear();
+    this._pipeline?.dispose();
     this._offShadowHooks?.forEach(off => off());
     // Before the rooms go: the portal lets go of the airlock, and every
     // culled object is drawn again, so nothing stays hidden into whatever
@@ -2012,8 +2015,12 @@ export class BaseScene extends Scene {
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
-    this._redOut.attach(this.engine);
-    this.engine.postProcess = this._redOut;
+    this._visorRefraction = new VisorRefraction();
+    this._pipeline = new PostPipeline();
+    this._pipeline.attach(this.engine);
+    this._pipeline.add('visorRefraction', this._visorRefraction);
+    this._pipeline.add('redOut', this._redOut);
+    this.engine.postProcess = this._pipeline;
     this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({
       controller:  this.gameController,
@@ -2931,6 +2938,7 @@ export class BaseScene extends Scene {
     // No breathing on a death screen — the night has been lost.
     engine.player.addComponent(new SuitVisor({
       suit: this.suit,
+      refraction: this._visorRefraction,
       silenced: () => this.gameController?.state === 'gameOver',
     }));
   }

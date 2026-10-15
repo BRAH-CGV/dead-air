@@ -13,8 +13,11 @@ import { Component } from '../core/Component.js';
 //   • the glass fogs up low in the view on each breath and clears between
 //     them. The fog is driven by the breathing clip's own loudness (see
 //     breathEnvelope), so it lands on the sound rather than on a guess.
+//   • when a refraction pass is set, a subtle barrel distortion fades in
+//     with the glass — the world bows slightly, as seen through a curved
+//     helmet visor (see VisorRefraction).
 //
-//   player.addComponent(new SuitVisor({ suit }));
+//   player.addComponent(new SuitVisor({ suit, refraction }));
 //
 // The overlay is a ShaderMaterial quad that writes clip space directly, so
 // it covers the screen whatever the camera does and needs no second render
@@ -227,6 +230,9 @@ export class SuitVisor extends Component {
   /**
    * @param {object} [opts]
    * @param {import('./EVASuit.js').EVASuit} [opts.suit]  The suit to follow.
+   * @param {import('../core/VisorRefraction.js').VisorRefraction} [opts.refraction]
+   *        A post-processing barrel-distortion pass.  Its intensity tracks
+   *        the glass opacity, so the warp fades in and out with the visor.
    * @param {THREE.Audio} [opts.sound]  Breathing to play. Left out, it is built
    *        from `soundKey` on `engine.audioListener` once the asset loads.
    * @param {string} [opts.soundKey='sfx:mask-breathing']
@@ -237,6 +243,7 @@ export class SuitVisor extends Component {
    */
   constructor({
     suit = null,
+    refraction = null,
     sound = null,
     soundKey = 'sfx:mask-breathing',
     volume = 0.4,
@@ -246,6 +253,7 @@ export class SuitVisor extends Component {
     super();
     this.silenced = silenced;
     this.suit = suit;
+    this.refraction = refraction;
     this.sound = sound;
     this.soundKey = soundKey;
     this.volume = volume;
@@ -289,6 +297,9 @@ export class SuitVisor extends Component {
     u.uOpacity.value = target > o ? Math.min(1, o + step) : Math.max(0, o - step);
     const opacity = u.uOpacity.value;
     this.overlay.visible = opacity > 0;
+
+    // Drive the barrel distortion in step with the glass fade.
+    this.refraction?.setIntensity(opacity);
 
     u.uTime.value += dt;
     u.uAspect.value = this._engine?.camera?.aspect ?? u.uAspect.value;

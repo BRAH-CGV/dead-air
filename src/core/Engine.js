@@ -69,9 +69,10 @@ export class Engine {
    *  Cleared on every scene load.
    *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
-  /** Optional post-processing pass (e.g. RedOut). When set, preRender()
-   *  redirects the scene render to a target and postRender() composites.
-   *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
+  /** Optional post-processing (PostPipeline, RedOut, or compatible).
+   *  When set, preRender() redirects the scene render to a target and
+   *  postRender() composites.
+   *  @type {import('./PostPipeline.js').PostPipeline|import('./RedOut.js').RedOut|null} */ postProcess = null;
   /** Drawn over the finished frame, in order, after postProcess — each
    *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
    *  scene that added them: emptied on every scene load.
