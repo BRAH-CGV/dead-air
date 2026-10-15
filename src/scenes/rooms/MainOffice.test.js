@@ -176,7 +176,7 @@ describe('MainOffice', () => {
     expect(childNames(room).filter(n => n.startsWith('SecurityCamera_'))).toEqual([]);
 
     const keys = engine.spawnModel.mock.calls.map(([key]) => key);
-    for (const gone of ['model:server-rack', 'model:radar-terminal', 'model:switchboard', 'model:security-camera']) {
+    for (const gone of ['model:server-rack', 'model:switchboard', 'model:security-camera']) {
       expect(keys, gone).not.toContain(gone);
     }
   });

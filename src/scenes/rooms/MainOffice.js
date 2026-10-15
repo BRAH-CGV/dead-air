@@ -673,4 +673,5 @@ export class MainOffice extends Room {
     const reach = this.ceilingLight.position.distanceTo(this.windowGlass.object3d.position);
     this.windowGlass.addLight(this.ceilingLight, 1 / (Math.PI * reach));
   }
+
 }

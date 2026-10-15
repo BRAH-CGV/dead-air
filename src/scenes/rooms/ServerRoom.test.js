@@ -217,12 +217,136 @@ describe('ServerRoom', () => {
     expect(slot.snapDistance).toBe(0.25);
   });
 
-  it('the console Interactable clears the signal from the inserted drive in the slot', () => {
+  it('the console Interactable opens the processing screen with an upgrade action for the inserted drive', () => {
     const interactable = room.root.find('ServerConsole').getComponent(Interactable);
     const slotBox = room.root.find('DriveSlot');
     const slot = slotBox.getComponent(DriveSlot);
     expect(interactable).not.toBeNull();
     expect(slot).not.toBeNull();
+
+    // Fake processing screen injected by BaseScene.
+    const opened = [];
+    const fakeScreen = {
+      open(drive, actions) { opened.push({ drive, actions }); },
+      refreshActions: vi.fn(),
+      prepareBlend: vi.fn(),
+    };
+    room.processingScreen = fakeScreen;
+
+    // Simulate a saved, level-1 drive inserted in the slot.
+    let level = 1;
+    let processingStarted = false;
+    let processingAccumulated = 0;
+    const PROCESSING_DURATION = 12;
+    const fakeDrive = {
+      saved: true, corrupted: false, signalLevel: 1,
+      get canUpgradeLevel() { return this.saved && !this.corrupted && this.signalLevel < 2 && !this.isProcessing; },
+      get isProcessing() { return processingStarted && processingAccumulated < PROCESSING_DURATION; },
+      get processingProgress() { return processingStarted ? Math.min(1, processingAccumulated / PROCESSING_DURATION) : 0; },
+      beginProcessing() { processingStarted = true; processingAccumulated = 0; },
+      accumulateProcessing(dt) {
+        if (!processingStarted) return false;
+        processingAccumulated += dt;
+        if (processingAccumulated >= PROCESSING_DURATION) {
+          processingStarted = false;
+          processingAccumulated = 0;
+          this.setSignalLevel(this.signalLevel + 1);
+          return true;
+        }
+        return false;
+      },
+      tickProcessing() {
+        if (!processingStarted || processingAccumulated < PROCESSING_DURATION) return false;
+        processingStarted = false;
+        processingAccumulated = 0;
+        this.setSignalLevel(this.signalLevel + 1);
+        return true;
+      },
+      setSignalLevel(l) { level = l; this.signalLevel = l; },
+    };
+    slot._insertedDrive = fakeDrive;
+
+    // The prompt shows the process option.
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('[E] Process signal');
+
+    // Interact to open the processing screen.
+    interactable.onInteract({});
+    expect(opened.length).toBe(1);
+    expect(opened[0].drive).toBe(fakeDrive);
+    expect(opened[0].actions).toHaveLength(1);
+    expect(opened[0].actions[0].id).toBe('upgrade');
+    expect(opened[0].actions[0].enabled).toBe(true);
+
+    // The upgrade action's onClick starts processing (not an instant upgrade).
+    opened[0].actions[0].onClick();
+    expect(fakeDrive.isProcessing).toBe(true);
+    expect(fakeScreen.refreshActions).toHaveBeenCalled();
+
+    // After processing finishes, tickProcessing applies the upgrade.
+    processingAccumulated = PROCESSING_DURATION; // simulate enough overlap
+    fakeDrive.tickProcessing();
+    expect(level).toBe(2);
+  });
+
+  it('the console opens the processing screen even with no drive inserted', () => {
+    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    const opened = [];
+    const fakeScreen = {
+      open(drive, actions) { opened.push({ drive, actions }); },
+      refreshActions: vi.fn(),
+      prepareBlend: vi.fn(),
+    };
+    room.processingScreen = fakeScreen;
+
+    interactable.onInteract({});
+    expect(opened.length).toBe(1);
+    expect(opened[0].drive).toBeNull();
+    expect(opened[0].actions[0].enabled).toBe(false);
+  });
+
+  it('the console prompt adapts to whether a drive can be upgraded', () => {
+    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+    interactable.refreshPrompt();
+    expect(interactable.promptLabel).toBe('[E] Processing console');
+  });
+
+  it('has a signal delete console with a DriveSlot and delete Interactable', () => {
+    const console_ = room.root.find('DeleteConsole');
+    expect(console_).not.toBeNull();
+    expect(console_.physicsAssetKey).toBe('model:radar-terminal');
+
+    // The drive slot is a standalone static box (not a child of the scaled model).
+    const slotBox = room.root.find('DeleteDriveSlot');
+    expect(slotBox).not.toBeNull();
+    expect(slotBox.rigidBody.isFixed()).toBe(true);
+    const slot = slotBox.getComponent(DriveSlot);
+    expect(slot).not.toBeNull();
+    expect(slot.snapDistance).toBe(0.25);
+
+    // The room exposes the slot for BaseScene wiring.
+    expect(room.deleteDriveSlot).toBe(slot);
+
+    // The console has a delete Interactable.
+    const interactable = console_.getComponent(Interactable);
+    expect(interactable).not.toBeNull();
+    expect(interactable.promptLabel).toBe('[E] Delete signal');
+  });
+
+  it('the delete console drive slot is at position (1.960, 0.405, 2.577) with rotation (0, -90, 0)', () => {
+    const slotBox = room.root.find('DeleteDriveSlot');
+    expect(slotBox.object3d.position.x).toBeCloseTo(1.960);
+    expect(slotBox.object3d.position.y).toBeCloseTo(0.405);
+    expect(slotBox.object3d.position.z).toBeCloseTo(2.577);
+    expect(slotBox.object3d.rotation.x).toBeCloseTo(0);
+    expect(slotBox.object3d.rotation.y).toBeCloseTo(-Math.PI / 2);
+    expect(slotBox.object3d.rotation.z).toBeCloseTo(0);
+  });
+
+  it('the delete console Interactable clears the signal from the inserted drive', () => {
+    const interactable = room.root.find('DeleteConsole').getComponent(Interactable);
+    const slotBox = room.root.find('DeleteDriveSlot');
+    const slot = slotBox.getComponent(DriveSlot);
 
     // Simulate a saved drive inserted in the slot.
     const fakeDrive = { saved: true, setSaved(v) { this.saved = v; } };
@@ -241,8 +365,8 @@ describe('ServerRoom', () => {
     expect(interactable.promptLabel).toBe('No signal to delete');
   });
 
-  it('the console shows "No signal to delete" when the slot has no drive', () => {
-    const interactable = room.root.find('ServerConsole').getComponent(Interactable);
+  it('the delete console shows "No signal to delete" when the slot has no drive', () => {
+    const interactable = room.root.find('DeleteConsole').getComponent(Interactable);
     interactable.refreshPrompt();
     expect(interactable.promptLabel).toBe('No signal to delete');
   });

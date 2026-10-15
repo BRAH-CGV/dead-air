@@ -394,12 +394,12 @@ describe('BaseScene', () => {
     expect(engine.scene.fog.density).toBeLessThan(0.005);
   });
 
-  it('disposes the radar and review overlays on dispose, so restarts do not stack listeners', () => {
+  it('disposes the radar and processing overlays on dispose, so restarts do not stack listeners', () => {
     const radar = vi.spyOn(scene.radarOverlay, 'dispose');
-    const review = vi.spyOn(scene.reviewPanel, 'dispose');
+    const processing = vi.spyOn(scene.processingScreen, 'dispose');
     scene.dispose();
     expect(radar).toHaveBeenCalledOnce();
-    expect(review).toHaveBeenCalledOnce();
+    expect(processing).toHaveBeenCalledOnce();
   });
 
   it('hands the fog back on dispose so it does not follow us into the next scene', () => {
@@ -551,11 +551,10 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController).toBeInstanceOf(GameController);
   });
 
-  it('draws signal payloads from a pool of relative image paths', () => {
-    for (const url of scene.signalManager.payloadPool) {
-      expect(url.startsWith('/')).toBe(false);
-      expect(url).toMatch(/^assets\/signals\/signal-\d+\.png$/);
-    }
+  it('builds a signal registry and wires it to the signal manager', () => {
+    expect(scene.signalRegistry).toBeDefined();
+    expect(scene.signalManager.signalNames).toStrictEqual(scene.signalRegistry.names);
+    expect(scene.signalRegistry.names.length).toBeGreaterThan(0);
   });
 
   it('attaches the terminal to the office computer desk', () => {
@@ -577,7 +576,6 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.signalManager).toBe(scene.signalManager);
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
-    expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
     expect(scene.terminal.driveManager).toBe(scene.driveManager);
     expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
@@ -887,7 +885,7 @@ describe('BaseScene gameplay loop', () => {
   });
 
   it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {
-    const hidden = [scene.hud, scene.radarOverlay, scene.reviewPanel]
+    const hidden = [scene.hud, scene.radarOverlay]
       .map(ui => vi.spyOn(ui, 'hide'));
     scene.dispose();
     for (const spy of hidden) expect(spy).toHaveBeenCalled();

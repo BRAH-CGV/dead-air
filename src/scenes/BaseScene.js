@@ -35,11 +35,13 @@ import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { SignalRegistry } from '../gameplay/SignalRegistry.js';
 import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
-import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { HUD, RadarOverlay } from '../ui/HUD.js';
+import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
@@ -409,14 +411,15 @@ export class BaseScene extends Scene {
     }
     for (const resource of this._owned) resource.dispose();
     this._owned.length = 0;
-    // The HUD, radar and review panel are DOM overlays living in index.html,
-    // outside the scene graph — nothing tears them down for us, so a scene
-    // swap would leave last night's numbers floating over the next level.
+    // The HUD, radar and processing screen are DOM overlays living in
+    // index.html, outside the scene graph — nothing tears them down for
+    // us, so a scene swap would leave last night's numbers floating over
+    // the next level.
     this.hud?.hide();
     // dispose(), not just hide(): both hang listeners on page elements and
     // the window that outlive the scene.
     this.radarOverlay?.dispose();
-    this.reviewPanel?.dispose();
+    this.processingScreen?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -662,14 +665,10 @@ export class BaseScene extends Scene {
   _addGameplaySystems() {
     this.nightClock = new NightClock();
 
-    // Payload URLs are direct paths to the placeholder images, not manifest
-    // keys — they are displayed through an HTML <img>, not a Three.js
-    // texture. Relative, like every other path that has to survive the
-    // upload to a LAMP subdirectory.
-    const payloadPool = Array.from({ length: 8 }, (_, i) =>
-      `assets/signals/signal-${i + 1}.png`,
-    );
-    this.signalManager = new SignalManager({ payloadPool });
+    // Signal registry discovers .wav files at build time; SignalManager
+    // shuffles the names each night and assigns one per target.
+    this.signalRegistry = new SignalRegistry();
+    this.signalManager = new SignalManager({ signalNames: this.signalRegistry.names });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -678,7 +677,7 @@ export class BaseScene extends Scene {
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
     this.radarOverlay = new RadarOverlay();
-    this.reviewPanel  = new SignalReviewPanel();
+    this.processingScreen = new ProcessingScreen();
 
     // The real sky behind the radar grid: the backdrop reads it live, so it
     // turns with the night and drowns in the dawn exactly as the window
@@ -690,7 +689,6 @@ export class BaseScene extends Scene {
     this.terminal.signalManager = this.signalManager;
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
-    this.terminal.reviewPanel   = this.reviewPanel;
     this.terminal.driveManager  = this.driveManager;
     this.terminal.crosshair     = this.engine.crosshair;
     // The desk is a room prop, so it is found through the room rather than
@@ -747,10 +745,19 @@ export class BaseScene extends Scene {
       driveSlot.bindDriveManager(this.driveManager);
     }
 
-    // Wire the server room's drive slot to watch the same drives.
-    // The slot works independently (no DriveManager) — the console's
+    // Wire the delete and processing console slots.
+    // Each slot works independently (no DriveManager) — the console's
     // Interactable checks the slot's insertedDrive for signals.
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Wire the processing screen to the ServerRoom console and the signal
+    // registry (for audio URL lookup from the drive's signal name).
+    this.processingScreen.signalRegistry = this.signalRegistry;
+    this.processingScreen.setEngine(this.engine);
+    if (this.rooms.ServerRoom) {
+      this.rooms.ServerRoom.processingScreen = this.processingScreen;
+    }
 
     // Wire the drive box dock in the airlock and the drive boxes on the
     // office shelf.
@@ -769,7 +776,8 @@ export class BaseScene extends Scene {
     for (const drive of office.drives) {
       this.driveManager.addDrive(drive);
       if (driveSlot) driveSlot.addDrive(drive);
-      if (serverSlot) serverSlot.addDrive(drive);
+      if (deleteSlot) deleteSlot.addDrive(drive);
+      if (processingSlot) processingSlot.addDrive(drive);
       for (const box of driveBoxes) box.addDrive?.(drive);
     }
 
@@ -786,10 +794,21 @@ export class BaseScene extends Scene {
         addDriveToRoom(drive);
       };
     }
-    if (serverSlot) {
-      const origOnRemoved = serverSlot.onDriveRemoved;
-      serverSlot.onDriveRemoved = (drive) => {
+    if (deleteSlot) {
+      const origOnRemoved = deleteSlot.onDriveRemoved;
+      deleteSlot.onDriveRemoved = (drive) => {
         origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+    if (processingSlot) {
+      const origOnRemoved = processingSlot.onDriveRemoved;
+      processingSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        // Removing a drive from the processing console cancels any in-flight
+        // signal upgrade — the player must start over with a fresh insertion.
+        drive.processingStarted = false;
+        drive.processingAccumulated = 0;
         addDriveToRoom(drive);
       };
     }
@@ -815,9 +834,6 @@ export class BaseScene extends Scene {
       driveManager: this.driveManager,
       pickupSystem: this.pickupSystem,
     });
-
-    // The review panel is now display-only — Q auto-saves via the terminal.
-    // No onSave/onDelete callbacks needed.
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on
@@ -893,11 +909,13 @@ export class BaseScene extends Scene {
    *  signals and positions. */
   _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
-    // Eject drives from reader and server slot (they keep their signal)
+    // Eject drives from reader and console slots (they keep their signal)
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
-    if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+    if (deleteSlot?.hasDrive) deleteSlot._ejectDrive(deleteSlot.insertedDrive);
+    if (processingSlot?.hasDrive) processingSlot._ejectDrive(processingSlot.insertedDrive);
 
     // Empty the dock: wipe the docked box's drives and release it.
     const box = this.rooms.Airlock.quotaDock?.empty();
