@@ -112,9 +112,14 @@ export class RedOut {
    *  @param {THREE.Scene} scene  @param {THREE.Camera} camera */
   async preCompile(scene, camera) {
     if (!this._renderer || !this._renderTarget) return;
+    const was = this._renderer.getRenderTarget?.() ?? null;
     this._renderer.setRenderTarget(this._renderTarget);
     await this._renderer.compileAsync(scene, camera);
     this._renderer.setRenderTarget(null);
+    // The composite too, without drawing it (a rebuild has no loading
+    // screen over the canvas to hide a frame of it).
+    await this._renderer.compileAsync(this._scene, this._camera);
+    this._renderer.setRenderTarget(was);
   }
 
   /** Set the effect strength 0..1. 0 = no effect, 1 = full red. */

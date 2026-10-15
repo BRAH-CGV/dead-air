@@ -20,7 +20,7 @@ function setup(level = 1) {
     camera,
     sky: { setStorm: vi.fn() },
     fog: { density: 0 },
-    fade: { play: vi.fn((cb) => { cb(); return true; }) },
+    fade: { cover: vi.fn((cb) => { cb(); return true; }), play: vi.fn() },
     onWake: vi.fn(),
   });
   return { walk, controller, position, camera, L: dreamLevel(level) };
@@ -78,7 +78,9 @@ describe('DreamWalk (#101)', () => {
     for (let i = 0; i < 60 * 120 && walk.state === 'pulled'; i++) walk.onUpdate(DT);
     expect(walk.state).toBe('awake');
     walk.onUpdate(DT);
-    expect(walk.fade.play).toHaveBeenCalledOnce();
+    // Covered and left black: the scene uncovers once the next one is ready.
+    expect(walk.fade.cover).toHaveBeenCalledOnce();
+    expect(walk.fade.play).not.toHaveBeenCalled();
     expect(walk.onWake).toHaveBeenCalledOnce();
   });
 

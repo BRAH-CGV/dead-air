@@ -78,8 +78,24 @@ export class ScreenFade {
     return true;
   }
 
+  /** A line on the black — what the wait is for ("NIGHT 2"), so a cover
+   *  held while the next scene gets ready reads as meant, not as stuck.
+   *  Taken away by uncover(). Text only. @param {string} text */
+  caption(text) {
+    if (!this.root) return;
+    let line = this.root.querySelector('.fade-caption');
+    if (!line) {
+      line = document.createElement('div');
+      line.className = 'fade-caption';
+      this.root.append(line);
+    }
+    line.textContent = text;
+    line.classList.add('is-shown');
+  }
+
   /** Fade back in from cover(). */
   uncover() {
+    this.root?.querySelector('.fade-caption')?.classList.remove('is-shown');
     if (!this.root || !this.playing) return;
     clearTimeout(this._coverTimer);
     this._coverTimer = null;

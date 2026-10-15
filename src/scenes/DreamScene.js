@@ -3,10 +3,12 @@ import RAPIER from '@dimforge/rapier3d';
 import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
-import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
+import { createMarsTerrain, terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { DreamWalk } from '../components/DreamWalk.js';
+import { Component } from '../core/Component.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { BaseScene } from './BaseScene.js';
 
 // ─────────────────────────────────────────────
@@ -29,6 +31,37 @@ import { BaseScene } from './BaseScene.js';
 const BASE = { width: 12, height: 3.2, depth: 9 };
 /** Where the player stands: just outside the front, facing away. */
 const SPAWN = [0, 1, BASE.depth / 2 + 3];
+
+/** The light on the ridge, straight down the player's view: something to
+ *  walk towards that the base never lets you reach. Metres from the base. */
+const BEACON = { distance: 300, mast: 16, glow: 1.4, halo: 5 };
+/** Its colour, level by level: a warm lamp that turns red. */
+const BEACON_COLORS = [0xffc27a, 0xff8a4a, 0xff2a1a];
+
+/** Once the next scene is built, frames drawn before the black lifts. */
+const SETTLE_FRAMES = 2;
+
+/** Resolves on the next animation frame (a short timer where there is none). */
+const nextFrame = () => new Promise((resolve) => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+  else setTimeout(resolve, 16);
+});
+
+/** The beacon's breathing: the halo swells and fades, slowly. */
+class BeaconPulse extends Component {
+  constructor(halo) {
+    super();
+    this.halo = halo;
+    this._t = 0;
+  }
+
+  onUpdate(dt) {
+    this._t += dt;
+    const k = 0.5 + 0.5 * Math.sin(this._t * 1.3);
+    this.halo.material.opacity = 0.25 + 0.35 * k;
+    this.halo.scale.setScalar(0.85 + 0.3 * k);
+  }
+}
 
 export class DreamScene extends Scene {
   /** The scene the dreamer wakes into. */
@@ -59,20 +92,41 @@ export class DreamScene extends Scene {
     this._addRocks();
     this._addLighting();
     this._addBase();
+    this._addBeacon();
     this._spawnPlayer();
     this._addWalk();
+
+    // Eyes open: falling asleep in the bunk shuts the eyelids (BedRest), and
+    // nothing in the dream would ever open them again.
+    new FatigueOverlay().clear();
   }
 
-  /** Wake: back to the base, on the night the dream came from. Deferred a
-   *  tick — the dream ends inside a frame, and a scene can't be swapped
-   *  out from under the loop that is updating it. */
-  wake() {
+  /**
+   * Wake: back to the base, on the night the dream came from. DreamWalk has
+   * already put the screen to black and left it there. Building the base
+   * and compiling its shaders takes seconds, so the black stays up — with
+   * the night it is waking into written on it — until the base is built,
+   * compiled and has drawn a frame or two. Before this the fade lifted on a
+   * timer, part-way through, and the screen sat black with no sign of life.
+   * @returns {Promise<void>}
+   */
+  async wake() {
     const { engine } = this;
     const night = this.night;
-    queueMicrotask(() => {
-      engine.loadScene(DreamScene.returnTo);
-      if (night > 1) engine.activeScene?.nights?.setNight?.(night);
-    });
+    const fade = engine.screenFade;
+    fade?.caption?.(`NIGHT ${night}`);
+    // Out of the frame that ended the dream: a scene can't be swapped out
+    // from under the loop that is updating it.
+    await Promise.resolve();
+    engine.loadScene(DreamScene.returnTo, { compile: false });
+    if (night > 1) engine.activeScene?.nights?.setNight?.(night);
+    try {
+      await engine.compileScene?.();
+    } catch (err) {
+      console.warn('[DreamScene] precompile on waking failed:', err);
+    }
+    for (let i = 0; i < SETTLE_FRAMES; i++) await nextFrame();
+    fade?.uncover?.();
   }
 
   dispose() {
@@ -160,6 +214,38 @@ export class DreamScene extends Scene {
 
     this._root.addChild(base);
     this.base = base;
+  }
+
+  /** The light on the ridge (Ryan's idea): a mast with a glowing lamp,
+   *  straight down the player's first view and far past where the base
+   *  pulls them back — the thing they want to reach and never do. The lamp
+   *  and its halo ignore the fog, so it shows through the thickest dream. */
+  _addBeacon() {
+    const color = new THREE.Color(BEACON_COLORS[Math.min(Math.max(this.level, 1), 3) - 1]);
+    this.beaconColor = color;
+    // Straight out from the spawn, the way the player faces.
+    const dir = new THREE.Vector2(SPAWN[0], SPAWN[2]).normalize();
+    const x = dir.x * BEACON.distance;
+    const z = dir.y * BEACON.distance;
+    const ground = terrainHeightAt(x, z);
+
+    const beacon = new GameObject('DreamBeacon');
+    beacon.object3d.position.set(x, ground, z);
+    const metal = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0b10, roughness: 0.8 }));
+    const mast = new THREE.Mesh(this._own(new THREE.CylinderGeometry(0.15, 0.3, BEACON.mast, 8)), metal);
+    mast.position.y = BEACON.mast / 2;
+    const lampMat = this._own(new THREE.MeshBasicMaterial({ color, fog: false }));
+    const lamp = new THREE.Mesh(this._own(new THREE.SphereGeometry(BEACON.glow, 16, 12)), lampMat);
+    lamp.position.y = BEACON.mast;
+    const haloMat = this._own(new THREE.MeshBasicMaterial({
+      color, fog: false, transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    const halo = new THREE.Mesh(this._own(new THREE.SphereGeometry(BEACON.halo, 16, 12)), haloMat);
+    halo.position.y = BEACON.mast;
+    beacon.object3d.add(mast, lamp, halo);
+    beacon.addComponent(new BeaconPulse(halo));
+    this._root.addChild(beacon);
+    this.beacon = beacon;
   }
 
   _spawnPlayer() {

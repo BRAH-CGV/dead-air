@@ -204,6 +204,21 @@ describe('BaseScene', () => {
     }));
   });
 
+  it('the bed dreams between nights: the dream at the night just done, waking on the next (#101)', async () => {
+    class Dream {}
+    engine.sceneRegistry = new Map([['DreamScene', Dream]]);
+    engine.loadScene = vi.fn();
+    const { bed } = scene.rooms.LivingQuarters;
+    expect(bed.dream(2)).toBe(true);
+    await Promise.resolve();
+    expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 2, night: 3 } });
+  });
+
+  it('with no dream scene registered, the bed says so and sleeps on as before', () => {
+    engine.sceneRegistry = new Map();
+    expect(scene.rooms.LivingQuarters.bed.dream(1)).toBe(false);
+  });
+
   it('wires the journal: the night from the controller, the paper panel (#79)', () => {
     const { journal } = scene.rooms.LivingQuarters;
     expect(journal.controller).toBe(scene.gameController);

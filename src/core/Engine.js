@@ -473,8 +473,13 @@ export class Engine {
    *  its old materials; without this, each thing that starts hidden (the
    *  Sleep Demon, the dust eyes, the UFO) compiled on the frame it first
    *  showed. @returns {Promise<void>} */
-  compileScene() {
-    return precompile({ renderer: this.renderer, scene: this.scene, camera: this.camera });
+  async compileScene() {
+    await precompile({ renderer: this.renderer, scene: this.scene, camera: this.camera });
+    // And the variants the red pass draws the scene with (into its render
+    // target: no tone mapping). The boot does this after its warm-up; a
+    // rebuild didn't, and the first red death after one (Ragno's, the evil
+    // signal's) recompiled every lit material mid-lunge — a freeze.
+    await this.postProcess?.preCompile?.(this.scene, this.camera);
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping

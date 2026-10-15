@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 
@@ -9,7 +10,9 @@ import { GameObject } from '../core/GameObject.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
-vi.setConfig({ testTimeout: 30_000 });
+// Imports and builds against the whole base scene module: as slow as
+// BaseScene.test.js under a parallel run, so it gets the same budget.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 function makeDreamEngine() {
   const engine = makeEngine();
@@ -93,10 +96,89 @@ describe('DreamScene (#101)', () => {
       loaded = SceneClass;
       engine.activeScene = { nights: { setNight: vi.fn() } };
     });
-    scene.wake();
-    await Promise.resolve();
+    await scene.wake();
     expect(loaded).toBe(BaseScene);
     expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(2);
+  });
+
+  describe('waking holds the black until the base is ready (playtest: a long black screen)', () => {
+    let fade, compiled;
+    beforeEach(() => {
+      fade = { caption: vi.fn(), uncover: vi.fn() };
+      engine.screenFade = fade;
+      engine.loadScene = vi.fn(() => { engine.activeScene = { nights: { setNight: vi.fn() } }; });
+      let finish;
+      compiled = new Promise((r) => { finish = r; });
+      compiled.finish = finish;
+      engine.compileScene = vi.fn(() => compiled);
+    });
+
+    it('says which night it is waking into, on the black', async () => {
+      const waking = scene.wake();
+      expect(fade.caption).toHaveBeenCalledWith('NIGHT 2');
+      compiled.finish();
+      await waking;
+    });
+
+    it('builds the base without the background compile, then waits for the compile', async () => {
+      const waking = scene.wake();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(engine.loadScene).toHaveBeenCalledWith(BaseScene, { compile: false });
+      expect(engine.compileScene).toHaveBeenCalled();
+      expect(fade.uncover).not.toHaveBeenCalled();
+      compiled.finish();
+      await waking;
+      expect(fade.uncover).toHaveBeenCalledOnce();
+    });
+
+    it('a failed compile still uncovers — never stuck on black', async () => {
+      engine.compileScene = vi.fn(() => Promise.reject(new Error('lost context')));
+      await scene.wake();
+      expect(fade.uncover).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('opens the eyes: the bunk\'s eyelids can be left shut by the sleep that led here', () => {
+    document.body.innerHTML = '<div id="fatigue"><div id="fatigue-tunnel"></div><div id="fatigue-lids"></div></div>';
+    const lids = document.getElementById('fatigue-lids');
+    lids.style.setProperty('--lid', '1');
+    new DreamScene(makeDreamEngine()).build();
+    expect(lids.style.getPropertyValue('--lid')).toBe('0');
+  });
+
+  describe('the light on the ridge (Ryan\'s idea: something to walk towards)', () => {
+    it('stands far ahead of the player, straight down their view', () => {
+      const p = engine.player.object3d.position;
+      const b = scene.beacon.object3d.position;
+      const yaw = engine.playerController.yaw;
+      const forward = new THREE.Vector2(-Math.sin(yaw), -Math.cos(yaw));
+      const to = new THREE.Vector2(b.x - p.x, b.z - p.z);
+      expect(to.clone().normalize().dot(forward)).toBeGreaterThan(0.99);
+      expect(to.length()).toBeGreaterThan(200);
+    });
+
+    it('is out of reach: far past where the base pulls you back, at every level', () => {
+      const b = scene.beacon.object3d.position;
+      expect(Math.hypot(b.x, b.z)).toBeGreaterThan(80 * 2);
+    });
+
+    it('glows through the dream fog', () => {
+      const glows = [];
+      scene.beacon.object3d.traverse(o => { if (o.isMesh && o.material.fog === false) glows.push(o); });
+      expect(glows.length).toBeGreaterThan(0);
+    });
+
+    it('turns from warm to red as the dreams get worse', () => {
+      const colour = (level) => {
+        const s = new DreamScene(makeDreamEngine(), { level });
+        s.build();
+        return s.beaconColor.clone();
+      };
+      const warm = colour(1), red = colour(3);
+      expect(red.r).toBeGreaterThan(red.g * 2);
+      expect(warm.g).toBeGreaterThan(red.g);
+    });
   });
 
   it('hands the fog back on dispose', () => {

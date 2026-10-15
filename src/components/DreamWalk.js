@@ -13,7 +13,8 @@ import { dreamLevel, walkScale, unease, RING_UNEASE } from '../gameplay/dream.js
 //            ring, so the edge is never an endless crawl — the controls go (inputLocked) and the
 //            player is dragged backwards to the base, faster and faster,
 //            still looking out at what they were walking towards
-//   awake    back at the base: the screen fades and onWake runs, once
+//   awake    back at the base: the screen goes black and onWake runs, once
+//            (the scene brings the picture back when the base is ready)
 //
 // Everything it touched is handed back in onDestroy, so a scene swap
 // mid-dream leaves no slowed player or warped camera behind.
@@ -89,11 +90,14 @@ export class DreamWalk extends Component {
     if (distance - step <= WAKE_RADIUS + 1e-6) this.wake();
   }
 
-  /** Back at the base: fade, then onWake — once. */
+  /** Back at the base: to black, then onWake — once. The screen is left
+   *  covered: rebuilding the base takes a while, and the scene uncovers it
+   *  only once the base is ready to be seen (DreamScene.wake). */
   wake() {
     if (this.state === 'awake') return;
     this.state = 'awake';
     const done = () => this.onWake?.();
+    if (this.fade?.cover?.(done)) return;
     if (!this.fade?.play?.(done)) done();
   }
 
