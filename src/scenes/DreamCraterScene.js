@@ -114,9 +114,11 @@ export class DreamCraterScene extends Scene {
     const { engine } = this;
     const night = this.night;
     queueMicrotask(() => {
+      // Flag must be set BEFORE loadScene: build() runs synchronously and
+      // _addStamina reads this flag during construction.
+      if (died) engine._dreamCraterDeath = true;
       engine.loadScene(DreamCraterScene.returnTo);
       if (night > 1) engine.activeScene?.nights?.setNight?.(night);
-      if (died) engine._dreamCraterDeath = true;
     });
   }
 
