@@ -284,6 +284,96 @@ describe('DustEyes', () => {
   });
 });
 
+describe('DustEyes — staring at them is tiring', () => {
+  // StaminaDrain reads staredAt: the stare costs stamina (STAMINA.stare).
+  const lookAt = (rig, eye) => { rig.hooks.viewDirection = out => out.copy(eye.position).sub(rig.pos).normalize(); };
+
+  it('staredAt is up while the player looks straight at an eye they can see, and down when they look away', () => {
+    const rig = makeRig({ random: () => 0.999 });
+    rig.system.summon('fence');
+    run(rig.system, 0.1);
+    expect(rig.system.staredAt).toBe(false);
+    const eye = rig.system.active[0];
+    lookAt(rig, eye);
+    run(rig.system, 0.1);
+    expect(rig.system.staredAt).toBe(true);
+    rig.hooks.viewDirection = out => out.set(0, -1, 0);
+    run(rig.system, 0.05);
+    expect(rig.system.staredAt).toBe(false);
+  });
+
+  it('a yard eye from indoors cannot be seen, so it costs nothing', () => {
+    const rig = makeRig({ random: () => 0.999 });
+    rig.system.summon('fence');
+    run(rig.system, 0.1);
+    const eye = rig.system.active[0];
+    rig.state.outside = false;
+    lookAt(rig, eye);
+    run(rig.system, 0.1);
+    expect(rig.system.staredAt).toBe(false);
+  });
+
+  it('it stays up while one that has turned comes for them: the growl, the leap and the chase', () => {
+    const rig = makeRig({ random: () => 0.999 });
+    rig.system.summon('fence');
+    run(rig.system, 0.1);
+    const eye = rig.system.active[0];
+    lookAt(rig, eye);
+    const phases = new Set();
+    for (let t = 0; t < 4 && rig.controller.state === 'playing'; t += 0.05) {
+      rig.system.onUpdate(0.05);
+      if (eye.phase === 'off') continue;
+      phases.add(eye.phase);
+      expect(rig.system.staredAt, eye.phase).toBe(true);
+    }
+    for (const phase of ['growling', 'leaping', 'chasing']) expect(phases).toContain(phase);
+  });
+
+  it('through the window too, and while it backs off into the fog; never through the wall', () => {
+    const rig = makeRig({ outside: false, player: [0, 1.24, -2], random: () => 0.999 });
+    rig.system.summon('window');
+    run(rig.system, 0.1);
+    const eye = rig.system.active[0];
+    lookAt(rig, eye);
+    run(rig.system, 0.1);
+    expect(rig.system.staredAt).toBe(true);
+    run(rig.system, DUST_EYES.windowStareSeconds + 0.1);
+    expect(eye.phase).toBe('retreating');
+    expect(rig.system.staredAt).toBe(true);
+
+    const wall = makeRig({ outside: false, player: [0, 1.24, -2], random: () => 0.999 });
+    wall.system.summon('window');
+    run(wall.system, 0.1);
+    const beyond = wall.system.active[0];
+    beyond.anchor.set(40, 1.5, -15);
+    run(wall.system, 0.05);
+    lookAt(wall, beyond);
+    run(wall.system, 0.1);
+    expect(wall.system.staredAt).toBe(false);
+  });
+
+  it('down off shift and on a new night', () => {
+    const rig = makeRig({ random: () => 0.999 });
+    rig.system.summon('fence');
+    run(rig.system, 0.1);
+    lookAt(rig, rig.system.active[0]);
+    run(rig.system, 0.1);
+    expect(rig.system.staredAt).toBe(true);
+    rig.controller.state = 'morning';
+    run(rig.system, 0.05);
+    expect(rig.system.staredAt).toBe(false);
+
+    const retry = makeRig({ random: () => 0.999 });
+    retry.system.summon('fence');
+    run(retry.system, 0.1);
+    lookAt(retry, retry.system.active[0]);
+    run(retry.system, 0.1);
+    expect(retry.system.staredAt).toBe(true);
+    retry.startNight(2, { retry: true });
+    expect(retry.system.staredAt).toBe(false);
+  });
+});
+
 describe('DustEyes — where the player is', () => {
   it('neither kind melts away when the player goes in or out', () => {
     const rig = makeRig({ outside: true, random: () => 0.999 });

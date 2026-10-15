@@ -39,19 +39,22 @@ import { keyName } from '../app/keyNames.js';
  * the open side +x), angles in radians. Yaw turns the forward view (−z)
  * about +Y; pitch up is positive.
  *
- *   pillow  the eye lying on the lower bunk, looking up toward its foot and
- *           out into the room, tipped onto its side
+ *   pillow  the eye lying on the bed's pillow, on its side facing the side
+ *           table (where the bedside clock stands), the clock well in view
  *   sit     the eye sitting on its edge, legs out, facing the room
  *   out     the feet standing beside it, clear of its collider by more than
  *           the player's radius, facing the room — where you get up to
- *   watch   where the Sleep Demon stands to watch a sleeper: corners of the
- *           bedroom in view of the pillow
+ *   watch   where the Sleep Demon stands to watch a sleeper: across the
+ *           bedroom in front of the pillow, in its view, clear of the lockers
+ *
+ * Fitted to bed.glb (0.9 × 2 m, mattress top 0.45 m, the pillow at
+ * z −0.92 … −0.70); LivingQuarters.test.js reads the file to keep them so.
  */
 export const BUNK_POSES = Object.freeze({
-  pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -2.53, pitch: 0.55, roll: -0.22 }),
-  sit: Object.freeze({ position: [0.4, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
-  out: Object.freeze({ position: [1.0, 0, 0.35], yaw: -Math.PI / 2 }),
-  watch: Object.freeze([[1.84, 0, 2.28], [1.94, 0, -0.52], [1.14, 0, 2.58]]),
+  pillow: Object.freeze({ position: [0.03, 0.6, -0.8], yaw: -1.68, pitch: 0.1, roll: 0.22 }),
+  sit: Object.freeze({ position: [0.32, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
+  out: Object.freeze({ position: [0.85, 0, 0.35], yaw: -Math.PI / 2 }),
+  watch: Object.freeze([[2.02, 0, -0.28], [2.82, 0, 0.27], [2.72, 0, 1.27]]),
 });
 
 const _q = new THREE.Quaternion();

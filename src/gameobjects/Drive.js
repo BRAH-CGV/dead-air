@@ -33,12 +33,22 @@ import { packGroups } from '../core/PhysicsLayers.js';
 /** Default colour — dark grey plastic. */
 const DEFAULT_COLOR = 0x3a3a3a;
 
-/** Emissive colour when a signal has been saved — green indicator. */
-const SAVED_EMISSIVE = 0x22cc44;
+/** Emissive colour per signal processing level. Level 1 is the default
+ *  saved state (green); higher levels are reached by processing the
+ *  signal at a dedicated console. Add new levels here as they appear. */
+export const SIGNAL_LEVEL_COLORS = {
+  1: 0x22cc44,  // green
+  2: 0x00cccc,  // cyan
+};
+
+/** Emissive intensity for saved drives (all levels). */
 const SAVED_EMISSIVE_INTENSITY = 1.5;
 
 /** Emissive colour when the anomalous (evil) signal is stored — red. */
 const CORRUPTED_EMISSIVE = 0xcc2222;
+
+/** Seconds of active overlap needed to process a signal at the console. */
+export const PROCESSING_DURATION = 12;
 
 /** Doom glow: the red drive pulses brighter as the silence timer runs
  *  down. The curve is exponential (pow 6) so the glow stays subdued for
@@ -83,6 +93,18 @@ class DoomGlowFade extends Component {
   onUpdate(dt) { this._drive._tickDoomFade(dt); }
 }
 
+/** Per-frame completion check for signal processing. The minigame UI
+ *  accumulates overlap time on the drive; this component just checks
+ *  whether enough has been collected and applies the upgrade. */
+class SignalProcessing extends Component {
+  _drive;
+  constructor(drive) {
+    super();
+    this._drive = drive;
+  }
+  onUpdate() { this._drive.tickProcessing(); }
+}
+
 export class Drive extends GameObject {
   /** @type {THREE.Mesh} */
   _mesh;
@@ -95,11 +117,26 @@ export class Drive extends GameObject {
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
 
+  /** Which signal (by name) is stored on this drive, or null when the
+   *  drive holds no signal. Set by DriveManager.saveToDrive(). */
+  signalName = null;
+
+  /** Processing level of the stored signal. 1 is the default (just saved);
+   *  higher levels are reached by processing at a dedicated console. The
+   *  drive's emissive colour follows the level (SIGNAL_LEVEL_COLORS). */
+  signalLevel = 1;
+
   /** Set while the anomalous (red) signal is stored on it — the indicator
    *  shows red, and a red drive never counts towards the night quota
    *  (DriveBoxDock). Deleted the same way as a green one: wipe it at the
    *  ServerRoom console (setSaved(false)). */
   corrupted = false;
+
+  /** Whether a processing run has been started. */
+  processingStarted = false;
+
+  /** Seconds of overlap accumulated so far in the current processing run. */
+  processingAccumulated = 0;
 
   /** Set when makeKinematic() is called before _init builds a body — a
    *  socket receiver attaching the drive during scene build. _init honours
@@ -135,6 +172,9 @@ export class Drive extends GameObject {
     this.addComponent(new ImpactSound(IMPACT_SOUNDS.drive));
     // Ticks the doom-glow fade-out; also pure data, same reasoning.
     this.addComponent(new DoomGlowFade(this));
+    // Ticks signal processing so the upgrade completes without the player
+    // having to revisit the console.
+    this.addComponent(new SignalProcessing(this));
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -306,21 +346,95 @@ export class Drive extends GameObject {
 
   // ── Visual ─────────────────────────────────────────────────
 
-  /** Turn the indicator on — green for a saved signal, red when that
-   *  signal was the anomalous one ({ corrupted: true }). Turning it off
-   *  clears both flags, so a wiped drive keeps no trace of the red signal. */
-  setSaved(saved, { corrupted = false } = {}) {
+  /** Turn the indicator on — colour follows signalLevel (SIGNAL_LEVEL_COLORS),
+   *  red when the signal was the anomalous one ({ corrupted: true }).
+   *  Turning it off clears both flags and the signal name. */
+  setSaved(saved, { corrupted = false, signalName = null } = {}) {
     // Any state change stops a running glow fade — the new look stands.
     this._doomFadeRemaining = null;
     this.saved = saved;
     this.corrupted = saved && corrupted;
+    this.signalName = saved ? signalName : null;
+    if (!saved) {
+      this.signalLevel = 1;
+      this.processingStarted = false;
+      this.processingAccumulated = 0;
+    }
     if (this.saved) {
-      this._material.emissive.setHex(this.corrupted ? CORRUPTED_EMISSIVE : SAVED_EMISSIVE);
+      const color = this.corrupted
+        ? CORRUPTED_EMISSIVE
+        : (SIGNAL_LEVEL_COLORS[this.signalLevel] ?? SIGNAL_LEVEL_COLORS[1]);
+      this._material.emissive.setHex(color);
       this._material.emissiveIntensity = SAVED_EMISSIVE_INTENSITY;
     } else {
       this._material.emissive.setHex(0x000000);
       this._material.emissiveIntensity = 0;
     }
+  }
+
+  /** Set the signal processing level. Updates the emissive colour if the
+   *  drive is saved. Callers enforce the max level — this is abstract. */
+  setSignalLevel(level) {
+    this.signalLevel = level;
+    if (this.saved && !this.corrupted && this._material) {
+      const color = SIGNAL_LEVEL_COLORS[this.signalLevel] ?? SIGNAL_LEVEL_COLORS[1];
+      this._material.emissive.setHex(color);
+    }
+  }
+
+  /** Whether the drive can be upgraded to the next processing level. True
+   *  when the drive holds a non-corrupted signal below the max level (2)
+   *  and no processing run is in progress. */
+  get canUpgradeLevel() {
+    return this.saved && !this.corrupted && this.signalLevel < 2
+      && !this.isProcessing;
+  }
+
+  /** True while a processing run is in progress (started but not yet
+   *  accumulated enough overlap time). */
+  get isProcessing() {
+    return this.processingStarted && this.processingAccumulated < PROCESSING_DURATION;
+  }
+
+  /** Fraction of the current processing run completed (0..1). */
+  get processingProgress() {
+    if (!this.processingStarted) return 0;
+    return Math.min(1, this.processingAccumulated / PROCESSING_DURATION);
+  }
+
+  /** Begin a processing run. The upgrade completes once the player has
+   *  accumulated PROCESSING_DURATION seconds of overlap in the minigame. */
+  beginProcessing() {
+    this.processingStarted = true;
+    this.processingAccumulated = 0;
+  }
+
+  /** Accumulate `dt` seconds of overlap time. Called by the minigame UI
+   *  when the crosshair is inside the target zone. Returns true if the
+   *  processing just completed. */
+  accumulateProcessing(dt) {
+    if (!this.processingStarted) return false;
+    this.processingAccumulated += dt;
+    if (this.processingAccumulated >= PROCESSING_DURATION) {
+      return this._applyProcessingUpgrade();
+    }
+    return false;
+  }
+
+  /** Check whether the current processing run has finished and, if so,
+   *  apply the upgrade. Returns true if an upgrade was applied. */
+  tickProcessing() {
+    if (!this.processingStarted) return false;
+    if (this.processingAccumulated < PROCESSING_DURATION) return false;
+    return this._applyProcessingUpgrade();
+  }
+
+  /** Apply the level upgrade and clear processing state. */
+  _applyProcessingUpgrade() {
+    this.processingStarted = false;
+    this.processingAccumulated = 0;
+    this.setSignalLevel(this.signalLevel + 1);
+    return true;
   }
 
   /** Reset to the default unmarked colour (drive ejected). */

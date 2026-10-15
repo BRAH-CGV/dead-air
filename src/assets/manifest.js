@@ -249,12 +249,14 @@ const PLACED = {
     url: 'assets/models/locker.glb',
     physics: 'static',
   },
-  // The bedroom's bunk: the bed you sleep through the day in. Modelled
-  // around its centre, so `origin: 'floor'` stands it on the floor.
-  'model:bunk-bed': {
+  // The bedroom's bunk: a single steel-framed bed, the one you sleep
+  // through the day in. Converted from the download's FBX in metres, the
+  // pillow at −z: 0.9 × 2 m, 0.82 m to the top of its headboard. Low, so
+  // the bedside clock is in plain view from the pillow (a bunk bed's
+  // ladder stood in the way, #113).
+  'model:bed': {
     type: 'model',
-    url: 'assets/models/bunk-bed.glb',
-    origin: 'floor',
+    url: 'assets/models/bed.glb',
     physics: 'static',
   },
   // Office furniture; the chair is in the bedroom too. Scales take each

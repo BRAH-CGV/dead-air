@@ -165,21 +165,22 @@ describe('Bed', () => {
       return b;
     }
 
-    it('the pillow: the eye at lying height on the bunk, looking up and tipped onto its side', () => {
+    it('the pillow: the eye lying on the bunk, on its side facing the bedside clock', () => {
       const pose = onBunk().pillowPose();
       expect(pose.position.toArray()).toEqual(BUNK_POSES.pillow.position);
       expect(pose.position.y).toBeGreaterThan(0.4);           // on the mattress …
       expect(pose.position.y).toBeLessThan(0.9);              // … lying, not sitting
-      expect(pose.pitch).toBeGreaterThan(0.3);                // up toward the ceiling
-      expect(Math.abs(pose.roll)).toBeGreaterThan(0.05);      // onto its side
+      expect(pose.pitch).toBeGreaterThanOrEqual(0);           // level or slight up toward the clock
+      expect(pose.pitch).toBeLessThan(0.4);
+      expect(pose.roll).toBeGreaterThan(0.05);                // onto its side, toward the clock
     });
 
     it('the get-out spot stands clear of the bunk, facing into the room', () => {
       const spot = onBunk().getOutSpot();
       expect(spot.position.y).toBe(0);                         // the feet, on the floor
-      // Outside the bunk's footprint (1.08 × 2 m about its origin) by more
+      // Outside the bunk's footprint (0.9 × 2 m about its origin) by more
       // than the player's radius, so the capsule never lands in its collider.
-      expect(spot.position.x).toBeGreaterThan(0.54 + 0.3);
+      expect(spot.position.x).toBeGreaterThan(0.45 + 0.3);
       // Facing +x, out of the bunk's open side: forward is (−sin yaw, −cos yaw).
       expect(-Math.sin(spot.yaw)).toBeCloseTo(1);
     });
