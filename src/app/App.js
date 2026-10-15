@@ -149,6 +149,12 @@ export class App {
     this._offs.push(flow.onChange(() => this._render()));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
+    // The main menu's shot over the office computer (#115), fitted to the
+    // window as it changes. The Engine's own resize listener, added first,
+    // has already fitted the game camera this copies.
+    this._offs.push(flow.onChange(() => this._syncMenuShot()));
+    this._listen(win, 'resize', () => this._syncMenuShot());
+
     // Music under the main menu (and the screens opened from it), faded out
     // for the game. It can only sound once the audio is awake, and the
     // menu's buttons aren't the canvas whose click wakes it — so the first
@@ -431,8 +437,33 @@ export class App {
    *  back with hard-coded values) and follow the new GameController. */
   _onSceneLoaded(scene) {
     this._applySettings();
+    this._syncMenuShot();
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
+  }
+
+  /** The main menu looks through the scene's own shot (`menuCamera`, #115):
+   *  over the office computer, out of the window at the dish, wherever the
+   *  player wakes. It takes the game camera's aspect and far plane, so it
+   *  fits the window and the render distance. Once the main menu is left,
+   *  the frame goes back to the player's eyes; a view someone else set (a
+   *  security camera on the monitor) is left alone. */
+  _syncMenuShot() {
+    const { engine } = this;
+    const shot = engine.activeScene?.menuCamera;
+    if (!shot) return;
+    const { state } = this.flow;
+    if (state === 'loading' || state === 'mainMenu') {
+      const { aspect, far } = engine.camera;
+      if (shot.aspect !== aspect || shot.far !== far) {
+        shot.aspect = aspect;
+        shot.far = far;
+        shot.updateProjectionMatrix();
+      }
+      engine.viewCamera = shot;
+    } else if (engine.viewCamera === shot) {
+      engine.viewCamera = null;
+    }
   }
 
   _applySettings(values = this.settings.values) {
@@ -444,6 +475,7 @@ export class App {
    *  isn't redrawn (that would drop it mid-drag); everything else is. */
   _onSettingsChanged(values, keys) {
     this._applySettings(values);
+    this._syncMenuShot();
     const sliderOnly = keys.length === 1 && SCHEMA[keys[0]]?.type === 'number';
     if (this.flow.screen === 'settings' && !sliderOnly) this._render();
   }
