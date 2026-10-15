@@ -41,12 +41,12 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   /** Press E (a fresh press: the last one was let go). */
   engine.press = () => { engine.held = true; engine.consumed = false; };
   const hud = { setPrompt: vi.fn() };
-  const banner = { show: vi.fn(), clear: vi.fn(), timer: { onDone: null } };
+  const banner = { show: vi.fn() };
   const hint = { show: vi.fn(), hide: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
-    controller, engine, hud, banner, hooks, rest, hint,
+    controller, engine, banner, hooks, rest, hint,
     alarms: [
       { test: () => state.power, message: 'The power went out.' },
       { test: () => state.ufo,   message: 'Something on the radar woke you.' },
@@ -165,16 +165,14 @@ describe('Nap', () => {
     expect(r.banner.show).toHaveBeenLastCalledWith('Something on the radar woke you.', { tone: 'warning' });
   });
 
-  it('puts the shift\'s own prompt back after the banner finishes', () => {
-    const { nap, state, controller, banner } = rig;
+  it("says what woke you on the banner, leaving the HUD's prompt (the shift's own) alone", () => {
+    const { nap, state, hud, banner } = rig;
     nap.start();
     state.eyes = true;
     nap.onUpdate(0.016);
-    // The banner is showing; the shift prompt hasn't come back yet.
-    expect(controller.refreshPrompt).not.toHaveBeenCalled();
-    // The banner finishes: its onDone callback fires.
-    banner.timer.onDone?.();
-    expect(controller.refreshPrompt).toHaveBeenCalledOnce();
+    expect(banner.show).toHaveBeenCalledOnce();
+    for (let i = 0; i < 10; i++) nap.onUpdate(1);
+    expect(hud.setPrompt).not.toHaveBeenCalled();
   });
 
   it('a scene torn down mid-nap leaves the engine at real time and the view handed back', () => {

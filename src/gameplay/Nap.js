@@ -20,7 +20,7 @@ import { Component } from '../core/Component.js';
 // lamps buzzing before a storm outage, the UFO's roar). Silent things — a
 // blob on the office radar, eyes at the office window — don't. Then time
 // runs normally again, you get up out of bed, and the banner says what woke
-// you for a few seconds before the shift's own prompt comes back.
+// you (scene.banner, fading out on its own).
 //
 // How you get up follows what woke you: calmly for the alarm, the E key or
 // the shift ending (6 AM); startled for the alarms (the lamps' buzz, the
@@ -39,7 +39,7 @@ import { Component } from '../core/Component.js';
 // `hooks.restless()` refuses a nap outright (the UFO already on its way).
 //
 //   const nap = gameplayGO.addComponent(new Nap({
-//     controller, engine, hud, rest: bedRest,
+//     controller, engine, banner, rest: bedRest,
 //     hooks: { setPlayerLocked, restless },
 //     alarms: [{ test: () => !grid.on, message: 'The power went out.' }],
 //   }));
@@ -49,8 +49,6 @@ export const NAP = {
   /** How much faster the night runs while napping: the rest of a ten-minute
    *  night passes in well under a minute. */
   timeScale: 15,
-  /** Real seconds the wake-up line stays up. */
-  messageSeconds: 4,
   /** The alarm lengths the bunk offers, in clock hours; null sleeps to 6 AM. */
   lengths: [0.5, 1, 2, 3, null],
   /** What the alarm says. */
@@ -74,23 +72,16 @@ export class Nap extends Component {
    * @param {{ active: boolean, lieDown(onAsleep: () => void): boolean,
    *           getUp(style: 'calm'|'startled'): boolean, cancel(): void }|null} [opts.rest]
    *        The bed animation (BedRest).
-   * @param {{ setPrompt: (text: string) => void }} [opts.hud]
-   * @param {{ show(text: string, opts?: object): void, clear(): void, timer: { onDone: (() => void)|null } }|null} [opts.banner]
+   * @param {{ show(text: string, opts?: object): void }|null} [opts.banner]
+   *        The event banner: what woke you.
    * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean }} [opts.hooks]
    * @param {{ test: () => boolean, message: string, tone?: string }[]} [opts.alarms]
    * @param {{ show(text: string): void, hide(): void }|null} [opts.hint]  Over the lids: "[E] Wake up".
    */
-  constructor({ controller, engine, rest = null, hud = null, banner = null, hooks = {}, alarms = [], hint = null }) {
+  constructor({ controller, engine, rest = null, banner = null, hooks = {}, alarms = [], hint = null }) {
     super();
-    Object.assign(this, { controller, engine, rest, hud, banner, hooks, alarms, hint });
+    Object.assign(this, { controller, engine, rest, banner, hooks, alarms, hint });
     this._armed = alarms.map(() => false);   // which alarms can still go off
-    // When the banner finishes, put the shift's own prompt back — but only
-    // if the shift is still running (a failed night owns its own prompt).
-    if (banner) {
-      banner.timer.onDone = () => {
-        if (this.controller.state === 'playing') this.controller.refreshPrompt?.();
-      };
-    }
   }
 
   /** During the shift, awake and out of bed, with nothing already on its way. */
@@ -136,9 +127,7 @@ export class Nap extends Component {
     this.wokeBy = message;
     if (this.rest) this.rest.getUp(style);
     else this.hooks.setPlayerLocked?.(false);
-    if (message) {
-      this.banner?.show(message, { tone });
-    }
+    if (message) this.banner?.show(message, { tone });
   }
 
   onUpdate(dt) {

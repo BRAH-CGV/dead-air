@@ -474,6 +474,13 @@ describe('GameController.refreshPrompt', () => {
     return { gc, hud, banner };
   };
 
+  it('a night start takes down whatever the banner was showing', () => {
+    const { gc, banner } = setUp(0);
+    banner.clear.mockClear();
+    gc.startNight(1, { retry: true });
+    expect(banner.clear).toHaveBeenCalledOnce();
+  });
+
   it("puts the quota-met prompt back up after something else wrote over it (a nap's wake-up line)", () => {
     const { gc, hud } = setUp(1);
     hud.setPrompt('The power went out.');

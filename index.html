@@ -172,8 +172,8 @@
 
       /* ── Event banner (EventBanner.js) ──────────────────
          Centred in the upper third, large readable text with a subtle
-         dark backing. Fade in, hold, fade out — CSS transitions on
-         opacity, driven by BannerTimer through the display style. */
+         dark backing. Fade in, hold, fade out: the opacity transitions as
+         EventBanner puts .is-shown on and takes it off. */
       #event-banner {
         position: fixed;
         top: 28%;
@@ -192,10 +192,10 @@
         text-align: center;
         text-shadow: 0 1px 4px rgba(0,0,0,0.9);
         opacity: 0;
-        transition: opacity 0.3s ease;
-        display: none;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0s linear 0.3s;
       }
-      #event-banner.is-shown { display: block; opacity: 1; }
+      #event-banner.is-shown { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
       #event-banner[data-tone="warning"] { color: #e8a050; }
       #event-banner[data-tone="danger"]  { color: #e0503c; }
 

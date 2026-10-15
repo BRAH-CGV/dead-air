@@ -8,9 +8,10 @@
 //
 // Markup and CSS live in index.html (#event-banner); this class is the
 // single place game code touches the DOM. The timing logic (BannerTimer)
-// is pure and unit-tested; a small component on GameplaySystems ticks it
-// with engine.realDt, so a nap's 15× timeScale doesn't rush it and a
-// pause holds it.
+// is pure and unit-tested; a small component on GameplaySystems calls
+// update(engine.realDt), so a nap's 15× timeScale doesn't rush it and a
+// pause holds it. The CSS does the fades: the banner is `is-shown` through
+// the fade-in and the hold, and fades out once the class comes off.
 //
 // scene.banner.show is the one way to show an event.
 // ─────────────────────────────────────────────
@@ -44,8 +45,12 @@ export class BannerTimer {
     this.onDone = onDone ?? null;
   }
 
-  /** Whether the banner is currently visible (fading in or holding). */
+  /** Whether the banner is on screen at all (fading in, holding or fading
+   *  out). */
   get visible() { return this._showing && this._elapsed < this._totalDuration(); }
+
+  /** Whether it should be shown: fading in or holding, not yet fading out. */
+  get holding() { return this._showing && this._elapsed < BANNER_FADE + this._seconds; }
 
   /** The text currently showing, or ''. */
   get text() { return this._text; }
@@ -103,8 +108,9 @@ export class BannerTimer {
  * The DOM wrapper. Takes the #event-banner root element (or null for tests)
  * and a keyLabel function (defaults to withKeys so [E] shows the bound key).
  *
- * show(text, opts) sets the text, applies the tone, and starts the timer.
- * clear() hides the banner.
+ * show(text, opts) sets the text, applies the tone, and starts the timer;
+ * update(dt) runs the timer and takes the banner down when its hold is up.
+ * clear() hides the banner at once.
  */
 export class EventBanner {
   /**
@@ -126,8 +132,15 @@ export class EventBanner {
     this.timer.show(text, opts);
     if (!this.root) return;
     if (this._textEl) this._textEl.textContent = text ? this.keyLabel(text) : '';
-    if (this.root) this.root.dataset.tone = opts?.tone ?? 'info';
+    this.root.dataset.tone = opts?.tone ?? 'info';
     this.root.classList.add('is-shown');
+  }
+
+  /** Run the timer by `dt` real seconds; the fade-out starts when the hold
+   *  is up. */
+  update(dt) {
+    this.timer.update(dt);
+    if (this.root && !this.timer.holding) this.root.classList.remove('is-shown');
   }
 
   /** Hide the banner. */

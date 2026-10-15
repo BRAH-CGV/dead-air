@@ -103,6 +103,7 @@ export class GameController extends Component {
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
+    this.banner?.clear();
 
     for (const fn of this._nightStartListeners) fn(nightNumber, { retry });
   }

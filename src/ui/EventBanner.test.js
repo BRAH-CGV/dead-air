@@ -104,6 +104,16 @@ describe('BannerTimer', () => {
     expect(second).toHaveBeenCalledOnce();
   });
 
+  it('holding: through the fade-in and the hold, not the fade-out', () => {
+    const t = new BannerTimer();
+    t.show('Hello', { seconds: 2 });
+    t.update(BANNER_FADE + 1.9);
+    expect(t.holding).toBe(true);
+    t.update(0.2);
+    expect(t.holding).toBe(false);
+    expect(t.visible).toBe(true);   // fading out
+  });
+
   it('defaults to BANNER_DEFAULT_SECONDS when no seconds given', () => {
     const t = new BannerTimer();
     t.show('Hello');
@@ -184,6 +194,15 @@ describe('EventBanner (DOM)', () => {
     b.clear();
     const span = root.querySelector('#event-banner-text');
     expect(span.textContent).toBe('');
+    expect(root.classList.contains('is-shown')).toBe(false);
+  });
+
+  it('update() takes it down once the hold is up, so the CSS fades it out', () => {
+    const b = banner();
+    b.show('Hello', { seconds: 2 });
+    b.update(BANNER_FADE + 1.9);
+    expect(root.classList.contains('is-shown')).toBe(true);
+    b.update(0.2);
     expect(root.classList.contains('is-shown')).toBe(false);
   });
 

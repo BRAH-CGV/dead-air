@@ -216,9 +216,9 @@ const SECURITY_CAMERAS = {
 };
 
 // ── BannerTicker ──────────────────────────────────────────
-// A small component on GameplaySystems that ticks the event banner's
-// timer with engine.realDt, so a nap's 15× timeScale doesn't rush it
-// and a pause holds it.
+// A small component on GameplaySystems that runs the event banner on
+// engine.realDt, so a nap's 15× timeScale doesn't rush it and a pause
+// holds it.
 class BannerTicker extends Component {
   constructor(banner, engine) {
     super();
@@ -226,7 +226,7 @@ class BannerTicker extends Component {
     this._engine = engine;
   }
   onUpdate(_dt) {
-    this._banner?.timer.update(this._engine?.realDt ?? 0);
+    this._banner?.update(this._engine?.realDt ?? 0);
   }
 }
 
@@ -1835,7 +1835,6 @@ export class BaseScene extends Scene {
       controller: this.gameController,
       engine:     this.engine,
       rest:       this.bedRest ?? null,
-      hud:        this.hud,
       banner:     this.banner,
       // Over the closed lids (#nap-hint): the HUD is under them.
       hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
