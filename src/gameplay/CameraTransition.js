@@ -13,12 +13,15 @@
 //   idle ─cut()─▶ drop ─▶ wait ─live─▶ resolve ─▶ idle
 //                  ▲        ▲            │
 //                  └─cut()──┴──not live──┘
+//   idle ─glitch(s)─▶ glitch ─(s)─▶ resolve ─▶ idle
 //
 //   drop     the last frame, frozen, tears and drains of colour; grain in
 //   wait     it holds, rolling slowly under dim grain, for as long as the
 //            new camera's zones are loading (CameraFeed.live is the gate)
 //   resolve  the live picture shows through the grain as it dies away, with
 //            one tear band sweeping down
+//   glitch   no switch: the live picture breaks up under heavy, flickering
+//            grain and tearing for a moment (Ragno reaching a vent)
 //
 // Nothing here decides when the picture is ready: `live` is CameraFeed's,
 // and resolve never starts before it — a slow machine waits on the frozen
@@ -45,12 +48,17 @@ export const SIGNAL = {
   /** The hiss's tail once the picture is live: it is at full from the cut
    *  and drops out this quickly, ahead of the grain. Longer read as flowy. */
   hissOut: 0.04,
+  /** A glitch on the live picture (glitch()): its grain and tear, flickering
+   *  this many times a second. */
+  glitchNoise: 1.15,
+  glitchTear: 1,
+  glitchFlicker: 23,
 };
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
 export class CameraTransition {
-  /** 'idle' | 'drop' | 'wait' | 'resolve' */
+  /** 'idle' | 'drop' | 'wait' | 'resolve' | 'glitch' */
   phase = 'idle';
   /** Show the captured frame (else the live picture under the effect). */
   frozen = false;
@@ -80,7 +88,7 @@ export class CameraTransition {
   /** The hiss, 0..1: full from the cut through the wait, then a short tail
    *  (`hissOut`) once the picture is live — not the grain's slow fade. */
   get hiss() {
-    if (this.phase === 'drop' || this.phase === 'wait') return 1;
+    if (this.phase === 'drop' || this.phase === 'wait' || this.phase === 'glitch') return 1;
     if (this.phase === 'resolve') return Math.max(0, 1 - this._t / SIGNAL.hissOut);
     return 0;
   }
@@ -94,6 +102,16 @@ export class CameraTransition {
     this._enter('drop');
     this._waited = 0;
     this.roll = 0;
+    this._apply();
+  }
+
+  /** The live picture breaks up for `seconds`, then clears as from a
+   *  switch. Never over a switch already under way. */
+  glitch(seconds) {
+    if (this.phase === 'drop' || this.phase === 'wait') return;
+    this.blank = false;
+    this._glitchFor = seconds;
+    this._enter('glitch');
     this._apply();
   }
 
@@ -114,6 +132,8 @@ export class CameraTransition {
     else if (this.phase === 'wait') {
       this._waited += dt;
       if (live) this._enter('resolve');
+    } else if (this.phase === 'glitch') {
+      if (this._t >= this._glitchFor) this._enter('resolve');
     } else if (this.phase === 'resolve') {
       if (!live) this._enter('wait');
       else if (this._t >= SIGNAL.resolve) this._enter('idle');
@@ -149,6 +169,16 @@ export class CameraTransition {
         this.tear = SIGNAL.waitTear * motion;
         this.band = 0;
         break;
+      case 'glitch': {
+        // Flickering between hard and harder, so it reads as interference.
+        const flick = 0.75 + 0.25 * Math.sign(Math.sin(this._t * SIGNAL.glitchFlicker * Math.PI * 2));
+        this.frozen = false;
+        this.noise = SIGNAL.glitchNoise * flick;
+        this.desat = SIGNAL.waitDesat * 0.6;
+        this.tear = SIGNAL.glitchTear * flick * motion;
+        this.band = 0;
+        break;
+      }
       case 'resolve': {
         const k = Math.min(this._t / SIGNAL.resolve, 1);
         const fade = (1 - k) * (1 - k);

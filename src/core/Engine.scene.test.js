@@ -53,4 +53,12 @@ describe('Engine loadScene', () => {
     await engine.compileScene();
     expect(engine.renderer.compileAsync).toHaveBeenCalledWith(engine.scene, engine.camera);
   });
+
+  it('compileScene() also compiles the red pass render-target variants, so a red death never freezes after a rebuild', async () => {
+    const { engine, order } = makeEngine();
+    engine.postProcess = { preCompile: vi.fn(async () => { order.push('red'); }) };
+    await engine.compileScene();
+    expect(engine.postProcess.preCompile).toHaveBeenCalledWith(engine.scene, engine.camera);
+    expect(order.slice(-2)).toEqual(['compile', 'red']);
+  });
 });
