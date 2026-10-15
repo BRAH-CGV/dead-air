@@ -218,6 +218,22 @@
       #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
       #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
 
+      /* The bed's closed-eyes view (BedRest.js, FatigueOverlay.js): the
+         world darkens and desaturates behind a heavy vignette, the bedside
+         clock's red digits still readable. backdrop-filter is removed when
+         the strength is 0 so it costs nothing outside of bed. */
+      #bed-darkness {
+        --dark: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 99;
+        opacity: 0;
+        background: radial-gradient(ellipse at center,
+          transparent 15%, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.92) 75%);
+        mix-blend-mode: multiply;
+      }
+
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
         position: fixed;
@@ -1062,6 +1078,7 @@
     <div id="fatigue">
       <div id="fatigue-tunnel"></div>
       <div id="fatigue-lids"></div>
+      <div id="bed-darkness"></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->

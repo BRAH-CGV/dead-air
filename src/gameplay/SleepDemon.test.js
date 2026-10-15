@@ -1622,7 +1622,7 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
   });
 });
 
-describe('SleepDemon while you nap: through half-open eyes', () => {
+describe('SleepDemon while you nap: in the darkened view', () => {
   const PILLOW = 0.62;
   let camera, figure, stamina, controller, sleeper, rayHit, realDt, demon;
 
@@ -1667,7 +1667,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     expect(visible()).toBe(false);
   });
 
-  it('when the eyes come half open it is there, in a corner of the room in view, just watching', () => {
+  it('when the stretch comes it is there, in a corner of the room in view, just watching', () => {
     sleeper.peeking = true;
     run(1 / 60);
     expect(visible()).toBe(true);
@@ -1696,7 +1696,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     expect(fromEye()).toBeCloseTo(NAP_WATCH.floor, 1);
   });
 
-  it('the eyes shut again: gone; the next time they open it is where it had got to', () => {
+  it('the stretch ends: gone; the next time it comes it is where it had got to', () => {
     sleeper.peeking = true;
     run(3);
     const reached = fromEye();
@@ -1708,6 +1708,17 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     run(1 / 60);
     expect(visible()).toBe(true);
     expect(fromEye()).toBeCloseTo(reached, 1);
+  });
+
+  it('says when it stands watching a sleeper (watchingSleeper): the nap holds the night to real time then', () => {
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(false);          // nothing yet
+    sleeper.peeking = true;
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(true);
+    sleeper.peeking = false;
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(false);
   });
 
   it('with no corner in view it does not show', () => {
@@ -1771,7 +1782,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       d.onStart();
       return d;
     }
-    /** Lie down, then a nap's worth of peeks: open, shut, open … Whether it was ever seen. */
+    /** Lie down, then a nap's worth of stretches: on, off, on … Whether it was ever seen. */
     function nap(d, peeks = 5) {
       sleeper.active = true;
       sleeper.peeking = false;
@@ -1791,7 +1802,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       expect(NAP_WATCH.chance).toBeCloseTo(0.1);
     });
 
-    it('an unwatched nap never shows it, at any peek', () => {
+    it('an unwatched nap never shows it, at any stretch, nor makes a sound', () => {
       const d = rolling(NAP_WATCH.chance);           // the roll misses: anything from the chance up
       expect(nap(d, 8)).toBe(false);
     });
@@ -1801,7 +1812,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       expect(nap(d)).toBe(true);
     });
 
-    it('rolled once per nap, as the player lies down: the peeks of one nap never change their mind', () => {
+    it('rolled once per nap, as the player lies down: the stretches of one nap never change their mind', () => {
       const d = rolling(0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
       expect(nap(d, 8)).toBe(false);
       expect(d.random).toHaveBeenCalledTimes(1);

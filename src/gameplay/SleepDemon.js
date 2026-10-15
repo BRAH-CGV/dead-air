@@ -94,13 +94,15 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // While the player is in bed (the sleeper, BedRest: getting in, asleep,
 // getting out) its rules wait and it never kills. And now and then — one
 // nap in ten (NAP_WATCH.chance, rolled as the player lies down) — it
-// watches: whenever the sleeper's eyes come half open (a peek), it is there,
+// watches: in the darkened view the sleeper sees through, it is there,
 // standing in a corner of the room in view of the pillow (the bunk's watch
-// spots), plainly visible, facing the bed, just watching — and creeping
-// toward it at a slow walk (NAP_WATCH), on the real clock, so through a
-// nap's fast-forwarded night it still looks like a slow walk. Never all the
-// way to the bed. The eyes shut and it is gone; the next peek finds it where
-// it had got to. On the other naps the peeks show an empty room.
+// spots), plainly visible through the darkening (its glowing eyes are what
+// matter), facing the bed, just watching — and creeping toward it at a
+// slow walk (NAP_WATCH), on the real clock, so through a nap's
+// fast-forwarded night it still looks like a slow walk. Never all the way
+// to the bed. The sleeper wakes and it is gone; the next nap it may be
+// there again. While it stands watching (watchingSleeper) the nap holds the
+// night to real time; the other naps race all the way.
 // Out of bed, its rules start over.
 //
 // At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
@@ -162,7 +164,7 @@ export const KNOCK = Object.freeze({
   clips: Object.freeze([[0, 1.48, 1], [1.5, 1.62, 1], [3.14, 0.87, 1.6]]),
 });
 
-/** Watching a sleeper (the half-open eyes of a nap): the share of naps it
+/** Watching a sleeper (the darkened view of a nap): the share of naps it
  *  watches (rolled once per nap, as the player lies down), how there it is,
  *  the metres a second it creeps toward the bed (a slow walk, in real time),
  *  and the nearest it comes, level metres from the eye. */
@@ -458,6 +460,12 @@ export class SleepDemon extends Component {
    *  'over' until the night starts again. For a sound to follow. */
   get deathPhase() {
     return this._death.phase;
+  }
+
+  /** It stands watching a sleeper, in view: the nap holds the night to real
+   *  time while it does. */
+  get watchingSleeper() {
+    return this._napping && this._napWatched && this.figure.object3d.visible;
   }
 
   /**
@@ -971,8 +979,8 @@ export class SleepDemon extends Component {
 
   // ── A sleeper ──
 
-  /** A frame in bed: nothing of its rules, and through a peek of a watched
-   *  nap, watching. */
+  /** A frame in bed: nothing of its rules, and on a watched nap, present
+   *  in the darkened view. */
   _napWatch(dt) {
     if (!this._napping) {
       this._napping = true;

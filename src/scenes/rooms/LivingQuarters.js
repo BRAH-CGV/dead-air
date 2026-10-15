@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
-import { Bed } from '../../components/Bed.js';
+import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { Journal } from '../../components/Journal.js';
+import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -20,8 +21,8 @@ import { Journal } from '../../components/Journal.js';
 // The room is split in three with the furniture, using the models already
 // in the game as stand-ins until better ones are found:
 //
-//   bedroom   back left: the bunk and a side table, with the lockers on the
-//             back wall beside the table
+//   bedroom   back left: the bunk (a single bed) and a side table with the
+//             bedside clock, the lockers on the back wall beside the table
 //   coffee    the left wall, halfway down: the coffee machine, facing in
 //   storage   back right: two rows of big racks running front to back (one
 //             against the right wall), with an aisle between
@@ -50,6 +51,9 @@ export class LivingQuarters extends Room {
   /** Where the player wakes: world position (capsule centre) and yaw.
    *  @type {{ position: [number, number, number], yaw: number }|null} */
   spawn = null;
+
+  /** On the side table beside the bunk, from buildProps(). @type {DigitalClock|null} */
+  bedsideClock = null;
 
   /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
   coffeeMachine = null;
@@ -98,14 +102,27 @@ export class LivingQuarters extends Room {
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
     // ── Bedroom ──
-    // Back-left corner, its long side along the left wall.
-    const bunk = this._spawnProp('model:bunk-bed', {
-      name: 'Bunk', position: [-inX + 0.56, 0, -inZ + 1.02],
+    // Back-left corner, its long side along the left wall, 3 cm off both
+    // walls (bed.glb is 0.9 × 2 m), the pillow at the back.
+    const bunk = this._spawnProp('model:bed', {
+      name: 'Bunk', position: [-inX + 0.48, 0, -inZ + 1.03],
     });
     this.bed = bunk.addComponent(new Bed());
 
+    // The side table stands just off the bed's open side, by the pillow.
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
-    this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+    const table = this._addStaticBox('SideTable', [-1.45, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+
+    // A digital clock on the side table, its face (+z) turned to the pillow
+    // so a napper watches the minutes race (#113). The scene hands it the
+    // NightClock.
+    this.bedsideClock = this._own(new DigitalClock('BedsideClock'));
+    const clock = this.bedsideClock.object3d;
+    clock.position.set(table.object3d.position.x, 0.5, table.object3d.position.z);
+    const [px, , pz] = BUNK_POSES.pillow.position;   // the bunk is not turned
+    const { x: bx, z: bz } = bunk.object3d.position;
+    clock.rotation.y = Math.atan2(bx + px - clock.position.x, bz + pz - clock.position.z);
+    this.root.addChild(this.bedsideClock);
 
     // Three lockers in one model, against the back wall past the side
     // table, the doors facing into the room: the bed, the table and the
