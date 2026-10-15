@@ -39,8 +39,8 @@ import { keyName } from '../app/keyNames.js';
  * the open side +x), angles in radians. Yaw turns the forward view (−z)
  * about +Y; pitch up is positive.
  *
- *   pillow  the eye lying on the lower bunk, looking up toward its foot and
- *           out into the room, tipped onto its side
+ *   pillow  the eye lying on the lower bunk, on its side facing the side
+ *           table (where the bedside clock stands), the clock well in view
  *   sit     the eye sitting on its edge, legs out, facing the room
  *   out     the feet standing beside it, clear of its collider by more than
  *           the player's radius, facing the room — where you get up to
@@ -48,10 +48,10 @@ import { keyName } from '../app/keyNames.js';
  *           bedroom in view of the pillow
  */
 export const BUNK_POSES = Object.freeze({
-  pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -2.53, pitch: 0.55, roll: -0.22 }),
+  pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -1.68, pitch: 0.1, roll: 0.22 }),
   sit: Object.freeze({ position: [0.4, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
   out: Object.freeze({ position: [1.0, 0, 0.35], yaw: -Math.PI / 2 }),
-  watch: Object.freeze([[1.84, 0, 2.28], [1.94, 0, -0.52], [1.14, 0, 2.58]]),
+  watch: Object.freeze([[1.84, 0, 2.28], [1.94, 0, -0.52], [1.14, 0, -2.5]]),
 });
 
 const _q = new THREE.Quaternion();

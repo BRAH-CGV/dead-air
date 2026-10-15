@@ -165,13 +165,14 @@ describe('Bed', () => {
       return b;
     }
 
-    it('the pillow: the eye at lying height on the bunk, looking up and tipped onto its side', () => {
+    it('the pillow: the eye lying on the bunk, on its side facing the bedside clock', () => {
       const pose = onBunk().pillowPose();
       expect(pose.position.toArray()).toEqual(BUNK_POSES.pillow.position);
       expect(pose.position.y).toBeGreaterThan(0.4);           // on the mattress …
       expect(pose.position.y).toBeLessThan(0.9);              // … lying, not sitting
-      expect(pose.pitch).toBeGreaterThan(0.3);                // up toward the ceiling
-      expect(Math.abs(pose.roll)).toBeGreaterThan(0.05);      // onto its side
+      expect(pose.pitch).toBeGreaterThanOrEqual(0);           // level or slight up toward the clock
+      expect(pose.pitch).toBeLessThan(0.4);
+      expect(pose.roll).toBeGreaterThan(0.05);                // onto its side, toward the clock
     });
 
     it('the get-out spot stands clear of the bunk, facing into the room', () => {
