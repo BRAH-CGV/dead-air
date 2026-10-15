@@ -631,11 +631,14 @@ describe('BaseScene gameplay loop', () => {
 
   /** The morning's errand (#98): carry the docked box out to the buggy's
    *  cargo bay. Only then does the bunk let you sleep. */
-  function loadTheBuggy() {
+  /** The morning's chores before bed: the docked box into the buggy's boot,
+   *  and the buggy sent off (dispatch, without the cutscene). */
+  function sendTheBuggyOff() {
     const dock = scene.rooms.Airlock.quotaDock;
     const box = dock.depositedBox;
     dock.socket.detach(box);
     expect(scene.buggyCargo.dock.socket.attach(box, 0)).toBe(true);
+    expect(scene.gameController.dispatch()).toBe(true);
   }
 
   /** Run the bed animation on for `seconds` (the fake engine has no realDt:
@@ -729,7 +732,7 @@ describe('BaseScene gameplay loop', () => {
     const setNight = vi.spyOn(scene.hud, 'setNight');
 
     workTheShift();
-    loadTheBuggy();
+    sendTheBuggyOff();
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
 
@@ -747,7 +750,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.bedRest.active).toBe(false);
   });
 
-  it('sleeping to the next night wipes the box loaded into the buggy and parks it on the office floor', () => {
+  it('sleeping to the next night wipes the box sent off in the buggy and parks it on the office floor', () => {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
     const [docked, other] = rooms.MainOffice.driveBoxes;
@@ -762,7 +765,7 @@ describe('BaseScene gameplay loop', () => {
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
-    loadTheBuggy();
+    sendTheBuggyOff();
 
     scene.rooms.LivingQuarters.bed.onInteract({});
     inBed(BED_TRANSITION.lieDown + 0.1);
@@ -858,7 +861,7 @@ describe('BaseScene gameplay loop', () => {
                     fog: engine.scene.fog.color.getHex() };
 
     workTheShift();
-    loadTheBuggy();
+    sendTheBuggyOff();
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(1);
     expect(scene.ambientLight.intensity).toBeGreaterThan(night.ambient);
