@@ -435,7 +435,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 });
 
 describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => {
-  it('game over ("You were silenced") if the corrupted drive is not wiped in 10 s', () => {
+  it('game over ("You were silenced") if the corrupted drive is not wiped in time', () => {
     const drive = makeDrive();
     const { evil, controller, signalManager, terminal, whiteOut, hooks } = makeRig({ drive });
     evil.summon();
@@ -448,12 +448,12 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     // Wait for the silence timer to expire.
     evil.onUpdate(EVIL.silenceSeconds + 0.1);
     expect(controller.fail).toHaveBeenCalledWith(
-      'You were silenced. [E] to retry',
+      '',
       expect.objectContaining({ retryAfter: expect.any(Number) }),
     );
     expect(terminal.exit).toHaveBeenCalled();
     expect(whiteOut.play).toHaveBeenCalledWith(
-      'You were silenced. [E] to retry',
+      'You were silenced.',
       expect.objectContaining({ tone: 'blood' }),
     );
     expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);

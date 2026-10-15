@@ -29,8 +29,8 @@ import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 // open; everything else is decided here.
 // ─────────────────────────────────────────────
 
-/** Game-over prompt when the corrupted drive is not wiped in time. */
-const CAUGHT_PROMPT = 'You were silenced. [E] to retry';
+/** Game-over message when the corrupted drive is not wiped in time. */
+const CAUGHT_MESSAGE = 'You were silenced.';
 
 /** White-out config: instant black, slow fade to blood red, message once
  *  it has settled — same pattern as DustEyes. */
@@ -413,11 +413,9 @@ export class EvilSignal extends Component {
           this._silenceTimer = null;
           this._driveHopTimer = null;
           this._caught = true;
-          this.controller?.fail(CAUGHT_PROMPT, {
-            retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000,
-          });
+          this.controller?.fail('', { retryAfter: 4 });
           this.terminal?.exit?.();
-          this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
+          this.whiteOut?.play(CAUGHT_MESSAGE, CAUGHT_SCREEN);
           this.hooks?.setPlayerLocked?.(true);
           return;
         }
