@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Bed } from '../../components/Bed.js';
+import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { Journal } from '../../components/Journal.js';
 
 // ─────────────────────────────────────────────
@@ -11,7 +12,9 @@ import { Journal } from '../../components/Journal.js';
 //
 // The bunk is the bed: its Bed interactable (`room.bed`) is how the player
 // sleeps through the day. The scene wires the controller and fade into it.
-// Food is in the office — the ration dispenser lives there.
+// The coffee machine on the left wall is `coffeeMachine`, a CoffeeMachine;
+// the scene hands it the stamina a cup restores. It is here, not in the
+// office, so a cup means leaving the desk and the radar for a while.
 //
 // ── Interior layout mock-up ──
 // The room is split in three with the furniture, using the models already
@@ -19,6 +22,7 @@ import { Journal } from '../../components/Journal.js';
 //
 //   bedroom   back left: the bunk and a side table, with the lockers on the
 //             back wall beside the table
+//   coffee    the left wall, halfway down: the coffee machine, facing in
 //   storage   back right: two rows of big racks running front to back (one
 //             against the right wall), with an aisle between
 //   office    front: the desk end-on to the front wall with its chair and a
@@ -46,6 +50,9 @@ export class LivingQuarters extends Room {
   /** Where the player wakes: world position (capsule centre) and yaw.
    *  @type {{ position: [number, number, number], yaw: number }|null} */
   spawn = null;
+
+  /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
+  coffeeMachine = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -109,6 +116,10 @@ export class LivingQuarters extends Room {
       name: 'Lockers', position: [-0.2 - 0.246, 0, -inZ + 0.225 - 0.018], scale: 0.9,
     });
 
+    // ── Coffee ──
+    // Halfway down the left wall, between the bunk and the desk.
+    this._buildCoffeeMachine([-inX, 0]);
+
     // ── Storage ──
     // Two rows of three big racks (0.92 × 0.6 m) running out from the back
     // wall, turned end-on to it: one against the right wall, one standing
@@ -142,8 +153,44 @@ export class LivingQuarters extends Room {
     });
   }
 
-  /** A lamp on the desk: base, stem, a glowing shade and a small light,
-   *  drawn only, with no collider. `position` is on the desk top (0.79 m). */
+  /** The coffee: a tall drinks machine, its back to the wall at `[x, z]`
+   *  (the wall's inner face, the middle of the machine), facing +x into the
+   *  room. Built here rather than imported — the downloaded vending machine
+   *  is a broken fragment. The body is the collider the interact ray hits;
+   *  the face details are plain meshes on it. Its status screen shows what
+   *  it is doing (CoffeeMachine colours it); the cup goes in the bay below. */
+  _buildCoffeeMachine([x, z]) {
+    const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
+    const size = [0.7, 1.9, 0.9];
+    const go = this._addStaticBox('CoffeeMachine', [x + size[0] / 2, size[1] / 2, z], size, body);
+
+    // Positions are relative to the body's centre, 0.95 m up.
+    const front = size[0] / 2;
+    const detail = (geometry, material, position) => {
+      const mesh = new THREE.Mesh(this._own(geometry), material);
+      mesh.position.set(...position);
+      go.object3d.add(mesh);
+      return mesh;
+    };
+    const dark  = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 }));
+    const glass = this._own(new THREE.MeshStandardMaterial({
+      color: 0x0a140e, emissive: 0x6dff9c, emissiveIntensity: 0.9, roughness: 0.3,
+    }));
+    const light = this._own(new THREE.MeshStandardMaterial({
+      color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
+    }));
+
+    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
+    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // brew button
+    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // cup bay
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
+
+    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
+  }
+
+  /** A lamp on the desk: base, stem and a glowing shade. A glow, not a
+   *  light — the light count is compiled into every lit shader — and drawn
+   *  only, with no collider. `position` is on the desk top (0.79 m). */
   _buildDeskLamp(position) {
     const go = this._addGroup('DeskLamp');
     go.object3d.position.set(...position);

@@ -12,7 +12,7 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // ─────────────────────────────────────────────
 // SleepDemonLogic holds the rules; this maps them onto the scene:
 //
-//   stamina    StaminaDrain ticks it, the ration dispenser restores it
+//   stamina    StaminaDrain ticks it, the coffee machine restores it
 //   a spot     a level line out from the player's eye, turned off the centre
 //              of the view by a share of its half-width, as far as the rules
 //              ask. Something solid along it (a sight ray) and it stands

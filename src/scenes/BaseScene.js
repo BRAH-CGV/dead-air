@@ -1677,20 +1677,23 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   // Stamina and the Sleep Demon (every night)
   // ──────────────────────────────────────────
-  /** Stamina drains through the shift and the office's ration dispenser
-   *  tops it up. The drain ticks on GameplaySystems after the controller,
-   *  and before the demon and the fatigue effects, so within a frame both
-   *  read this frame's stamina. */
+  /** Stamina drains through the shift — faster outside, and faster still
+   *  while the player stares at the dust eyes — and the bedroom's coffee
+   *  machine tops it up, a couple of cups a night. The drain ticks on
+   *  GameplaySystems after the controller, and before the demon and the
+   *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
     this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
-    const dispenser = this.rooms.MainOffice.rationDispenser;
-    if (dispenser) {
-      dispenser.stamina = this.stamina;
-      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
-      dispenser.onEat = () => {
-        if (!crunch) return;
-        if (crunch.isPlaying) crunch.stop();
-        crunch.play();
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
+    if (machine) {
+      machine.stamina = this.stamina;
+      // The ration's placeholder, as the cup is drunk: see the manifest.
+      // onBrew and onBrewed are free for the machine's own sounds.
+      const sip = this._sound('sfx:ration', 0.8);
+      machine.onDrink = () => {
+        if (!sip) return;
+        if (sip.isPlaying) sip.stop();
+        sip.play();
       };
     }
     this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
@@ -1698,8 +1701,9 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       grid:         this.power,
-      onNightStart: () => dispenser?.reset(),
-      isResting:    () => !!this.nap?.napping,
+      onNightStart: () => machine?.reset(),
+      isOutside:    () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
+      isStaring:    () => !!this.dustEyes?.staredAt,
     }));
   }
 
@@ -2542,6 +2546,7 @@ export class BaseScene extends Scene {
 const _box = new THREE.Box3();
 
 const _airlockEar = new THREE.Vector3();
+const _staminaEye = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {
