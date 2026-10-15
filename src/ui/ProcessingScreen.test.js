@@ -52,6 +52,38 @@ function makeDOM() {
   tuningGame.appendChild(tuningSlider);
   root.appendChild(tuningGame);
 
+  const progress = document.createElement('div');
+  progress.id = 'processing-progress';
+  const progressBar = document.createElement('div');
+  progressBar.id = 'processing-progress-bar';
+  const progressFill = document.createElement('div');
+  progressFill.id = 'processing-progress-fill';
+  progressBar.appendChild(progressFill);
+  progress.appendChild(progressBar);
+  const progressLabel = document.createElement('div');
+  progressLabel.id = 'processing-progress-label';
+  progress.appendChild(progressLabel);
+  root.appendChild(progress);
+
+  const viz = document.createElement('div');
+  viz.id = 'processing-viz';
+  // Attributes mirror index.html — jsdom throws IndexSizeError when the
+  // constructor's initial volume apply() reads a valueless range input.
+  const makeVizSlider = (id, min, max, step, value) => {
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.id = id;
+    slider.min = min;
+    slider.max = max;
+    slider.step = step;
+    slider.value = value;
+    viz.appendChild(slider);
+  };
+  makeVizSlider('viz-gain', '0.5', '5', '0.1', '1');
+  makeVizSlider('viz-contrast', '0.2', '3', '0.1', '1');
+  makeVizSlider('viz-volume', '0', '1', '0.05', '0.7');
+  root.appendChild(viz);
+
   const audio = document.createElement('audio');
   audio.id = 'processing-audio';
   audio.preload = 'auto';
@@ -105,6 +137,7 @@ describe('ProcessingScreen', () => {
   afterEach(() => {
     domRoot?.remove();
     domRoot = null;
+    vi.unstubAllGlobals();
   });
 
   it('constructs null-safely when no DOM element exists', () => {
@@ -301,6 +334,58 @@ describe('ProcessingScreen', () => {
 
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyQ' }));
     expect(domRoot.style.display).toBe('none');
+  });
+
+  it('re-enables the viz sliders when a processing run completes', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+
+    // Deterministic RAF: queue callbacks and run them by hand.
+    const rafCallbacks = new Map();
+    let nextRafId = 1;
+    vi.stubGlobal('requestAnimationFrame', (cb) => {
+      const id = nextRafId++;
+      rafCallbacks.set(id, cb);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id) => { rafCallbacks.delete(id); });
+    const runFrames = (n) => {
+      for (let i = 0; i < n; i++) {
+        const cbs = [...rafCallbacks.values()];
+        rafCallbacks.clear();
+        for (const cb of cbs) cb(1000 + i * 16);
+      }
+    };
+
+    const drive = {
+      saved: true,
+      signalName: 'deep_hum',
+      isProcessing: true,
+      processingProgress: 0.5,
+      tickProcessing: vi.fn(),
+      accumulateProcessing: vi.fn(),
+    };
+    screen.open(drive, []);
+
+    const viz = domRoot.querySelector('#processing-viz');
+    // While processing: sliders locked, minigame active, loop armed.
+    expect(viz.classList.contains('disabled')).toBe(true);
+    expect(domRoot.querySelector('#tuning-game').classList.contains('disabled')).toBe(false);
+    expect(rafCallbacks.size).toBe(1);
+
+    // The upgrade applies on the drive; the tracking loop must notice.
+    drive.isProcessing = false;
+    runFrames(1);
+
+    expect(drive.tickProcessing).toHaveBeenCalled();
+    // The sliders are interactive again and the minigame is over.
+    expect(viz.classList.contains('disabled')).toBe(false);
+    expect(domRoot.querySelector('#tuning-game').classList.contains('disabled')).toBe(true);
+    expect(domRoot.querySelector('#processing-progress').style.display).toBe('none');
+    // The loop stopped — no frames left pending.
+    expect(rafCallbacks.size).toBe(0);
+
+    screen.close();
   });
 
   it('dispose cleans up engine and signalRegistry references', () => {

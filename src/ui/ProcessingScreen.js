@@ -487,6 +487,9 @@ export class ProcessingScreen {
     drive.tickProcessing();
     this._stopTuningGame();
     this._hideProgress();
+    // Processing just stopped mid-loop — re-evaluate the viz gate, which
+    // _startProgressTracking only flips on its way in.
+    this._updateVizDisabled();
     this._renderActions(this._actions);
     this._renderMediaButtons(drive);
 
@@ -521,6 +524,7 @@ export class ProcessingScreen {
     this._updateSpectrogram(drive);
     this._renderMediaButtons(drive);
     this._renderActions(this._actions);
+    this._updateVizDisabled();
   }
 
   _showProgress() {
