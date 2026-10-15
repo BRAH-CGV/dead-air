@@ -6,8 +6,7 @@
 // only. Once stamina drops below `appearBelow` (0.5) it is about: a few seconds later it
 // fades in (slowly — the scene's fadeIn) in the periphery, or, by the roll
 // (behindChance), behind the player. Where it showed it stays. It moves
-// only while nobody looks at it, and slowly: then, and only then, its
-// footsteps are heard.
+// only while nobody looks at it, and slowly, and without a sound.
 //
 //   stamina      0.5 ───── 0.4 ───── 0.3 ──────────── 0.1 ──── 0.05 ── 0.01 ── 0
 //   presence     barely there ─▶ firming ─▶ solid
@@ -130,9 +129,9 @@ export const SLEEP_DEMON = Object.freeze({
   stareFollow: 0.5,
   /** Dead air (duckFor): the world's sound, as a share of its level, with
    *  it standing where it showed … */
-  duckEdge: 0.7,
-  /** … and at the look. Near-silence, not a mute. */
-  duckFloor: 0.06,
+  duckEdge: 0.9,
+  /** … and at the look. A small dip, never a hush. */
+  duckFloor: 0.7,
   /** Out of sight it stands this far round, as a share of the view's
    *  half-width (past 1 is out of view): beside the player when it first
    *  shows, behind them at empty. */
@@ -261,7 +260,7 @@ export class SleepDemonLogic {
   /** Walking in, seen, this frame (below walkBelow): the scene slows the
    *  player down. */
   walking = false;
-  /** Creeping in unseen this frame: the scene plays its footsteps. */
+  /** Creeping in unseen this frame. */
   sneaking = false;
   /** Standing out of sight: behind the player, or round the terminal. */
   ambush = false;

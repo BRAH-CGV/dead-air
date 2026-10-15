@@ -477,6 +477,17 @@ not yet decided as a team.
 | **Used for** | The Sleep Demon's body, drawn as a pitch-black shade (`MonsterFigure`) |
 | **Modifications** | Baked by `scripts/bake-sleep-demon.mjs`: bind pose baked in, rig, textures, eyes, gums, teeth and the head card dropped, decimated from 18,396 to 3,000 triangles, scaled to 1.8 m, eye and mouth markers added. Our own eyes and grin are drawn on it |
 
+### Ragno
+
+"Ragno (Monster)" (https://sketchfab.com/3d-models/ragno-monster-2e1a422e6f0048f98a786ceecac423d7) by Hobu (https://sketchfab.com/Hobu_Coffee) is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/ragno.glb` |
+| **Manifest key** | `model:ragno` |
+| **Used for** | Ragno, the camera entity (`RagnoFigure`) |
+| **Modifications** | Renamed from `ragno_monster.glb`; scaled ×0.8 in the manifest; at load, the loose shin, spike and tail bones are reattached to the legs and body, the legs are walked by IK, the idle clip plays on everything but the legs, and the head's face, hair and eyes, which the export left at the wrong size and place, are rebuilt where the creator's thumbnail shows them |
+
 ## Sounds
 
 ### Gas mask breathing
@@ -634,6 +645,41 @@ attribution not required, credited here anyway. Downloaded as
 | **Manifest key** | `sfx:yawn` |
 | **Used for** | The tired player's yawns (`FatigueEffects`) |
 | **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
+
+### Heartbeat
+
+"my heart beat for Halloween+.mp3" by strongheartbeat (https://freesound.org/people/strongheartbeat/sounds/62120/), used under Creative Commons Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/) — sampling and remixing allowed, attribution required.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/heartbeat.mp3` |
+| **Manifest key** | `sfx:heartbeat` |
+| **Used for** | A tired player's heartbeat, looped, louder and faster towards empty (`FatigueEffects`) |
+| **Modifications** | Cut to a five-beat loop, time-stretched 1.3× with the pitch kept (55 → 72 bpm), converted to mono mp3 |
+
+### Knocks — ⚠ one part non-commercial
+
+Three knocking takes, mixed by us from Freesound recordings: "Metal Knocking" by BenjaminNelan (https://freesound.org/people/BenjaminNelan/sounds/410362/), Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/); "KnockMetal1.wav" by ImaginaryDust (https://freesound.org/people/ImaginaryDust/sounds/670021/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/); and "Urgent Impacts - 5" by Speedenza (https://freesound.org/people/Speedenza/sounds/223017/), used under Creative Commons Attribution-NonCommercial (https://creativecommons.org/licenses/by-nc/4.0/).
+
+⚠ Speedenza's licence is non-commercial (the page's badge says 4.0, its description 3.0). Dead Air is a non-commercial university project, which satisfies NC, as for the poster and the Sleep Demon.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/knocks.mp3` |
+| **Manifest key** | `sfx:knocks` |
+| **Used for** | The Sleep Demon's knocks, now and then in place of a whisper (`SleepDemon`) |
+| **Modifications** | Cut and arranged into three takes in one file, downmixed to mono |
+
+### Creepy whispering
+
+Many whispering voices, mixed by us from Freesound recordings by JoelMcDaniel: "Creepy, Whispering Latin Paragraph 1" (https://freesound.org/people/JoelMcDaniel/sounds/851765/), "Creepy, Whispering Latin Paragraph 3" (https://freesound.org/people/JoelMcDaniel/sounds/851767/) and "Creepy, Whispering Latin Paragraph 4" (https://freesound.org/people/JoelMcDaniel/sounds/851768/), used under Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/) — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/whispering.mp3` |
+| **Manifest key** | `sfx:whispering` |
+| **Used for** | The Sleep Demon's whispers, a snippet at a time (`SleepDemon`) |
+| **Modifications** | Overlaid into one 10 s clip, downmixed to mono, raised about 27 dB |
 
 ### Pressure release
 
@@ -811,6 +857,39 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | The main menu's music (`MenuMusic`) |
 | **Modifications** | Renamed; played at 0.07 of its file level; at load, the tail is crossfaded into the head (`blendLoopSeam`) |
 
+### Giant spider walking
+
+"Giant Spider Walking" (https://pixabay.com/sound-effects/giant-spider-walking-504034/) by Dragon Studio is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `dragon-studio-giant-spider-walking-504034.mp3`; the link is built from that name and still needs checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-walking.mp3` |
+| **Manifest key** | `sfx:spider-walking` |
+| **Used for** | Ragno's legs, indoors (`Ragno`) |
+| **Modifications** | Renamed; looped, its playback rate following his speed |
+
+### Spider call
+
+"Spider Call" (https://pixabay.com/sound-effects/spider-call-71921/), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spider-call-71921.mp3`; the link is built from that name and still needs checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-call.mp3` |
+| **Manifest key** | `sfx:spider-call` |
+| **Used for** | Ragno outside (`Ragno`): its soft chirps, and its loud bursts pitched down as a rare screech |
+| **Modifications** | Renamed; cut at load into its separate sounds (`findBursts`), played one at a time, low-passed |
+
+### Spider attacks
+
+"Spider Attack 2", "Spider Attack 4" and "Spider Attack 8" (https://pixabay.com/sound-effects/spider-attack-2-482539/, https://pixabay.com/sound-effects/spider-attack-4-482536/, https://pixabay.com/sound-effects/spider-attack-8-482541/) by yodguard are used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `yodguard-spider-attack-2-482539.mp3`, `yodguard-spider-attack-4-482536.mp3` and `yodguard-spider-attack-8-482541.mp3`; the links are built from those names and still need checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-attack-2.mp3`, `spider-attack-4.mp3`, `spider-attack-8.mp3` |
+| **Manifest key** | `sfx:spider-attack-2`, `sfx:spider-attack-4`, `sfx:spider-attack-8` |
+| **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
+| **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
+
 
 ## Downloaded but unattributed — TODO
 
@@ -821,7 +900,6 @@ before submission (the credits screen must list all non-original work):
 - `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
 - `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
 - `break-panel.glb` (`model:break-panel`)
-- `ragno_monster.glb` (not in the manifest)
 - `the_boiled_one_horror_game_-_boiled_one.glb` (not in the manifest)
 
 ## Candidate links — upcoming assets

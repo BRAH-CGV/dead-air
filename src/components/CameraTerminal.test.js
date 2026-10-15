@@ -82,6 +82,59 @@ describe('CameraTerminal', () => {
     desk.addComponent(terminal);
   });
 
+  describe('what is on air (Ragno reads it)', () => {
+    it('nothing while away from the monitor', () => {
+      expect(terminal.onAir).toBeNull();
+    });
+
+    it('the camera on screen, whether its picture is in, and whether its flash is lit', () => {
+      terminal.enter();
+      run(CCTV.minStatic + 0.05);
+      expect(terminal.onAir).toMatchObject({ index: 0, camera: cameras[0], live: true, flash: false });
+      frame(['KeyF']);
+      expect(terminal.onAir.flash).toBe(true);
+    });
+
+    it('not live while a switch is still covering the picture', () => {
+      terminal.enter();
+      run(CCTV.minStatic + 0.05);
+      frame(['Digit2']);
+      expect(terminal.onAir.live).toBe(false);
+    });
+  });
+
+  describe('interfere (something reaching a vent on camera)', () => {
+    it('breaks up the camera on screen for a moment, without switching away', () => {
+      terminal.enter();
+      run(CCTV.minStatic + 0.3);
+      expect(terminal.interfere(0, 0.5)).toBe(true);
+      expect(terminal.transition.phase).toBe('glitch');
+      expect(terminal.feed.index).toBe(0);
+      frame();
+      expect(sounds.static.isPlaying).toBe(true);
+    });
+
+    it('hisses louder than a switch, over whatever the camera hears', () => {
+      terminal.enter();
+      run(CCTV.minStatic + 0.3);
+      terminal.interfere(0, 0.5);
+      run(0.2);
+      expect(sounds.static.volume).toBeGreaterThan(CAMERA_SOUNDS.static * 2);
+      expect(hooks.listenFrom).toHaveBeenLastCalledWith(cameras[0].lens, 0);
+    });
+
+    it('a camera not on screen: nothing', () => {
+      terminal.enter();
+      run(CCTV.minStatic + 0.3);
+      expect(terminal.interfere(1, 0.5)).toBe(false);
+      expect(terminal.transition.phase).toBe('idle');
+    });
+
+    it('away from the monitor: nothing', () => {
+      expect(terminal.interfere(0, 0.5)).toBe(false);
+    });
+  });
+
   describe('entering and leaving', () => {
     it('starts idle, drawing through the player’s eyes', () => {
       expect(terminal.state).toBe('idle');
