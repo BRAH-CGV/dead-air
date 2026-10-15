@@ -939,6 +939,24 @@ describe('BaseScene occlusion — the airlock decides which side is drawn', () =
     }
   });
 
+  it("never what the player can carry: a drive or a box goes out through the airlock with them", () => {
+    const office = scene.rooms.MainOffice;
+    const carried = [...office.drives, ...office.driveBoxes];
+    expect(office.drives.length).toBeGreaterThan(0);
+    expect(office.driveBoxes.length).toBeGreaterThan(0);
+    for (const name of scene.zones.names()) {
+      const zone = zoneContents(name);
+      for (const go of carried) expect(zone.has(go.object3d), `${name}: ${go.name}`).toBe(false);
+    }
+  });
+
+  it('a drive box is still drawn with the interior hidden, as it is with the suit on', () => {
+    scene.zones.hide('interior');
+    for (const go of [...scene.rooms.MainOffice.drives, ...scene.rooms.MainOffice.driveBoxes]) {
+      for (let o = go.object3d; o; o = o.parent) expect(o.visible, `${go.name}: ${o.name}`).toBe(true);
+    }
+  });
+
   it('leaves the airlock out of the interior — it is the one room seen from both sides', () => {
     const interior = zoneContents('interior');
     expect(interior.has(named(scene.rooms.Airlock.root.object3d, 'SuitLocker'))).toBe(false);

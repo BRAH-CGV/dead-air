@@ -869,7 +869,10 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   undrawn while the player is outside, and outdoor things no window can see
   go undrawn while they're inside. Low scenery behind the building, which
   the roof hides from the whole yard, is drawn only from inside. New props
-  are picked up automatically. An InstancedMesh whose instances are
+  are picked up automatically. Anything with a `Pickupable` (the drives and
+  drive boxes) is left out of every zone: it stays a child of its room
+  wherever the player carries it, so the zone would hide it outside, in
+  their hands or on the airlock's dock. An InstancedMesh whose instances are
   rewritten every frame (the mast beacons' lamps) sets
   `userData.liveInstances`: the sort splits instanced scenery into copies,
   and a component still writing to the original would be writing to a mesh
