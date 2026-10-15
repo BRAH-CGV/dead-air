@@ -21,7 +21,7 @@
 import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { SignalTarget } from '../../gameplay/SignalTarget.js';
-import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from '../../gameplay/SignalManager.js';
+import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
 
 /**
  * on|off (or a pair of words of its own) → true|false; nothing flips `current`.
@@ -255,7 +255,7 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
         // Create a signal target and add it to the manager.
         const id = signalManager.signals.length + 1;
         const yaw = Math.random() * Math.PI * 2 - Math.PI;
-        const pitch = Math.random() * 0.6 - 0.3;  // within typical scan range
+        const pitch = PITCH_MIN + Math.random() * (PITCH_MAX - PITCH_MIN);
         const target = new SignalTarget({
           id,
           yaw,
