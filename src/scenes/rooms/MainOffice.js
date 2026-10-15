@@ -134,6 +134,14 @@ const WINDOW_BOLT = { radius: 0.018, spacing: 0.5 };
  *  reader rests. The wings and what stands on them are placed from these. */
 const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: -2.95, top: 0.864 };
 
+/** The whole station on the floor, desk and both wings, room-local metres
+ *  (x, z): what anything walking round it (Ragno) has to keep clear of. */
+export function deskStation() {
+  const pts = [-1, 1].flatMap(side => deskWingOutline(side, DESK).body);
+  const xs = pts.map(([x]) => x), zs = [...pts.map(([, z]) => z), DESK.back, DESK.front];
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+}
+
 /** Where the player stands to use the desk (x, z): what the wing monitor
  *  turns to face. */
 const SEAT = [0, -1.45];

@@ -201,7 +201,8 @@ describe('BaseScene bunker shell', () => {
   });
 
   it('hangs the outdoor cameras on the roof band, never in the slope', () => {
-    const outdoor = scene.securityCameras.filter(c => c.zones.includes('yard'));
+    // Every outdoor camera but the two on poles (Ragno's).
+    const outdoor = scene.securityCameras.filter(c => c.zones.includes('yard') && !c.label.startsWith('POLE'));
     expect(outdoor).toHaveLength(4);
     for (const cam of outdoor) {
       const p = cam.object3d.getWorldPosition(new THREE.Vector3());

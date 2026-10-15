@@ -113,15 +113,29 @@ describe('MenuMusic', () => {
     expect(sound.stop).not.toHaveBeenCalled();
   });
 
-  it('comes back on the way out to the menu, without starting a second copy', async () => {
+  it('comes back from its beginning once it has faded out, never as a second copy', async () => {
+    const { music, sound, loaded, gain } = build();
+    music.load();
+    await loaded();
+    music.setPlaying(true);
+    music.setPlaying(false);                     // faded right out: gain 0
+    music.setPlaying(true);
+    expect(sound.stop).toHaveBeenCalledTimes(1); // from its top…
+    expect(sound.play).toHaveBeenCalledTimes(2);
+    expect(sound.isPlaying).toBe(true);          // …one copy
+    expect(gain.ramps.at(-1).to).toBe(MENU_MUSIC.volume);
+  });
+
+  it('caught mid fade-out, it carries on rather than jumping back to its top', async () => {
     const { music, sound, loaded, gain } = build();
     music.load();
     await loaded();
     music.setPlaying(true);
     music.setPlaying(false);
+    gain.value = MENU_MUSIC.volume * 0.5;        // still audible
     music.setPlaying(true);
+    expect(sound.stop).not.toHaveBeenCalled();
     expect(sound.play).toHaveBeenCalledTimes(1);
-    expect(gain.ramps.at(-1).to).toBe(MENU_MUSIC.volume);
   });
 
   it('does not reschedule a fade for a state it is already in', async () => {
