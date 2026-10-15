@@ -64,6 +64,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn() };
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
+  const engine = { timeScale: 1, realDt: 0 };
   const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
   const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
@@ -72,8 +73,9 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
+  evil.gameObject = { scene: { userData: { engine }, add: vi.fn() } };
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum, engine };
 }
 
 /** The single red target in the manager's list. */
@@ -647,8 +649,8 @@ describe('EvilSignal pull-in — cursor drag before engage', () => {
   });
 });
 
-describe('EvilSignal redOut — last-moment red filter', () => {
-  it('redOut intensity is 0 while the silence timer is above 0.5 s', () => {
+describe('EvilSignal redOut — freeze and red filter', () => {
+  it('redOut intensity is 0 while the silence timer is above the redout window', () => {
     const drive = makeDrive();
     const { evil, signalManager, redOut } = makeRig({ drive });
     evil.summon();
@@ -658,39 +660,50 @@ describe('EvilSignal redOut — last-moment red filter', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in, starts silence timer
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
 
-    // Tick 1 s — still well above the 0.5 s threshold.
+    // Tick 1 s — still well above the redout window.
     evil.onUpdate(1);
     expect(redOut.setIntensity).toHaveBeenCalledWith(0);
   });
 
-  it('redOut intensity ramps during the last 0.2 s', () => {
+  it('freezes the engine and ramps redOut when the timer enters the redout window', () => {
     const drive = makeDrive();
-    const { evil, signalManager, redOut } = makeRig({ drive });
+    const { evil, signalManager, redOut, engine } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
-    // Tick past most of the timer so ~0.1 s remains (half of the 0.2 s window).
-    evil.onUpdate(EVIL.silenceSeconds - 0.1);
-    expect(evil._silenceTimer).toBeCloseTo(0.1, 2);
-    // The intensity is 1 - (0.1 / 0.2) = 0.5, allow for float imprecision.
+    // Tick past most of the timer so ~1.0 s remains (inside the 1.5 s window).
+    evil.onUpdate(EVIL.silenceSeconds - 1.0);
+    expect(evil._frozen).toBe(true);
+    expect(engine.timeScale).toBe(0);
+
+    // Simulate real time passing (engine.realDt).
+    engine.realDt = 0.25;
+    evil.onUpdate(0);  // gameDt = 0 (frozen), but realDt drives the ramp
     const lastCall = redOut.setIntensity.mock.calls.at(-1)[0];
-    expect(lastCall).toBeCloseTo(0.5, 3);
+    expect(lastCall).toBeCloseTo(0.25 / EVIL.redoutWindow, 3);
   });
 
-  it('redOut is cleared on night reset', () => {
+  it('redOut is cleared and timeScale restored on night reset', () => {
     const drive = makeDrive();
-    const { evil, controller, signalManager, redOut } = makeRig({ drive });
+    const { evil, controller, signalManager, redOut, engine } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
 
+    // Enter the freeze.
+    evil.onUpdate(EVIL.silenceSeconds - 0.5);
+    expect(evil._frozen).toBe(true);
+    expect(engine.timeScale).toBe(0);
+
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
+    expect(engine.timeScale).toBe(1);
+    expect(evil._frozen).toBe(false);
   });
 });
 
