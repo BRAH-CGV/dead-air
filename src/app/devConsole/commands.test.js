@@ -335,6 +335,13 @@ describe('createCommands', () => {
       expect(scene.nights.currentNight).toBe(1);
     });
 
+    it('night 0, the tutorial, where the scene has one', () => {
+      scene.nights = new NightManager({ minNight: 0 });
+      expect(run('night 0').out).toEqual(['Night 0 of 3']);
+      expect(scene.nights.currentNight).toBe(0);
+      expect(run('night 9').out[0]).toBe('Night must be 0–3');
+    });
+
     it('a scene without nights says so', () => {
       delete scene.nights;
       expect(run('night')).toEqual({ ok: false, out: ['No nights in this scene'] });

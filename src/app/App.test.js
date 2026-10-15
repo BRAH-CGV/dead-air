@@ -196,6 +196,18 @@ describe('App', () => {
       await startGame();
       expect(engine.loadScene).not.toHaveBeenCalled();
     });
+
+    // Night 0 is the tutorial. Select night 1 is the way past it.
+    it('opens on the tutorial, night 0, where the scene has one', async () => {
+      engine.activeScene.nights.minNight = 0;
+      await startGame();
+      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+    });
+
+    it('leaves a scene without a night 0 on its first night', async () => {
+      await startGame();
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
   });
 
   describe('pausing', () => {

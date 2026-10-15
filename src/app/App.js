@@ -228,6 +228,10 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        // A new run opens on the tutorial, night 0, where the scene has one;
+        // Select night 1 is the way past it.
+        const nights = this.engine.activeScene?.nights;
+        if (nights?.minNight === 0) nights.setNight(0);
         this._saveNight(null);   // a new run: Continue returns from night 2
         this.flow.newGame();
         this.engine.setPaused(false);

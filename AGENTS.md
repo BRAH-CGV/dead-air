@@ -82,7 +82,8 @@ src/
 │   ├── StaminaDrain.js  # Ticks Stamina through the shift; a tired player sees the base dim
 │   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns, the walk-down's breath (setDread)
 │   ├── CameraTerminal.js # The security monitor: view through a camera, pan, flash, static
-│   └── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
+│   ├── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
+│   └── Tutorial.js      # Night 0 on the live scene: reads what the player did, bends the night to teach it, shows the steps
 ├── gameobjects/
 │   ├── WindDust.js      # Low dust clouds on the wind, a wall of them in a sandstorm: one draw call, moved in the vertex shader
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
@@ -110,6 +111,7 @@ src/
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Nap.js           # Nap at the bunk: the night fast-forwarded (engine.timeScale) until the alarm, 6 AM or something wakes you
 │   ├── BedTransition.js # The bed animation's steps: lie down, asleep (with half-open peeks), open, sit up, stand (pure)
+│   ├── TutorialSteps.js # Night 0's steps: what each says, points at and waits for (pure)
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
 │   ├── Sandstorm.js     # One long dust storm a night: wind sound, fog, sky, moonlight, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
@@ -120,7 +122,7 @@ src/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
 ├── systems/
-│   ├── NightManager.js  # Counts nights (1 … maxNight) and notifies on change
+│   ├── NightManager.js  # Counts nights (minNight … maxNight; the base's minNight is 0, the tutorial) and notifies on change
 │   ├── AmbienceMix.js   # Which room loops are heard where: rooms, corridor crossfades (pure)
 │   ├── OcclusionZones.js # Named object sets drawn/skipped together, with a readiness gate
 │   ├── Sightlines.js    # Window half-spaces, instance splitting, hideable-part collection
@@ -132,6 +134,7 @@ src/
 │   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
 │   ├── FatigueOverlay.js # A tired player's tunnel vignette and eyelids (#fatigue)
+│   ├── TutorialOverlay.js # Night 0's big words and arrow (#tutorial); placeArrow (pure)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── CameraOverlay.js # The security monitor's label, hints and static (#cctv)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
@@ -271,6 +274,22 @@ Meeting the quota early does **not** end the shift — the core loop is "meet th
     - `sky.directions` holds the live world directions of `sun`, `phobos` and `deimos`.
   - **The moonlight.** It shines from wherever Phobos is. While Phobos is low or down it comes from Phobos's bearing but never lower than `MOONLIGHT.minElevation` (20°), never from under the ground, and dimmed to `MOONLIGHT.downLevel` (35 %) until Phobos rises: the early evening is the darkest part of the night. Through the dusk and the dawn it swings between that and the Sun's bearing at `sunElevation` (30°), keeping the distance the scene set, so the shadow camera still fits.
   - **Cost.** Nothing is allocated. The sky and the light are rewritten each frame of the night, and not at all while the morning clock is stopped.
+
+### Night 0 — the tutorial
+
+New game opens on night 0, a tutorial night that teaches the loop one thing at a time: the signal game, a storm that takes the power, a nap, and sleeping to end the shift. Its quota is one signal (`TUTORIAL_QUOTA`). Select night 1 (and Continue) skip it.
+
+- **How it starts.** The base's `NightManager` is built with `minNight: 0`, but the scene itself is built on night 1, so the main menu and every other path are as they were. `App._newGame` calls `nights.setNight(0)` where the scene's `minNight` is 0, before the first frame. The console's `night 0` jumps to it too. The HUD reads "Night 0". Sleeping through its morning goes on to night 1 as usual.
+- **The steps** (`TutorialSteps`, pure; `TutorialRunner` runs them). Each has a big title, a line under it (`[E] …` names the bound key, `promptKeys.withKeys`), an arrow target and a `done(ctx)` test. Three timed story cards (6 s each), then: put a drive in the reader → use the computer → find the signal → scan it → save it → box the drive → take the box to the airlock → QUOTA MET (5 s) → a storm is coming → put on the suit → restart the generator → get back inside → take a nap → see the night out → go to bed. A step whose `done` is already true when it is reached is passed straight on. While the computer is up (`desk`) the words shrink to a strip at the top (`compact`), out of the radar's way.
+- **On the scene** (`Tutorial`, on `GameplaySystems` after the nap, built by `BaseScene._addTutorial`, as `scene.tutorial`). Each frame it reads what the player has done (`readContext()`: a drive in the reader, the terminal open, the cursor on the signal, scanned, saved, a good drive in one of the office's boxes, the quota met, the power, the suit, napping, morning) and moves the steps on. It subscribes to `controller.onNightStart` in `onStart` and reads `nightNumber` there, like `Sandstorm`, so the New game's night 0 is never missed. On any other night it does nothing.
+- **The night bent to teach.**
+  - **The clock** holds at 7 PM (`TUTORIAL.startHour`), after dark, until the quota is met.
+  - **One signal.** The night's signals are cut to one, placed off the dish's park (`TUTORIAL.signal`) so the cursor has to find it, hidden until the player is at the computer, and never fading.
+  - **No threats of its own.** Stamina is held full (no Sleep Demon); `Sandstorm`, `DustEyes` and `UfoThreat` keep to nights from 1 (`nightNumber ?? 1`), so none come on night 0.
+  - **The storm step** summons a storm (`sandstorm.summon()`) and forces its outage (`StormOutage.force(TUTORIAL.outageAt)`, 10 % of the way through), so the power is sure to go.
+  - **The nap step** fades to black and brings the clock on to 4:30 AM (`TUTORIAL.napHour`), so a nap reaches the dawn.
+- **The overlay** (`TutorialOverlay`, `#tutorial` in index.html). Big amber words near the top and a bobbing arrow: over the target, pointing down, when it is on screen; pinned to the nearest edge, pointing the way to turn, when it isn't (`placeArrow`, from the target projected through the camera, a few centimetres over it: `targets` in `_addTutorial`). Hidden off shift, behind the failed-night prompt, in the bunk (the lids are down), on the security monitor and whenever the game isn't `playing`.
+- **A retry** (`[E]` after a failed night) starts again at the drive, past the story cards (`TUTORIAL.retryStep`).
 
 ### Stamina and the Sleep Demon
 
@@ -563,7 +582,7 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 | `perf [on\|off]` (`fps`) | `PerfStats` | FPS (average and worst frame), draw calls and triangles (shadow passes included), loaded geometries/textures. Also shown by Settings → GAME → Show FPS, in any build |
 | `editor [on\|off]` | `LevelEditor` | Visual object placement. Closes the console and plays on without the pointer lock, so the editor has the mouse; only from a console opened in game |
 | `models [on\|off]` | Engine | Model debug logging, and reload the scene (same night) |
-| `night [n]` | `NightManager` (BaseScene) | Jump to night `n`, or on to the next; wraps back to night 1 after the last |
+| `night [n]` | `NightManager` (BaseScene) | Jump to night `n` (0, the tutorial, to the last), or on to the next; wraps back to night 1 after the last |
 | `time [h:mm am\|pm]` | `NightClock.setTime` | Show the clock, or set it within the shift (`time 5:50am`) |
 | `stamina [0–1]` | `Stamina` | Show stamina, or set it (`stamina 0.1` to bring on the Sleep Demon) |
 | `power [on\|off]` | `GeneratorSound` | Start or stop the generator, sound and grid; refused while the breakers are tripped |

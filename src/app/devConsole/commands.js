@@ -169,7 +169,8 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           night = nights.isLastNight() ? 1 : nights.currentNight + 1;
         } else {
           night = /^\d+$/.test(arg) ? Number(arg) : NaN;
-          if (!(night >= 1 && night <= nights.maxNight)) throw new UsageError(`Night must be 1–${nights.maxNight}`);
+          const first = nights.minNight ?? 1;   // 0 where there is a tutorial
+          if (!(night >= first && night <= nights.maxNight)) throw new UsageError(`Night must be ${first}–${nights.maxNight}`);
           if (night === nights.currentNight) return `Already night ${night}`;
         }
         nights.setNight(night);
