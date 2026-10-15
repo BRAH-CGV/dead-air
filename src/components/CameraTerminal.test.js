@@ -71,6 +71,7 @@ describe('CameraTerminal', () => {
       setViewZones: vi.fn(),
       isReady: zone => ready.has(zone),
       holdPlayer: vi.fn(),
+      listenFrom: vi.fn(),
     };
     crosshair = { show: vi.fn(), hide: vi.fn() };
 
@@ -421,9 +422,9 @@ describe('CameraTerminal', () => {
     });
 
     it('at the levels asked for: the servo faint, the flash softer than its file', () => {
-      expect(CAMERA_SOUNDS.servo).toBe(0.2);
+      expect(CAMERA_SOUNDS.servo).toBe(0.14);
       expect(CAMERA_SOUNDS.spotlight).toBe(0.4);
-      expect(sounds.servo.volume).toBe(0.2);
+      expect(sounds.servo.volume).toBe(0.14);
       expect(sounds.spotlight.volume).toBe(0.4);
       expect(sounds.spotlightOff.volume).toBe(CAMERA_SOUNDS.spotlightOff);
     });
@@ -435,7 +436,7 @@ describe('CameraTerminal', () => {
       expect(sounds.servo.isPlaying).toBe(false);
     });
 
-    it('the flash clunks on as it lights, and clunks off as F puts it out', () => {
+    it('the flash clicks on as it lights, and clicks off as F puts it out', () => {
       terminal.enter();
       frame(['KeyF']);
       expect(sounds.spotlight.plays).toBe(1);
@@ -446,7 +447,7 @@ describe('CameraTerminal', () => {
       expect(sounds.spotlightOff.plays).toBe(1);
     });
 
-    it('a flash put out by a switch or by leaving clunks off too, cutting the on sound short', () => {
+    it('a flash put out by a switch or by leaving clicks off too, cutting the on sound short', () => {
       terminal.enter();
       frame(['KeyF']);
       frame(['Digit2']);
@@ -458,7 +459,7 @@ describe('CameraTerminal', () => {
       expect(sounds.spotlightOff.plays).toBe(2);
     });
 
-    it('no off clunk when the flash was never on', () => {
+    it('no off click when the flash was never on', () => {
       terminal.enter();
       frame(['Digit2']);
       frame(['KeyQ']);
@@ -483,6 +484,34 @@ describe('CameraTerminal', () => {
       expect(sounds.static.isPlaying).toBe(false);
       frame();                                   // resumed, still coming in
       expect(sounds.static.isPlaying).toBe(true);
+    });
+
+    describe('hearing what the camera on screen hears (hooks.listenFrom)', () => {
+      const heard = () => hooks.listenFrom.mock.lastCall;
+
+      it('from its lens, in full once its picture is live', () => {
+        terminal.enter();
+        run(CCTV.minStatic + SIGNAL.drop + SIGNAL.resolve + 0.3);
+        expect(heard()).toEqual([cameras[0].lens, 1]);
+      });
+
+      it('cut under the static of a switch, and back from the new camera with its picture', () => {
+        terminal.enter();
+        run(CCTV.minStatic + SIGNAL.drop + SIGNAL.resolve + 0.3);
+        frame(['Digit2']);
+        run(0.3);                                // the yard is still loading
+        expect(heard()[1]).toBe(0);
+        ready.add('yard'); ready.add('unseen');
+        run(SIGNAL.resolve + 0.1);
+        expect(heard()).toEqual([cameras[1].lens, 1]);
+      });
+
+      it('the player’s own ears again on leaving the monitor', () => {
+        terminal.enter();
+        run(0.5);
+        frame(['KeyQ']);
+        expect(heard()).toEqual([null, 0]);
+      });
     });
 
     it('works with no sounds at all (tests, a failed load)', () => {

@@ -11,7 +11,8 @@ import { CameraTransition } from '../gameplay/CameraTransition.js';
 // ─────────────────────────────────────────────
 // [E] on the monitor puts the base's security cameras on screen. The frame
 // is drawn through the camera's own lens (Engine.viewCamera); the player
-// stays at the desk, held still, hearing the office — only the picture moves.
+// stays at the desk, held still — only the picture moves, and what the
+// monitor's speaker plays.
 //
 //   idle ──[E]──▶ viewing ──Q / Esc / power lost / BaseScene says so──▶ idle
 //
@@ -28,10 +29,17 @@ import { CameraTransition } from '../gameplay/CameraTransition.js';
 //
 // Sound (`sounds`, THREE.Audio each, any of them may be missing): the pan
 // motor loops faintly while a camera actually turns, the static hisses with
-// the switch's grain (CameraTransition.hiss), and the flash clunks as it comes on and as it goes out
+// the switch's grain (CameraTransition.hiss), and the flash clicks as it comes on and as it goes out
 // (by F, a switch or leaving — whatever puts it out). They come from the
 // monitor's speaker, not the camera, so they aren't placed in the world. The
 // audio clock runs on through a pause, so the scene calls silence() then.
+//
+// The speaker also plays everything the camera on screen hears, as if the
+// player stood there: `hooks.listenFrom(lens, level)` every frame (the
+// scene moves the ears onto the lens, through a MonitorSpeaker). The level
+// is cut under the static of a switch and comes back as the picture does
+// (1 - hiss), so a lost signal is lost sound too; leaving says
+// listenFrom(null, 0).
 //
 // A switch (CameraTransition, drawn by CameraSignalPass) freezes the screen
 // as it stands, degrades it, and holds it for as long as the zones the new
@@ -54,7 +62,7 @@ import { CameraTransition } from '../gameplay/CameraTransition.js';
 export const CAMERA_FLASH = { intensity: 90, angle: 0.55, penumbra: 0.35, decay: 1.4, color: 0xf2f6ff };
 
 /** Levels, against each clip's own: the motor is faint by request. */
-export const CAMERA_SOUNDS = { servo: 0.2, static: 0.18, spotlight: 0.4, spotlightOff: 0.4 };
+export const CAMERA_SOUNDS = { servo: 0.14, static: 0.18, spotlight: 0.4, spotlightOff: 0.4 };
 
 /** How closely the hiss follows the switch's grain (per second, see
  *  LoopVoice): tight, so picture and sound move as one, with just enough
@@ -89,8 +97,11 @@ export class CameraTerminal extends Component {
    *  power. Set by createCameraInteractable(). @type {Interactable|null} */
   _interactable = null;
 
-  /** Whether the flash was lit when last applied: its clunks go with a change. */
+  /** Whether the flash was lit when last applied: its clicks go with a change. */
   _flashLit = false;
+
+  /** The camera actually drawn — a switch changes it a frame late. */
+  _onAir = null;
 
   /**
    * @param {object} opts
@@ -102,6 +113,9 @@ export class CameraTerminal extends Component {
    * @param {(zone: string) => boolean} [opts.hooks.isReady]
    * @param {(held: boolean) => void} [opts.hooks.holdPlayer]  Hold the player
    *        still and free the mouse for the map (true), or give both back.
+   * @param {(lens: THREE.Object3D|null, level: number) => void} [opts.hooks.listenFrom]
+   *        What the monitor's speaker hears from, and how loud (0..1); null
+   *        for the player's own ears.
    * @param {{ show(): void, hide(): void }} [opts.crosshair]
    * @param {{ servo?: THREE.Audio, static?: THREE.Audio, spotlight?: THREE.Audio, spotlightOff?: THREE.Audio }} [opts.sounds]
    * @param {import('../core/CameraSignalPass.js').CameraSignalPass} [opts.signal]  Draws
@@ -172,6 +186,8 @@ export class CameraTerminal extends Component {
     this.transition.reset();
     this.signal?.set(this.transition);
     this.overlay?.setConnecting(false);
+    this._onAir = null;
+    this.hooks.listenFrom?.(null, 0);
     const engine = this._engine;
     if (engine) engine.viewCamera = null;
     this.hooks.setViewZones?.(null);
@@ -258,6 +274,7 @@ export class CameraTerminal extends Component {
     this.signal?.tick(dt);
     this.overlay?.setConnecting(this.transition.waitingLong);
     this._static.set(CAMERA_SOUNDS.static * this.transition.hiss, dt);
+    if (this._onAir !== null) this.hooks.listenFrom?.(this.cameras[this._onAir].lens, 1 - this.transition.hiss);
     this._applyFlash();
   }
 
@@ -286,7 +303,8 @@ export class CameraTerminal extends Component {
    *  while still at the monitor: a switch dropped by leaving does nothing. */
   _applyCamera() {
     if (this.state !== 'viewing') return;
-    const cam = this.cameras[this.feed.index];
+    this._onAir = this.feed.index;
+    const cam = this.cameras[this._onAir];
     const engine = this._engine;
     if (engine) engine.viewCamera = cam.lens;
     this.hooks.setViewZones?.(cam.zones);
@@ -308,7 +326,7 @@ export class CameraTerminal extends Component {
   }
 
   /** Light the flash on the camera on screen, aimed down its view — or zero
-   *  it. Its clunk on or off goes with the change, whatever made it. */
+   *  it. Its click on or off goes with the change, whatever made it. */
   _applyFlash() {
     const lit = this.feed.active && this.feed.flash;
     if (lit !== this._flashLit) {
