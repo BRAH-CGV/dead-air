@@ -404,8 +404,9 @@ export class SleepDemon extends Component {
    *  `side` (+1 right, −1 left) of the view — but never inside the look
    *  cone (`focus`, plus showMargin); an ambush may land out of view.
    *  The metres it stands off (a wall may bring it in), or false: no room
-   *  there. Silent: it fades in, it doesn't step in. */
-  _place({ distance, side, edge, focus = 0, ambush = false }) {
+   *  there — nearer than `minDistance`. Silent: it fades in, it doesn't
+   *  step in. */
+  _place({ distance, side, edge, focus = 0, ambush = false, minDistance = this.tuning.minDistance }) {
     const camera = this.camera;
     if (!camera) return false;
     camera.getWorldPosition(_eye);
@@ -419,8 +420,8 @@ export class SleepDemon extends Component {
     _dir.normalize().applyAxisAngle(UP, -side * off);
 
     let d = Math.min(distance, this.rayHit(_eye, _dir, distance + t.wallGap) - t.wallGap);
-    while (d >= t.minDistance && this._occupied(_eye.x + _dir.x * d, _eye.z + _dir.z * d)) d -= STEP;
-    if (d < t.minDistance) return false;
+    while (d >= minDistance && this._occupied(_eye.x + _dir.x * d, _eye.z + _dir.z * d)) d -= STEP;
+    if (d < minDistance) return false;
 
     _spot.copy(_eye).addScaledVector(_dir, d);
     _spot.y = terrainHeightAt(_spot.x, _spot.z);
