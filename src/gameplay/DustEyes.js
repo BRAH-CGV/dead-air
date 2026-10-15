@@ -584,6 +584,9 @@ export class DustEyes extends Component {
     this.chances = null;
     this._attack = 0;           // the chase sound's level, 0 … 1
     this._silhouette = new THREE.Color();
+    /** The player is looking straight at an eye they can see, whatever it
+     *  is doing: StaminaDrain makes the stare cost stamina. */
+    this.staredAt = false;
   }
 
   /** The eyes out there now. Allocates — for tests and debugging. */
@@ -619,6 +622,7 @@ export class DustEyes extends Component {
     this._graceLeft = null;
     this._aggroClock = 0;
     this._attack = 0;
+    this.staredAt = false;
     this._stop('attack');
     for (const slot of this.slots) this._hide(slot);
     if (this.sandstorm) this.sandstorm.held = false;
@@ -647,6 +651,7 @@ export class DustEyes extends Component {
 
   onUpdate(dt) {
     if (this.controller.state !== 'playing') {
+      this.staredAt = false;
       // Game over by its hand: its face stays in view as the screen goes.
       if (!this._caught) {
         for (const slot of this.slots) if (slot.phase !== 'off') this._hide(slot);
@@ -683,6 +688,8 @@ export class DustEyes extends Component {
     }
 
     this.hooks.viewDirection(_view);
+    // Read before any moves: the view is on where they were drawn.
+    this.staredAt = this._staredAt(eye, outside);
     this._crossed(outside, level, dt);
     this._midway();
     this._staysOut(dt, outside, eye);
@@ -1108,6 +1115,14 @@ export class DustEyes extends Component {
         && !sightBlocked(eye, slot.position, NO_TREES, this.occluders);
     }
     return !outside && throughWindow(eye, slot.position, this.window);
+  }
+
+  /** Is the player looking straight at any eye they can see? */
+  _staredAt(eye, outside) {
+    for (const slot of this.slots) {
+      if (slot.phase !== 'off' && this._seen(slot, eye, outside) && this._lookingAt(slot, eye)) return true;
+    }
+    return false;
   }
 
   /** Is it near the middle of the view? */

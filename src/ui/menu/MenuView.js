@@ -327,11 +327,12 @@ export class MenuView {
     ];
   }
 
-  /** @param {{ night: number, saved: number, required: number }} m */
-  _drawNightFailed({ night = 1, saved = 0, required = 0 }) {
+  /** @param {{ night: number, saved: number, required: number, minSignalLevel?: number }} m */
+  _drawNightFailed({ night = 1, saved = 0, required = 0, minSignalLevel = 1 }) {
+    const label = minSignalLevel >= 2 ? 'cyan drives' : 'drives';
     return [
       h('h2', { class: 'menu-heading is-danger' }, COPY.nightFailedTitle),
-      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} drives`),
+      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} ${label}`),
       h('nav', { class: 'menu-list' },
         option('retry', 'Retry night'),
         option('quit', 'Main menu'),

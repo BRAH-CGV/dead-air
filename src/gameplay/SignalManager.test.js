@@ -3,32 +3,26 @@ import { SignalManager, TUTORIAL_QUOTA, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_
 import { SHIFT, NIGHT_SECONDS } from './NightClock.js';
 
 const POOL = [
-  'assets/signals/signal-1.png',
-  'assets/signals/signal-2.png',
-  'assets/signals/signal-3.png',
-  'assets/signals/signal-4.png',
-  'assets/signals/signal-5.png',
-  'assets/signals/signal-6.png',
-  'assets/signals/signal-7.png',
-  'assets/signals/signal-8.png',
+  'deep_hum', 'pulse_beacon', 'static_burst', 'tonal_sweep',
+  'rhythmic_click', 'ghost_voice', 'carrier_wave', 'harmonic_drone',
 ];
 
 describe('SignalManager', () => {
   it('generates the configured number of signals per night', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
     expect(mgr.signals).toHaveLength(5);
   });
 
   it('assigns unique IDs starting from 1', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(1);
     const ids = mgr.signals.map(s => s.id);
     expect(ids).toEqual([1, 2, 3]);
   });
 
   it('generates yaw in full circle and pitch in upper hemisphere', () => {
-    const mgr = new SignalManager({ signalsPerNight: 50, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 50, signalNames: POOL });
     mgr.startNight(1);
 
     for (const sig of mgr.signals) {
@@ -46,7 +40,7 @@ describe('SignalManager', () => {
     // central disc, and the neighbours' rim sections in the outer band.
     // Statistical: with 200 signals the band's ends must both be reached
     // (the old band was -70°..-10°).
-    const mgr = new SignalManager({ signalsPerNight: 200, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 200, signalNames: POOL });
     mgr.startNight(1);
 
     let closestToHorizon = -Math.PI / 2;   // the shallowest pitch spawned
@@ -62,7 +56,7 @@ describe('SignalManager', () => {
   });
 
   it('sets required count scaling with night number — 1.5× the old 3, 4, 5', () => {
-    const mgr = new SignalManager({ signalsPerNight: 10, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 10, signalNames: POOL });
 
     mgr.startNight(1);
     expect(mgr.required).toBe(5);
@@ -92,13 +86,13 @@ describe('SignalManager', () => {
   });
 
   it('clamps required to signalsPerNight', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(5);  // would want 7, but only 3 available
     expect(mgr.required).toBeLessThanOrEqual(3);
   });
 
   it('save marks the signal as saved, delete marks as deleted', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     mgr.saveSignal(1);
@@ -112,7 +106,7 @@ describe('SignalManager', () => {
   });
 
   it('marks signals as saved or deleted correctly', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(1);
 
     mgr.markScanned(1);
@@ -129,36 +123,36 @@ describe('SignalManager', () => {
   });
 
   it('getProgress returns the required count', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);  // required = 5
 
     const p = mgr.getProgress();
     expect(p.required).toBe(5);
   });
 
-  it('assigns payload URLs from pool without repeats until exhausted', () => {
-    const smallPool = ['a.png', 'b.png', 'c.png'];
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: smallPool });
+  it('assigns signal names from pool without repeats until exhausted', () => {
+    const smallPool = ['alpha', 'beta', 'gamma'];
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: smallPool });
     mgr.startNight(1);
 
-    const urls = mgr.signals.map(s => s.payloadUrl);
+    const names = mgr.signals.map(s => s.name);
     // All three should be different (pool size = signal count)
-    expect(new Set(urls).size).toBe(3);
+    expect(new Set(names).size).toBe(3);
   });
 
   it('recycles pool when signals exceed pool size', () => {
-    const smallPool = ['a.png', 'b.png'];
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: smallPool });
+    const smallPool = ['alpha', 'beta'];
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: smallPool });
     mgr.startNight(1);
 
-    // All signals should have a URL even though pool is smaller
+    // All signals should have a name even though pool is smaller
     for (const sig of mgr.signals) {
-      expect(sig.payloadUrl).toBeTruthy();
+      expect(sig.name).toBeTruthy();
     }
   });
 
   it('resets state on startNight', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(1);
     mgr.saveSignal(1);
     expect(mgr.signals[0].saved).toBe(true);
@@ -170,7 +164,7 @@ describe('SignalManager', () => {
   });
 
   it('ignores save/delete for unknown IDs', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(1);
 
     // Should not throw
@@ -182,10 +176,10 @@ describe('SignalManager', () => {
   });
 
   it('handles empty payload pool gracefully', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: [] });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: [] });
     mgr.startNight(1);
     for (const sig of mgr.signals) {
-      expect(sig.payloadUrl).toBe('');
+      expect(sig.name).toBe('');
     }
   });
 });
@@ -196,7 +190,7 @@ describe('SignalManager signal appearance', () => {
   const stubClock = (progress) => ({ currentTime: progress * 6, startHour: 0, endHour: 6 });
 
   it('hides every signal when the night starts', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     for (const sig of mgr.signals) {
@@ -215,7 +209,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('spreads appearances across [APPEAR_START, APPEAR_BY] with gaps between them', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     const appearAts = mgr.signals.map(s => s.appearAt).sort((a, b) => a - b);
@@ -232,7 +226,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('keeps signals hidden before their appearance time, whatever the dt', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     const first = Math.min(...mgr.signals.map(s => s.appearAt));
@@ -245,7 +239,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('fades a signal in over SIGNAL_FADE_SECONDS once its time comes', () => {
-    const mgr = new SignalManager({ signalsPerNight: 2, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 2, signalNames: POOL });
     mgr.startNight(1);
     const sig = mgr.signals[0];
     sig.appearAt = 0.2;   // poke for determinism; the other stays hidden
@@ -264,7 +258,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('has every signal revealed late in the night', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     mgr.update(0.1, stubClock(APPEAR_BY + 0.05));
@@ -277,7 +271,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('update() without a clock is a no-op', () => {
-    const mgr = new SignalManager({ signalsPerNight: 3, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
     mgr.startNight(1);
     mgr.update(60, undefined);
     for (const sig of mgr.signals) {
@@ -286,7 +280,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('gives every signal the shared visible window', () => {
-    const mgr = new SignalManager({ signalsPerNight: 5, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
     mgr.startNight(1);
 
     for (const sig of mgr.signals) {
@@ -295,7 +289,7 @@ describe('SignalManager signal appearance', () => {
   });
 
   it('fades a signal back out after its visible window and lets it expire', () => {
-    const mgr = new SignalManager({ signalsPerNight: 2, payloadPool: POOL });
+    const mgr = new SignalManager({ signalsPerNight: 2, signalNames: POOL });
     mgr.startNight(1);
     const sig = mgr.signals[0];
     sig.appearAt = 0;   // poke for determinism

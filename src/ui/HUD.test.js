@@ -253,17 +253,17 @@ describe('RadarOverlay blip colour', () => {
     expect(overlay._blipColor(blip({ scanned: true, opacity: 0.5 }))).toBe('rgba(180, 180, 60, 0.35)');
   });
 
-  it('draws the evil signal red — bright while unresolved, dim once dealt with', () => {
-    expect(overlay._blipColor(blip({ evil: true }))).toBe('rgba(255, 45, 45, 0.8)');
-    expect(overlay._blipColor(blip({ evil: true, scanned: true }))).toBe('rgba(255, 45, 45, 0.8)');
-    expect(overlay._blipColor(blip({ evil: true, saved: true }))).toBe('rgba(255, 45, 45, 0.5)');
-    expect(overlay._blipColor(blip({ evil: true, deleted: true }))).toBe('rgba(255, 45, 45, 0.5)');
-    expect(overlay._blipColor(blip({ evil: true, opacity: 0.5 }))).toBe('rgba(255, 45, 45, 0.4)');
+  it('draws the evil signal the same cyan as ordinary — bright while unresolved, dim once dealt with', () => {
+    expect(overlay._blipColor(blip({ evil: true }))).toBe('rgba(0, 220, 200, 0.8)');
+    expect(overlay._blipColor(blip({ evil: true, scanned: true }))).toBe('rgba(0, 220, 200, 0.8)');
+    expect(overlay._blipColor(blip({ evil: true, saved: true }))).toBe('rgba(0, 220, 200, 0.5)');
+    expect(overlay._blipColor(blip({ evil: true, deleted: true }))).toBe('rgba(0, 220, 200, 0.5)');
+    expect(overlay._blipColor(blip({ evil: true, opacity: 0.5 }))).toBe('rgba(0, 220, 200, 0.4)');
   });
 
-  it('gives the evil signal its own rgb for the ripple pass', () => {
-    expect(overlay._blipRgb(blip({ evil: true }))).toBe('255, 45, 45');
-    expect(overlay._blipRgb(blip({ evil: true, saved: true }))).toBe('255, 45, 45');
+  it('gives the evil signal the same rgb as ordinary for the ripple pass', () => {
+    expect(overlay._blipRgb(blip({ evil: true }))).toBe('0, 220, 200');
+    expect(overlay._blipRgb(blip({ evil: true, saved: true }))).toBe('0, 220, 200');
     expect(overlay._blipRgb(blip({ saved: true }))).toBe('80, 200, 80');
   });
 });

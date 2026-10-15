@@ -271,13 +271,11 @@ describe('OfficeScene ground', () => {
     expect(mockEngine.scene.fog.density).toBeGreaterThan(0);
   });
 
-  it('disposes the radar and review overlays on dispose, so restarts do not stack listeners', () => {
+  it('disposes the radar overlay on dispose, so restarts do not stack listeners', () => {
     scene.build();
     const radar = vi.spyOn(scene.radarOverlay, 'dispose');
-    const review = vi.spyOn(scene.reviewPanel, 'dispose');
     scene.dispose();
     expect(radar).toHaveBeenCalledOnce();
-    expect(review).toHaveBeenCalledOnce();
   });
 
   it('hands the fog back on dispose, so the next scene starts clean', () => {

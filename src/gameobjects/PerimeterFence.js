@@ -56,6 +56,16 @@ import { terrainHeightAt } from './MarsTerrain.js';
 // it lands on. A gate is cut on whichever side that turns out to be, centred
 // on the crossing and at least COMM wide enough for the lane itself, or the
 // buggy, whichever asks for more.
+//
+// ── The sliding gate ──
+// The yard BaseScene fences has no lane gates: it is closed all round, so
+// the player stays where the back window can't be seen. The buggy still has
+// to leave it every morning, so `gate` cuts one opening that is not a gap: a
+// collider stands across it always, and two leaves (FenceGate) slide apart
+// along the line to let the buggy through, each behind the run beside it.
+// They stand `gateStandOff` outside the wire, so they pass the runs' panels
+// instead of through them. It is not in `fence.gates`, which are the open
+// gaps.
 // ─────────────────────────────────────────────
 
 /** How many times the diamond pattern repeats across one panel's width and
@@ -84,7 +94,14 @@ export const FENCE = {
    *  you cannot cross, not a wall with depth worth colliding into the side
    *  of. */
   colliderThickness: 0.15,
+  /** How far outside the wire the sliding gate's leaves stand, so each slides
+   *  past the run beside it. More than a panel's thickness. */
+  gateStandOff: 0.2,
 };
+
+/** Which way is out of the rectangle from each side, as a sign on the axis
+ *  the side is fixed on. */
+const OUTWARD = { N: 1, S: -1, E: 1, W: -1 };
 
 /**
  * The rectangle the fence runs around: the building shell plus its buffer,
@@ -187,6 +204,9 @@ export function fenceKeepOut(rect, { openSides = [], clearance = 3 } = {}) {
  *        at the rect's own minZ — BaseScene starts them at the foot of the
  *        bunker's front slope, where each is anchored into it. The rect
  *        (and everything that reads it) is unchanged.
+ * @param {{side: 'N'|'S'|'E'|'W', at: number, halfWidth: number}} [opts.gate]
+ *        A sliding gate: its opening is cut from the panels, a collider
+ *        stands across it, and `fence.gate` slides its leaves (FenceGate).
  * @returns {GameObject} a group carrying the fence panels
  */
 export function createPerimeterFence(opts = {}) {
@@ -210,39 +230,113 @@ export function createPerimeterFence(opts = {}) {
   // the two that run along world Z. Which of the pair (N vs S, W vs E) makes
   // no difference to that alignment, only to which face of the panel ends up
   // outward, and the geometry is symmetric enough that it does not matter.
-  const sides = [
+  const allSides = [
     { name: 'S', fixed: rect.minZ, from: rect.minX, to: rect.maxX, along: 'x', facing: 0 },
     { name: 'N', fixed: rect.maxZ, from: rect.minX, to: rect.maxX, along: 'x', facing: 0 },
     { name: 'W', fixed: rect.minX, from: sideStart, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
     { name: 'E', fixed: rect.maxX, from: sideStart, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
-  ].filter(side => !openSides.includes(side.name));
+  ];
+  const sides = allSides.filter(side => !openSides.includes(side.name));
+  const slide = opts.gate ?? null;
 
   // The same open runs answer both what to draw and what to collide with, so
   // a gate can never end up solid in one and not the other.
   const runsBySide = sides.map(side => {
-    const sideGates = mergeGates(
-      gates.filter(g => g.side === side.name).map(g => [g.at - g.halfWidth, g.at + g.halfWidth]),
-      FENCE.minGateWidth,
-    );
+    const cuts = gates.filter(g => g.side === side.name).map(g => [g.at - g.halfWidth, g.at + g.halfWidth]);
+    if (slide?.side === side.name) cuts.push([slide.at - slide.halfWidth, slide.at + slide.halfWidth]);
+    const sideGates = mergeGates(cuts, FENCE.minGateWidth);
     return { side, runs: openRuns(side.from, side.to, sideGates, FENCE.minGateWidth) };
   });
 
-  attachColliders(world, fence, runsBySide, heightAt);
+  // The sliding gate's opening is cut from the panels but never from the
+  // colliders: the leaves are only drawn, and the yard stays closed.
+  const gateSide = slide && allSides.find(side => side.name === slide.side);
+  const solid = gateSide
+    ? [...runsBySide, { side: gateSide, runs: [[slide.at - slide.halfWidth, slide.at + slide.halfWidth]] }]
+    : runsBySide;
+  attachColliders(world, fence, solid, heightAt);
 
-  if (assets) {
-    const parts = flattenModelParts('model:chainlink-fence', assets);
-    const panelWidth = parts.length > 0 ? partsSpan(parts) : 0;
+  const parts = assets ? flattenModelParts('model:chainlink-fence', assets) : [];
+  const panelWidth = parts.length > 0 ? partsSpan(parts) : 0;
+  const materials = panelWidth > 0 ? { lattice: latticeMaterial(), steel: steelMaterial() } : null;
 
-    if (panelWidth > 0) {
-      const placements = [];
-      for (const { side, runs } of runsBySide) {
-        for (const [start, end] of runs) tileRun(side, start, end, panelWidth, heightAt, placements);
-      }
-      buildInstancedParts(fence, parts, placements);
+  if (materials) {
+    const placements = [];
+    for (const { side, runs } of runsBySide) {
+      for (const [start, end] of runs) tileRun(side, start, end, panelWidth, heightAt, placements);
     }
+    buildInstancedParts(fence, parts, placements, materials);
   }
 
+  fence.gate = gateSide
+    ? new FenceGate(slide, gateSide, heightAt, materials && { parts, width: panelWidth, materials })
+    : null;
+  if (fence.gate) fence.object3d.add(fence.gate.object3d);
+
   return fence;
+}
+
+/**
+ * The sliding gate: two leaves that meet in the middle of the opening and
+ * slide apart along the fence line, each behind the run on its own side. Only
+ * drawn — the fence's collider across the opening is what stops the player,
+ * open or shut. BaseScene opens it for the buggy (BuggyDeparture).
+ */
+export class FenceGate {
+  /** 0 shut … 1 each leaf wholly clear of the opening. */
+  open = 0;
+
+  /**
+   * @param {{side: string, at: number, halfWidth: number}} gate
+   * @param {{fixed: number, along: 'x'|'z', facing: number}} run  The side it is cut in
+   * @param {(x: number, z: number) => number} heightAt
+   * @param {{parts: Array<{geometry: THREE.BufferGeometry, matrix: THREE.Matrix4, name?: string}>,
+   *          width: number, materials: {lattice: THREE.Material, steel: THREE.Material}}|null} panel
+   *        The chain-link panel each leaf is drawn as; null draws nothing.
+   */
+  constructor({ side, at, halfWidth }, run, heightAt, panel) {
+    this.side = side;
+    this.at = at;
+    this.halfWidth = halfWidth;
+    this.object3d = new THREE.Group();
+    this.object3d.name = 'FenceGate';
+
+    this._axis = run.along;
+    /** Each leaf's centre along the line, shut. */
+    this._shut = [at - halfWidth / 2, at + halfWidth / 2];
+    const out = run.fixed + OUTWARD[side] * FENCE.gateStandOff;
+
+    this.leaves = this._shut.map((centre, i) => {
+      const leaf = new THREE.Group();
+      leaf.name = `GateLeaf_${i}`;
+      const x = run.along === 'x' ? centre : out;
+      const z = run.along === 'x' ? out : centre;
+      leaf.position.set(x, heightAt(x, z), z);
+      leaf.rotation.y = run.facing;
+      if (panel) {
+        // One panel, its local X (the line) fitted to the leaf.
+        leaf.scale.x = halfWidth / panel.width;
+        for (const part of panel.parts) {
+          const material = /Plane/.test(part.name ?? '') ? panel.materials.lattice : panel.materials.steel;
+          const mesh = new THREE.Mesh(part.geometry, material);
+          part.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+          leaf.add(mesh);
+        }
+      }
+      this.object3d.add(leaf);
+      return leaf;
+    });
+  }
+
+  /** @param {number} t  0 shut … 1 open; clamped */
+  setOpen(t) {
+    this.open = THREE.MathUtils.clamp(t, 0, 1);
+    const slide = this.open * this.halfWidth;
+    this.leaves[0].position[this._axis] = this._shut[0] - slide;
+    this.leaves[1].position[this._axis] = this._shut[1] + slide;
+  }
 }
 
 /**
@@ -396,13 +490,11 @@ function partsSpan(parts) {
 }
 
 /** One InstancedMesh per model part, placed at every tiled position. */
-function buildInstancedParts(fence, parts, placements) {
+function buildInstancedParts(fence, parts, placements, { lattice, steel }) {
   if (placements.length === 0) return;
 
   const local = new THREE.Matrix4();
   const world = new THREE.Matrix4();
-  const lattice = latticeMaterial();
-  const steel = steelMaterial();
 
   parts.forEach((part, p) => {
     // pPlane* is the wire mesh, pCube* the posts and top rail — see the
