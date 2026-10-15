@@ -18,8 +18,11 @@
 //                           next applySettings doesn't undo it
 // ─────────────────────────────────────────────
 
+import * as THREE from 'three';
 import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
+import { Drive } from '../../gameobjects/Drive.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
 
 /**
  * on|off (or a pair of words of its own) → true|false; nothing flips `current`.
@@ -283,6 +286,50 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       set: (zones, on) => zones.revealAll(on),
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
     }),
+
+    {
+      name: 'signals', usage: 'signals [count]', help: 'Spawn drives with signals already stored (default 1)',
+      run: ([arg]) => {
+        const driveManager = system('driveManager', 'drive manager');
+        const count = arg === undefined ? 1 : /^\d+$/.test(arg) ? Number(arg) : NaN;
+        if (!(count >= 1)) throw new UsageError('Give a number of drives to spawn');
+
+        const player = engine.player;
+        const scene = engine.activeScene;
+        if (!player?.object3d) throw new CommandError('No player to spawn near');
+
+        // Spawn in front of the player, slightly above ground.
+        const pos = player.object3d.position.clone();
+        const forward = new THREE.Vector3(0, 0, -1)
+          .applyEuler(player.object3d.rotation);
+        const spawnPos = pos.add(forward.multiplyScalar(0.5));
+        spawnPos.y = 0.1; // Just above the floor.
+
+        const room = scene.rooms?.MainOffice;
+        const parent = room?.root ?? scene._sceneRoot;
+
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+          const drive = new Drive(`DevSignalDrive_${spawned + 1}`);
+          drive.setSaved(true);
+          drive.object3d.position.copy(spawnPos);
+          // Offset each drive slightly so they don't stack.
+          drive.object3d.position.x += (i % 4) * 0.12;
+          drive.object3d.position.z += Math.floor(i / 4) * 0.15;
+          parent.addChild(drive);
+          driveManager.addDrive(drive);
+          // Also add to every snap receiver so the drive can be picked up.
+          const driveBoxes = room?.driveBoxes ?? [];
+          const driveSlot = room?.driveReader?.getComponent?.(DriveSlot);
+          const serverSlot = scene.rooms?.ServerRoom?.driveSlot;
+          for (const box of driveBoxes) box.addDrive?.(drive);
+          if (driveSlot) driveSlot.addDrive(drive);
+          if (serverSlot) serverSlot.addDrive(drive);
+          spawned++;
+        }
+        return `Spawned ${spawned} drive${spawned !== 1 ? 's' : ''} with signals`;
+      },
+    },
   ];
 }
 
