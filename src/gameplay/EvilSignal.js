@@ -8,8 +8,8 @@ import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
 // ─────────────────────────────────────────────
-// For testing, summon() — the G key — puts it in the sky. It has no night
-// of its own yet; EVIL.nights is where that will go.
+// For testing, summon() — the dev console's `evil` — puts it in the sky. It
+// has no night of its own yet; EVIL.nights is where that will go.
 //
 // It reads as an ordinary blip except that it is red. The moment the radar
 // cursor is on it, it scans itself — no Enter, no wait, no dish to settle —
@@ -37,7 +37,7 @@ const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2
 /** Tuning. Seconds and radians unless stated. */
 export const EVIL = {
   /** The nights it appears on — none yet: until the run grows a night for
-   *  it, the G debug key is the only way in. */
+   *  it, the dev console's `evil` is the only way in. */
   nights: [],
   /** Where it fades in (clock hours after midnight), once scheduled. */
   spawnHours: [1, 4],
@@ -190,9 +190,9 @@ export class EvilSignal extends Component {
   }
 
   /**
-   * Put the red signal in the sky now rather than at its time — the G debug
-   * key. Refused while the previous one is still unresolved, or outside a
-   * shift.
+   * Put the red signal in the sky now rather than at its time — the dev
+   * console's `evil`. Refused while the previous one is still unresolved,
+   * or outside a shift.
    * @returns {boolean} whether it appeared
    */
   summon() {

@@ -290,4 +290,206 @@ describe('MenuView', () => {
     view.show('main', { tagline: [], version: '1', continueNight: null });
     expect(view.panel.querySelector('[data-action="nightSelect"]')).not.toBeNull();
   });
+
+  describe('dev console', () => {
+    const COMMANDS = [
+      { name: 'stamina', usage: 'stamina [0–1]', help: 'Show or set stamina' },
+      { name: 'storm', usage: 'storm', help: 'Start a sandstorm now' },
+      { name: 'suit', usage: 'suit [on|off]', help: 'The EVA suit' },
+    ];
+    /** DevConsole.suggest's shape: guesses by prefix; past a space, the format line. */
+    const suggest = (text) => {
+      const t = text.trimStart();
+      if (!t) return [];
+      if (t.includes(' ')) {
+        const command = COMMANDS.find(c => c.name === t.split(' ')[0]);
+        return command ? [{ ...command, format: true }] : [];
+      }
+      return COMMANDS.filter(c => c.name.startsWith(t));
+    };
+    const LINES = [
+      { text: '> stamna', kind: 'input' },
+      { text: 'Unknown command "stamna". Did you mean stamina?', kind: 'error' },
+      { text: 'Stamina 0.20 (tired)', kind: 'output' },
+    ];
+
+    const input = () => view.panel.querySelector('input[data-console]');
+    const list = () => view.panel.querySelector('.menu-console-suggest');
+    const rows = () => [...list().querySelectorAll('li')];
+    const type = (text) => {
+      input().focus();
+      input().value = text;
+      input().dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const press = (code) => view.handleKey(new KeyboardEvent('keydown', { code, cancelable: true }));
+    const show = (model = {}) => view.show('console', { lines: LINES, draft: '', suggest, ...model });
+
+    it('draws the log, a line each, what was typed and the errors marked', () => {
+      show();
+      const lines = [...view.panel.querySelectorAll('.menu-console-line')];
+      expect(lines.map(l => l.textContent)).toEqual(LINES.map(l => l.text));
+      expect(lines[0].classList.contains('is-input')).toBe(true);
+      expect(lines[1].classList.contains('is-error')).toBe(true);
+      expect(lines[2].className).toBe('menu-console-line');
+    });
+
+    it('writes the log as text, never markup', () => {
+      show({ lines: [{ text: '<b>bold</b>', kind: 'output' }] });
+      expect(view.panel.querySelector('.menu-console-log b')).toBeNull();
+      expect(view.panel.querySelector('.menu-console-line').textContent).toBe('<b>bold</b>');
+    });
+
+    it('focuses an input showing the ghost text until something is typed', () => {
+      show();
+      expect(document.activeElement).toBe(input());
+      expect(input().placeholder).toBe('Type "help" for a list of commands');
+      expect(input().value).toBe('');
+      expect(input().getAttribute('autocomplete')).toBe('off');
+      expect(input().spellcheck).toBe(false);
+    });
+
+    it('holds the draft (a line recalled from the history), the caret at its end', () => {
+      show({ draft: 'stamina 0.5' });
+      expect(input().value).toBe('stamina 0.5');
+      expect(input().selectionStart).toBe('stamina 0.5'.length);
+    });
+
+    it('has a Back option', () => {
+      show();
+      expect(byAction(view, 'back')).not.toBeNull();
+    });
+
+    describe('the guesses', () => {
+      it('stay hidden until something is typed', () => {
+        show({ draft: 'st' });
+        expect(list().hidden).toBe(true);
+      });
+
+      it('drop down as you type: each command with its format and what it does', () => {
+        show();
+        type('st');
+        expect(list().hidden).toBe(false);
+        expect(rows()).toHaveLength(2);
+        expect(rows()[0].textContent).toContain('stamina [0–1]');
+        expect(rows()[0].textContent).toContain('Show or set stamina');
+        expect(rows()[1].textContent).toContain('storm');
+        expect(intents).toEqual([]);
+      });
+
+      it('go away when the input is emptied or nothing matches', () => {
+        show();
+        type('st');
+        type('');
+        expect(list().hidden).toBe(true);
+        type('zz');
+        expect(list().hidden).toBe(true);
+      });
+
+      it('clicking one completes the command, keeps the focus, and shows its format', () => {
+        show();
+        type('st');
+        rows()[0].click();
+        expect(input().value).toBe('stamina ');
+        expect(document.activeElement).toBe(input());
+        expect(rows()).toHaveLength(1);
+        expect(rows()[0].classList.contains('is-format')).toBe(true);
+        expect(rows()[0].textContent).toContain('stamina [0–1]');
+        expect(intents).toEqual([]);
+      });
+
+      it('the format line is a reminder, not a guess to pick', () => {
+        show();
+        type('stamina 0');
+        rows()[0].click();
+        expect(input().value).toBe('stamina 0');
+      });
+
+      it('a redraw (after a line runs) closes them', () => {
+        show();
+        type('st');
+        show();
+        expect(list().hidden).toBe(true);
+      });
+    });
+
+    describe('keys in the input', () => {
+      it('↓ / ↑ move a highlight through the guesses, wrapping', () => {
+        show();
+        type('s');
+        expect(press('ArrowDown')).toBe(true);
+        expect(rows()[0].getAttribute('aria-selected')).toBe('true');
+        press('ArrowDown');
+        expect(rows()[1].getAttribute('aria-selected')).toBe('true');
+        expect(rows()[0].getAttribute('aria-selected')).toBe('false');
+        press('ArrowUp');
+        press('ArrowUp');
+        expect(rows()[2].getAttribute('aria-selected')).toBe('true');
+        expect(document.activeElement).toBe(input());
+        expect(intents).toEqual([]);
+      });
+
+      it('Enter takes the highlighted guess', () => {
+        show();
+        type('st');
+        press('ArrowDown');
+        expect(press('Enter')).toBe(true);
+        expect(input().value).toBe('stamina ');
+        expect(intents).toEqual([]);
+      });
+
+      it('Enter runs the line when no guess is highlighted', () => {
+        show();
+        type('stamina 0.2');
+        expect(press('Enter')).toBe(true);
+        expect(intents).toEqual([['consoleRun', { line: 'stamina 0.2' }]]);
+      });
+
+      it('Tab completes the top guess, or the highlighted one', () => {
+        show();
+        type('st');
+        expect(press('Tab')).toBe(true);
+        expect(input().value).toBe('stamina ');
+        type('st');
+        press('ArrowDown');
+        press('ArrowDown');
+        press('Tab');
+        expect(input().value).toBe('storm ');
+      });
+
+      it('Tab with nothing to complete is left to the browser', () => {
+        show();
+        type('stamina 0');
+        expect(press('Tab')).toBe(false);
+      });
+
+      it('↑ / ↓ walk the history while there are no guesses to move through', () => {
+        show();
+        input().focus();
+        press('ArrowUp');
+        press('ArrowDown');
+        type('stamina ');
+        press('ArrowUp');
+        expect(intents).toEqual([
+          ['consoleHistory', { dir: 'prev' }],
+          ['consoleHistory', { dir: 'next' }],
+          ['consoleHistory', { dir: 'prev' }],
+        ]);
+      });
+
+      it('← / → move the caret, as in any text box', () => {
+        show();
+        type('st');
+        expect(press('ArrowLeft')).toBe(false);
+        expect(press('ArrowRight')).toBe(false);
+      });
+    });
+
+    it('off the input, the arrows move between it and Back as on any screen', () => {
+      show();
+      byAction(view, 'back').focus();
+      press('ArrowDown');
+      expect(document.activeElement).toBe(input());
+      expect(intents).toEqual([]);
+    });
+  });
 });

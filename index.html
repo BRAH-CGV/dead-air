@@ -492,6 +492,68 @@
       /* Starts one window-height down, ends scrolled off the top. */
       .menu-roll { padding-top: min(52vh, 440px); animation: menu-roll 90s linear 1s both; }
 
+      /* The dev console (dev builds): a light backdrop, so a toggle shows on
+         the paused scene behind it. */
+      #menu[data-screen="console"] { background: rgba(0, 0, 0, 0.18); }
+      #menu[data-screen="console"] #menu-panel {
+        width: min(860px, calc(100vw - 32px));
+        height: min(560px, calc(100vh - 48px));
+        background: rgba(13, 13, 20, 0.82);
+      }
+      .menu-console-log { font-size: 13px; line-height: 1.45; }
+      .menu-console-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+      .menu-console-line.is-input { color: var(--menu-muted); }
+      .menu-console-line.is-error { color: var(--menu-danger); }
+      .menu-console-prompt {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--menu-line);
+      }
+      .menu-console-prompt:focus-within { border-color: var(--menu-accent); }
+      .menu-console-caret { color: var(--menu-accent); }
+      .menu-console-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        outline: none;
+        background: none;
+        color: var(--menu-bright);
+        font: inherit;
+        caret-color: var(--menu-accent);
+      }
+      .menu-console-input::placeholder { color: var(--menu-muted); opacity: 0.6; }
+      /* The guesses drop down under the input, over the log. */
+      .menu-console-suggest {
+        position: absolute;
+        top: 100%;
+        left: -1px;
+        right: -1px;
+        z-index: 1;
+        max-height: 14em;
+        overflow-y: auto;
+        margin: 0;
+        padding: 4px 0;
+        list-style: none;
+        border: 1px solid var(--menu-line);
+        background: rgba(13, 13, 20, 0.97);
+      }
+      .menu-console-suggest[hidden] { display: none; }
+      .menu-console-option { display: flex; gap: 16px; padding: 3px 12px; cursor: pointer; }
+      .menu-console-option:hover,
+      .menu-console-option[aria-selected="true"] { background: rgba(110, 207, 154, 0.12); }
+      .menu-console-option[aria-selected="true"] .menu-console-usage { color: var(--menu-ok); }
+      .menu-console-option.is-format { cursor: default; background: none; }
+      .menu-console-usage { flex: 0 0 auto; color: var(--menu-bright); white-space: nowrap; }
+      .menu-console-help { flex: 1 1 auto; min-width: 0; color: var(--menu-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      @media (max-width: 640px) {
+        .menu-console-option { flex-direction: column; gap: 0; }
+        .menu-console-help { white-space: normal; }
+      }
+
       @keyframes menu-blink   { 50% { opacity: 0; } }
       @keyframes menu-flicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: 0.82; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
       @keyframes menu-type    { from { width: 0; } }

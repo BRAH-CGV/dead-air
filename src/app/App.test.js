@@ -61,7 +61,6 @@ function makeEngine() {
     keyBinds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
-      debugFly: 'KeyV', fullbright: 'KeyB', nextNight: 'KeyN', perfStats: 'KeyI',
     },
     revealed: Promise.resolve(),
     levelEditor: { enabled: false },
@@ -509,7 +508,7 @@ describe('App', () => {
       expect(document.querySelector('[data-setting="renderScale"]')).toBeNull();
     });
 
-    it('debug keys follow the build: on in dev, off in production', async () => {
+    it('dev tools follow the build: on in dev, off in production', async () => {
       expect(engine.devTools).toBe(true);
       const e2 = makeEngine();
       const a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
@@ -569,6 +568,19 @@ describe('App', () => {
         expect(panel().textContent).toMatch(/Q is reserved/);
       });
 
+      it('takes the keys the debug tools used to hold (they live in the console now)', () => {
+        bindRow('jump').click();
+        key('KeyV');
+        expect(engine.keyBinds.jump).toBe('KeyV');
+      });
+
+      it('refuses `, the console key', () => {
+        bindRow('jump').click();
+        key('Backquote');
+        expect(engine.keyBinds.jump).toBe('Space');
+        expect(panel().textContent).toMatch(/is reserved/);
+      });
+
       it('Esc cancels the capture and stays on settings', () => {
         bindRow('jump').click();
         key('Escape');
@@ -595,6 +607,274 @@ describe('App', () => {
         bindRow('forward').click();
         key('KeyO');
         expect(panel().textContent).toMatch(/Move cursor\s*O A S D/);
+      });
+    });
+  });
+
+  describe('dev console', () => {
+    const panel = () => document.getElementById('menu-panel');
+    const input = () => panel().querySelector('input[data-console]');
+    const backquote = () => key('Backquote');
+    /** Type a line into the console's input, as a person would. */
+    const typeLine = (text) => {
+      input().focus();
+      input().value = text;
+      input().dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const run = (text) => { typeLine(text); key('Enter'); };
+
+    describe('from play', () => {
+      beforeEach(startGame);
+
+      it('` opens it over the paused game and lets go of the mouse', () => {
+        backquote();
+        expect(app.flow.state).toBe('paused');
+        expect(view.screen).toBe('console');
+        expect(engine.paused).toBe(true);
+        expect(lock.exit).toHaveBeenCalled();
+        expect(document.activeElement).toBe(input());
+      });
+
+      it('keeps the ` out of the input it focuses', () => {
+        expect(backquote().defaultPrevented).toBe(true);
+        expect(input().value).toBe('');
+      });
+
+      it('` again closes it and plays on once the lock is back', async () => {
+        backquote();
+        lock.request.mockClear();
+        const e = backquote();
+        await flush();
+        expect(e.defaultPrevented).toBe(true);
+        expect(lock.request).toHaveBeenCalledOnce();
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+        expect(view.visible).toBe(false);
+      });
+
+      it('a refused lock lands on the pause menu with the retry hint', async () => {
+        backquote();
+        lock.grant = false;
+        backquote();
+        await flush();
+        expect(app.flow.state).toBe('paused');
+        expect(view.screen).toBe('pause');
+        expect(panel().textContent).toContain('Click RESUME again');
+      });
+
+      it('Esc goes back to the pause menu', () => {
+        backquote();
+        key('Escape');
+        expect(app.flow.state).toBe('paused');
+        expect(view.screen).toBe('pause');
+      });
+
+      it('keeps every key it gets from the game behind it', () => {
+        backquote();
+        const behind = vi.fn();
+        window.addEventListener('keydown', behind);
+        key('KeyW');
+        key('Enter');
+        backquote();
+        window.removeEventListener('keydown', behind);
+        expect(behind).not.toHaveBeenCalled();
+      });
+
+      it("is not opened by a ` typed into a text field (the level editor's)", () => {
+        const field = document.createElement('input');
+        document.body.append(field);
+        field.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backquote', bubbles: true, cancelable: true }));
+        expect(app.flow.state).toBe('playing');
+        field.remove();
+      });
+
+      it('runs a line typed into it and shows what it said', () => {
+        engine.activeScene.stamina = { value: 1, level: 'rested' };
+        backquote();
+        run('stamina 0.2');
+        expect(engine.activeScene.stamina.value).toBe(0.2);
+        expect(panel().textContent).toContain('> stamina 0.2');
+        expect(panel().textContent).toContain('Stamina 0.20');
+        expect(input().value).toBe('');
+        expect(document.activeElement).toBe(input());
+      });
+
+      it('shows a mistake as an error line', () => {
+        backquote();
+        run('stamna 0.2');
+        const error = panel().querySelector('.menu-console-line.is-error');
+        expect(error.textContent).toContain('stamina');
+      });
+
+      it('↑ recalls the last line run', () => {
+        backquote();
+        run('help');
+        key('ArrowUp');
+        expect(input().value).toBe('help');
+      });
+
+      it('keeps its log and history when closed and opened again', async () => {
+        backquote();
+        run('help');
+        backquote();
+        await flush();
+        backquote();
+        expect(panel().textContent).toContain('> help');
+        key('ArrowUp');
+        expect(input().value).toBe('help');
+      });
+
+      it('`editor` closes it into play and leaves the mouse to the editor', () => {
+        engine.levelEditor.toggle = vi.fn(() => { engine.levelEditor.enabled = !engine.levelEditor.enabled; });
+        backquote();
+        lock.request.mockClear();
+        run('editor');
+        expect(engine.levelEditor.enabled).toBe(true);
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+        expect(view.visible).toBe(false);
+        expect(lock.request).not.toHaveBeenCalled();
+      });
+
+      it('opens over the level editor, and closing goes back to it without the lock', async () => {
+        engine.levelEditor.enabled = true;
+        backquote();
+        expect(view.screen).toBe('console');
+        lock.request.mockClear();
+        backquote();
+        await flush();
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+        expect(lock.request).not.toHaveBeenCalled();
+      });
+
+      it('`models` reloads the scene through a rebuild, on the same night, and stays open', () => {
+        engine.activeScene.nights.setNight(2);
+        backquote();
+        run('models');
+        expect(engine.debugModels).toBe(true);
+        expect(engine.loadScene).toHaveBeenCalledOnce();
+        expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(2);
+        expect(view.screen).toBe('console');
+        expect(engine.paused).toBe(true);
+      });
+
+      it('`perf` turns on Show FPS, so the settings keep it on', () => {
+        engine.perfStats.visible = false;
+        backquote();
+        run('perf on');
+        expect(app.settings.values.showFps).toBe(true);
+        expect(engine.perfStats.show).toHaveBeenCalled();
+      });
+    });
+
+    describe('from the settings menu', () => {
+      it('is a button under DEVELOPER on the GAME tab; Back returns to settings', async () => {
+        await click('settings');
+        expect(panel().textContent).toContain('DEVELOPER');
+        await click('devConsole');
+        expect(view.screen).toBe('console');
+        expect(app.flow.state).toBe('mainMenu');
+        await click('back');
+        expect(view.screen).toBe('settings');
+      });
+
+      it('` closes it back to settings, leaving the lock alone', async () => {
+        await click('settings');
+        await click('devConsole');
+        backquote();
+        await flush();
+        expect(view.screen).toBe('settings');
+        expect(lock.request).not.toHaveBeenCalled();
+      });
+
+      it('over the pause menu, closing it returns to settings, still paused', async () => {
+        await startGame();
+        lock.lose();
+        await click('settings');
+        await click('devConsole');
+        backquote();
+        await flush();
+        expect(app.flow.state).toBe('paused');
+        expect(view.screen).toBe('settings');
+      });
+
+      it('`editor` is refused there: the editor needs the game running', async () => {
+        engine.levelEditor.toggle = vi.fn();
+        await click('settings');
+        await click('devConsole');
+        run('editor');
+        expect(engine.levelEditor.toggle).not.toHaveBeenCalled();
+        expect(view.screen).toBe('console');
+        expect(panel().querySelector('.menu-console-line.is-error')).not.toBeNull();
+      });
+    });
+
+    describe('in a production build', () => {
+      beforeEach(async () => {
+        app.dispose();
+        engine = makeEngine();
+        lock = makeLock();
+        view = makeDom();
+        app = new App(engine, { pointerLock: lock, view, fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+        await app.start();
+      });
+
+      it('there is no in-game console: no Settings button, and ` does nothing in play', async () => {
+        await click('settings');
+        expect(panel().querySelector('[data-action="devConsole"]')).toBeNull();
+        expect(panel().textContent).not.toContain('DEVELOPER');
+        await click('back');
+        await startGame();
+        backquote();
+        expect(app.flow.state).toBe('playing');
+      });
+    });
+
+    describe('window.dev, from the browser console (F12), in every build', () => {
+      let log, warn;
+      beforeEach(async () => {
+        app.dispose();
+        engine = makeEngine();
+        app = new App(engine, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+        await app.start();
+        log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      });
+      afterEach(() => { log.mockRestore(); warn.mockRestore(); });
+
+      it('runs a command and prints what it says, in one log', () => {
+        window.dev('help stamina');
+        expect(log).toHaveBeenCalledTimes(1);
+        expect(log.mock.calls[0][0]).toContain('stamina [0–1]');
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('with nothing typed, prints the list of commands', () => {
+        window.dev();
+        expect(log.mock.calls[0][0]).toContain('help [command] — List the commands, or explain one');
+        expect(log.mock.calls[0][0]).toContain('night [n]');
+      });
+
+      it('a mistake is a warning', () => {
+        window.dev('nope');
+        expect(log).not.toHaveBeenCalled();
+        expect(warn.mock.calls[0][0]).toContain('Unknown command "nope"');
+      });
+
+      it('leaves the game running: no menu opens and nothing pauses', async () => {
+        await startGame();
+        window.dev('help');
+        expect(app.flow.state).toBe('playing');
+        expect(engine.paused).toBe(false);
+      });
+
+      it('goes with the App, and only its own', () => {
+        const other = new App(makeEngine(), { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage: memoryStorage(), devToolsDefault: false, dev: false });
+        other.dispose();
+        expect(typeof window.dev).toBe('function');
+        app.dispose();
+        expect(window.dev).toBeUndefined();
       });
     });
   });

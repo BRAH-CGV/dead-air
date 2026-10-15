@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { NightClock } from './NightClock.js';
+import { NightClock, NIGHT_SECONDS, SHIFT } from './NightClock.js';
 
 describe('NightClock', () => {
   it('starts at startHour with zero elapsed', () => {
@@ -12,7 +12,7 @@ describe('NightClock', () => {
 
   it('accumulates elapsed time and maps it to in-game hours', () => {
     // 300 real seconds = 6 in-game hours → 50 s per hour
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.update(50);  // one in-game hour
     expect(clock.elapsed).toBeCloseTo(50);
     expect(clock.currentTime).toBeCloseTo(1.0);
@@ -22,14 +22,14 @@ describe('NightClock', () => {
   });
 
   it('clamps currentTime to endHour and sets finished', () => {
-    const clock = new NightClock({ nightDuration: 300, endHour: 6 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300, endHour: 6 });
     clock.update(999);  // way past 6 hours
     expect(clock.currentTime).toBe(6);
     expect(clock.finished).toBe(true);
   });
 
   it('does not advance while paused', () => {
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.update(25);
     clock.pause();
     expect(clock.paused).toBe(true);
@@ -45,7 +45,7 @@ describe('NightClock', () => {
   });
 
   it('resets to initial state', () => {
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.update(100);
     expect(clock.elapsed).toBeGreaterThan(0);
 
@@ -58,7 +58,7 @@ describe('NightClock', () => {
 
   it('fires onHourChange exactly once per integer hour crossed', () => {
     const onHour = vi.fn();
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.onHourChange = onHour;
 
     // 50 s = 1 hour.  Split into two updates: 30s + 20s.
@@ -76,7 +76,7 @@ describe('NightClock', () => {
 
   it('fires onNightEnd when finished becomes true', () => {
     const onEnd = vi.fn();
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.onNightEnd = onEnd;
 
     clock.update(200);  // 4 hours — not done
@@ -88,7 +88,7 @@ describe('NightClock', () => {
 
   it('fires onNightEnd only once even with overshoot', () => {
     const onEnd = vi.fn();
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.onNightEnd = onEnd;
 
     clock.update(999);  // way past
@@ -98,7 +98,7 @@ describe('NightClock', () => {
 
   it('fires onTick every update with currentTime', () => {
     const onTick = vi.fn();
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.onTick = onTick;
 
     clock.update(10);
@@ -111,7 +111,7 @@ describe('NightClock', () => {
 
   it('does not fire onTick while paused', () => {
     const onTick = vi.fn();
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     clock.onTick = onTick;
 
     clock.pause();
@@ -160,10 +160,106 @@ describe('NightClock', () => {
   });
 
   it('exposes a formatted timeString', () => {
-    const clock = new NightClock({ nightDuration: 300 });
+    const clock = new NightClock({ startHour: 0, nightDuration: 300 });
     expect(clock.timeString).toBe('12:00 AM');
 
     clock.update(75);  // 1.5 hours → 1:30 AM
     expect(clock.timeString).toBe('1:30 AM');
+  });
+});
+
+describe('setTime (the dev console)', () => {
+  const opts = { startHour: 0, endHour: 6, nightDuration: 300 };
+
+  it('jumps to an hour, and the clock runs on from there', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(3);
+    expect(clock.currentTime).toBe(3);
+    expect(clock.timeString).toBe('3:00 AM');
+    clock.update(25);   // half an hour at 50 s an hour
+    expect(clock.currentTime).toBeCloseTo(3.5);
+  });
+
+  it('goes back as well as forward', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(4);
+    clock.setTime(2);
+    expect(clock.timeString).toBe('2:00 AM');
+    expect(clock.elapsed).toBeCloseTo(100);
+  });
+
+  it('stays within the shift', () => {
+    const clock = new NightClock(opts);
+    clock.setTime(-3);
+    expect(clock.currentTime).toBe(0);
+    clock.setTime(9);
+    expect(clock.currentTime).toBe(6);
+  });
+
+  it('follows the clock\'s own hours', () => {
+    const clock = new NightClock({ startHour: -6, endHour: 6, nightDuration: 600 });
+    clock.setTime(-2);
+    expect(clock.timeString).toBe('10:00 PM');
+    expect(clock.elapsed).toBeCloseTo(200);
+  });
+
+  it('the end of the shift still ends the night on the next update', () => {
+    const clock = new NightClock(opts);
+    const end = vi.fn();
+    clock.onNightEnd = end;
+    clock.setTime(6);
+    expect(clock.finished).toBe(false);
+    clock.update(0.01);
+    expect(end).toHaveBeenCalledOnce();
+  });
+});
+
+describe('shift length', () => {
+  it('is ten real minutes by default (NIGHT_SECONDS)', () => {
+    expect(NIGHT_SECONDS).toBe(600);
+    expect(new NightClock().nightDuration).toBe(NIGHT_SECONDS);
+  });
+});
+
+describe('the shift runs from dusk to dawn', () => {
+  it('starts at sunset, 6:00 PM, and ends at 6:00 AM', () => {
+    const clock = new NightClock();
+    expect(clock.startHour).toBe(SHIFT.startHour);
+    expect(clock.endHour).toBe(SHIFT.endHour);
+    expect(clock.timeString).toBe('6:00 PM');
+    clock.update(NIGHT_SECONDS / 2);
+    expect(clock.timeString).toBe('12:00 AM');
+    clock.update(NIGHT_SECONDS / 2);
+    expect(clock.timeString).toBe('6:00 AM');
+    expect(clock.finished).toBe(true);
+  });
+
+  it('keeps the old pace: 50 real seconds an hour', () => {
+    expect(NIGHT_SECONDS / (SHIFT.endHour - SHIFT.startHour)).toBe(50);
+  });
+
+  it('is dark an hour after sunset', () => {
+    expect(SHIFT.darkHour).toBe(SHIFT.startHour + 1);
+  });
+
+  it('crosses midnight without losing an hour', () => {
+    const clock = new NightClock();
+    const hours = [];
+    clock.onHourChange = h => hours.push(h);
+    clock.update(NIGHT_SECONDS);
+    expect(hours).toEqual([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+describe('one twelve-hour shift', () => {
+  it('runs sunset to sunrise with no overtime: one shift, 6:00 PM to 6:00 AM', () => {
+    expect(SHIFT.endHour - SHIFT.startHour).toBe(12);
+    expect(SHIFT.shiftEndHour).toBeUndefined();
+    const clock = new NightClock();
+    expect(clock.overtime).toBeUndefined();
+    clock.update(NIGHT_SECONDS - 1);
+    expect(clock.finished).toBe(false);
+    clock.update(1);
+    expect(clock.finished).toBe(true);
   });
 });

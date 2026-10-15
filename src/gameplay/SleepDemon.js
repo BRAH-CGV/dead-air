@@ -30,7 +30,7 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //
 // It comes every night, and runs only through the shift. In the morning, or
 // behind the failed-night prompt, it is hidden and silent; every night that
-// starts (a new one, a retry, the N key) sends it away. It holds while the
+// starts (a new one, a retry, the console's `night`) sends it away. It holds while the
 // debug fly camera has frozen the player.
 //
 // It is silent but for its footsteps (FOOTSTEP), and those only while it

@@ -8,7 +8,7 @@
 // the EVA suit, not the calendar (see Airlock).
 //
 // Plain state, no engine dependency — gameplay (sleeping through the day,
-// debug keys) calls advance(); listeners react through onChange.
+// the dev console's `night`) calls advance(); listeners react through onChange.
 // ─────────────────────────────────────────────
 
 export class NightManager {

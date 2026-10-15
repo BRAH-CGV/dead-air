@@ -28,7 +28,7 @@ function makeEngine() {
     scene: makeScene([shared, shared, [other, shared]]),
     playerController: { sensitivity: 0, invertY: false, cameraSmoothing: 0, crouchMode: 'toggle' },
     perfStats: { show: vi.fn(), hide: vi.fn() },
-    keyBinds: { ...binds(), debugFly: 'KeyV' },
+    keyBinds: binds(),
     activeScene: { moonLight: { shadow: { mapSize: { x: 2048, y: 2048, set(x, y) { this.x = x; this.y = y; } }, map: shadowMap } } },
     shadows: { invalidate: vi.fn() },
     levelEditor: { enabled: false, toggle: vi.fn() },
@@ -118,7 +118,6 @@ describe('applySettings', () => {
     applySettings(engine, settings({ keyBinds: { ...binds(), jump: 'KeyJ' } }), { devicePixelRatio: 1 });
     expect(engine.keyBinds).toBe(before);
     expect(engine.keyBinds.jump).toBe('KeyJ');
-    expect(engine.keyBinds.debugFly).toBe('KeyV');
   });
 
   it('hands the dust storm quality to the scene', () => {

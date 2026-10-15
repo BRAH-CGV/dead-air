@@ -35,19 +35,21 @@ describe('isReserved', () => {
   it.each(['Escape', 'Backquote', 'F1', 'F2', 'F4', 'F12', 'KeyQ', 'Enter', 'NumpadEnter'])(
     'always reserves %s',
     (code) => {
-      expect(isReserved(code, { devTools: false })).toBe(true);
-      expect(isReserved(code, { devTools: true })).toBe(true);
+      expect(isReserved(code)).toBe(true);
     },
   );
 
-  it.each(['KeyV', 'KeyB', 'KeyN', 'KeyI'])('reserves the debug key %s only while dev tools are on', (code) => {
-    expect(isReserved(code, { devTools: true })).toBe(true);
-    expect(isReserved(code, { devTools: false })).toBe(false);
-  });
+  // The debug tools moved into the developer console (`, the one key they
+  // keep), so their old keys are free for the player.
+  it.each(['KeyV', 'KeyB', 'KeyN', 'KeyI', 'KeyU', 'KeyK', 'KeyJ', 'KeyM', 'Comma'])(
+    'leaves the old debug key %s free',
+    (code) => {
+      expect(isReserved(code)).toBe(false);
+    },
+  );
 
   it('leaves ordinary keys free', () => {
-    expect(isReserved('KeyJ', { devTools: true })).toBe(false);
-    expect(isReserved('Space', { devTools: true })).toBe(false);
+    expect(isReserved('Space')).toBe(false);
   });
 });
 
@@ -55,7 +57,7 @@ describe('rebind', () => {
   const defaults = () => ({
     forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
-    debugFly: 'KeyV',
+    sprint: 'ShiftLeft',
   });
 
   it('binds a free key to the action', () => {
@@ -77,18 +79,18 @@ describe('rebind', () => {
   });
 
   it('rejects a reserved key with a reason', () => {
-    const result = rebind(defaults(), 'jump', 'KeyQ', { devTools: false });
+    const result = rebind(defaults(), 'jump', 'KeyQ');
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/reserved/i);
   });
 
-  it('rejects a debug key while dev tools are on, allows it when off', () => {
-    expect(rebind(defaults(), 'jump', 'KeyV', { devTools: true }).ok).toBe(false);
-    expect(rebind(defaults(), 'jump', 'KeyV', { devTools: false }).ok).toBe(true);
+  it("takes an old debug key, and refuses the console's", () => {
+    expect(rebind(defaults(), 'jump', 'KeyV').ok).toBe(true);
+    expect(rebind(defaults(), 'jump', 'Backquote').ok).toBe(false);
   });
 
   it('rejects an action that is not rebindable', () => {
-    expect(rebind(defaults(), 'debugFly', 'KeyJ').ok).toBe(false);
+    expect(rebind(defaults(), 'sprint', 'KeyJ').ok).toBe(false);
   });
 
   it('rebinding to the key it already has is a no-op success', () => {

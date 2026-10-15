@@ -487,7 +487,7 @@ describe('DustEyes — the growl and the leap', () => {
   });
 });
 
-describe('DustEyes — the J key', () => {
+describe('DustEyes — the console\'s eyes', () => {
   it('puts it in front of the player, so it can be found', () => {
     const rig = makeRig({ random: Math.random });
     for (const look of [[0, 0, 1], [-1, 0, 0], [1, 0, 0.2]]) {

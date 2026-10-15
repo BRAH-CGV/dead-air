@@ -107,12 +107,13 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
-// wall clock and the HUD both show. The last hour brings the dawn (Daylight
-// turns the sky, lights and fog to the Martian day). A met quota makes it
+// A night is a shift: 6:00 PM to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. It starts at sunset and the first hour is
+// the dusk; the last hour brings the dawn (Daylight turns the sky, lights and
+// fog between the night and the Martian day). A met quota makes it
 // morning, and the bunk in LivingQuarters sleeps through the day to the next
-// night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
-// night 1 after the last.
+// night. The dev console's `night` skips ahead; it wraps back to night 1
+// after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -374,7 +375,11 @@ export class BaseScene extends Scene {
     // The airlock's open end sits on the office's front outer wall face,
     // centred on the front doorway — the office doorway is its way in.
     const airlock = new Airlock(engine);
-    const frontDoorX = office.position[0] + office.openings.find(o => o.side === 'front').offset;
+    const frontDoor = office.openings.find(o => o.side === 'front');
+    const frontDoorX = office.position[0] + frontDoor.offset;
+    // The office's front wall shows inside the airlock, round that doorway:
+    // the airlock lines it, as neither room's own walls cover it.
+    airlock.openEndDoorways = { back: { width: frontDoor.width, height: frontDoor.height } };
     const frontFace  = office.position[2] + office.depth / 2 + office.wallThick / 2;
     airlock.position = [frontDoorX, 0, frontFace + airlock.length / 2];
 
@@ -396,9 +401,22 @@ export class BaseScene extends Scene {
       length: CORRIDOR_LENGTH, width: CORRIDOR_WIDTH,
       height: rooms.MainOffice.height, wallThick: rooms.MainOffice.wallThick, axis: 'x',
     };
+    // Each end butts against a room's outer wall, round its doorway; the
+    // corridor lines that face, as neither room's own walls cover it. A
+    // corridor runs along x, so its left end is the −x one.
+    const door = (room, side) => {
+      const { width, height } = rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
     this.corridors = {
-      OfficeToServer:   new Corridor(engine, { ...common, name: 'OfficeToServer',   position: [ mid, 0, this._doorZ.right] }),
-      OfficeToQuarters: new Corridor(engine, { ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left] }),
+      OfficeToServer: new Corridor(engine, {
+        ...common, name: 'OfficeToServer', position: [mid, 0, this._doorZ.right],
+        openEndDoorways: { left: door('MainOffice', 'right'), right: door('ServerRoom', 'left') },
+      }),
+      OfficeToQuarters: new Corridor(engine, {
+        ...common, name: 'OfficeToQuarters', position: [-mid, 0, this._doorZ.left],
+        openEndDoorways: { left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left') },
+      }),
     };
     for (const corridor of Object.values(this.corridors)) this._corridors.addChild(corridor.build());
   }
@@ -537,10 +555,10 @@ export class BaseScene extends Scene {
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
       listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
-      // Testing only — remove before release. Each key swings a music
-      // track in, and back out on the next press: M the spooky one, comma
-      // the ambient one. Dev builds only: the production bundle has no keys.
-      testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
+      // Testing only: the dev console's `music spooky|ambient|off` swings
+      // one in under the game. Dev builds only, so the production bundle
+      // never loads the extra track for it.
+      testTracks: import.meta.env?.DEV ? { spooky: AMBIENCE.music, ambient: AMBIENCE.ambientMusic } : null,
     }));
 
     // The silence of the sealed airlock is filled by its pressure release:
@@ -579,7 +597,7 @@ export class BaseScene extends Scene {
    *  Built after the rooms, the outside area and the player, because it
    *  reaches into all three. */
   _addGameplaySystems() {
-    this.nightClock = new NightClock({ nightDuration: 300 });
+    this.nightClock = new NightClock();
 
     // Payload URLs are direct paths to the placeholder images, not manifest
     // keys — they are displayed through an HTML <img>, not a Three.js
@@ -588,7 +606,7 @@ export class BaseScene extends Scene {
     const payloadPool = Array.from({ length: 8 }, (_, i) =>
       `assets/signals/signal-${i + 1}.png`,
     );
-    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+    this.signalManager = new SignalManager({ payloadPool });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -1063,18 +1081,21 @@ export class BaseScene extends Scene {
     // door. Scaled against the doorway it stands next to: the model is 3.3 m
     // tall as downloaded, which beside a 2.2 m door reads as a machine that
     // could not get through it. BUGGY_SCALE brings the roof to just over the
-    // lintel. Position and heading placed by hand in the level editor (F2).
+    // lintel. Position and heading placed by hand in the level editor.
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
-    // Generator stand-in until generator.glb arrives (asset list, P1). In the
-    // far corner of the fenced yard, on the side away from the buggy — a walk
-    // out into the storm to cut the power, along the wire. Read off the
-    // fence, so it follows the yard. _addPower() puts its switch on it.
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it.
     const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
     const [insetX, insetZ] = GENERATOR_CORNER_INSET;
     const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this._addStandIn('Generator', 'generator.glb',
-      [genX, 0.8, fenceRect.maxZ - insetZ], [2.0, 1.6, 1.2], 0x5a4a32);
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
   }
 
@@ -1637,6 +1658,7 @@ export class BaseScene extends Scene {
       whiteOut:    this.whiteOut,
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
@@ -1714,6 +1736,9 @@ export class BaseScene extends Scene {
       // …and the wind: the storm has no recording of its own. It blows the
       // ambience's wind harder, and lets a hiss of it into the rooms.
       ambience: this.ambience,
+      // The moons are lost in the dust, and their light with them.
+      moon:     this.moonLight,
+      ambient:  this.ambientLight,
       hooks: {
         // The grit is wrapped round the eye the frame is drawn from — a
         // security camera's, on the monitor (Engine.renderCamera).
@@ -1721,6 +1746,7 @@ export class BaseScene extends Scene {
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.sandstorm);
     this._addDustEyes();
@@ -1988,7 +2014,7 @@ export class BaseScene extends Scene {
    * body rather than on the floor, so dropped at y = 0 the wheels end up
    * buried, and this is measured off the model's own bounds so swapping it
    * cannot quietly sink it again. Passing `y` explicitly overrides that with
-   * a value read straight from the level editor (F2): easier to trust than
+   * a value read straight from the level editor: easier to trust than
    * the computed one once someone has actually looked at where the wheels
    * land, and the fix if that ever needs revisiting.
    */
@@ -2006,31 +2032,6 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
-  }
-
-  /** Solid box standing in for a model that hasn't been sourced yet. */
-  _addStandIn(name, file, position, size, color) {
-    const { world } = this.engine;
-    const go = new GameObject(name);
-    go.object3d.position.set(...position);
-    const mesh = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(...size)),
-      this._own(new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.3 })),
-    );
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...position));
-    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2), body);
-    go.rigidBody = body;
-    go.collider  = collider;
-    go.colliders = [collider];
-    go._originalSize = [...size];
-    go.placeholderFor = file;
-    this.engine._bodyToGO?.set(body.handle, go);
-
-    this._outside.addChild(go);
-    return go;
   }
 
   // ──────────────────────────────────────────
