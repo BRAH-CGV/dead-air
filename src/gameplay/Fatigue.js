@@ -5,10 +5,14 @@
 // to feel threatened. By level:
 //
 //   ok        nothing
-//   tired     a yawn every 20–35 s; the view narrows (tunnel)
-//   critical  a yawn every 7–12 s, blinks, the lights stutter (dread),
-//             a heartbeat rising towards empty
+//   tired     the view narrows (tunnel)
+//   critical  blinks, the lights stutter (dread), a heartbeat rising
+//             towards empty
 //   < 0.08    it nods off: the lids stay shut for a moment
+//
+// And a yawn at a few marks on the way down (yawnAt), not on a timer: one
+// as tiredness sets in, a warning, then three more, closer together towards
+// the end. Any more and they take the player out of it.
 //
 // The base dimming with fatigue is StaminaDrain's 'fatigue' factor; this is
 // everything on top of it. tunnel() and heartbeat() are pure functions of
@@ -23,10 +27,14 @@ import { STAMINA } from './Stamina.js';
 export const FATIGUE = Object.freeze({
   /** How dark the tunnel's edge gets at empty (the overlay's opacity). */
   tunnelMax: 0.85,
-  /** Seconds between yawns [min, max], by level. */
-  yawnGap: Object.freeze({ tired: [20, 35], critical: [7, 12] }),
-  /** Seconds from first feeling tired to the first yawn [min, max]. */
-  firstYawn: [2, 6],
+  /** The stamina marks a yawn comes at, once each on the way down: the
+   *  first is tiredBelow (the warning), the gaps after it closing in. */
+  yawnAt: Object.freeze([0.5, 0.28, 0.16, 0.07]),
+  /** Seconds after a mark is passed that its yawn comes [min, max]. */
+  yawnDelay: [2, 6],
+  /** How far back above a mark stamina must be eaten before its yawn can
+   *  come again, so hovering at one never repeats it. */
+  yawnRearm: 0.1,
   /** Critical: seconds between blinks, and how long one takes. */
   blinkGap: [4, 8],
   blinkSeconds: 0.25,
@@ -96,6 +104,7 @@ export class FatigueLogic {
     this.dread = 1;
     this._level = 'ok';
     this._yawnIn = Infinity;
+    this._passed = this.tuning.yawnAt.map(() => false);
     this._blinkIn = Infinity;
     this._sleepIn = Infinity;
     this._flickerIn = Infinity;
@@ -112,11 +121,7 @@ export class FatigueLogic {
     if (!nodding) this._sleepIn = Infinity;
     else if (this._sleepIn === Infinity) this._sleepIn = this._between(this.tuning.microsleepGap);
 
-    this._yawnIn -= dt;
-    if (this._yawnIn <= 0) {
-      this.onYawn?.();
-      this._yawnIn += this._between(this.tuning.yawnGap[level]);
-    }
+    this._yawns(dt, stamina, level);
 
     this._updateLids(dt);
     this._updateFlicker(dt);
@@ -124,15 +129,33 @@ export class FatigueLogic {
 
   // ── Private ──
 
-  _changeLevel(from, to) {
-    const { yawnGap, firstYawn, blinkGap, flickerGap } = this.tuning;
-    if (to === 'ok') {
-      this._yawnIn = this._blinkIn = this._flickerIn = Infinity;
+  /** A yawn a beat after stamina passes one of its marks; several passed
+   *  at once, or one passed with a yawn still to come, are that one yawn.
+   *  A mark eaten well clear of (yawnRearm) can be passed again. */
+  _yawns(dt, stamina, level) {
+    const { yawnAt, yawnDelay, yawnRearm } = this.tuning;
+    let passed = false;
+    yawnAt.forEach((mark, i) => {
+      if (!this._passed[i] && stamina < mark) passed = this._passed[i] = true;
+      else if (this._passed[i] && stamina >= mark + yawnRearm) this._passed[i] = false;
+    });
+    if (level === 'ok') {
+      this._yawnIn = Infinity;              // eaten back: no yawn still to come
       return;
     }
-    if (from === 'ok') this._yawnIn = this._between(firstYawn);
+    if (passed && this._yawnIn === Infinity) this._yawnIn = this._between(yawnDelay);
+    if ((this._yawnIn -= dt) > 0) return;
+    this._yawnIn = Infinity;
+    this.onYawn?.();
+  }
+
+  _changeLevel(from, to) {
+    const { blinkGap, flickerGap } = this.tuning;
+    if (to === 'ok') {
+      this._blinkIn = this._flickerIn = Infinity;
+      return;
+    }
     if (to === 'critical') {
-      this._yawnIn = Math.min(this._yawnIn, this._between(yawnGap.critical));
       this._blinkIn = this._between(blinkGap);
       this._flickerIn = this._between(flickerGap);
     } else {

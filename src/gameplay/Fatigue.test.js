@@ -47,25 +47,53 @@ describe('FatigueLogic', () => {
     expect(yawns).toBe(0);
   });
 
-  it('the first yawn comes a few seconds after tiredness sets in, then every 20–35 s', () => {
+  it('one yawn a beat after tiredness sets in — the warning — and no more however long it lasts', () => {
     let yawns = 0;
     const f = new FatigueLogic({ rand: low, onYawn: () => yawns++ });
-    run(f, FATIGUE.firstYawn[0] - 0.1, 0.4);
+    run(f, FATIGUE.yawnDelay[0] - 0.1, 0.45);
     expect(yawns).toBe(0);
-    run(f, 0.2, 0.4);
+    run(f, 0.2, 0.45);
     expect(yawns).toBe(1);
-    run(f, FATIGUE.yawnGap.tired[0] - 0.2, 0.4);
+    run(f, 300, 0.45);
     expect(yawns).toBe(1);
-    run(f, 0.2, 0.4);
-    expect(yawns).toBe(2);
   });
 
-  it('yawns come faster once critical', () => {
+  it('down to empty only yawnAt.length yawns: the warning at tiredBelow, then a few, closer together', () => {
+    const at = FATIGUE.yawnAt;
+    expect(at[0]).toBe(STAMINA.tiredBelow);
+    expect(at.length).toBe(4);
+    const gaps = at.slice(1).map((v, i) => at[i] - v);
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThan(gaps[i - 1]);
+
+    const heard = [];
+    let stamina = 0.6;
+    const f = new FatigueLogic({ rand: low, onYawn: () => heard.push(stamina) });
+    for (; stamina > 0; stamina -= 0.0001) run(f, 0.05, stamina);   // a slow drain
+    expect(heard.length).toBe(at.length);
+    heard.forEach((s, i) => {
+      expect(s).toBeLessThan(at[i]);
+      expect(s).toBeGreaterThan(at[i] - 0.01);   // a beat after its mark
+    });
+  });
+
+  it('passing several marks at once is one yawn, not a burst', () => {
     let yawns = 0;
     const f = new FatigueLogic({ rand: low, onYawn: () => yawns++ });
-    run(f, 60, 0.15);
-    const gap = FATIGUE.yawnGap.critical[0];
-    expect(yawns).toBe(1 + Math.floor((60 - FATIGUE.firstYawn[0]) / gap));
+    run(f, 60, 0.1);                         // straight past three marks
+    expect(yawns).toBe(1);
+  });
+
+  it('eaten well back above a mark, its yawn can come again — never from hovering at it', () => {
+    let yawns = 0;
+    const f = new FatigueLogic({ rand: low, onYawn: () => yawns++ });
+    run(f, 10, 0.45);
+    expect(yawns).toBe(1);
+    run(f, 10, 0.51);                        // only just back above it
+    run(f, 10, 0.45);
+    expect(yawns).toBe(1);
+    run(f, 10, 0.7);                         // well clear
+    run(f, 10, 0.45);
+    expect(yawns).toBe(2);
   });
 
   it('eating back to ok stops the yawns', () => {
@@ -146,7 +174,9 @@ describe('FatigueLogic', () => {
     expect(f.eyelid).toBe(0);
     expect(f.dread).toBe(1);
     const before = yawns;
-    run(f, FATIGUE.firstYawn[0] - 0.1, 0.4);
+    run(f, FATIGUE.yawnDelay[0] - 0.1, 0.4);
     expect(yawns).toBe(before);
+    run(f, 1, 0.4);                          // the marks are fresh again
+    expect(yawns).toBe(before + 1);
   });
 });
