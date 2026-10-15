@@ -50,22 +50,14 @@ export const BUGGY_DEPARTURE = {
   gateCloseOver: 4,
   /** Clear of the yard's corners: the gate's edge stays this far in. */
   cornerMargin: 1,
-  /** The route: a smooth turn from the buggy's nose to square on the gate
-   *  `approach` metres inside it, straight through and `beyond` metres on,
-   *  a smooth turn onto the lane `join` metres further out, then the lane's
-   *  centre out to `out` metres from the base. Laid as a point every `step`
-   *  metres: evenly spaced points keep the spline from overshooting. */
-  approach: 1,
-  beyond: 1,
-  join: 20,
-  /** Each turn's tangents, out of its start and into its end, as shares of
-   *  its chord. Into the gate longer swings it round sooner, opening the
-   *  tightest part out to about a 5 m radius. Onto the lane, which crosses
-   *  the fence aslant, a long, gentle join keeps the S it has to make (the
-   *  gate is square, the lane is not) to a few degrees. */
-  gateTurn: [1, 1.5],
-  laneTurn: [0.7, 1.3],
-  step: 1,
+  /** The route: `pullAway` metres straight along the buggy's nose first,
+   *  then lined up `approach` metres inside the gate, through it, `beyond`
+   *  metres straight on, then the lane's centre every `step` metres out to
+   *  `out` metres from the base. */
+  pullAway: 3,
+  approach: 4,
+  beyond: 2,
+  step: 5,
   out: 45,
   /** The eagle view: metres behind and above the buggy, looking at a point
    *  `ahead` metres in front of it. */
@@ -138,12 +130,8 @@ export function exitGate(lanes, rect, { near = 0, halfWidth = BUGGY_DEPARTURE.ga
 
 /**
  * The way out, as ground-plan points for a smooth curve: from where the
- * buggy stands, round from its nose to line up square on the gate, through
- * it, round onto the lane and out along its centre line.
- *
- * The turns are cubic Hermite curves, each matched to the heading at both
- * of its ends, so the way never kinks: the buggy faces along it, and a kink
- * was it spinning on the spot.
+ * buggy stands, straight along its nose, round to line up square on the
+ * gate, through it, and out along the lane's centre line.
  * @param {{start: {x: number, z: number}, forward: {x: number, z: number},
  *          gate: {at: number, lane?: object}, lane?: {bearing: number, wander: number},
  *          rect: {maxZ: number}}} opts  `forward` is the way its nose points;
@@ -152,53 +140,18 @@ export function exitGate(lanes, rect, { near = 0, halfWidth = BUGGY_DEPARTURE.ga
  */
 export function buggyRoute({ start, forward, gate, lane = gate.lane, rect }) {
   const T = BUGGY_DEPARTURE;
-  const north = { x: 0, z: 1 };
-  const nose = unit(forward);
-  const lined = { x: gate.at, z: rect.maxZ - T.approach };
-  const through = { x: gate.at, z: rect.maxZ + T.beyond };
-  const r0 = Math.hypot(through.x, through.z) + T.join;
-
-  const points = [{ x: start.x, z: start.z }];
-  turn(points, start, nose, lined, north, T.step, T.gateTurn);
-  straight(points, lined, through, T.step);
-  turn(points, through, north, laneCentre(lane, r0), laneHeading(lane, r0), T.step, T.laneTurn);
-  for (let r = r0 + T.step; r < T.out; r += T.step) points.push(laneCentre(lane, r));
+  const ahead = T.pullAway / Math.hypot(forward.x, forward.z);
+  const points = [
+    { x: start.x, z: start.z },
+    { x: start.x + forward.x * ahead, z: start.z + forward.z * ahead },
+    { x: gate.at, z: rect.maxZ - T.approach },
+    { x: gate.at, z: rect.maxZ },
+    { x: gate.at, z: rect.maxZ + T.beyond },
+  ];
+  const past = points.at(-1);
+  for (let r = Math.hypot(past.x, past.z) + T.step; r < T.out; r += T.step) points.push(laneCentre(lane, r));
   points.push(laneCentre(lane, T.out));
   return points;
-}
-
-const unit = v => { const l = Math.hypot(v.x, v.z); return { x: v.x / l, z: v.z / l }; };
-
-/** The way a lane's centre runs at `radius`, outward. */
-function laneHeading(lane, radius) {
-  const a = laneCentre(lane, radius - 0.5);
-  const b = laneCentre(lane, radius + 0.5);
-  return unit({ x: b.x - a.x, z: b.z - a.z });
-}
-
-/** Points along a cubic Hermite from `p0` heading `d0` to `p1` heading `d1`
- *  (unit vectors), about `step` apart, `p0` itself left out. The tangents
- *  are `scale` shares of the chord, [out of p0, into p1]: about the chord's
- *  length rounds the turn without a loop. */
-function turn(points, p0, d0, p1, d1, step, [k0, k1]) {
-  const chord = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-  const m = chord * k0;
-  const n1 = chord * k1;
-  const n = Math.max(1, Math.ceil(chord / step));
-  for (let i = 1; i <= n; i++) {
-    const t = i / n, t2 = t * t, t3 = t2 * t;
-    const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
-    points.push({
-      x: h00 * p0.x + h10 * m * d0.x + h01 * p1.x + h11 * n1 * d1.x,
-      z: h00 * p0.z + h10 * m * d0.z + h01 * p1.z + h11 * n1 * d1.z,
-    });
-  }
-}
-
-/** Points on the straight from `a` to `b`, about `step` apart, `a` left out. */
-function straight(points, a, b, step) {
-  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / step));
-  for (let i = 1; i <= n; i++) points.push({ x: a.x + (b.x - a.x) * i / n, z: a.z + (b.z - a.z) * i / n });
 }
 
 /** The route as a curve, each point at `heightAt(x, z)`. Centripetal, so it
