@@ -127,6 +127,8 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     expect(scene.gameController.nightNumber).toBe(1);
 
     expect(loadTheBuggy(box)).toBe(true);
+    expect(scene.gameController.canSleep).toBe(false);   // loaded, not yet sent off
+    expect(scene.gameController.dispatch()).toBe(true);
     expect(scene.gameController.canSleep).toBe(true);
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
@@ -139,6 +141,7 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     const box = workTheShift();
     const drives = box.receiver.attachedItems.filter(Boolean);
     loadTheBuggy(box);
+    scene.gameController.dispatch();
     scene.gameController.sleep();
     expect(scene.gameController.nightNumber).toBe(2);
 

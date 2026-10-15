@@ -49,6 +49,14 @@ describe('Bed', () => {
     expect(controller.sleep).not.toHaveBeenCalled();
   });
 
+  it('in the morning, with the drives loaded but the buggy still here, says to send it off', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    controller.delivered = true;
+    controller.dispatched = false;
+    expect(label('morning')).toMatch(/send the buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+  });
+
   it('offers nothing after a failed night or the last shift', () => {
     expect(label('gameOver')).toBe('');
     expect(label('finished')).toBe('');
