@@ -12,6 +12,10 @@ function makeHUD() {
   };
 }
 
+function makeBanner() {
+  return { show: vi.fn(), clear: vi.fn(), timer: { onDone: null } };
+}
+
 function makeSatellite() {
   return { scanProgress: 0, scanTarget: null, isScanning: false };
 }
@@ -19,13 +23,14 @@ function makeSatellite() {
 const POOL = ['s1.png', 's2.png', 's3.png', 's4.png', 's5.png'];
 
 describe('GameController', () => {
-  let gc, clock, mgr, hud, sat, quotaDock;
+  let gc, clock, mgr, hud, sat, quotaDock, banner;
 
   beforeEach(() => {
     gc   = new GameController();
     clock = new NightClock({ startHour: 0, nightDuration: 300 });
     mgr  = new SignalManager({ signalsPerNight: 10, payloadPool: POOL });
     hud  = makeHUD();
+    banner = makeBanner();
     sat  = makeSatellite();
     // A plain dock stub — the controller only reads collectedCount /
     // requiredCount and calls isQuotaMet().
@@ -38,6 +43,7 @@ describe('GameController', () => {
     gc.nightClock    = clock;
     gc.signalManager = mgr;
     gc.hud           = hud;
+    gc.banner        = banner;
     gc.satellite     = sat;
     gc.quotaDock      = quotaDock;
     gc.autoStart     = false;  // manual control for tests
@@ -107,7 +113,8 @@ describe('GameController', () => {
 
     expect(gc.state).toBe('playing');
     expect(clock.paused).toBe(false);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Hold out until 6:00 AM');
+    expect(banner.show).toHaveBeenCalledWith('Quota met', { tone: 'info' });
 
     gc.onUpdate(50);
     expect(clock.currentTime).toBeCloseTo(1.0);
@@ -128,7 +135,8 @@ describe('GameController', () => {
     gc.onUpdate(999);
 
     expect(gc.state).toBe('morning');
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('Shift over — get some sleep (bedroom)');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Get some sleep (bedroom)');
+    expect(banner.show).toHaveBeenCalledWith('6:00 AM — shift over', { tone: 'info' });
     expect(hud.setTime).toHaveBeenLastCalledWith('6:00 AM');
   });
 
@@ -459,17 +467,18 @@ describe('GameController.refreshPrompt', () => {
   const setUp = (collected) => {
     const gc = new GameController();
     const hud = makeHUD();
+    const banner = makeBanner();
     const quotaDock = { requiredCount: 1, collectedCount: collected, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
-    Object.assign(gc, { nightClock: new NightClock(), hud, quotaDock, satellite: makeSatellite(), autoStart: false });
+    Object.assign(gc, { nightClock: new NightClock(), hud, banner, quotaDock, satellite: makeSatellite(), autoStart: false });
     gc.startNight(1);
-    return { gc, hud };
+    return { gc, hud, banner };
   };
 
   it("puts the quota-met prompt back up after something else wrote over it (a nap's wake-up line)", () => {
     const { gc, hud } = setUp(1);
     hud.setPrompt('The power went out.');
     gc.refreshPrompt();
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('Quota met — hold out until 6:00 AM');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Hold out until 6:00 AM');
   });
 
   it('clears the line when the quota is not met yet', () => {
@@ -515,7 +524,7 @@ describe('GameController — one twelve-hour shift', () => {
   it('a quota met early keeps the shift running all night — no bed before 6 AM', () => {
     quotaDock.collectedCount = 3;
     gc.onSignalSaved();
-    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/6:00 AM/));
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/Quota met|Hold out/));
     for (const hour of [0, 3, 5.9]) {
       runTo(hour);
       expect(gc.state, `at ${hour}`).toBe('playing');

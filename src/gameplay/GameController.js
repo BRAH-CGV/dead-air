@@ -24,8 +24,8 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 
 const PROMPT = {
-  quotaMet: 'Quota met — hold out until 6:00 AM',
-  morning:  'Shift over — get some sleep (bedroom)',
+  quotaMet: 'Hold out until 6:00 AM',
+  morning:  'Get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
   finished: 'You made it through every shift.',
 };
@@ -48,6 +48,8 @@ export class GameController extends Component {
   terminal = null;
   /** @type {import('../ui/HUD.js').HUD|null} */
   hud = null;
+  /** @type {import('../ui/EventBanner.js').EventBanner|null} */
+  banner = null;
   /** Which night it is — set through bindNights().
    *  @type {import('../systems/NightManager.js').NightManager|null} */
   nights = null;
@@ -264,11 +266,15 @@ export class GameController extends Component {
   }
 
   /** The prompt for where the shift stands — the quota met, or not yet —
-   *  set only when that changes. */
+   *  set only when that changes. When the quota is first met, the banner
+   *  announces the event; the HUD shows the standing objective. */
   _updateShiftPrompt() {
     const key = this.quotaDock?.isQuotaMet() ? 'quotaMet' : null;
     if (key === this._shiftPrompt) return;
     this._shiftPrompt = key;
+    if (key) {
+      this.banner?.show('Quota met', { tone: 'info' });
+    }
     this.hud?.setPrompt(key ? PROMPT[key] : '');
   }
 
@@ -308,7 +314,10 @@ export class GameController extends Component {
     this._setState(state);
   }
 
-  _morning()  { this._endShift('morning',  PROMPT.morning); }
+  _morning()  {
+    this.banner?.show('6:00 AM — shift over', { tone: 'info' });
+    this._endShift('morning',  PROMPT.morning);
+  }
   _gameOver() { this._endShift('gameOver', PROMPT.failed); }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }
