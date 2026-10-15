@@ -29,7 +29,7 @@ import { keyName } from '../app/keyNames.js';
 //
 // The bunk's poses for that animation are here, in the bunk's own frame
 // (BUNK_POSES), so they follow the bunk wherever the room puts it:
-// pillowPose(), sitPose() and getOutSpot().
+// pillowPose(), sitPose(), getOutSpot() and the demon's watchSpots().
 //
 // promptLabel is a data field refreshed every frame — InteractionSystem
 // re-shows a label that changes while it's being looked at.
@@ -46,11 +46,14 @@ import { keyName } from '../app/keyNames.js';
  *   sit     the eye sitting on its edge, legs out, facing the room
  *   out     the feet standing beside it, clear of its collider by more than
  *           the player's radius, facing the room — where you get up to
+ *   watch   where the Sleep Demon stands to watch a sleeper: corners of the
+ *           bedroom in view of the pillow
  */
 export const BUNK_POSES = Object.freeze({
   pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -2.53, pitch: 0.55, roll: -0.22 }),
   sit: Object.freeze({ position: [0.4, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
   out: Object.freeze({ position: [1.0, 0, 0.35], yaw: -Math.PI / 2 }),
+  watch: Object.freeze([[1.84, 0, 2.28], [1.94, 0, -0.52], [1.14, 0, 2.58]]),
 });
 
 const _q = new THREE.Quaternion();
@@ -156,6 +159,15 @@ export class Bed extends Interactable {
   getOutSpot() {
     const { position, yaw } = this._view(BUNK_POSES.out);
     return { position, yaw };
+  }
+
+  /** Where the Sleep Demon stands to watch a sleeper: floor points, world. */
+  watchSpots() {
+    const o = this._bunk();
+    return BUNK_POSES.watch.map(p => {
+      const v = new THREE.Vector3(...p);
+      return o ? o.localToWorld(v) : v;
+    });
   }
 
   /** The bunk's object, its world matrix fresh, or null off a bunk. */

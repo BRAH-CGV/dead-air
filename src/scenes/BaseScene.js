@@ -24,7 +24,7 @@ import { DriveBoxDock } from '../gameplay/DriveBoxDock.js';
 import { BuggyCargo, BUGGY_CARGO } from '../components/BuggyCargo.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
-import { MainOffice, WINDOW_CORNER_RADIUS } from './rooms/MainOffice.js';
+import { MainOffice, WINDOW_CORNER_RADIUS, deskStation } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
@@ -44,6 +44,7 @@ import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -64,6 +65,8 @@ import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { CameraSignalPass } from '../core/CameraSignalPass.js';
+import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -87,6 +90,10 @@ import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
+import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
+import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
+import { approachRoute, climbRoute, slopeOut, NavGraph, RAGNO_PATHS } from '../gameplay/RagnoPaths.js';
+import { createVentHood, createVentGrille, createCameraPole } from '../gameobjects/WallVent.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
@@ -216,6 +223,14 @@ const UFO_HOVER_HEIGHT = 35;
  *  `glass` is how much of it the window's smudges show by (WindowGlass). */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
+/** The main menu's shot (_buildMenuShot, #115): over the office computer,
+ *  out of the window at the dish. `eye` is office-local metres, just behind
+ *  the desk and above its screen. It looks at a point `look` m up the tower,
+ *  `lead` m along x from it, so the dish sits right of centre, clear of the
+ *  menu panel on the left. A narrower `fov` than the player's keeps the
+ *  dish big; the window frames it at any screen shape from 4:3 to 21:9. */
+const MENU_SHOT = { eye: [0.15, 1.35, -1.9], look: 3.5, lead: -6, fov: 60 };
+
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
  *  the corner's two walls, and down from the ceiling. Outdoors: how far off
  *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
@@ -223,12 +238,47 @@ const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angl
  *  radians either way; `reach` is how far each one's flash carries. */
 const SECURITY_CAMERAS = {
   room:    { inset: 0.2, drop: 0.25, aimHeight: 0.4, panRange: 0.75, reach: 11 },
-  outside: { offWall: 0.02, panRange: 1.1, reach: 25 },
+  /** `aimBack`: metres toward the window side the end-wall cameras look at
+   *  rest, 15 m out, so they pick up Ragno rounding the end. */
+  outside: { offWall: 0.02, panRange: 1.1, reach: 25, aimBack: -2 },
   yard:    { inFromFence: 1.5, panRange: Math.PI / 2, reach: 25 },
-  /** The monitor's map: metres of ground shown round the base, [across,
-   *  down] — wide enough across that the end-wall cameras read as outside. */
-  mapMargin: [6, 1.5],
+  /** On a CCTV pole in the clearing behind each wing: `out` m from the end
+   *  wall's line (negative: in from it), `back` m behind the wing's
+   *  window-side wall, clear of the trees. It looks out across the clearing
+   *  at the tree line Ragno comes out of (`aim`: x out, z back), held to
+   *  `panRange` either way of that so it never turns to the building. */
+  pole: { out: -3.3, back: 9, height: 3.6, aim: [12, -4], panRange: 0.35, reach: 30 },
+  /** The ground in front of each pole kept clear of trees: metres out along
+   *  its aim, and either side of its line. */
+  poleView: { ahead: 13, across: 5 },
+  /** The monitor's map: metres of ground shown round the base and its
+   *  farthest cameras (the poles are the corners), [across, down]. Wide
+   *  enough across that the end-wall cameras read as outside, and enough
+   *  every way that no camera's button hangs off the map's edge. */
+  mapMargin: [6, 4],
 };
+
+/** Ragno's vents (_addVents), one per wing, on the end wall: the middle of
+ *  the opening `y` up, and room-local z along the wall, where the floor
+ *  inside is clear of the bunk, the racks and the desk. The hood outside
+ *  stands `hoodOut` past the slope at its foot; he lands on the floor
+ *  `landing` m in from the wall, coming down it. */
+const RAGNO_VENTS = {
+  y: 2.2, width: 0.8, height: 0.55, hoodOut: 0.3, landing: 0.75,
+  z: { LivingQuarters: 1.2, ServerRoom: 2.7 },
+};
+/** Where Ragno stands watching the corridor (room-local x, z): toward the
+ *  back of his room, out of the line of sight through its doorway, so he
+ *  can't be seen from the corridor. And the player's eye at the desk
+ *  (office-local), for the window's view. */
+const RAGNO_WATCH = { LivingQuarters: [-0.6, -0.6], ServerRoom: [0.4, -1.0] };
+/** A standing spot on the way to his watch, where the room needs one
+ *  (room-local x, z): the server room's aisle mouth, so the way down the
+ *  aisle never cuts across a rack's corner. */
+const RAGNO_VIA = { ServerRoom: [0.3, 1.9] };
+/** Metres his standing spots round the office desk keep off it. */
+const RAGNO_DESK_GAP = 0.8;
+const DESK_EYE = [0, 1.24, -1.4];
 
 
 export class BaseScene extends Scene {
@@ -287,7 +337,9 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._buildMenuShot();
     this._addSecurityCameras();
+    this._addVents();
     this._addWindDust();
     this._spawnPlayer();
     this._keepFogOutside();
@@ -301,6 +353,7 @@ export class BaseScene extends Scene {
     this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
+    this._addRagno();
     this._addNap();
     this._buildOcclusion();
 
@@ -325,6 +378,14 @@ export class BaseScene extends Scene {
     // the zones a camera asked for go back to the airlock's choice.
     this.cameraTerminal?.exit();
     this.cameraOverlay?.hide();
+    if (this.cameraSignal) {
+      const passes = this.engine.screenPasses;
+      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
+      this.cameraSignal.dispose();
+      this.cameraSignal = null;
+    }
+    this.monitorSpeaker?.dispose();
+    this.monitorSpeaker = null;
     this._offCameraState?.();
     this._offCameraPause?.();
     for (const cam of this.securityCameras ?? []) cam.dispose();
@@ -337,6 +398,7 @@ export class BaseScene extends Scene {
     this.ufo?.dispose();
     this.dust?.dispose();
     for (const { go } of this.dustEyes?.slots ?? []) go.dispose();
+    this.ragnoFigure?.dispose();
     this.breakerPanel?.close();
     for (const sound of this._sounds) {
       if (sound.isPlaying) sound.stop();
@@ -572,7 +634,7 @@ export class BaseScene extends Scene {
     });
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       // Testing only: the dev console's `music spooky|ambient|off` swings
       // one in under the game. Dev builds only, so the production bundle
       // never loads the extra track for it.
@@ -584,7 +646,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new AirlockSound({
       airlock: rooms.Airlock,
       sound:   this._sound(AIRLOCK_SOUND.key),
-      isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
+      isInside: () => airlock.box.containsPoint(this._ears(_airlockEar)),
     }));
 
     // In a storm, sand on the office window: heard in the office, louder
@@ -593,7 +655,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new WindowSand({
       window: this._officeWindow(),
       storm:  () => this.sandstorm?.level ?? 0,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       isInside: p => officeShell.containsPoint(p),
     }));
   }
@@ -821,6 +883,12 @@ export class BaseScene extends Scene {
       signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
+    // The previous operator's notebook (#79): tonight's entry, on paper.
+    const { journal } = this.rooms.LivingQuarters;
+    if (journal) {
+      journal.controller = this.gameController;
+      journal.panel = new JournalPanel();
+    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
@@ -1023,7 +1091,14 @@ export class BaseScene extends Scene {
       lanes: [DISH_LANE],
       // A tree on the fence line grows through the chain-link. Dropped, not
       // moved, so the rest of the belt stands where it always has.
-      treesClearOf: fenceKeepOut(fenceRect, { openSides: ['S'], clearance: TREE_FENCE_CLEARANCE }),
+      treesClearOf: [
+        ...fenceKeepOut(fenceRect, { openSides: ['S'], clearance: TREE_FENCE_CLEARANCE }),
+        // Nothing grows right in front of a pole's camera: it watches the
+        // clearing Ragno crosses out of the trees. Nor on his way down the
+        // yard side, past the fence: a worn strip to the end walls.
+        ...[-1, 1].map(side => this._poleView(side)),
+        ...[-1, 1].map(side => this._yardWalk(side, fenceRect)),
+      ],
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
     // what is left to look at in the distance — and standing one at the end of
@@ -1135,6 +1210,24 @@ export class BaseScene extends Scene {
     this.dishPad = dishPad;
   }
 
+  /** The camera the main menu is drawn through (`menuCamera`, #115): over
+   *  the office computer, looking out of the window at the dish. App hands
+   *  it to `engine.viewCamera` while the main menu is up and fits its
+   *  aspect and far plane to the game camera's, so the shot stays the same
+   *  wherever the player wakes. It belongs to no GameObject: nothing moves
+   *  it, so its matrices are set once here. */
+  _buildMenuShot() {
+    const [ox, oy, oz] = this.rooms.MainOffice.position;
+    const [ex, ey, ez] = MENU_SHOT.eye;
+    const camera = new THREE.PerspectiveCamera(MENU_SHOT.fov, 16 / 9, 0.1, this.engine.camera?.far ?? 1000);
+    camera.name = 'MenuShot';
+    camera.position.set(ox + ex, oy + ey, oz + ez);
+    const tower = this.satellite.object3d.position;
+    camera.lookAt(tower.x + MENU_SHOT.lead, MENU_SHOT.look, tower.z);
+    camera.updateMatrixWorld();
+    this.menuCamera = camera;
+  }
+
   // ──────────────────────────────────────────
   // Security cameras (watched from the monitor on the desk's left wing)
   // ──────────────────────────────────────────
@@ -1215,7 +1308,7 @@ export class BaseScene extends Scene {
       const z = (b.min.z + b.max.z) / 2;
       place(this._outside, {
         label, panRange: O.panRange, zones: ['yard', 'unseen'], flashReach: O.reach,
-        position: [x, band.y, z], target: [x + side * 15, 0, z],
+        position: [x, band.y, z], target: [x + side * 15, 0, z + O.aimBack],
         mount: { wall: { axis: 'x', at: face }, material: band.material },
       });
     }
@@ -1234,6 +1327,28 @@ export class BaseScene extends Scene {
         mount: { wall: { axis: 'z', at: front }, material: band.material },
       });
     }
+    // On a pole off each end, toward the window side (Ragno's cameras):
+    // out over the trees he comes from, and free to turn round to the end
+    // wall and its vent.
+    const PL = SECURITY_CAMERAS.pole;
+    this.cameraPoles = [];
+    for (const [room, label, side] of [[rooms.LivingQuarters, 'POLE — QUARTERS SIDE', -1], [rooms.ServerRoom, 'POLE — SERVER SIDE', 1]]) {
+      const { x, z } = this._poleSpot(side);
+      const ground = terrainHeightAt(x, z);
+      const pole = createCameraPole({ height: PL.height, name: `CameraPole_${room.name}` });
+      pole.object3d.position.set(x, ground, z);
+      // Its camera's collar toward where it looks.
+      pole.object3d.rotation.y = Math.atan2(side * PL.aim[0], PL.aim[1]);
+      this._outside.addChild(pole);
+      for (const r of pole.resources) this._own(r);
+      this.cameraPoles.push(pole);
+      pole.object3d.updateMatrixWorld(true);
+      const top = pole.object3d.localToWorld(pole.top.clone());
+      place(this._outside, {
+        label, panRange: PL.panRange, zones: ['yard', 'unseen'], flashReach: PL.reach,
+        position: top.toArray(), target: [top.x + side * PL.aim[0], ground, top.z + PL.aim[1]],
+      });
+    }
     this.securityCameras = cams;
     this.cameraMap = this._cameraMap(cams);
 
@@ -1245,6 +1360,44 @@ export class BaseScene extends Scene {
     flashGO.object3d.add(flash, flash.target);
     this._sceneRoot.addChild(flashGO);
     this.cameraFlash = flash;
+  }
+
+  /** Where the pole for one end (−1 the quarters', +1 the server's) stands
+   *  on the ground: in the clearing behind its wing (SECURITY_CAMERAS.pole). */
+  _poleSpot(side) {
+    const room = side < 0 ? this.rooms.LivingQuarters : this.rooms.ServerRoom;
+    const b = room.bounds();
+    const PL = SECURITY_CAMERAS.pole;
+    return { x: (side < 0 ? b.min.x : b.max.x) + side * PL.out, z: b.min.z - PL.back };
+  }
+
+  /** The strip Ragno comes down outside the fence's side run to an end
+   *  wall, as a box no tree may stand in: from the fence out past where his
+   *  straight run in to the vent starts, from the end wall to past the
+   *  fence's far end. */
+  _yardWalk(side, fence) {
+    const room = side < 0 ? this.rooms.LivingQuarters : this.rooms.ServerRoom;
+    const b = room.bounds();
+    const end = side < 0 ? b.min.x : b.max.x;
+    const far = end + side * (RAGNO_PATHS.straightOut + 1);
+    const line = side < 0 ? fence.minX : fence.maxX;
+    return {
+      minX: Math.min(line, far), maxX: Math.max(line, far),
+      minZ: b.min.z, maxZ: fence.maxZ + RAGNO_PATHS.yardFrom + 2,
+    };
+  }
+
+  /** The ground a pole's camera looks across, as a box no tree may stand in. */
+  _poleView(side) {
+    const { x, z } = this._poleSpot(side);
+    const { aim } = SECURITY_CAMERAS.pole;
+    const { ahead, across } = SECURITY_CAMERAS.poleView;
+    const len = Math.hypot(aim[0], aim[1]);
+    const ex = x + side * aim[0] / len * ahead, ez = z + aim[1] / len * ahead;
+    return {
+      minX: Math.min(x, ex) - across, maxX: Math.max(x, ex) + across,
+      minZ: Math.min(z, ez) - across, maxZ: Math.max(z, ez) + across,
+    };
   }
 
   /** The monitor's map, as CameraOverlay.setMap wants it: every room and
@@ -1282,20 +1435,37 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
+    // The switch, drawn over the frame: the old picture frozen and degraded
+    // while the new camera loads. Needs the renderer; headless (tests) the
+    // terminal switches at once.
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this.cameraSignal = new CameraSignalPass();
+      this.cameraSignal.attach(renderer);
+      screenPasses.push(this.cameraSignal);
+    }
+    // The monitor's speaker: everything the camera on screen hears
+    // (_listenFrom), and the flash's clicks, thin and fuzzy through it. The
+    // servo's clip is fuzzy already and the static is the speaker's own:
+    // out of it as they are, never heard from the lens.
+    this.monitorSpeaker = new MonitorSpeaker(this.engine.audioListener);
+    const speaker = this.monitorSpeaker;
     this.cameraTerminal = new CameraTerminal({
+      signal:    this.cameraSignal ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,
       crosshair: this.engine.crosshair,
       sounds: {
-        servo:     this._sound('sfx:camera-servo'),
-        static:    this._sound('sfx:camera-static'),
-        spotlight:    this._sound('sfx:camera-spotlight'),
-        spotlightOff: this._sound('sfx:camera-spotlight-off'),
+        servo:     speaker.route(this._sound('sfx:camera-servo'), { dry: true }),
+        static:    speaker.route(this._sound('sfx:camera-static'), { dry: true }),
+        spotlight:    speaker.route(this._sound('sfx:camera-spotlight')),
+        spotlightOff: speaker.route(this._sound('sfx:camera-spotlight-off')),
       },
       hooks: {
         setViewZones: zones => this.portal?.setViewZones(zones),
         isReady:      zone => this.zones?.isReady(zone) ?? true,
+        listenFrom:   (lens, level) => this._listenFrom(lens, level),
         // The mouse goes to the page, for the map — as for the breaker panel.
         // Taken off the monitor by the shift ending (a game over, the
         // morning), the pointer lock isn't asked back: there was no click.
@@ -1363,7 +1533,7 @@ export class BaseScene extends Scene {
     // Start-up on, wind-down off, a hum between — a whisper from indoors.
     const sound = generator.addComponent(new GeneratorSound({
       grid,
-      hooks: { listenerPosition: out => this.engine.camera.getWorldPosition(out), isOutside: p => this._isOutside(p) },
+      hooks: { listenerPosition: out => this._ears(out), isOutside: p => this._isOutside(p) },
     }));
     this.generatorSound = sound;
     // After a UFO blow-out the breakers are tripped: the switch is dead
@@ -1445,6 +1615,32 @@ export class BaseScene extends Scene {
     return audio;
   }
 
+  /** Where the player's ears are: on the player, or on the lens of the
+   *  security camera on screen (_listenFrom). Every sound that works out
+   *  its own level from where it is heard reads this. */
+  _ears(out) {
+    const ears = this.engine.audioListener?.parent ? this.engine.audioListener : this.engine.camera;
+    return ears ? ears.getWorldPosition(out) : out;
+  }
+
+  /** Hear what `lens` hears, as if standing there, through the monitor's
+   *  speaker at `level` (0..1) — or, with null, the player's own ears
+   *  again. The ears themselves move (the AudioListener goes onto the
+   *  lens), so every sound placed in the world is heard from the camera,
+   *  and the sounds that work out their own level (_ears) cut straight
+   *  over rather than easing across. */
+  _listenFrom(lens, level) {
+    const { audioListener: listener, camera } = this.engine;
+    if (!listener || !camera) return;
+    const host = lens ?? camera;
+    if (listener.parent !== host) {
+      host.add(listener);
+      this.ambience?.jump();
+      this.generatorSound?.jump();
+    }
+    this.monitorSpeaker?.engage(!!lens, level);
+  }
+
   /** Hand the mouse to a DOM panel (true) or back to looking around. The
    *  player stands still meanwhile; the pointer lock comes back on the way
    *  out — a click or a key press, so the browser allows it. */
@@ -1462,13 +1658,20 @@ export class BaseScene extends Scene {
     }
   }
 
-  /** Back to where the night starts: the office, facing the window. */
+  /** Back to where the night starts: beside the bunk, facing the desk. */
   _respawn() {
     this.suit?.takeOff();
+    const { position, yaw } = this._spawnPoint();
     const player = this.engine.player;
     const ctrl = player?.getComponent(FirstPersonController);
-    if (ctrl) ctrl.teleport(PLAYER_SPAWN, { yaw: 0, pitch: 0 });
-    else player?.object3d.position.set(...PLAYER_SPAWN);
+    if (ctrl) ctrl.teleport(position, { yaw, pitch: 0 });
+    else player?.object3d.position.set(...position);
+  }
+
+  /** Where the player wakes (#79): the bedroom's spawn, beside the bunk —
+   *  they sleep the day through there. The office centre if it's missing. */
+  _spawnPoint() {
+    return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
@@ -1512,6 +1715,7 @@ export class BaseScene extends Scene {
       hud:          this.hud,
       grid:         this.power,
       onNightStart: () => dispenser?.reset(),
+      isResting:    () => !!this.nap?.napping,
     }));
   }
 
@@ -1565,6 +1769,12 @@ export class BaseScene extends Scene {
       overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
       fade:            this.screenFade ?? null,
       listener:        engine.audioListener ?? null,
+      // In bed its rules wait; through the half-open eyes of a nap it
+      // watches, on the real clock, seen from inside the bunk's box.
+      sleeper:         this.bedRest ?? null,
+      realDt:          () => engine.realDt,
+      napRayHit:       sightRay(engine.world, engine.player?.rigidBody ?? null,
+        this.rooms.LivingQuarters.bed?.gameObject?.collider ?? null),
     }));
   }
 
@@ -1579,15 +1789,17 @@ export class BaseScene extends Scene {
       overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
       grid:       this.power,
       isFrozen:   () => !!engine.debugCamera?.active,
+      isResting:  () => !!this.bedRest?.active,
     }));
   }
 
   // ──────────────────────────────────────────
   // Getting into and out of the bunk (BedRest)
   // ──────────────────────────────────────────
-  /** The view to the pillow and back, the lids, the peeks. It writes the
-   *  lids last (its late update).
-   *  The bunk and the nap are handed it. */
+  /** The view to the pillow and back, the lids, the peeks. Built before the
+   *  fatigue effects and the demon, so within a frame the demon sees where
+   *  it got to; it writes the lids last (its late update). The bunk, the nap
+   *  and the demon are handed it. */
   _addBedRest() {
     const { engine } = this;
     const bed = this.rooms.LivingQuarters.bed;
@@ -1884,6 +2096,219 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
   }
 
+  // ──────────────────────────────────────────
+  // Ragno (the camera entity) and its vents
+  // ──────────────────────────────────────────
+  /** The slope Ragno climbs, as RagnoPaths wants it: the bunker's batter
+   *  and shoulder, and its height (the rooms' roof). */
+  _ragnoSlope() {
+    return { batter: BUNKER.batter, shoulder: BUNKER.shoulder, height: this.rooms.MainOffice.bounds().max.y };
+  }
+
+  /** One air vent per wing, on its end wall: a duct hood on the slope
+   *  outside, a grille on the wall inside. Ragno goes in at one and comes
+   *  out of the other. The hood hangs on the bunker (always drawn: the end
+   *  walls are seen only by cameras); the grille is a room furnishing. */
+  _addVents() {
+    const V = RAGNO_VENTS;
+    const slope = this._ragnoSlope();
+    this.vents = {};
+    for (const [name, sign] of [['LivingQuarters', -1], ['ServerRoom', 1]]) {
+      const room = this.rooms[name];
+      const b = room.bounds();
+      const endX = sign < 0 ? b.min.x : b.max.x;
+      const z = room.position[2] + V.z[name];
+      const y = room.position[1] + V.y;
+      // Outside: its back against the slope at its top edge, its face out
+      // past the slope at its foot.
+      const top = slopeOut(slope, y + V.height / 2), foot = slopeOut(slope, y - V.height / 2);
+      const depth = foot - top + V.hoodOut;
+      const hood = createVentHood({ width: V.width, height: V.height, depth, name: `VentHood_${name}` });
+      hood.object3d.position.set(endX + sign * top, y, z);
+      hood.object3d.rotation.y = sign * Math.PI / 2;
+      (this.bunker ?? this._sceneRoot).addChild(hood);
+      for (const r of hood.resources) this._own(r);
+      // Inside: on the wall's inner face, facing into the room.
+      const inner = endX - sign * room.wallThick;
+      const grille = createVentGrille({ width: V.width, height: V.height });
+      grille.object3d.position.set(inner - sign * 0.03 - room.position[0], y - room.position[1], z - room.position[2]);
+      grille.object3d.rotation.y = -sign * Math.PI / 2;
+      room.root.addChild(grille);
+      for (const r of grille.resources) this._own(r);
+      this.vents[sign] = {
+        room: name,
+        /** Where he goes in outside: the hood's mouth. */
+        intake: new THREE.Vector3(endX + sign * (top + depth), y, z),
+        /** Where he comes out inside: the grille. */
+        grille: new THREE.Vector3(inner - sign * 0.05, y, z),
+        /** Just under the hood: the top of his climb. */
+        climbTop: y - V.height / 2 - 0.1,
+        endX, inner, z,
+      };
+    }
+  }
+
+  /** Everything RagnoLogic and the Ragno component need, read off the rooms,
+   *  the fence, the window and the vents. */
+  _ragnoLayout() {
+    const { rooms } = this;
+    const office = rooms.MainOffice;
+    const slope = this._ragnoSlope();
+    const [ox, oy, oz] = office.position;
+    const eye = { x: ox + DESK_EYE[0], y: oy + DESK_EYE[1], z: oz + DESK_EYE[2] };
+    const win = this._officeWindow();
+    // He comes in at the treeline or beyond, and creeps inside the trees.
+    const trees = this._sceneRoot.find('Outside')?.find('MarsVegetation')?.trees ?? [];
+    const paths = { window: win, eye, slope, fence: this.fence.rect, ground: (x, z) => terrainHeightAt(x, z), trees };
+
+    // Inside: the rooms as a graph of standing spots. Door nodes sit in the
+    // doorways, where he goes thin.
+    const o = office.bounds();
+    const nodes = [{ id: 'oC', x: ox, z: oz + 0.8 }];
+    const edges = [];
+    // Round the desk, so a player hiding behind it is reached the long way,
+    // not dithered at from the front: its front corners, its back corners
+    // and behind its middle, `RAGNO_DESK_GAP` m off it.
+    const desk = deskStation();
+    const g = RAGNO_DESK_GAP;
+    const behind = (desk.minZ + o.min.z + office.wallThick) / 2;   // between the desk and the window wall
+    nodes.push(
+      { id: 'oFL', x: ox + desk.minX - g, z: oz + desk.maxZ + g },
+      { id: 'oFR', x: ox + desk.maxX + g, z: oz + desk.maxZ + g },
+      { id: 'oBL', x: ox + desk.minX - g, z: behind },
+      { id: 'oBR', x: ox + desk.maxX + g, z: behind },
+      { id: 'oB', x: ox, z: behind },
+    );
+    edges.push(['oC', 'oFL'], ['oC', 'oFR'], ['oFL', 'oBL'], ['oFR', 'oBR'], ['oBL', 'oB'], ['oBR', 'oB']);
+    const sides = {};
+    const slopes = {};
+    for (const [tag, sign, roomName, corridorName] of [['q', -1, 'LivingQuarters', 'OfficeToQuarters'], ['s', 1, 'ServerRoom', 'OfficeToServer']]) {
+      const room = rooms[roomName];
+      const vent = this.vents[sign];
+      const b = room.bounds();
+      const doorZ = this._doorZ[sign < 0 ? 'left' : 'right'];
+      const roomDoorX = sign < 0 ? b.max.x : b.min.x;           // its wall toward the office
+      const officeDoorX = sign < 0 ? o.min.x : o.max.x;
+      const [wx, wz] = RAGNO_WATCH[roomName];
+      const landing = { x: vent.inner - sign * RAGNO_VENTS.landing, z: vent.z };
+      nodes.push(
+        { id: `${tag}L`, ...landing },
+        { id: `${tag}W`, x: room.position[0] + wx, z: room.position[2] + wz },
+        { id: `${tag}I`, x: roomDoorX + sign * 1.2, z: doorZ },
+        { id: `${tag}D`, x: roomDoorX, z: doorZ, door: true },
+        { id: `${tag}C`, x: (roomDoorX + officeDoorX) / 2, z: doorZ },
+        { id: `${tag}O`, x: officeDoorX, z: doorZ, door: true },
+        { id: `${tag}N`, x: officeDoorX - sign * 1.2, z: doorZ },
+      );
+      edges.push([`${tag}I`, `${tag}D`], [`${tag}D`, `${tag}C`], [`${tag}C`, `${tag}O`], [`${tag}O`, `${tag}N`], [`${tag}N`, 'oC']);
+      const via = RAGNO_VIA[roomName];
+      if (via) {
+        nodes.push({ id: `${tag}A`, x: room.position[0] + via[0], z: room.position[2] + via[1] });
+        edges.push([`${tag}L`, `${tag}A`], [`${tag}A`, `${tag}W`], [`${tag}A`, `${tag}I`]);
+      } else {
+        edges.push([`${tag}L`, `${tag}W`], [`${tag}L`, `${tag}I`], [`${tag}W`, `${tag}I`]);
+      }
+
+      const side = { sign, endX: vent.endX, back: b.min.z, front: b.max.z, vent: { z: vent.z, y: vent.climbTop } };
+      sides[sign] = {
+        ...side,
+        approach: { window: approachRoute('window', side, paths), yard: approachRoute('yard', side, paths) },
+        creep: {
+          window: approachRoute('window', side, paths, { inside: true }),
+          yard: approachRoute('yard', side, paths, { inside: true }),
+        },
+        climb: climbRoute(side, paths),
+        // Out of the grille, head first down the wall, onto the floor.
+        descent: [
+          { x: vent.grille.x, y: vent.grille.y - 0.3, z: vent.z, up: [-sign, 0, 0] },
+          { x: vent.grille.x, y: 0.7, z: vent.z, up: [-sign, 0, 0] },
+          { x: landing.x, y: 0, z: landing.z, up: [0, 1, 0] },
+        ],
+        landing: `${tag}L`, stare: `${tag}W`,
+        door: { x: roomDoorX, z: doorZ },
+        room: roomName, corridor: corridorName,
+      };
+
+      // The slope his feet find outside (Ragno._cast), as a plane.
+      const len = Math.hypot(slope.height, slope.batter - slope.shoulder);
+      const normal = { x: sign * slope.height / len, y: (slope.batter - slope.shoulder) / len, z: 0 };
+      const toeX = vent.endX + sign * slope.batter;
+      slopes[sign] = { normal, c: normal.x * toeX, x0: vent.endX, x1: toeX, z0: b.min.z, z1: b.max.z };
+    }
+
+    const frontDoor = office.openings.find(op => op.side === 'front');
+    // Each corridor's floor between its walls' inner faces: he is thin all
+    // along one, and kept off its walls (RagnoLogic._keepOffWalls).
+    const corridors = Object.values(this.corridors).map((c) => {
+      const b = c.bounds();
+      const t = c.wallThick ?? office.wallThick;
+      return c.axis === 'x'
+        ? { minX: b.min.x, maxX: b.max.x, minZ: b.min.z + t, maxZ: b.max.z - t, axis: 'x' }
+        : { minX: b.min.x + t, maxX: b.max.x - t, minZ: b.min.z, maxZ: b.max.z, axis: 'z' };
+    });
+    return {
+      sides,
+      corridors,
+      graph: new NavGraph(nodes, edges),
+      airlockDoor: { x: ox + frontDoor.offset, z: o.max.z },
+      window: win,
+      vents: this.vents,
+      occluders: this._yardView().occluders,
+      slopes,
+    };
+  }
+
+  /** Which room or corridor a point is in, by whole shells; 'outside' for
+   *  none. Rooms first, so a doorway counts as the room. */
+  _zoneOf(p) {
+    this._zoneBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => [part.name, part.bounds()]);
+    for (const [name, box] of this._zoneBoxes) if (box.containsPoint(p)) return name;
+    return 'outside';
+  }
+
+  /** Ragno, the camera entity (Ragno.js): his figure under Threats on the
+   *  scene root, built hidden so its shaders compile behind the loading
+   *  screen, and the component that runs him on GameplaySystems. After the
+   *  UFO (never during its visit) and before the nap (which he wakes). */
+  _addRagno() {
+    const { engine } = this;
+    const loaded = !!engine.assets?.has?.('model:ragno');
+    const figure = new RagnoFigure({
+      model: loaded ? engine.assets.instantiate('model:ragno') : null,
+      animations: loaded ? engine.assets.getAnimations?.('model:ragno') ?? [] : [],
+      warm: loaded ? engine.assets.instantiate('model:ragno') : null,
+    });
+    (this._sceneRoot.find('Threats') ?? this._group('Threats')).addChild(figure);
+    this.ragnoFigure = figure;
+    this.ragnoLayout = this._ragnoLayout();
+    const ufoBusy = () => {
+      const phase = this.ufoThreat?.phase;
+      return !!phase && phase !== 'waiting' && phase !== 'gone';
+    };
+    this.ragno = this._sceneRoot.find('GameplaySystems').addComponent(new Ragno({
+      controller: this.gameController,
+      clock:      this.nightClock,
+      layout:     this.ragnoLayout,
+      figure,
+      terminal:   this.cameraTerminal ?? null,
+      cameras:    this.securityCameras ?? [],
+      flashlight: engine.player?.getComponent(Flashlight) ?? null,
+      power:      this.power,
+      camera:     engine.camera ?? null,
+      whiteOut:   this.whiteOut ?? null,
+      // His kill drains the view to red, as the evil signal's does.
+      redOut:     this._redOut ?? null,
+      ambience:   this.ambience ?? null,
+      hooks: {
+        zoneOf:          p => this._zoneOf(p),
+        ufoBusy,
+        setPlayerLocked: locked => this._setPlayerLocked(locked),
+        isFrozen:        () => !!engine.debugCamera?.active,
+        rayHit:          ragnoRay(engine.world, engine.player?.rigidBody ?? null),
+      },
+    }));
+  }
+
   /** Naps at the bunk: the night fast-forwarded until 6 AM, until the
    *  player presses E, or until something loud enough to wake a sleeper —
    *  the lamps buzzing before a storm outage, the UFO's roar. Silent things
@@ -1904,6 +2329,7 @@ export class BaseScene extends Scene {
       hud:        this.hud,
       // Over the closed lids (#nap-hint): the HUD is under them.
       hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
+      stamina:    this.stamina,
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),
         restless:        ufoBusy,
@@ -1911,6 +2337,7 @@ export class BaseScene extends Scene {
       alarms: [
         { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },
         { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.' },
+        { test: () => !!this.ragno?.hunting,          message: 'Something skittering in the corridor woke you.' },
       ],
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
@@ -2337,7 +2764,9 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _spawnPlayer() {
     const { engine } = this;
-    engine.buildPlayer({ position: PLAYER_SPAWN });
+    const spawn = this._spawnPoint();
+    engine.buildPlayer({ position: spawn.position });
+    engine.player?.getComponent(FirstPersonController)?.teleport?.(spawn.position, { yaw: spawn.yaw, pitch: 0 });
     const transitions = new RoomTransitionSystem({
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),

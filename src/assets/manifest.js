@@ -276,6 +276,17 @@ const PLACED = {
     castShadow: false,
     receiveShadow: false,
   },
+  // Ragno, the camera entity: a rigged, four-legged spider thing, already in
+  // metres (2.2 m tall, 1.8 m across the feet as downloaded). Render-only;
+  // its legs are walked by IK (RagnoFigure). Four fifths of its size keeps
+  // the thin stance under a 2.2 m doorway. No shadow: a moving caster
+  // outside would redraw the moonlight's whole map every frame.
+  'model:ragno': {
+    type: 'model',
+    url: 'assets/models/ragno.glb',
+    scale: 0.8,
+    castShadow: false,
+  },
   'model:trash-bin': {
     type: 'model',
     url: 'assets/models/trash-bin.glb',
@@ -534,10 +545,29 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/scanner-alert.mp3',
   },
+  // The faint hum under the evil drive's countdown (EvilSignal), looped.
+  'sfx:evil-hum': {
+    type: 'audio',
+    url: 'assets/audio/evil-hum.mp3',
+  },
+  // The corrupted drive sparking (EvilSignal): one of three, at random, on
+  // each hop.
+  'sfx:spark-1': {
+    type: 'audio',
+    url: 'assets/audio/spark-1.mp3',
+  },
+  'sfx:spark-2': {
+    type: 'audio',
+    url: 'assets/audio/spark-2.mp3',
+  },
+  'sfx:spark-3': {
+    type: 'audio',
+    url: 'assets/audio/spark-3.mp3',
+  },
   // The security monitor (CameraTerminal): a camera's pan motor, looped
   // while it turns (the loud first 7 s of the recording only); static,
-  // looped while a feed comes in; and the clunk of its flash coming on, and
-  // going off (made from the same clip: its head, slowed and faded).
+  // looped while a feed comes in; and the click of its flash switching on,
+  // and off (the two clicks of one switch recording, cut apart).
   'sfx:camera-servo': {
     type: 'audio',
     url: 'assets/audio/camera-servo.mp3',
@@ -552,7 +582,7 @@ const PLACED = {
   },
   'sfx:camera-spotlight-off': {
     type: 'audio',
-    url: 'assets/audio/camera-spotlight-off.wav',
+    url: 'assets/audio/camera-spotlight-off.mp3',
   },
   // A loose prop knocked against something (ImpactSound): one of its clips,
   // picked at random. Two for a drive box put down or dropped, and one of
@@ -629,24 +659,20 @@ const PLACED = {
     url: 'assets/audio/monster-bite.mp3',
   },
   // Stamina and the Sleep Demon, from the first minute of night 1: the
-  // demon's footsteps on its figure (SleepDemon); the heartbeat, looped, the
-  // yawn and the player's own breathing of a tired one (FatigueEffects); a
+  // demon's whispers and knocks, placed on its figure (SleepDemon); the heartbeat, looped,
+  // and the yawn of a tired one (FatigueEffects); a
   // ration dropping from the office dispenser (BaseScene._addStamina).
   //
-  // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
-  // final audio — all but the yawn, which is a real recording (Mixkit, see
-  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
-  // public/assets/audio/, named after its key (any format: footsteps.mp3 is
+  // The ration is a PLACEHOLDER, for the sound owner to replace: a short
+  // synthesised wav, not final audio. The whispers, the heartbeat and the yawn
+  // are real (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // public/assets/audio/, named after its key (any format: ration.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
   // sound owner".
-  'sfx:breathing': {
-    type: 'audio',
-    url: 'assets/audio/breathing.wav',
-  },
   'sfx:heartbeat': {
     type: 'audio',
-    url: 'assets/audio/heartbeat.wav',
+    url: 'assets/audio/heartbeat.mp3',
   },
   'sfx:yawn': {
     type: 'audio',
@@ -656,9 +682,39 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/ration.wav',
   },
-  'sfx:footsteps': {
+  'sfx:whispering': {
     type: 'audio',
-    url: 'assets/audio/footsteps.wav',
+    url: 'assets/audio/whispering.mp3',
+  },
+  // Three takes in one file, played as stretches of it (KNOCK.clips).
+  'sfx:knocks': {
+    type: 'audio',
+    url: 'assets/audio/knocks.mp3',
+  },
+  // Ragno, the camera entity (Ragno.js): its legs walking, looped at the
+  // pace of its steps and heard only indoors; the call, cut into its soft
+  // chirps (outside, under the wind) and its loud bursts (the rare screech,
+  // pitched down); two attacks for a flinch or the aggro; and the third for
+  // the death screen, its loud part only.
+  'sfx:spider-walking': {
+    type: 'audio',
+    url: 'assets/audio/spider-walking.mp3',
+  },
+  'sfx:spider-call': {
+    type: 'audio',
+    url: 'assets/audio/spider-call.mp3',
+  },
+  'sfx:spider-attack-2': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-2.mp3',
+  },
+  'sfx:spider-attack-4': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-4.mp3',
+  },
+  'sfx:spider-attack-8': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-8.mp3',
   },
 };
 

@@ -35,6 +35,16 @@ describe('StaminaDrain', () => {
     expect(stamina.value).toBeCloseTo(0.9);
   });
 
+  it('holds it while the player is resting (a nap)', () => {
+    let resting = true;
+    drain = new StaminaDrain({ stamina, controller, hud, isResting: () => resting });
+    drain.onUpdate(10);
+    expect(stamina.value).toBe(1);
+    resting = false;
+    drain.onUpdate(10);
+    expect(stamina.value).toBeCloseTo(0.9);
+  });
+
   it('holds it in the morning and behind a failed night', () => {
     drain.onUpdate(1);
     const v = stamina.value;

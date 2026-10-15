@@ -6,8 +6,9 @@ import { PLAYER_BODY } from './PlayerBody.js';
 // ─────────────────────────────────────────────
 // BedRest  –  getting into and out of the bunk, on the camera (Component)
 // ─────────────────────────────────────────────
-// BedTransition holds the steps; this maps them onto the scene. There is
-// no player body to animate, so it is the view: the camera's place, pitch and roll, and the
+// BedTransition holds the steps; this maps them onto the scene, the way
+// SleepDemon maps SleepDemonDeath. There is no player body to animate, so
+// it is the view: the camera's place, pitch and roll, and the
 // FatigueOverlay's eyelids.
 //
 //   lieDown(onAsleep)    from where you stand to the bunk's pillow, the
@@ -102,8 +103,13 @@ export class BedRest extends Component {
   /** Lying with the lids down, peeks included. */
   get asleep() { return this.transition.asleep; }
 
-  /** The eyes half open while asleep (a peek). */
+  /** The eyes half open while asleep: where the Sleep Demon shows itself, on a nap it watches. */
   get peeking() { return this.transition.peeking; }
+
+  /** Where the demon stands to watch a sleeper (the bunk's). */
+  watchSpots() {
+    return this.bed?.watchSpots?.() ?? [];
+  }
 
   onStart() {
     this._off = this.controller.onNightStart?.((_, opts = {}) => {
