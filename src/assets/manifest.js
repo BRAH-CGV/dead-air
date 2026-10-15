@@ -555,8 +555,8 @@ const PLACED = {
   },
   // The security monitor (CameraTerminal): a camera's pan motor, looped
   // while it turns (the loud first 7 s of the recording only); static,
-  // looped while a feed comes in; and the clunk of its flash coming on, and
-  // going off (made from the same clip: its head, slowed and faded).
+  // looped while a feed comes in; and the click of its flash switching on,
+  // and off (the two clicks of one switch recording, cut apart).
   'sfx:camera-servo': {
     type: 'audio',
     url: 'assets/audio/camera-servo.mp3',
@@ -571,7 +571,7 @@ const PLACED = {
   },
   'sfx:camera-spotlight-off': {
     type: 'audio',
-    url: 'assets/audio/camera-spotlight-off.wav',
+    url: 'assets/audio/camera-spotlight-off.mp3',
   },
   // A loose prop knocked against something (ImpactSound): one of its clips,
   // picked at random. Two for a drive box put down or dropped, and one of

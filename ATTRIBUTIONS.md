@@ -701,16 +701,16 @@ One beep, mixed by us from three Freesound recordings, all Creative Commons 0 �
 | **Used for** | The security monitor's static, looped while a feed comes in (`CameraTerminal`) |
 | **Modifications** | Cut to its first 4 s, at MPEG frame boundaries with no re-encode; renamed |
 
-### Spotlight
+### Camera flash switch
 
-"Spotlight" (Pixabay sound 91359), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spotlight-91359.mp3`.
+"MECHSwtch_small_electric_switch_on_off.wav" (https://freesound.org/people/DBS_Sounds/sounds/613657/) by DBS_Sounds on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.wav` |
+| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.mp3` |
 | **Manifest key** | `sfx:camera-spotlight`, `sfx:camera-spotlight-off` |
 | **Used for** | A security camera's flash coming on, and going off (`CameraTerminal`) |
-| **Modifications** | Renamed. The off sound is made from it: its first 0.7 s, slowed to 0.8× (lower in pitch) and faded out after 0.25 s, rendered to WAV |
+| **Modifications** | Its two clicks cut apart: the switch going on, and going off |
 
 ### Drive box knocks
 
