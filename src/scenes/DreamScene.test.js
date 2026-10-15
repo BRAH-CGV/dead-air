@@ -104,4 +104,15 @@ describe('DreamScene (#101)', () => {
     expect(engine.scene.fog.density).toBeCloseTo(0.02);
     expect(engine.scene.fog.color.getHex()).toBe(0x1a1a2e);
   });
+
+  it('scatters rocks over the valley, so walking (and slowing) can be seen (playtest)', () => {
+    expect(scene.rocks).toBeTruthy();
+    let instances = 0;
+    scene.rocks.object3d.traverse(o => { if (o.isInstancedMesh) instances += o.count; });
+    expect(instances).toBeGreaterThan(50);
+  });
+
+  it('lights the valley floor enough to see (the first playtest was pitch black)', () => {
+    expect(scene.moonLight.intensity).toBeGreaterThanOrEqual(1.2);
+  });
 });

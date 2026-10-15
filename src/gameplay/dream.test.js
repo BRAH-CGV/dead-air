@@ -51,4 +51,12 @@ describe('dream rules (#101)', () => {
     expect(unease(L.pullRadius, L)).toBe(1);
     expect(unease(L.pullRadius * 2, L)).toBe(1);
   });
+
+  it('caps the crawl at the edge: a few seconds deep in the slow ring, then the pull (playtest)', () => {
+    for (const L of DREAM_LEVELS) {
+      expect(L.ringSeconds).toBeGreaterThan(0);
+      expect(L.ringSeconds).toBeLessThanOrEqual(5);
+    }
+    expect(DREAM_LEVELS[2].ringSeconds).toBeLessThanOrEqual(DREAM_LEVELS[0].ringSeconds);
+  });
 });

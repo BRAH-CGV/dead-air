@@ -104,4 +104,26 @@ describe('DreamWalk (#101)', () => {
     expect(three.controller.inputLocked).toBe(false);
     expect(three.camera.fov).toBe(75);
   });
+
+  describe('no endless crawl (playtest)', () => {
+    /** A spot deep in the slow ring but short of the pull radius. */
+    const deep = (L) => L.slowStart + 0.9 * (L.pullRadius - L.slowStart);
+
+    it('a few seconds deep in the slow ring starts the pull, even short of the radius', () => {
+      stepTo(walk, position, 0, deep(L));
+      for (let t = 0; t < L.ringSeconds - 0.5; t += DT) walk.onUpdate(DT);
+      expect(walk.state).toBe('walking');
+      for (let t = 0; t < 1; t += DT) walk.onUpdate(DT);
+      expect(walk.state).toBe('pulled');
+    });
+
+    it('stepping back out of the deep ring resets the count', () => {
+      stepTo(walk, position, 0, deep(L));
+      for (let t = 0; t < L.ringSeconds - 0.5; t += DT) walk.onUpdate(DT);
+      stepTo(walk, position, 0, L.slowStart, 10);
+      stepTo(walk, position, 0, deep(L));
+      for (let t = 0; t < L.ringSeconds - 0.5; t += DT) walk.onUpdate(DT);
+      expect(walk.state).toBe('walking');
+    });
+  });
 });

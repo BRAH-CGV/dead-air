@@ -22,13 +22,20 @@
  * @property {number} skyBase     Sky storm tint at the base (MarsSky.setStorm).
  * @property {number} skyMax      Sky storm tint at the pull radius.
  * @property {number} fovWobble   Degrees the view breathes by at the pull radius.
+ * @property {number} ringSeconds Seconds deep in the slow ring (RING_UNEASE)
+ *           before the pull starts anyway. The slowdown flattens out at the
+ *           edge and the valley climbs past the flat pad, so without this the
+ *           last few metres were a half-minute crawl that read as stuck.
  */
+
+/** How far into the slow ring counts as deep: past this, ringSeconds runs. */
+export const RING_UNEASE = 0.75;
 
 /** @type {DreamLevel[]} */
 export const DREAM_LEVELS = [
-  { slowStart: 35, pullRadius: 80, minWalk: 0.18, drag: 2.5, fogBase: 0.004, fogMax: 0.012, skyBase: 0.05, skyMax: 0.35, fovWobble: 0 },
-  { slowStart: 25, pullRadius: 60, minWalk: 0.14, drag: 4,   fogBase: 0.006, fogMax: 0.02,  skyBase: 0.2,  skyMax: 0.6,  fovWobble: 2 },
-  { slowStart: 15, pullRadius: 45, minWalk: 0.1,  drag: 6,   fogBase: 0.009, fogMax: 0.032, skyBase: 0.4,  skyMax: 0.9,  fovWobble: 6 },
+  { slowStart: 35, pullRadius: 80, minWalk: 0.18, drag: 2.5, fogBase: 0.004, fogMax: 0.02,  skyBase: 0.05, skyMax: 0.5,  fovWobble: 0, ringSeconds: 4 },
+  { slowStart: 25, pullRadius: 60, minWalk: 0.14, drag: 4,   fogBase: 0.006, fogMax: 0.03,  skyBase: 0.2,  skyMax: 0.7,  fovWobble: 2, ringSeconds: 3.5 },
+  { slowStart: 15, pullRadius: 45, minWalk: 0.1,  drag: 6,   fogBase: 0.009, fogMax: 0.045, skyBase: 0.4,  skyMax: 0.95, fovWobble: 6, ringSeconds: 3 },
 ];
 
 /** The level for a night: 1 for anything below, the last for anything past.

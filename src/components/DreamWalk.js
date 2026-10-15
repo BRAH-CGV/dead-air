@@ -1,5 +1,5 @@
 import { Component } from '../core/Component.js';
-import { dreamLevel, walkScale, unease } from '../gameplay/dream.js';
+import { dreamLevel, walkScale, unease, RING_UNEASE } from '../gameplay/dream.js';
 
 // ─────────────────────────────────────────────
 // DreamWalk  –  the base won't let you leave (#101)
@@ -9,7 +9,8 @@ import { dreamLevel, walkScale, unease } from '../gameplay/dream.js';
 //   walking  the player's speedScale falls with distance from the base;
 //            the fog thickens and the sky turns rust (MarsSky.setStorm);
 //            at level 3 the view starts to breathe (the camera's FOV)
-//   pulled   past the pull radius the controls go (inputLocked) and the
+//   pulled   past the pull radius — or after ringSeconds deep in the slow
+//            ring, so the edge is never an endless crawl — the controls go (inputLocked) and the
 //            player is dragged backwards to the base, faster and faster,
 //            still looking out at what they were walking towards
 //   awake    back at the base: the screen fades and onWake runs, once
@@ -50,6 +51,8 @@ export class DreamWalk extends Component {
     this._baseFov = camera?.fov ?? null;
     this._pullSpeed = 0;
     this._time = 0;
+    /** Seconds spent deep in the slow ring, this time in. */
+    this._ringTime = 0;
   }
 
   onUpdate(dt) {
@@ -69,7 +72,8 @@ export class DreamWalk extends Component {
 
     if (this.state === 'walking') {
       this.controller.speedScale = walkScale(distance, L);
-      if (distance >= L.pullRadius) {
+      this._ringTime = k >= RING_UNEASE ? this._ringTime + dt : 0;
+      if (distance >= L.pullRadius || this._ringTime >= L.ringSeconds) {
         this.state = 'pulled';
         this.controller.inputLocked = true;
       }

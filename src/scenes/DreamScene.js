@@ -4,6 +4,7 @@ import { GameObject } from '../core/GameObject.js';
 import { Scene } from '../core/Scene.js';
 import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobjects/MarsSky.js';
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
+import { createMarsRocks } from '../gameobjects/MarsRocks.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { BaseScene } from './BaseScene.js';
@@ -55,6 +56,7 @@ export class DreamScene extends Scene {
 
     this._addSky();
     this._addTerrain();
+    this._addRocks();
     this._addLighting();
     this._addBase();
     this._spawnPlayer();
@@ -107,15 +109,27 @@ export class DreamScene extends Scene {
     this.terrain = terrain;
   }
 
+  /** The valley's rock field, round the dream's base: something on the
+   *  ground to watch go by, so walking — and slowing down — can be seen. The
+   *  first playtest had bare black ground and read as not moving at all. */
+  _addRocks() {
+    const rocks = createMarsRocks({ footprint: { halfX: BASE.width / 2, halfZ: BASE.depth / 2 } });
+    this._root.addChild(rocks);
+    this._ownAll(rocks);
+    this.rocks = rocks;
+  }
+
   _addLighting() {
+    // Bright enough to see the valley floor by: a dream's moonlight, a
+    // touch violet. The first playtest was near black underfoot.
     const ambient = new GameObject('DreamAmbient');
-    ambient.object3d.add(new THREE.AmbientLight(0x3a3448, 0.6));
+    ambient.object3d.add(new THREE.AmbientLight(0x5a5070, 1.1));
     this._root.addChild(ambient);
 
     // The moon, from where Phobos stands at midnight; no shadow — cheap,
     // and the dream needn't be exact.
     const moonGO = new GameObject('DreamMoon');
-    const moon = new THREE.DirectionalLight(0xc8c0d8, 0.7);
+    const moon = new THREE.DirectionalLight(0xd8d0ec, 1.5);
     const { azimuth, elevation } = DEFAULT_MOONS.phobos;
     moon.position.copy(directionFromAngles(azimuth, elevation)).multiplyScalar(30);
     moon.castShadow = false;
