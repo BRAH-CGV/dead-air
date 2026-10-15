@@ -1,67 +1,174 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { BuggyCargo } from './BuggyCargo.js';
-import { Interactable } from './Interactable.js';
+import { describe, it, expect } from 'vitest';
+import { BUGGY_CARGO, BuggyCargo } from './BuggyCargo.js';
 
-describe('BuggyCargo', () => {
-  let controller, dock, cargo;
-  const box = { isDriveBox: true };
-  const label = (state) => {
-    controller.state = state;
-    cargo.onUpdate(0.016);
-    return cargo.promptLabel;
-  };
+// ─────────────────────────────────────────────
+// BuggyCargo — the boot on the buggy's rear (#98)
+// ─────────────────────────────────────────────
 
-  beforeEach(() => {
-    controller = { state: 'playing' };
-    dock = {
-      requiredCount: 3, collectedCount: 0, depositedBox: null,
-      isQuotaMet() { return this.collectedCount >= this.requiredCount; },
-    };
-    cargo = new BuggyCargo();
-    cargo.controller = controller;
-    cargo.dock = dock;
+/** A stub controller that looks enough like GameController for the cargo. */
+const stubController = (overrides = {}) => ({
+  state: 'morning',
+  dispatched: false,
+  delivered: true,
+  ...overrides,
+});
+
+/** A stub dock that looks enough like DriveBoxDock. */
+const stubDock = (overrides = {}) => ({
+  depositedBox: { isDriveBox: true },
+  isQuotaMet: () => true,
+  ...overrides,
+});
+
+/** A stub send-off. */
+const stubSendOff = (overrides = {}) => ({
+  active: false,
+  started: false,
+  start() { this.started = true; },
+  ...overrides,
+});
+
+describe('BUGGY_CARGO — the boot\'s dimensions', () => {
+  it('has the boot\'s size, top, gap, wall, lidOpen and mount', () => {
+    expect(BUGGY_CARGO.size).toEqual([1.0, 0.4, 0.6]);
+    expect(BUGGY_CARGO.top).toBe(1.0);
+    expect(BUGGY_CARGO.gap).toBe(0.02);
+    expect(BUGGY_CARGO.wall).toBe(0.04);
+    expect(BUGGY_CARGO.lidOpen).toBeCloseTo(80 * Math.PI / 180, 6);
+    expect(BUGGY_CARGO.mount).toBe(0.35);
+  });
+});
+
+describe('BuggyCargo — labels', () => {
+  it('says "Buggy" when there is no controller', () => {
+    const c = new BuggyCargo();
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy');
   });
 
-  it('is an Interactable, so looking at it shows its label', () => {
-    expect(cargo).toBeInstanceOf(Interactable);
+  it('names the boot during the shift', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ state: 'playing' });
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy — the drives go in its boot after the shift');
   });
 
-  it('takes a drive box in the morning only — never mid-shift', () => {
-    controller.state = 'playing';
-    expect(cargo.accepts(box)).toBe(false);
-    controller.state = 'morning';
-    expect(cargo.accepts(box)).toBe(true);
-    for (const state of ['gameOver', 'finished', 'idle']) {
-      controller.state = state;
-      expect(cargo.accepts(box), state).toBe(false);
-    }
+  it('asks for the box in the morning with no box yet', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ state: 'morning' });
+    c.dock = stubDock({ depositedBox: null });
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy — put the drive box in its boot');
   });
 
-  it('takes only whole drive boxes, not a loose drive', () => {
-    controller.state = 'morning';
-    expect(cargo.accepts({ isDrive: true })).toBe(false);
-    expect(cargo.accepts(null)).toBe(false);
+  it('says the box is short of the quota', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ state: 'morning' });
+    c.dock = stubDock({ isQuotaMet: () => false });
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy — the box in its boot is short of the quota');
   });
 
-  it('says during the shift that the drives go in after it', () => {
-    expect(label('playing')).toMatch(/after the shift/i);
+  it('says drives loaded once dispatched', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ dispatched: true });
+    c.dock = stubDock();
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy — drives loaded');
   });
 
-  it('in the morning, says where the box goes, then that it is short, then that it is loaded', () => {
-    expect(label('morning')).toMatch(/drive box/i);
-    dock.depositedBox = box;
-    dock.collectedCount = 2;
-    expect(label('morning')).toMatch(/short/i);
-    dock.collectedCount = 3;
-    expect(label('morning')).toMatch(/loaded/i);
+  it('says drives loaded while the cutscene runs', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock();
+    c.sendOff = stubSendOff({ active: true });
+    c.onUpdate();
+    expect(c.promptLabel).toBe('Buggy — drives loaded');
   });
 
-  it('is only a name after a failed night or the last shift, or before the scene wires it', () => {
-    expect(label('gameOver')).toBe('Buggy cargo');
-    expect(label('finished')).toBe('Buggy cargo');
-    const loose = new BuggyCargo();
-    loose.onUpdate(0.016);
-    expect(loose.promptLabel).toBe('Buggy cargo');
-    expect(loose.accepts(box)).toBe(false);
+  it('offers "[E] Send the buggy off" when it can go', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock();
+    c.onUpdate();
+    // canSend is true: morning, quota met, not dispatched, no sendOff active
+    expect(c.canSend).toBe(true);
+    expect(c.promptLabel).toBe('[E] Send the buggy off');
+  });
+});
+
+describe('BuggyCargo — canSend', () => {
+  it('is false outside the morning', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ state: 'playing' });
+    c.dock = stubDock();
+    expect(c.canSend).toBe(false);
+  });
+
+  it('is false when the dock has no box', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock({ depositedBox: null });
+    expect(c.canSend).toBe(false);
+  });
+
+  it('is false when the quota is not met', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock({ isQuotaMet: () => false });
+    expect(c.canSend).toBe(false);
+  });
+
+  it('is false once dispatched', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ dispatched: true });
+    c.dock = stubDock();
+    expect(c.canSend).toBe(false);
+  });
+
+  it('is false while the send-off runs', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock();
+    c.sendOff = stubSendOff({ active: true });
+    expect(c.canSend).toBe(false);
+  });
+
+  it('is true when everything is ready', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock();
+    expect(c.canSend).toBe(true);
+  });
+});
+
+describe('BuggyCargo — onInteract', () => {
+  it('starts the send-off when one is wired', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController();
+    c.dock = stubDock();
+    const sendOff = stubSendOff();
+    c.sendOff = sendOff;
+    c.onInteract();
+    expect(sendOff.started).toBe(true);
+  });
+
+  it('dispatches directly when no send-off is wired', () => {
+    const dispatched = { called: false };
+    const c = new BuggyCargo();
+    c.controller = { ...stubController(), dispatch() { dispatched.called = true; return true; } };
+    c.dock = stubDock();
+    c.onInteract();
+    expect(dispatched.called).toBe(true);
+  });
+
+  it('does nothing when canSend is false', () => {
+    const c = new BuggyCargo();
+    c.controller = stubController({ state: 'playing' });
+    c.dock = stubDock();
+    const sendOff = stubSendOff();
+    c.sendOff = sendOff;
+    c.onInteract();
+    expect(sendOff.started).toBe(false);
   });
 });

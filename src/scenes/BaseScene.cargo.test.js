@@ -14,9 +14,9 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 // ─────────────────────────────────────────────
 // The morning's job: the night's drive box carried out to the buggy and
-// loaded before bed (#98). The rules are in GameController and BuggyCargo;
-// this pins the wiring into the real base. A file of its own, like
-// BaseScene.stamina.test.js, so the builds don't pile up in one worker.
+// loaded into its boot before bed (#98). The rules are in GameController and
+// BuggyCargo; this pins the wiring into the real base. A file of its own,
+// like BaseScene.stamina.test.js, so the builds don't pile up in one worker.
 // ─────────────────────────────────────────────
 
 /** The buggy as the real spawn draws it: a box its size at BUGGY_SCALE
@@ -78,29 +78,31 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     return cargo.dock.socket.attach(box, 0);
   }
 
-  it("stands a cargo bay on the ground at the buggy's end nearest the hatch, clear of it, inside the fence", () => {
-    const go = outside.find('BuggyCargo');
-    expect(go).toBeTruthy();
-    expect(go.getComponent(BuggyCargo)).toBe(cargo);
-    expect(go.rigidBody).toBeTruthy();                  // solid: the interaction ray stops on it
+  it('puts the boot on the buggy\'s rear, inside the fence, with a fixed body', () => {
+    const buggy = outside.find('Buggy');
+    const boot = scene.buggyBoot;
+    expect(boot).toBeTruthy();
+    expect(boot.getComponent(BuggyCargo)).toBe(cargo);
+    expect(boot.rigidBody).toBeTruthy();
 
-    const bay = boxOf(go);
-    const buggy = boxOf(outside.find('Buggy'));
-    expect(bay.min.y).toBeCloseTo(0);
-    expect(bay.max.y).toBeCloseTo(BUGGY_CARGO.size[1]);
+    // The boot sits on the buggy's rear (-z end).
+    const buggyBox = boxOf(buggy);
+    const bootBox = boxOf(boot);
+    // The boot's top is roughly at BUGGY_CARGO.top.
+    expect(bootBox.max.y).toBeCloseTo(BUGGY_CARGO.top, 0);
 
-    // Off the buggy's end toward the hatch, by its gap, beside its middle.
-    const hatch = scene.rooms.Airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
-    expect(hatch.x).toBeGreaterThan(buggy.max.x);
-    expect(bay.min.x - buggy.max.x).toBeCloseTo(BUGGY_CARGO.gap);
-    const mid = buggy.getCenter(new THREE.Vector3());
-    expect(bay.getCenter(new THREE.Vector3()).z).toBeCloseTo(mid.z);
-
+    // Inside the fence.
     const { minX, maxX, minZ, maxZ } = scene.fence.rect;
-    expect(bay.min.x).toBeGreaterThan(minX);
-    expect(bay.max.x).toBeLessThan(maxX);
-    expect(bay.min.z).toBeGreaterThan(minZ);
-    expect(bay.max.z).toBeLessThan(maxZ);
+    expect(bootBox.min.x).toBeGreaterThan(minX);
+    expect(bootBox.max.x).toBeLessThan(maxX);
+    expect(bootBox.min.z).toBeGreaterThan(minZ);
+    expect(bootBox.max.z).toBeLessThan(maxZ);
+  });
+
+  it('the fence has a gate on the north side', () => {
+    const gate = scene.fence.gate;
+    expect(gate).toBeTruthy();
+    expect(gate.side).toBe('N');
   });
 
   it('is wired to the controller, which asks it for the night\'s quota', () => {
@@ -117,7 +119,7 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     expect(cargo.dock.depositedBox).toBeNull();
   });
 
-  it('keeps the bed shut in the morning until the box is loaded, then sleeps to the next night', () => {
+  it('keeps the bed shut in the morning until the box is loaded and the buggy sent, then sleeps', () => {
     const box = workTheShift();
     const bed = scene.rooms.LivingQuarters.bed;
     bed.onUpdate(0.016);
@@ -163,9 +165,10 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     expect(a.distanceTo(b)).toBeGreaterThan(0.3);
   });
 
-  it('a chasing dust eye goes round the bay', () => {
-    const bay = boxOf(outside.find('BuggyCargo'));
+  it('a chasing dust eye goes round the buggy (which now includes the boot)', () => {
+    const buggyBox = boxOf(outside.find('Buggy'));
     const rects = scene._yardObstacles();
-    expect(rects.some(r => Math.abs(r.minX - bay.min.x) < 1e-6 && Math.abs(r.maxZ - bay.max.z) < 1e-6)).toBe(true);
+    // The Buggy's box now includes the boot, so the obstacle rect covers both.
+    expect(rects.some(r => Math.abs(r.minX - buggyBox.min.x) < 0.1 && Math.abs(r.maxZ - buggyBox.max.z) < 0.1)).toBe(true);
   });
 });

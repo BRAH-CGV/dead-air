@@ -85,6 +85,9 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
+import { BuggySendOff } from '../gameplay/BuggySendOff.js';
+import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -158,7 +161,12 @@ const DUST_EYE_POOL = 10;
 
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */
-const DISH_LANE = Math.atan2(-25, 0);
+const DISH_LANE = { bearing: Math.atan2(-25, 0), halfWidth: 4.4, wander: 0 };
+
+/** The lane the buggy leaves by: 60.5° out from the base, through the belt.
+ *  The same wander MarsVegetation cuts for it, so the route follows the
+ *  ground the belt left clear. */
+const BUGGY_EXIT_LANE = { bearing: THREE.MathUtils.degToRad(60.5), halfWidth: 4.4, wander: 1.3 };
 
 /** The colony rover is 3.4 x 3.3 x 6.6 m as downloaded. The base's exterior
  *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
@@ -293,6 +301,7 @@ export class BaseScene extends Scene {
     this._addCameraTerminal();
     this._addStamina();
     this._addBedRest();
+    this._addBuggySendOff();
     this._addFatigue();
     this._addSleepDemon();
     this._addUfo();
@@ -328,6 +337,7 @@ export class BaseScene extends Scene {
     this._offNightReset?.();
     this._offSuitHud?.();
     this._offRetry?.();
+    this._offBuggyNight?.();
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
     this.dust?.dispose();
@@ -1015,7 +1025,9 @@ export class BaseScene extends Scene {
       assets: engine.assets,
       // The belt closes the horizon all round, so the way out to the dish has
       // to be one of the lanes through it, not just a clearing at its feet.
-      lanes: [DISH_LANE],
+      // The buggy's exit lane is the other: the 60.5° road through the belt
+      // the buggy drives away on every morning (#98).
+      lanes: [DISH_LANE, BUGGY_EXIT_LANE],
       // A tree on the fence line grows through the chain-link. Dropped, not
       // moved, so the rest of the belt stands where it always has.
       treesClearOf: fenceKeepOut(fenceRect, { openSides: ['S'], clearance: TREE_FENCE_CLEARANCE }),
@@ -1024,20 +1036,29 @@ export class BaseScene extends Scene {
     // what is left to look at in the distance — and standing one at the end of
     // each clearing is what makes the clearings read as roads to somewhere
     // rather than as gaps. The dish road is left out: the dish is what you are
-    // meant to see down that one.
+    // meant to see down that one. The buggy's exit lane gets one too.
     const roads = belt.lanes
       .map(lane => lane.bearing)
-      .filter(bearing => bearing !== DISH_LANE);
+      .filter(bearing => bearing !== DISH_LANE.bearing);
     const towers = createCommTowers({ alignTo: roads });
+
+    // The sliding gate in the fence's back (north) run, where the buggy exit
+    // lane crosses it. exitGate picks the crossing nearest x = 12 (the lane
+    // ahead of the buggy's nose, not the one behind that needs a U-turn).
+    // Null if no lane crosses within the run: the cargo then dispatches
+    // directly, with no cutscene.
+    const gate = exitGate(belt.lanes, fenceRect, { near: 12 });
+    this.exitGate = gate;
 
     // Chain-link round the yard block in front of the base — the airlock's
     // side, with the generator and the buggy — closed on three sides, the
-    // building's front being the fourth. No gates: keeping the player in
-    // front of the building is what lets the whole interior go undrawn while
-    // they're outside, since the only window is in the back wall (see
-    // _buildOcclusion). The side runs meet the END rooms' front walls, not the
-    // airlock's — the airlock sticks out further, and fencing from its depth
-    // would leave a gap at each end of the building to walk round.
+    // building's front being the fourth. The player stays in front of the
+    // building: the only window is in the back wall (see _buildOcclusion).
+    // A sliding gate in the back run lets the buggy out each morning (#98):
+    // its opening is cut from the panels, a collider stands across it, and
+    // two leaves slide apart along the line (FenceGate). The side runs meet
+    // the END rooms' front walls, not the airlock's — the airlock sticks out
+    // further, and fencing from its depth would leave a gap at each end.
     //
     // With the bunker round the building, the side runs start at the foot of
     // its front slope instead of buried in it, and each is anchored there:
@@ -1050,6 +1071,7 @@ export class BaseScene extends Scene {
       assets: engine.assets,
       world: engine.world,
       sideStart,
+      gate,
     });
     this.fence = fence;
     this.fenceAnchors = this.bunker
@@ -1591,6 +1613,63 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // The buggy send-off (BuggySendOff)
+  // ──────────────────────────────────────────
+  /** The cutscene that sends the buggy off each morning (#98): the lid
+   *  shuts, the view rises to an eagle's eye, the buggy drives itself out
+   *  through the gate and down the lane, the screen fades. Built after
+   *  _addBedRest, on the GameplaySystems GO. Only when a gate exists. */
+  _addBuggySendOff() {
+    if (!this.exitGate || !this.buggyBoot) return;
+    const { engine } = this;
+    const buggy = this._outside.find('Buggy');
+    if (!buggy) return;
+
+    // Build the route.
+    const startYaw = buggy.object3d.rotation.y;
+    const forward = { x: Math.sin(startYaw), z: Math.cos(startYaw) };
+    const points = buggyRoute({
+      start: { x: buggy.object3d.position.x, z: buggy.object3d.position.z },
+      forward,
+      gate: this.exitGate,
+      rect: this.fence.rect,
+    });
+    const curve = routeCurve(points, (x, z) => terrainHeightAt(x, z) + 1.237);
+    const length = curve.getLength();
+    const gateAt = distanceAlong(curve, new THREE.Vector3(this.exitGate.at, 0, this.fence.rect.maxZ));
+
+    this.buggySendOff = this._sceneRoot.find('GameplaySystems').addComponent(new BuggySendOff({
+      engine,
+      buggy,
+      boot: this.buggyBoot,
+      lidPivot: this.buggyLidPivot,
+      socket: this.buggySocket,
+      gate: this.fence.gate,
+      controller: this.gameController,
+      fade: this.screenFade,
+      player: engine.player?.getComponent(FirstPersonController) ?? null,
+      interaction: engine.player?.getComponent(InteractionSystem) ?? null,
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      isFrozen: () => !!engine.debugCamera?.active,
+      moonLight: this.moonLight,
+      curve,
+      length,
+      gateAt,
+    }));
+
+    // Wire the cargo's sendOff.
+    if (this.buggyCargo) this.buggyCargo.sendOff = this.buggySendOff;
+
+    // Shadows: watch the buggy.
+    engine.shadows?.watch(buggy.object3d, [this.moonLight]);
+
+    // Night start: restore the buggy.
+    this._offBuggyNight = this.gameController.onNightStart(() => {
+      this.buggySendOff.resetForNight();
+    });
+  }
+
+  // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
@@ -1855,7 +1934,7 @@ export class BaseScene extends Scene {
   _yardObstacles() {
     const outside = this._sceneRoot.find('Outside');
     const boxes = [];
-    for (const name of ['Buggy', 'BuggyCargo', 'Generator']) {
+    for (const name of ['Buggy', 'Generator']) {
       const go = outside?.find(name);
       if (!go) continue;
       go.object3d.updateMatrixWorld(true);
@@ -2045,59 +2124,220 @@ export class BaseScene extends Scene {
   }
 
   /**
-   * The buggy's cargo bay (#98): a crate on the ground at the buggy's end
-   * nearest the hatch, where the night's drive box is set down in the
-   * morning before bed. Placed off the buggy's measured bounds, clear of
-   * its collider by BUGGY_CARGO.gap, beside its middle. A second
-   * DriveBoxDock counts the drives in the box set on it; BuggyCargo refuses
-   * a box mid-shift, so the quota stays with the airlock's dock all night.
-   * _addGameplaySystems hands it the controller.
+   * The buggy's boot (#98): a hollow steel box on the buggy's rear (-z end),
+   * where the night's drive box is set down in the morning before the buggy
+   * is sent off. A child of the Buggy GO, so it rides along during the
+   * cutscene. The boot's own scale (1/buggy's scale) makes its units metres.
+   *
+   * Visuals: floor + 4 walls (dark steel), a mount plate reaching forward
+   * into the body so there's no visible gap, and a lid on a pivot at the
+   * buggy-side top edge that swings open for loading and shuts for departure.
+   *
+   * Physics: its own fixed rigid body with cuboid colliders for the floor
+   * and 4 walls, open top so the interaction ray reaches the seated box.
+   *
+   * Components: BuggyCargo (labels, canSend, onInteract), SnapSocket (one
+   * slot at the floor top + 0.06 m), DriveBoxDock (counts the drives).
+   *
+   * A delegate Interactable on the Buggy GO copies the cargo's prompt label
+   * and forwards onInteract, so looking at the buggy's body offers
+   * '[E] Send the buggy off'.
    */
   _addBuggyCargo(buggy) {
-    const [w, h, d] = BUGGY_CARGO.size;
-    const bounds = new THREE.Box3().setFromObject(buggy.object3d);
-    const at = buggy.object3d.position;
-    if (bounds.isEmpty()) {
-      bounds.min.set(at.x - BUGGY_HALF_LENGTH, 0, at.z);
-      bounds.max.set(at.x + BUGGY_HALF_LENGTH, 0, at.z);
-    }
-    const hatch = this.rooms.Airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
-    const toHatch = Math.sign(hatch.x - at.x) || 1;
-    const end = toHatch > 0 ? bounds.max.x : bounds.min.x;
-    const x = end + toHatch * (BUGGY_CARGO.gap + w / 2);
-    const z = (bounds.min.z + bounds.max.z) / 2;
+    const { engine } = this;
+    const [across, height, depth] = BUGGY_CARGO.size;
+    const { top, gap, wall, lidOpen, mount } = BUGGY_CARGO;
+    const s = buggy.object3d.scale.x;
 
-    const go = new GameObject('BuggyCargo');
-    go.object3d.position.set(x, h / 2, z);
-    // The body sits 2 cm inside the lid all round, so the lid is the crate's
-    // outer edge and the whole thing stays within BUGGY_CARGO.size.
-    const crate = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(w - 0.04, h - 0.06, d - 0.04)),
-      this._own(new THREE.MeshStandardMaterial({ color: 0x5b5f58, roughness: 0.55, metalness: 0.5 })),
+    // Measure the buggy's own-frame bounds (local unscaled space).
+    const localBounds = this._measureLocalBounds(buggy.object3d);
+    if (!localBounds) {
+      // Fallback for tests with no model: a plain crate beside the buggy.
+      return this._addBuggyCargoFallback(buggy);
+    }
+
+    // The boot is a child of the buggy, at the rear (-z end).
+    const boot = new GameObject('BuggyBoot');
+    boot.object3d.scale.setScalar(1 / s);
+    const localZ = localBounds.min.z - (gap + depth / 2) / s;
+    const localY = (top - height / 2 - buggy.object3d.position.y) / s;
+    boot.object3d.position.set(0, localY, localZ);
+    buggy.object3d.add(boot.object3d);
+
+    // Visuals: dark steel.
+    const steelMat = this._own(new THREE.MeshStandardMaterial({ color: 0x2a2d2a, roughness: 0.7, metalness: 0.5 }));
+
+    // Floor.
+    const floor = new THREE.Mesh(this._own(new THREE.BoxGeometry(across, wall, depth)), steelMat);
+    floor.name = 'BootFloor';
+    floor.position.y = -height / 2 + wall / 2;
+    floor.castShadow = floor.receiveShadow = true;
+    boot.object3d.add(floor);
+
+    // 4 walls.
+    const wallH = height - wall;
+    const wallY = wall / 2;
+    const walls = [
+      { name: 'BootWallBack', size: [across, wallH, wall], pos: [0, wallY, -depth / 2 + wall / 2] },
+      { name: 'BootWallFront', size: [across, wallH, wall], pos: [0, wallY, depth / 2 - wall / 2] },
+      { name: 'BootWallLeft', size: [wall, wallH, depth - 2 * wall], pos: [-across / 2 + wall / 2, wallY, 0] },
+      { name: 'BootWallRight', size: [wall, wallH, depth - 2 * wall], pos: [across / 2 - wall / 2, wallY, 0] },
+    ];
+    for (const w of walls) {
+      const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...w.size)), steelMat);
+      mesh.name = w.name;
+      mesh.position.set(...w.pos);
+      mesh.castShadow = mesh.receiveShadow = true;
+      boot.object3d.add(mesh);
+    }
+
+    // Mount plate: reaches forward into the body so there's no visible gap.
+    const mountPlate = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(across, height, mount)),
+      this._own(new THREE.MeshStandardMaterial({ color: 0x1e201e, roughness: 0.8, metalness: 0.4 })),
     );
-    crate.name = 'BuggyCargo';
-    crate.position.y = -0.03;
-    crate.castShadow = crate.receiveShadow = true;
-    go.object3d.add(crate);
-    // A dark lid band, so it reads as a crate and not a block of the ground.
-    const lid = new THREE.Mesh(
-      this._own(new THREE.BoxGeometry(w, 0.06, d)),
+    mountPlate.name = 'BootMount';
+    mountPlate.position.set(0, 0, depth / 2 + mount / 2);
+    mountPlate.castShadow = mountPlate.receiveShadow = true;
+    boot.object3d.add(mountPlate);
+
+    // Lid: a pivot group on the buggy-side top edge, the lid mesh extending
+    // toward -z. rotation.x = lidOpen * lid raises the far edge.
+    const lidPivot = new THREE.Group();
+    lidPivot.name = 'BootLidPivot';
+    lidPivot.position.set(0, height / 2, depth / 2);
+    boot.object3d.add(lidPivot);
+    const lidMesh = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(across, wall, depth)),
       this._own(new THREE.MeshStandardMaterial({ color: 0x2f3230, roughness: 0.7, metalness: 0.4 })),
     );
-    lid.position.y = h / 2 - 0.03;
-    lid.castShadow = lid.receiveShadow = true;
-    go.object3d.add(lid);
+    lidMesh.name = 'BootLid';
+    lidMesh.position.set(0, wall / 2, -depth / 2);
+    lidMesh.castShadow = lidMesh.receiveShadow = true;
+    lidPivot.add(lidMesh);
 
+    // Physics: own fixed rigid body at the boot's world pose.
+    boot.object3d.updateMatrixWorld(true);
+    const bootWorldPos = new THREE.Vector3();
+    const bootWorldQuat = new THREE.Quaternion();
+    boot.object3d.getWorldPosition(bootWorldPos);
+    boot.object3d.getWorldQuaternion(bootWorldQuat);
+    const { world } = engine;
+    boot.rigidBody = world.createRigidBody(
+      RAPIER.RigidBodyDesc.fixed()
+        .setTranslation(bootWorldPos.x, bootWorldPos.y, bootWorldPos.z)
+        .setRotation({ x: bootWorldQuat.x, y: bootWorldQuat.y, z: bootWorldQuat.z, w: bootWorldQuat.w }),
+    );
+    // Cuboid colliders for floor and 4 walls, open top.
+    const bootColliders = [];
+    // Floor (in boot-local metres, transformed to world).
+    const floorLocalY = -height / 2 + wall / 2;
+    const floorWorld = new THREE.Vector3(0, floorLocalY, 0).applyMatrix4(boot.object3d.matrixWorld);
+    bootColliders.push(world.createCollider(
+      RAPIER.ColliderDesc.cuboid(across / 2, wall / 2, depth / 2)
+        .setTranslation(floorWorld.x, floorWorld.y, floorWorld.z),
+      boot.rigidBody,
+    ));
+    // Walls.
+    for (const w of walls) {
+      const wLocal = new THREE.Vector3(...w.pos);
+      const wWorld = wLocal.applyMatrix4(boot.object3d.matrixWorld);
+      const [wx, wy, wz] = w.size;
+      // Approximate: use the boot's world quaternion for the collider rotation.
+      bootColliders.push(world.createCollider(
+        RAPIER.ColliderDesc.cuboid(wx / 2, wy / 2, wz / 2)
+          .setTranslation(wWorld.x, wWorld.y, wWorld.z)
+          .setRotation({ x: bootWorldQuat.x, y: bootWorldQuat.y, z: bootWorldQuat.z, w: bootWorldQuat.w }),
+        boot.rigidBody,
+      ));
+    }
+    boot.collider = bootColliders[0];
+    boot.colliders = bootColliders;
+    engine._bodyToGO?.set(boot.rigidBody.handle, boot);
+
+    // Components.
+    const cargo = boot.addComponent(new BuggyCargo());
+    // Snap slot: y = floor top + 0.06 in boot-local metres.
+    const slotY = -height / 2 + wall + 0.06;
+    const socket = boot.addComponent(new SnapSocket({
+      snapDistance: 0.5,
+      slots: [{ offset: { x: 0, y: slotY, z: 0 } }],
+      attachedPromptLabel: '[E] Take drive box',
+      sounds: 'item',
+      canAccept: item => cargo.accepts(item),
+    }));
+    cargo.dock = boot.addComponent(new DriveBoxDock({ socket }));
+
+    // Store references for the send-off.
+    this.buggyBoot = boot;
+    this.buggyLidPivot = lidPivot;
+    this.buggySocket = socket;
+
+    // Delegate Interactable on the Buggy GO: looks at the cargo's prompt.
+    const delegate = buggy.addComponent(new class extends Interactable {
+      promptLabel = '';
+      onUpdate() { this.promptLabel = cargo.promptLabel; }
+      onInteract(hit) { cargo.onInteract(hit); }
+    }());
+    this.buggyInteractable = delegate;
+
+    return cargo;
+  }
+
+  /** Measure an Object3D's bounds in its own local (unscaled) space. */
+  _measureLocalBounds(object3d) {
+    const inv = object3d.matrixWorld.clone().invert();
+    const box = new THREE.Box3();
+    let found = false;
+    object3d.traverse(o => {
+      if (!o.isMesh || !o.geometry) return;
+      o.geometry.computeBoundingBox();
+      if (!o.geometry.boundingBox) return;
+      // Transform the 8 corners of the geometry's bounding box to world
+      // space, then back into the buggy's local space.
+      const bb = o.geometry.boundingBox;
+      const corners = [
+        new THREE.Vector3(bb.min.x, bb.min.y, bb.min.z),
+        new THREE.Vector3(bb.min.x, bb.min.y, bb.max.z),
+        new THREE.Vector3(bb.min.x, bb.max.y, bb.min.z),
+        new THREE.Vector3(bb.min.x, bb.max.y, bb.max.z),
+        new THREE.Vector3(bb.max.x, bb.min.y, bb.min.z),
+        new THREE.Vector3(bb.max.x, bb.min.y, bb.max.z),
+        new THREE.Vector3(bb.max.x, bb.max.y, bb.min.z),
+        new THREE.Vector3(bb.max.x, bb.max.y, bb.max.z),
+      ];
+      for (const c of corners) {
+        c.applyMatrix4(o.matrixWorld);
+        c.applyMatrix4(inv);
+        box.expandByPoint(c);
+        found = true;
+      }
+    });
+    return found ? box : null;
+  }
+
+  /** Fallback for tests with no buggy model: a plain crate beside it. */
+  _addBuggyCargoFallback(buggy) {
+    const [w, h, d] = BUGGY_CARGO.size;
+    const at = buggy.object3d.position;
+    const go = new GameObject('BuggyBoot');
+    go.object3d.position.set(at.x + BUGGY_HALF_LENGTH + BUGGY_CARGO.gap + w / 2, h / 2, at.z);
+    const crate = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(w, h, d)),
+      this._own(new THREE.MeshStandardMaterial({ color: 0x2a2d2a, roughness: 0.7, metalness: 0.5 })),
+    );
+    crate.name = 'BuggyBoot';
+    crate.castShadow = crate.receiveShadow = true;
+    go.object3d.add(crate);
     const { world } = this.engine;
-    go.rigidBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, h / 2, z));
+    const p = go.object3d.position;
+    go.rigidBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z));
     go.collider = world.createCollider(RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2), go.rigidBody);
     go.colliders = [go.collider];
     this.engine._bodyToGO?.set(go.rigidBody.handle, go);
-
     const cargo = go.addComponent(new BuggyCargo());
-    // A seated box rests on the lid: half the crate and half a box (0.12 m).
     const socket = go.addComponent(new SnapSocket({
-      snapDistance: 0.35,
+      snapDistance: 0.5,
       slots: [{ offset: { y: h / 2 + 0.06 } }],
       attachedPromptLabel: '[E] Take drive box',
       sounds: 'item',
@@ -2105,6 +2345,9 @@ export class BaseScene extends Scene {
     }));
     cargo.dock = go.addComponent(new DriveBoxDock({ socket }));
     this._outside.addChild(go);
+    this.buggyBoot = go;
+    this.buggyLidPivot = null;
+    this.buggySocket = socket;
     return cargo;
   }
 
