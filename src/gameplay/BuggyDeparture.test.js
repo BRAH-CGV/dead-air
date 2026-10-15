@@ -68,11 +68,33 @@ describe('buggyRoute — from the parking spot, through the gate and down the la
   const curve = routeCurve(points);
   const samples = curve.getSpacedPoints(400);
 
-  it('starts where the buggy stands and pulls straight away along its nose first', () => {
+  it('starts where the buggy stands, heading along its nose', () => {
     expect(points[0]).toEqual(START);
-    const ahead = points[1];
-    const along = (ahead.x - START.x) * FORWARD.x + (ahead.z - START.z) * FORWARD.z;
-    expect(along).toBeCloseTo(BUGGY_DEPARTURE.pullAway, 6);
+    const t = curve.getTangentAt(0);
+    const off = Math.atan2(t.x, t.z) - Math.atan2(FORWARD.x, FORWARD.z);
+    expect(Math.abs(off)).toBeLessThan(THREE.MathUtils.degToRad(2));
+  });
+
+  // The buggy faces along the route, so a kink or a wobble in it is the
+  // buggy spinning on the spot as it drives.
+  it('turns smoothly: never tighter than a 4 m radius, and never back and forth', () => {
+    const length = curve.getLength();
+    const ds = 0.25;
+    const t = new THREE.Vector3();
+    const yawAt = d => { curve.getTangentAt(Math.min(d / length, 1), t); return Math.atan2(t.x, t.z); };
+    let prev = yawAt(0);
+    let turned = 0;
+    for (let d = ds; d <= length; d += ds) {
+      const yaw = yawAt(d);
+      const dyaw = Math.abs(yaw - prev);
+      expect(dyaw / ds, `at ${d.toFixed(2)} m`).toBeLessThan(1 / 4);
+      turned += dyaw;
+      prev = yaw;
+    }
+    // About as much turning as the way needs: round to the gate, then onto
+    // the lane, and the lane's own gentle wander.
+    const need = Math.abs(yawAt(0)) + Math.abs(yawAt(length));
+    expect(turned).toBeLessThan(need + THREE.MathUtils.degToRad(20));
   });
 
   it('crosses the fence once, through the middle of the gate and square to it', () => {
