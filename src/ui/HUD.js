@@ -1,12 +1,11 @@
 // ─────────────────────────────────────────────
 // HUD  –  In-game heads-up display overlay
 // ─────────────────────────────────────────────
-// Three classes wrapping DOM elements defined in index.html:
+// Two classes wrapping DOM elements defined in index.html:
 //
 //   HUD              – clock, signal counter, night label, scan bar, prompt,
 //                      stamina bar, EVA suit indicator
 //   RadarOverlay     – 2D canvas radar display with signal blips
-//   SignalReviewPanel– modal for viewing a scanned signal's payload
 //
 // All follow the Crosshair/LoadingScreen pattern: markup + CSS live in
 // index.html so the panel renders before any JS parses; these classes
@@ -46,8 +45,10 @@ export class HUD {
     if (this._clock) this._clock.textContent = timeString;
   }
 
-  setSignals(saved, required) {
-    if (this._signals) this._signals.textContent = `Drives: ${saved} / ${required}`;
+  setSignals(saved, required, { minSignalLevel = 1 } = {}) {
+    if (!this._signals) return;
+    const label = minSignalLevel >= 2 ? 'Cyan drives' : 'Drives';
+    this._signals.textContent = `${label}: ${saved} / ${required}`;
   }
 
   setNight(number) {
@@ -334,7 +335,7 @@ export class RadarOverlay {
    *  fade-in opacity — a signal mid-fade shows as a ghost of its state. */
   _blipColor(sig) {
     const a = sig.opacity;
-    if (sig.evil)       return `rgba(255, 45, 45, ${((sig.saved || sig.deleted) ? 0.5 : 0.8) * a})`;   // hostile red, dim once resolved
+    if (sig.evil)       return `rgba(0, 220, 200, ${((sig.saved || sig.deleted) ? 0.5 : 0.8) * a})`;   // same cyan as ordinary, dim once resolved
     if (sig.saved)      return `rgba(80, 200, 80, ${0.5 * a})`;      // dim green
     if (sig.deleted)    return `rgba(200, 60, 60, ${0.5 * a})`;      // dim red
     if (sig.scanned)    return `rgba(180, 180, 60, ${0.7 * a})`;     // scanned but unresolved
@@ -344,7 +345,7 @@ export class RadarOverlay {
   /** RGB triplet for a signal's state colour — used by the ripple
    *  animation which applies its own alpha. */
   _blipRgb(sig) {
-    if (sig.evil)    return '255, 45, 45';
+    if (sig.evil)    return '0, 220, 200';
     if (sig.saved)   return '80, 200, 80';
     if (sig.deleted) return '200, 60, 60';
     if (sig.scanned) return '180, 180, 60';
@@ -623,10 +624,12 @@ export class RadarOverlay {
       const rgb = this._blipRgb(sig);
 
       // Stagger each signal's phase so the sky never pulses as one.
+      // Evil signals ripple inward (contracting) instead of outward.
       const offset = (i * 737) % RIPPLE_CYCLE;
-      const phase  = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
+      const raw    = ((now + offset) % RIPPLE_CYCLE) / RIPPLE_CYCLE;
+      const phase  = sig.evil ? 1 - raw : raw;
 
-      // The expanding ring — radius grows, alpha fades.
+      // The ring — radius grows (or shrinks for evil), alpha fades.
       const ringR   = phase * RIPPLE_MAX * s;
       const ringA   = (1 - phase) * 0.8 * sig.opacity;
       if (ringA > 0.01) {
@@ -705,72 +708,3 @@ export class RadarOverlay {
   }
 }
 
-// ── SignalReviewPanel ──────────────────────────────────────
-
-export class SignalReviewPanel {
-  constructor(root = typeof document !== 'undefined' ? document.getElementById('signal-review') : null) {
-    this.root = root;
-    this._image    = root?.querySelector('#signal-review-image')  ?? null;
-    this._saveBtn  = root?.querySelector('#signal-save-btn')      ?? null;
-    this._deleteBtn = root?.querySelector('#signal-delete-btn')    ?? null;
-    this._saveCb    = null;
-    this._deleteCb  = null;
-    this._keyHandler = null;
-
-    // Wire click handlers. The buttons outlive the scene (index.html), so
-    // the handlers are kept to be removed again in dispose().
-    this._onSaveClick   = () => this._saveCb?.();
-    this._onDeleteClick = () => this._deleteCb?.();
-    this._saveBtn?.addEventListener('click', this._onSaveClick);
-    this._deleteBtn?.addEventListener('click', this._onDeleteClick);
-  }
-
-  /** Let go of the page's buttons. Without this every scene rebuild adds
-   *  another pair of click listeners, and one click saves into every dead
-   *  scene as well as the live one. */
-  dispose() {
-    this.hide();
-    this._saveBtn?.removeEventListener('click', this._onSaveClick);
-    this._deleteBtn?.removeEventListener('click', this._onDeleteClick);
-    this._saveCb = null;
-    this._deleteCb = null;
-  }
-
-  /** Show the panel with the signal's payload image. */
-  show(payloadUrl) {
-    if (!this.root) return;
-    if (this._image) this._image.src = payloadUrl;
-    this.root.style.display = 'flex';
-    this._installKeyHandler();
-  }
-
-  /** Hide the panel and clear handlers. */
-  hide() {
-    if (!this.root) return;
-    this.root.style.display = 'none';
-    if (this._image) this._image.src = '';
-    this._removeKeyHandler();
-  }
-
-  /** Register callback for save action (KeyS or click). */
-  onSave(callback) { this._saveCb = callback; }
-
-  /** Register callback for delete action (KeyD or click). */
-  onDelete(callback) { this._deleteCb = callback; }
-
-  _installKeyHandler() {
-    this._removeKeyHandler();
-    this._keyHandler = (e) => {
-      if (e.code === 'KeyS') { e.preventDefault(); this._saveCb?.(); }
-      if (e.code === 'KeyD') { e.preventDefault(); this._deleteCb?.(); }
-    };
-    addEventListener('keydown', this._keyHandler);
-  }
-
-  _removeKeyHandler() {
-    if (this._keyHandler) {
-      removeEventListener('keydown', this._keyHandler);
-      this._keyHandler = null;
-    }
-  }
-}

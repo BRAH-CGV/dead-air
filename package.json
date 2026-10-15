@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.20.0",
+    "fft.js": "^4.0.4",
     "three": "^0.185.1"
   },
   "devDependencies": {
