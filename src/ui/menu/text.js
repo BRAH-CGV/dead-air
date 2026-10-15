@@ -33,6 +33,7 @@ export const BUILT_WITH = [
   { name: 'Rapier (@dimforge/rapier3d)', licence: 'Apache-2.0', url: 'https://rapier.rs' },
   { name: 'Vite', licence: 'MIT', url: 'https://vitejs.dev' },
   { name: 'vite-plugin-wasm', licence: 'MIT', url: 'https://github.com/Menci/vite-plugin-wasm' },
+  { name: 'fft.js', licence: 'MIT', url: 'https://github.com/indutny/fft.js' },
 ];
 
 /** Inspirations, not assets used. */

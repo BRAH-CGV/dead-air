@@ -35,11 +35,13 @@ import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { SignalRegistry } from '../gameplay/SignalRegistry.js';
 import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
-import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
+import { HUD, RadarOverlay } from '../ui/HUD.js';
+import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
@@ -85,6 +87,7 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
 import { approachRoute, climbRoute, slopeOut, NavGraph, RAGNO_PATHS } from '../gameplay/RagnoPaths.js';
@@ -409,14 +412,15 @@ export class BaseScene extends Scene {
     }
     for (const resource of this._owned) resource.dispose();
     this._owned.length = 0;
-    // The HUD, radar and review panel are DOM overlays living in index.html,
-    // outside the scene graph — nothing tears them down for us, so a scene
-    // swap would leave last night's numbers floating over the next level.
+    // The HUD, radar and processing screen are DOM overlays living in
+    // index.html, outside the scene graph — nothing tears them down for
+    // us, so a scene swap would leave last night's numbers floating over
+    // the next level.
     this.hud?.hide();
     // dispose(), not just hide(): both hang listeners on page elements and
     // the window that outlive the scene.
     this.radarOverlay?.dispose();
-    this.reviewPanel?.dispose();
+    this.processingScreen?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -662,14 +666,10 @@ export class BaseScene extends Scene {
   _addGameplaySystems() {
     this.nightClock = new NightClock();
 
-    // Payload URLs are direct paths to the placeholder images, not manifest
-    // keys — they are displayed through an HTML <img>, not a Three.js
-    // texture. Relative, like every other path that has to survive the
-    // upload to a LAMP subdirectory.
-    const payloadPool = Array.from({ length: 8 }, (_, i) =>
-      `assets/signals/signal-${i + 1}.png`,
-    );
-    this.signalManager = new SignalManager({ payloadPool });
+    // Signal registry discovers .wav files at build time; SignalManager
+    // shuffles the names each night and assigns one per target.
+    this.signalRegistry = new SignalRegistry();
+    this.signalManager = new SignalManager({ signalNames: this.signalRegistry.names });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -678,7 +678,7 @@ export class BaseScene extends Scene {
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
     this.radarOverlay = new RadarOverlay();
-    this.reviewPanel  = new SignalReviewPanel();
+    this.processingScreen = new ProcessingScreen();
 
     // The real sky behind the radar grid: the backdrop reads it live, so it
     // turns with the night and drowns in the dawn exactly as the window
@@ -690,7 +690,6 @@ export class BaseScene extends Scene {
     this.terminal.signalManager = this.signalManager;
     this.terminal.hud           = this.hud;
     this.terminal.radar         = this.radarOverlay;
-    this.terminal.reviewPanel   = this.reviewPanel;
     this.terminal.driveManager  = this.driveManager;
     this.terminal.crosshair     = this.engine.crosshair;
     // The desk is a room prop, so it is found through the room rather than
@@ -747,10 +746,19 @@ export class BaseScene extends Scene {
       driveSlot.bindDriveManager(this.driveManager);
     }
 
-    // Wire the server room's drive slot to watch the same drives.
-    // The slot works independently (no DriveManager) — the console's
+    // Wire the delete and processing console slots.
+    // Each slot works independently (no DriveManager) — the console's
     // Interactable checks the slot's insertedDrive for signals.
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
+
+    // Wire the processing screen to the ServerRoom console and the signal
+    // registry (for audio URL lookup from the drive's signal name).
+    this.processingScreen.signalRegistry = this.signalRegistry;
+    this.processingScreen.setEngine(this.engine);
+    if (this.rooms.ServerRoom) {
+      this.rooms.ServerRoom.processingScreen = this.processingScreen;
+    }
 
     // Wire the drive box dock in the airlock and the drive boxes on the
     // office shelf.
@@ -769,7 +777,8 @@ export class BaseScene extends Scene {
     for (const drive of office.drives) {
       this.driveManager.addDrive(drive);
       if (driveSlot) driveSlot.addDrive(drive);
-      if (serverSlot) serverSlot.addDrive(drive);
+      if (deleteSlot) deleteSlot.addDrive(drive);
+      if (processingSlot) processingSlot.addDrive(drive);
       for (const box of driveBoxes) box.addDrive?.(drive);
     }
 
@@ -786,10 +795,21 @@ export class BaseScene extends Scene {
         addDriveToRoom(drive);
       };
     }
-    if (serverSlot) {
-      const origOnRemoved = serverSlot.onDriveRemoved;
-      serverSlot.onDriveRemoved = (drive) => {
+    if (deleteSlot) {
+      const origOnRemoved = deleteSlot.onDriveRemoved;
+      deleteSlot.onDriveRemoved = (drive) => {
         origOnRemoved?.(drive);
+        addDriveToRoom(drive);
+      };
+    }
+    if (processingSlot) {
+      const origOnRemoved = processingSlot.onDriveRemoved;
+      processingSlot.onDriveRemoved = (drive) => {
+        origOnRemoved?.(drive);
+        // Removing a drive from the processing console cancels any in-flight
+        // signal upgrade — the player must start over with a fresh insertion.
+        drive.processingStarted = false;
+        drive.processingAccumulated = 0;
         addDriveToRoom(drive);
       };
     }
@@ -815,9 +835,6 @@ export class BaseScene extends Scene {
       driveManager: this.driveManager,
       pickupSystem: this.pickupSystem,
     });
-
-    // The review panel is now display-only — Q auto-saves via the terminal.
-    // No onSave/onDelete callbacks needed.
 
     // One night number across the scene. NightManager owns it; the
     // controller's quota, clock and HUD follow it instead of counting on
@@ -895,11 +912,13 @@ export class BaseScene extends Scene {
    *  signals and positions. */
   _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
-    const serverSlot = this.rooms.ServerRoom?.driveSlot;
+    const deleteSlot = this.rooms.ServerRoom?.deleteDriveSlot;
+    const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
-    // Eject drives from reader and server slot (they keep their signal)
+    // Eject drives from reader and console slots (they keep their signal)
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
-    if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
+    if (deleteSlot?.hasDrive) deleteSlot._ejectDrive(deleteSlot.insertedDrive);
+    if (processingSlot?.hasDrive) processingSlot._ejectDrive(processingSlot.insertedDrive);
 
     // Empty the dock: wipe the docked box's drives and release it.
     const box = this.rooms.Airlock.quotaDock?.empty();
@@ -1660,20 +1679,23 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   // Stamina and the Sleep Demon (every night)
   // ──────────────────────────────────────────
-  /** Stamina drains through the shift and the office's ration dispenser
-   *  tops it up. The drain ticks on GameplaySystems after the controller,
-   *  and before the demon and the fatigue effects, so within a frame both
-   *  read this frame's stamina. */
+  /** Stamina drains through the shift — faster outside, and faster still
+   *  while the player stares at the dust eyes — and the bedroom's coffee
+   *  machine tops it up, a couple of cups a night. The drain ticks on
+   *  GameplaySystems after the controller, and before the demon and the
+   *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
     this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
-    const dispenser = this.rooms.MainOffice.rationDispenser;
-    if (dispenser) {
-      dispenser.stamina = this.stamina;
-      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
-      dispenser.onEat = () => {
-        if (!crunch) return;
-        if (crunch.isPlaying) crunch.stop();
-        crunch.play();
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
+    if (machine) {
+      machine.stamina = this.stamina;
+      // The ration's placeholder, as the cup is drunk: see the manifest.
+      // onBrew and onBrewed are free for the machine's own sounds.
+      const sip = this._sound('sfx:ration', 0.8);
+      machine.onDrink = () => {
+        if (!sip) return;
+        if (sip.isPlaying) sip.stop();
+        sip.play();
       };
     }
     this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
@@ -1681,8 +1703,9 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       grid:         this.power,
-      onNightStart: () => dispenser?.reset(),
-      isResting:    () => !!this.nap?.napping,
+      onNightStart: () => machine?.reset(),
+      isOutside:    () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
+      isStaring:    () => !!this.dustEyes?.staredAt,
     }));
   }
 
@@ -2332,15 +2355,22 @@ export class BaseScene extends Scene {
     const { engine } = this;
     const zones = new OcclusionZones({ renderer: engine.renderer, scene: engine.scene, camera: engine.camera });
 
-    const isShell = o => o.userData.isDoor
-      || /^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name);
     const interiorParts = [
       this.rooms.MainOffice, this.rooms.ServerRoom, this.rooms.LivingQuarters,
       ...Object.values(this.corridors),
     ];
+    // What the player can pick up goes where they go — out through the
+    // airlock to the dock, or into the yard — and stays a child of the room
+    // it was built in. A zone hiding it would hide it in their hands.
+    const carried = new Set();
+    for (const part of interiorParts) {
+      for (const go of part.root.descendants()) if (go.getComponent?.(Pickupable)) carried.add(go.object3d);
+    }
+    const isFixed = o => o.userData.isDoor || carried.has(o)
+      || /^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name);
     for (const part of interiorParts) {
       for (const door of part.doors) door.object3d.userData.isDoor = true;
-      zones.add('interior', collectHideable(part.root.object3d, isShell));
+      zones.add('interior', collectHideable(part.root.object3d, isFixed));
     }
 
     // Each outdoor thing (each instance, for the instanced scenery) is asked
@@ -2519,6 +2549,7 @@ export class BaseScene extends Scene {
 const _box = new THREE.Box3();
 
 const _airlockEar = new THREE.Vector3();
+const _staminaEye = new THREE.Vector3();
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {
