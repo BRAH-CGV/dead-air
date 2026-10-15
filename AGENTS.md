@@ -65,7 +65,7 @@ src/
 │       └── commands.js  # Every command, on the engine and the live scene
 ├── components/
 │   ├── FirstPersonController.js  # WASD + mouse look, Rapier character controller; speedScale for a threat's slow
-│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera; stutters under interference
+│   ├── Flashlight.js    # F: weak, short-range spotlight on the camera; stutters under interference; clicks on and off (the camera flash's switch)
 │   ├── Ambience.js      # A loop per room, eased toward the AmbienceMix; tension music (setTension)
 │   ├── AirlockSound.js  # The pressure release as the airlock seals and cycles
 │   ├── SatelliteSound.js # The dish's drive while it slews, and the click as it settles
