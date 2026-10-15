@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────
 
 import { FirstPersonController } from '../components/FirstPersonController.js';
-import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram } from './Spectrogram.js';
+import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend } from './Spectrogram.js';
 
 export class ProcessingScreen {
   /** @type {import('../gameplay/SignalRegistry.js').SignalRegistry|null} */
@@ -49,6 +49,13 @@ export class ProcessingScreen {
 
   /** requestAnimationFrame handle for the processing progress bar. */
   _progressRaf = null;
+
+  /** Blend animation state (old → new spectrogram during processing). */
+  _blendRaf = null;
+  _blendOldResult = null;
+  _blendNewResult = null;
+  _blendRevealOrder = null;
+  _blendComplete = false;
 
   constructor(root = typeof document !== 'undefined' ? document.getElementById('processing-screen') : null) {
     this.root = root;
@@ -96,6 +103,7 @@ export class ProcessingScreen {
     this.root.style.display = 'none';
     this._stopScanline();
     this._stopProgressTracking();
+    this._stopBlend();
     this._clearSpectrogram();
     this._clearMediaButtons();
     this._clearActions();
@@ -180,6 +188,7 @@ export class ProcessingScreen {
     return {
       gain:     Number(this._gainSlider?.value)     || 1,
       contrast: Number(this._contrastSlider?.value) || 1,
+      maxFreq:  16000,
     };
   }
 
@@ -259,12 +268,13 @@ export class ProcessingScreen {
     }
 
     const hasAudio = !!url;
+    const locked = drive?.isProcessing ?? false;
 
     // Play/Pause toggle.
     const playBtn = document.createElement('button');
     playBtn.className = 'media-btn';
     playBtn.textContent = 'Play';
-    playBtn.disabled = !hasAudio;
+    playBtn.disabled = !hasAudio || locked;
     playBtn.dataset.actionId = 'play-pause';
     if (hasAudio) {
       playBtn.addEventListener('click', () => {
@@ -290,7 +300,7 @@ export class ProcessingScreen {
     const stopBtn = document.createElement('button');
     stopBtn.className = 'media-btn';
     stopBtn.textContent = 'Stop';
-    stopBtn.disabled = !hasAudio;
+    stopBtn.disabled = !hasAudio || locked;
     stopBtn.dataset.actionId = 'stop';
     if (hasAudio) {
       stopBtn.addEventListener('click', () => {
@@ -383,7 +393,9 @@ export class ProcessingScreen {
   // ── Processing progress ────────────────────────────────────
 
   /** Start tracking a drive's processing progress. Shows the progress bar
-   *  if the drive is currently processing; hides it otherwise. */
+   *  if the drive is currently processing; hides it otherwise. The blend
+   *  animation (if the target spectrogram has loaded) runs here, during
+   *  processing, so the reveal tracks the progress bar in real time. */
   _startProgressTracking(drive) {
     this._stopProgressTracking();
     if (!drive?.isProcessing) {
@@ -393,15 +405,18 @@ export class ProcessingScreen {
     this._showProgress();
     const tick = () => {
       if (!drive.isProcessing) {
-        // Processing finished — complete the upgrade and refresh.
-        drive.tickProcessing();
-        this._hideProgress();
-        this._renderActions(this._actions);
-        this._updateSpectrogram(drive);
-        this._renderMediaButtons(drive);
+        this._onProcessingComplete(drive);
         return;
       }
       this._updateProgress(drive);
+      // Render the blend if the target spectrogram has loaded.
+      if (this._blendOldResult && this._blendNewResult && !this._blendComplete) {
+        renderBlend(
+          this._spectrogram, this._blendOldResult, this._blendNewResult,
+          drive.processingProgress, this._blendRevealOrder, this._vizOpts(),
+        );
+        if (drive.processingProgress >= 1) this._blendComplete = true;
+      }
       this._progressRaf = requestAnimationFrame(tick);
     };
     this._progressRaf = requestAnimationFrame(tick);
@@ -413,6 +428,47 @@ export class ProcessingScreen {
       this._progressRaf = null;
     }
     this._hideProgress();
+  }
+
+  /** Called when the drive's processing finishes. Applies the upgrade,
+   *  hides the bar, and either completes the blend animation (if the
+   *  target loaded late) or refreshes the spectrogram directly. */
+  _onProcessingComplete(drive) {
+    drive.tickProcessing();
+    this._hideProgress();
+    this._renderActions(this._actions);
+    this._renderMediaButtons(drive);
+
+    if (this._blendOldResult && this._blendNewResult) {
+      if (!this._blendComplete) {
+        // Target loaded but blend wasn't finished — run a quick final RAF
+        // loop to complete the reveal, then refresh.
+        const finishBlend = () => {
+          if (!this._spectrogram || !this._blendOldResult || !this._blendNewResult) {
+            this._refreshAfterProcessing(drive);
+            return;
+          }
+          renderBlend(
+            this._spectrogram, this._blendOldResult, this._blendNewResult,
+            1, this._blendRevealOrder, this._vizOpts(),
+          );
+          this._stopBlend();
+          this._refreshAfterProcessing(drive);
+        };
+        requestAnimationFrame(finishBlend);
+        return;
+      }
+      // Blend already complete — just clean up and refresh.
+      this._stopBlend();
+    }
+    this._refreshAfterProcessing(drive);
+  }
+
+  /** Full refresh after processing + blend complete. */
+  _refreshAfterProcessing(drive) {
+    this._updateSpectrogram(drive);
+    this._renderMediaButtons(drive);
+    this._renderActions(this._actions);
   }
 
   _showProgress() {
@@ -428,5 +484,71 @@ export class ProcessingScreen {
     if (this._progressFill) this._progressFill.style.width = `${pct}%`;
     const secs = Math.ceil(drive.processingRemainingMs / 1000);
     if (this._progressLabel) this._progressLabel.textContent = `Processing… ${secs}s`;
+  }
+
+  // ── Spectrogram blend transition ───────────────────────────
+
+  /** Pre-load the target spectrogram for the blend transition. Called by
+   *  the upgrade button's onClick so the target is ready (or loading)
+   *  while the 30 s processing timer runs. The blend runs DURING
+   *  processing — not after — so the reveal tracks the progress bar. */
+  async prepareBlend(drive) {
+    this._stopBlend();
+    const oldResult = this._spectrogramResult;
+    if (!oldResult) return;
+
+    // The drive is still at the CURRENT level; the target is one higher.
+    const targetLevel = (drive.signalLevel ?? 1) + 1;
+    const targetUrl = this.signalRegistry?.getAudioUrl(drive.signalName, targetLevel) ?? '';
+    if (!targetUrl) return;
+
+    try {
+      if (!this._audioContext) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        this._audioContext = new Ctx();
+      }
+      const audioBuffer = await decodeAudio(targetUrl, this._audioContext);
+      if (!this._spectrogram) return;  // screen closed during load
+      const newResult = computeSpectrogram(audioBuffer);
+      this._setupBlend(oldResult, newResult);
+    } catch {
+      // Target audio failed to load — blend won't run; completion will
+      // fall back to a direct spectrogram refresh.
+    }
+  }
+
+  /** Set up the blend state (reveal order + cached results). Called once
+   *  the target spectrogram has loaded. The progress RAF loop picks up
+   *  the blend on its next frame. */
+  _setupBlend(oldResult, newResult) {
+    this._blendOldResult = oldResult;
+    this._blendNewResult = newResult;
+    this._blendComplete = false;
+
+    // Build a randomised column reveal order (localised shuffles so the
+    // progression is generally left-to-right with bursty chunks).
+    const total = oldResult.frames;
+    const order = Array.from({ length: total }, (_, i) => i);
+    const chunkSize = Math.max(1, Math.ceil(total / 40));
+    for (let start = 0; start < total; start += chunkSize) {
+      const end = Math.min(start + chunkSize, total);
+      for (let i = end - 1; i > start; i--) {
+        const j = start + Math.floor(Math.random() * (i - start + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    }
+    this._blendRevealOrder = order;
+  }
+
+  /** Stop the blend animation and clear the state. */
+  _stopBlend() {
+    if (this._blendRaf) {
+      cancelAnimationFrame(this._blendRaf);
+      this._blendRaf = null;
+    }
+    this._blendOldResult = null;
+    this._blendNewResult = null;
+    this._blendRevealOrder = null;
+    this._blendComplete = false;
   }
 }

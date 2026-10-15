@@ -229,6 +229,7 @@ describe('ServerRoom', () => {
     const fakeScreen = {
       open(drive, actions) { opened.push({ drive, actions }); },
       refreshActions: vi.fn(),
+      prepareBlend: vi.fn(),
     };
     room.processingScreen = fakeScreen;
 
@@ -281,6 +282,7 @@ describe('ServerRoom', () => {
     const fakeScreen = {
       open(drive, actions) { opened.push({ drive, actions }); },
       refreshActions: vi.fn(),
+      prepareBlend: vi.fn(),
     };
     room.processingScreen = fakeScreen;
 

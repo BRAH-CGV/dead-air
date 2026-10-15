@@ -212,6 +212,7 @@ export class ServerRoom extends Room {
             onClick: () => {
               if (drive?.canUpgradeLevel) {
                 drive.startProcessing();
+                screen.prepareBlend(drive);
               }
               screen.refreshActions(self._driveSlot?.insertedDrive ?? null);
             },

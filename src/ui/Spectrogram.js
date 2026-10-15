@@ -183,3 +183,114 @@ export function render(canvas, result, { colormap = colourMap, gain = 1, contras
   }
   ctx.putImageData(imageData, 0, 0);
 }
+
+// ── Blend rendering (processing transition) ──────────────────
+
+/**
+ * Render a left-to-right blend from an old spectrogram to a new one.
+ * Columns marked true in `revealOrder` show the NEW result; the rest
+ * show the OLD result. As `progress` (0→1) advances, more columns flip,
+ * producing a randomised-burst reveal — like a real program's progress.
+ *
+ * Both results may have different frame counts (different audio lengths);
+ * the new spectrogram is scaled to the old canvas's width via an
+ * offscreen canvas so the column mapping is 1-to-1 at the display size.
+ *
+ * @param {HTMLCanvasElement} canvas
+ * @param {object} oldResult   Result from `compute()` (current level).
+ * @param {object} newResult   Result from `compute()` (target level).
+ * @param {number} progress    0..1 — fraction of columns revealed.
+ * @param {boolean[]} revealOrder  length = oldResult.frames; true = new.
+ * @param {object} [opts]      Same viz opts as `render()`.
+ */
+export function renderBlend(canvas, oldResult, newResult, progress, revealOrder, opts = {}) {
+  if (!oldResult || !newResult || !oldResult.frames || !newResult.frames) return;
+
+  const { magnitude: oldMag, bins: oldBins, frames: oldFrames, sampleRate: oldSR } = oldResult;
+  const { magnitude: newMag, bins: newBins, frames: newFrames } = newResult;
+  const { colormap = colourMap, gain = 1, contrast = 1, maxFreq = 16000 } = opts;
+
+  const oldNyquist = oldSR / 2;
+  const oldVisibleBins = Math.min(oldBins, Math.ceil(oldBins * (maxFreq / oldNyquist)));
+  const newNyquist = newResult.sampleRate / 2;
+  const newVisibleBins = Math.min(newBins, Math.ceil(newBins * (maxFreq / newNyquist)));
+
+  // Pre-render both spectrograms to offscreen canvases at native size.
+  const oldCvs = document.createElement('canvas');
+  oldCvs.width = oldFrames;
+  oldCvs.height = oldVisibleBins;
+  _renderToCanvas(oldCvs, oldMag, oldFrames, oldVisibleBins, colormap, gain, contrast);
+
+  const newCvs = document.createElement('canvas');
+  newCvs.width = newFrames;
+  newCvs.height = newVisibleBins;
+  _renderToCanvas(newCvs, newMag, newFrames, newVisibleBins, colormap, gain, contrast);
+
+  // Scale the new canvas to the old canvas's dimensions so column copies
+  // map 1-to-1 regardless of differing audio lengths.
+  let scaledNew = newCvs;
+  if (newFrames !== oldFrames || newVisibleBins !== oldVisibleBins) {
+    scaledNew = document.createElement('canvas');
+    scaledNew.width = oldFrames;
+    scaledNew.height = oldVisibleBins;
+    const sCtx = scaledNew.getContext('2d');
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.drawImage(newCvs, 0, 0, oldFrames, oldVisibleBins);
+  }
+
+  // Set the main canvas to the old spectrogram's dimensions.
+  canvas.width = oldFrames;
+  canvas.height = oldVisibleBins;
+  const ctx = canvas.getContext('2d');
+
+  // Start with the old spectrogram as the base.
+  ctx.drawImage(oldCvs, 0, 0);
+
+  // Determine how many columns to reveal at this progress.
+  const total = oldFrames;
+  const revealCount = Math.min(total, Math.floor(progress * total));
+
+  if (revealCount > 0 && scaledNew) {
+    const oldData = ctx.getImageData(0, 0, oldFrames, oldVisibleBins);
+    const newData = scaledNew.getContext('2d').getImageData(0, 0, oldFrames, oldVisibleBins);
+
+    // Build a column bitmask from the reveal order.
+    const revealed = new Uint8Array(total);
+    for (let i = 0; i < revealCount; i++) revealed[revealOrder[i]] = 1;
+
+    // Copy revealed columns from the new spectrogram.
+    for (let t = 0; t < total; t++) {
+      if (!revealed[t]) continue;
+      for (let y = 0; y < oldVisibleBins; y++) {
+        const si = (y * total + t) * 4;
+        oldData.data[si]     = newData.data[si];
+        oldData.data[si + 1] = newData.data[si + 1];
+        oldData.data[si + 2] = newData.data[si + 2];
+        oldData.data[si + 3] = 255;
+      }
+    }
+    ctx.putImageData(oldData, 0, 0);
+  }
+}
+
+/** Render a magnitude matrix to an offscreen canvas (internal helper). */
+function _renderToCanvas(canvas, magnitude, frames, visibleBins, colormap, gain, contrast) {
+  const ctx = canvas.getContext('2d');
+  const imageData = ctx.createImageData(frames, visibleBins);
+  const data = imageData.data;
+  for (let t = 0; t < frames; t++) {
+    for (let f = 0; f < visibleBins; f++) {
+      let v = magnitude[f][t] * gain;
+      v = Math.max(0, Math.min(1, v));
+      if (contrast !== 1) v = Math.pow(v, contrast);
+      const y = visibleBins - 1 - f;
+      const idx = (y * frames + t) * 4;
+      const [r, g, b] = colormap(v);
+      data[idx] = r;
+      data[idx + 1] = g;
+      data[idx + 2] = b;
+      data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}

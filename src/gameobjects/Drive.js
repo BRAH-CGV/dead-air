@@ -95,44 +95,15 @@ class DoomGlowFade extends Component {
 
 /** Per-frame ticker for signal processing. Checks whether the wall-clock
  *  deadline has passed and applies the upgrade automatically — so the
- *  player doesn't have to revisit the console. Also pauses the timer
- *  when the game is paused by shifting the deadline forward. */
+ *  player doesn't have to revisit the console. The timer runs on real
+ *  wall-clock time and is NOT paused by the game pause. */
 class SignalProcessing extends Component {
   _drive;
-  /** Unsubscribe handle for engine.onPauseChange. */
-  _unsubPause = null;
-  /** Wall-clock timestamp when the game was paused, or null. */
-  _pauseStart = null;
-
   constructor(drive) {
     super();
     this._drive = drive;
   }
-
-  onStart() {
-    const engine = this.gameObject?.scene?.userData?.engine;
-    if (!engine?.onPauseChange) return;
-    this._unsubPause = engine.onPauseChange((paused) => {
-      if (paused) {
-        // Game paused: remember when, so we can shift the deadline on resume.
-        this._pauseStart = Date.now();
-      } else if (this._pauseStart != null) {
-        // Game resumed: push the deadline forward by the pause duration.
-        const pauseDuration = Date.now() - this._pauseStart;
-        if (this._drive.processingEndTime != null) {
-          this._drive.processingEndTime += pauseDuration;
-        }
-        this._pauseStart = null;
-      }
-    });
-  }
-
   onUpdate() { this._drive.tickProcessing(); }
-
-  onDestroy() {
-    this._unsubPause?.();
-    this._unsubPause = null;
-  }
 }
 
 export class Drive extends GameObject {

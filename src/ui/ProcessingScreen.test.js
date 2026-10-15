@@ -7,6 +7,7 @@ vi.mock('./Spectrogram.js', () => ({
   decode: vi.fn(),
   compute: vi.fn(),
   render: vi.fn(),
+  renderBlend: vi.fn(),
 }));
 
 import { ProcessingScreen } from './ProcessingScreen.js';
