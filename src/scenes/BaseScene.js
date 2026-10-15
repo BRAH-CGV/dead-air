@@ -46,6 +46,7 @@ import { ComputerTerminal, createComputerInteractable } from '../components/Comp
 import { HUD, RadarOverlay } from '../ui/HUD.js';
 import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
@@ -941,6 +942,7 @@ export class BaseScene extends Scene {
     if (bed) {
       bed.controller = this.gameController;
       bed.fade       = this.screenFade;
+      bed.dream      = (night) => this._dream(night);
     }
 
     this.hud.setSuit(this.suit.worn);
@@ -1708,6 +1710,22 @@ export class BaseScene extends Scene {
     }
   }
 
+  /** Sleep after night `night` dreams (#101): that night's dream
+   *  (DREAM_AFTER_NIGHT, the walk if it has none), at the night's level,
+   *  waking into the next night. The scene is found by name — the
+   *  dream wakes back into this scene, and the two importing each other
+   *  would be a cycle. Swapped on the next tick: this runs inside a frame.
+   *  @param {number} night  The night just done
+   *  @returns {boolean} false when there is no dream scene to go to */
+  _dream(night) {
+    const { engine } = this;
+    const registry = engine.sceneRegistry;
+    const Dream = registry?.get?.(DREAM_AFTER_NIGHT[night]) ?? registry?.get?.('DreamScene');
+    if (!Dream) return false;
+    queueMicrotask(() => engine.loadScene(Dream, { sceneOptions: { level: night, night: night + 1 } }));
+    return true;
+  }
+
   /** Back to where the night starts: beside the bunk, facing the desk. */
   _respawn() {
     this.suit?.takeOff();
@@ -1761,6 +1779,11 @@ export class BaseScene extends Scene {
         if (sip.isPlaying) sip.stop();
         sip.play();
       };
+    }
+    // Dream crater death penalty: 60 % stamina instead of full.
+    if (this.engine._dreamCraterDeath) {
+      this.engine._dreamCraterDeath = false;
+      this.stamina.value = 0.6;
     }
     this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
       stamina:      this.stamina,

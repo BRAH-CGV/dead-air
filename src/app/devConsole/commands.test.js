@@ -596,4 +596,53 @@ describe('createCommands', () => {
     expect(next.nights.currentNight).toBe(3);
     expect(scene.nights.currentNight).toBe(1);
   });
+
+  describe('dream (#101)', () => {
+    class Dream {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamScene', Dream]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('drops into the dream at the night\'s level, and remembers the night', () => {
+      scene.nights.setNight(2);
+      const { ok, out } = run('dream');
+      expect(ok).toBe(true);
+      expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 2, night: 2 } });
+      expect(out.join(' ')).toMatch(/level 2/i);
+    });
+
+    it('takes a level 1-3', () => {
+      run('dream 3');
+      expect(engine.loadScene).toHaveBeenLastCalledWith(Dream, { sceneOptions: { level: 3, night: 1 } });
+      expect(run('dream 4').ok).toBe(false);
+      expect(run('dream x').ok).toBe(false);
+    });
+
+    it('says so when there is no dream scene', () => {
+      engine.sceneRegistry = new Map();
+      expect(run('dream').ok).toBe(false);
+    });
+  });
+
+  describe('dreamcrater', () => {
+    class DreamCrater {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamCraterScene', DreamCrater]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('drops into the crater dream with the current night', () => {
+      scene.nights.setNight(2);
+      const { ok, out } = run('dreamcrater');
+      expect(ok).toBe(true);
+      expect(engine.loadScene).toHaveBeenCalledWith(DreamCrater, { sceneOptions: { night: 2 } });
+      expect(out.join(' ')).toMatch(/crater dream/i);
+    });
+
+    it('says so when there is no crater dream scene', () => {
+      engine.sceneRegistry = new Map();
+      expect(run('dreamcrater').ok).toBe(false);
+    });
+  });
 });

@@ -209,6 +209,8 @@ export class App {
     this._offs.length = 0;
     this._offController?.();
     this._offController = null;
+    this._offNights?.();
+    this._offNights = null;
     this.music.dispose();
     this.intro?.dispose();
   }
@@ -243,7 +245,10 @@ export class App {
     engine.uiHasMouse = false;
     this._offController?.();
     this._offController = null;
-    engine.loadScene(engine.activeScene.constructor);
+    // A dream (DreamScene) is not where a fresh night starts: rebuild the
+    // scene it wakes into.
+    const Scene = engine.activeScene.constructor;
+    engine.loadScene(Scene.returnTo ?? Scene);
     // The camera outlives the scene, and nothing ticks under the menu to
     // turn it back: face the way the fresh player does (beside the bunk,
     // looking at the desk — not world forward).
@@ -509,6 +514,14 @@ export class App {
   _onSceneLoaded(scene) {
     this._applySettings();
     this._syncMenuShot();
+    // The night moving on in play is saved for Continue, including a fresh
+    // scene put on its night (waking from a dream, #101), which no
+    // controller state change announces. From the menus, Continue and
+    // Select night keep their own rules.
+    this._offNights?.();
+    this._offNights = scene?.nights?.onChange?.((night) => {
+      if (this.flow.state === 'playing') this._saveNight(night);
+    }) ?? null;
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
   }

@@ -31,6 +31,12 @@ import { keyName } from '../app/keyNames.js';
 // (BUNK_POSES), so they follow the bunk wherever the room puts it:
 // pillowPose(), sitPose(), getOutSpot() and the demon's watchSpots().
 //
+// Between nights (#101) the scene hands it `bed.dream(night)`: on any night
+// but the last, falling asleep dreams (DreamScene) instead of waking
+// straight into the next night — the dream wakes you into it. It returns
+// false when there's no dream to be had, and the sleep goes on as before.
+// Naps never dream.
+//
 // promptLabel is a data field refreshed every frame — InteractionSystem
 // re-shows a label that changes while it's being looked at.
 // ─────────────────────────────────────────────
@@ -86,6 +92,9 @@ export class Bed extends Interactable {
   napLength = DEFAULT_LENGTH;
   /** The bed animation (BedRest); without one the morning sleep fades. */
   rest = null;
+  /** Between nights: `(night) => boolean`, dream instead of waking into the
+   *  next night; false if there's no dream (#101). Set by the scene. */
+  dream = null;
 
   promptLabel = '';
 
@@ -108,15 +117,21 @@ export class Bed extends Interactable {
       return;
     }
     // Checked again at black: a second press during the fade must not sleep
-    // through a second night.
+    // through a second night. Returns true when it went into a dream — the
+    // scene is about to be swapped for it, so nothing more happens here.
     const sleep = () => {
-      if (this.controller.canSleep) this.controller.sleep();
+      if (!this.controller.canSleep) return false;
+      const last = this.controller.nights?.isLastNight?.() ?? false;
+      if (!last && this.dream?.(this.controller.nightNumber)) return true;
+      this.controller.sleep();
+      return false;
     };
     if (this.rest) {
       // Asleep, the next night begins: up out of bed into it. The run over
-      // (the last night), the view is handed straight back.
+      // (the last night), the view is handed straight back. Dreaming, the
+      // dream takes the view.
       this.rest.lieDown(() => {
-        sleep();
+        if (sleep()) return;
         if (this.controller.state === 'playing') this.rest.getUp('calm');
         else this.rest.cancel();
       });

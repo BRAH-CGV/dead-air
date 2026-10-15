@@ -145,4 +145,25 @@ describe('ScreenFade.fadeIn', () => {
     expect(onDark).toHaveBeenCalledOnce();
     expect(() => bare.uncover()).not.toThrow();
   });
+
+  describe('caption (#101: a line on the black while the next scene gets ready)', () => {
+    it('shows a line on the cover, and takes it away on uncover', () => {
+      fade.cover();
+      fade.caption('NIGHT 2');
+      const line = root.querySelector('.fade-caption');
+      expect(line.textContent).toBe('NIGHT 2');
+      expect(line.classList.contains('is-shown')).toBe(true);
+      fade.uncover();
+      expect(line.classList.contains('is-shown')).toBe(false);
+    });
+
+    it('is text, never HTML', () => {
+      fade.caption('<b>x</b>');
+      expect(root.querySelector('b')).toBeNull();
+    });
+
+    it('is a no-op without an element', () => {
+      expect(() => new ScreenFade(null).caption('x')).not.toThrow();
+    });
+  });
 });

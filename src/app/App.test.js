@@ -24,9 +24,17 @@ function makeScene() {
     },
     get listenerCount() { return listeners.size; },
   };
+  const nightListeners = new Set();
   const nights = {
     currentNight: 1, maxNight: 3,
-    setNight: vi.fn((n) => { nights.currentNight = n; gameController.nightNumber = n; }),
+    setNight: vi.fn((n) => {
+      const previous = nights.currentNight;
+      nights.currentNight = n;
+      gameController.nightNumber = n;
+      if (n !== previous) for (const l of [...nightListeners]) l(n, previous);
+    }),
+    onChange: (cb) => { nightListeners.add(cb); return () => nightListeners.delete(cb); },
+    get listenerCount() { return nightListeners.size; },
   };
   return {
     gameController, nights,
@@ -1065,6 +1073,19 @@ describe('App', () => {
       a2.dispose();
     });
 
+    it('saves the night when a fresh scene is put on it (waking from a dream, #101)', async () => {
+      await startGame();
+      engine.loadScene();                       // the dream wakes into a fresh base…
+      engine.activeScene.nights.setNight(2);    // …on the next night
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY)).night).toBe(2);
+    });
+
+    it('stops following the old scene\'s nights after a rebuild', async () => {
+      const old = engine.activeScene;
+      engine.loadScene();
+      expect(old.nights.listenerCount).toBe(0);
+    });
+
     it('New game forgets the old save', async () => {
       storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 3 }));
       await startGame();
@@ -1160,6 +1181,17 @@ describe('App', () => {
       await click('quit');
       await click('confirm');
       expect(engine.camera.rotation).toMatchObject({ x: 0, y: 2.5, z: 0 });
+    });
+
+    it('quitting from a dream rebuilds the scene the dream wakes into (#101)', async () => {
+      class Home {}
+      class Dream { static returnTo = Home; }
+      engine.activeScene = Object.assign(Object.create(Dream.prototype), makeScene());
+      await startGame();
+      lock.lose();
+      await click('quit');
+      await click('confirm');
+      expect(engine.loadScene).toHaveBeenCalledWith(Home);
     });
 
     it('credits name the team by name only, with no Discord handles', async () => {
