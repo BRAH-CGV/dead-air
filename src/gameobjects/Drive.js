@@ -47,8 +47,8 @@ const SAVED_EMISSIVE_INTENSITY = 1.5;
 /** Emissive colour when the anomalous (evil) signal is stored — red. */
 const CORRUPTED_EMISSIVE = 0xcc2222;
 
-/** Seconds a signal takes to process at the console. */
-export const PROCESSING_DURATION = 30;
+/** Seconds of active overlap needed to process a signal at the console. */
+export const PROCESSING_DURATION = 12;
 
 /** Doom glow: the red drive pulses brighter as the silence timer runs
  *  down. The curve is exponential (pow 6) so the glow stays subdued for
@@ -93,10 +93,9 @@ class DoomGlowFade extends Component {
   onUpdate(dt) { this._drive._tickDoomFade(dt); }
 }
 
-/** Per-frame ticker for signal processing. Checks whether the wall-clock
- *  deadline has passed and applies the upgrade automatically — so the
- *  player doesn't have to revisit the console. The timer runs on real
- *  wall-clock time and is NOT paused by the game pause. */
+/** Per-frame completion check for signal processing. The minigame UI
+ *  accumulates overlap time on the drive; this component just checks
+ *  whether enough has been collected and applies the upgrade. */
 class SignalProcessing extends Component {
   _drive;
   constructor(drive) {
@@ -133,10 +132,11 @@ export class Drive extends GameObject {
    *  ServerRoom console (setSaved(false)). */
   corrupted = false;
 
-  /** Wall-clock timestamp (ms, Date.now()) when the current processing
-   *  finishes, or null when no processing is running. The upgrade completes
-   *  automatically once this time passes — even if the terminal is closed. */
-  processingEndTime = null;
+  /** Whether a processing run has been started. */
+  processingStarted = false;
+
+  /** Seconds of overlap accumulated so far in the current processing run. */
+  processingAccumulated = 0;
 
   /** Set when makeKinematic() is called before _init builds a body — a
    *  socket receiver attaching the drive during scene build. _init honours
@@ -357,7 +357,8 @@ export class Drive extends GameObject {
     this.signalName = saved ? signalName : null;
     if (!saved) {
       this.signalLevel = 1;
-      this.processingEndTime = null;
+      this.processingStarted = false;
+      this.processingAccumulated = 0;
     }
     if (this.saved) {
       const color = this.corrupted
@@ -389,38 +390,49 @@ export class Drive extends GameObject {
       && !this.isProcessing;
   }
 
-  /** True while a processing run is counting down. */
+  /** True while a processing run is in progress (started but not yet
+   *  accumulated enough overlap time). */
   get isProcessing() {
-    return this.processingEndTime != null && Date.now() < this.processingEndTime;
-  }
-
-  /** Milliseconds remaining in the current processing run, or 0. */
-  get processingRemainingMs() {
-    if (this.processingEndTime == null) return 0;
-    return Math.max(0, this.processingEndTime - Date.now());
+    return this.processingStarted && this.processingAccumulated < PROCESSING_DURATION;
   }
 
   /** Fraction of the current processing run completed (0..1). */
   get processingProgress() {
-    if (this.processingEndTime == null) return 0;
-    const remaining = this.processingRemainingMs;
-    if (remaining <= 0) return 1;
-    return 1 - remaining / (PROCESSING_DURATION * 1000);
+    if (!this.processingStarted) return 0;
+    return Math.min(1, this.processingAccumulated / PROCESSING_DURATION);
   }
 
-  /** Begin a processing run. The upgrade completes automatically once
-   *  PROCESSING_DURATION seconds have elapsed. */
-  startProcessing() {
-    this.processingEndTime = Date.now() + PROCESSING_DURATION * 1000;
+  /** Begin a processing run. The upgrade completes once the player has
+   *  accumulated PROCESSING_DURATION seconds of overlap in the minigame. */
+  beginProcessing() {
+    this.processingStarted = true;
+    this.processingAccumulated = 0;
+  }
+
+  /** Accumulate `dt` seconds of overlap time. Called by the minigame UI
+   *  when the crosshair is inside the target zone. Returns true if the
+   *  processing just completed. */
+  accumulateProcessing(dt) {
+    if (!this.processingStarted) return false;
+    this.processingAccumulated += dt;
+    if (this.processingAccumulated >= PROCESSING_DURATION) {
+      return this._applyProcessingUpgrade();
+    }
+    return false;
   }
 
   /** Check whether the current processing run has finished and, if so,
    *  apply the upgrade. Returns true if an upgrade was applied. */
   tickProcessing() {
-    if (this.processingEndTime == null) return false;
-    if (Date.now() < this.processingEndTime) return false;
-    // Time's up — apply the upgrade.
-    this.processingEndTime = null;
+    if (!this.processingStarted) return false;
+    if (this.processingAccumulated < PROCESSING_DURATION) return false;
+    return this._applyProcessingUpgrade();
+  }
+
+  /** Apply the level upgrade and clear processing state. */
+  _applyProcessingUpgrade() {
+    this.processingStarted = false;
+    this.processingAccumulated = 0;
     this.setSignalLevel(this.signalLevel + 1);
     return true;
   }

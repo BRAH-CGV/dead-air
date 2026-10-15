@@ -17,7 +17,8 @@
 // ─────────────────────────────────────────────
 
 import { FirstPersonController } from '../components/FirstPersonController.js';
-import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend } from './Spectrogram.js';
+import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend, renderToImageData, blendFromImageData } from './Spectrogram.js';
+import { TuningGame, TARGET_ZONE_WIDTH } from '../gameplay/TuningGame.js';
 
 export class ProcessingScreen {
   /** @type {import('../gameplay/SignalRegistry.js').SignalRegistry|null} */
@@ -56,6 +57,21 @@ export class ProcessingScreen {
   _blendNewResult = null;
   _blendRevealOrder = null;
   _blendComplete = false;
+  /** Pre-rendered ImageData for the fast blend path. */
+  _blendOldData = null;
+  _blendNewData = null;
+  /** Reusable scratch array for column reveal bitmask. */
+  _blendRevealed = null;
+  /** Pre-allocated output buffers for the per-frame blend (avoid GC). */
+  _blendOutBuf = null;
+  _blendOutImage = null;
+
+  /** Tuning minigame state. */
+  _tuningGame = null;
+  /** Whether the player is actively dragging the tuning slider. */
+  _isDragging = false;
+  /** Last RAF timestamp for computing dt in the tuning loop. */
+  _lastTuningTime = 0;
 
   constructor(root = typeof document !== 'undefined' ? document.getElementById('processing-screen') : null) {
     this.root = root;
@@ -72,8 +88,12 @@ export class ProcessingScreen {
     this._progressContainer = root?.querySelector('#processing-progress')      ?? null;
     this._progressFill      = root?.querySelector('#processing-progress-fill') ?? null;
     this._progressLabel     = root?.querySelector('#processing-progress-label') ?? null;
+    this._tuningContainer   = root?.querySelector('#tuning-game')              ?? null;
+    this._tuningCanvas      = root?.querySelector('#tuning-canvas')            ?? null;
+    this._tuningSlider      = root?.querySelector('#tuning-slider')            ?? null;
     this._installVizListeners();
     this._installVolumeListener();
+    this._installTuningListeners();
   }
 
   /** Wire the engine so open/close can lock input and hide the crosshair.
@@ -103,6 +123,7 @@ export class ProcessingScreen {
     this.root.style.display = 'none';
     this._stopScanline();
     this._stopProgressTracking();
+    this._stopTuningGame();
     this._stopBlend();
     this._clearSpectrogram();
     this._clearMediaButtons();
@@ -172,7 +193,7 @@ export class ProcessingScreen {
       }
       const audioBuffer = await decodeAudio(url, this._audioContext);
       if (token.cancelled) return;
-      const result = computeSpectrogram(audioBuffer);
+      const result = await computeSpectrogram(audioBuffer);
       if (token.cancelled) return;
       this._spectrogramResult = result;
       renderSpectrogram(this._spectrogram, result, this._vizOpts());
@@ -188,7 +209,6 @@ export class ProcessingScreen {
     return {
       gain:     Number(this._gainSlider?.value)     || 1,
       contrast: Number(this._contrastSlider?.value) || 1,
-      maxFreq:  16000,
     };
   }
 
@@ -392,10 +412,9 @@ export class ProcessingScreen {
 
   // ── Processing progress ────────────────────────────────────
 
-  /** Start tracking a drive's processing progress. Shows the progress bar
-   *  if the drive is currently processing; hides it otherwise. The blend
-   *  animation (if the target spectrogram has loaded) runs here, during
-   *  processing, so the reveal tracks the progress bar in real time. */
+  /** Start tracking a drive's processing progress. Runs the tuning minigame
+   *  and the blend animation in a single RAF loop. Progress only accumulates
+   *  while the crosshair overlaps the target zone. */
   _startProgressTracking(drive) {
     this._stopProgressTracking();
     if (!drive?.isProcessing) {
@@ -403,17 +422,27 @@ export class ProcessingScreen {
       return;
     }
     this._showProgress();
-    const tick = () => {
+    this._startTuningGame(drive);
+    this._lastTuningTime = 0;
+    const tick = (timestamp) => {
       if (!drive.isProcessing) {
         this._onProcessingComplete(drive);
         return;
       }
+      // Compute dt for the tuning game.
+      if (this._lastTuningTime === 0) this._lastTuningTime = timestamp;
+      const dt = Math.min((timestamp - this._lastTuningTime) / 1000, 0.1);
+      this._lastTuningTime = timestamp;
+      // Update the tuning minigame.
+      this._updateTuningGame(dt, drive);
+      // Update the progress bar.
       this._updateProgress(drive);
-      // Render the blend if the target spectrogram has loaded.
-      if (this._blendOldResult && this._blendNewResult && !this._blendComplete) {
-        renderBlend(
-          this._spectrogram, this._blendOldResult, this._blendNewResult,
-          drive.processingProgress, this._blendRevealOrder, this._vizOpts(),
+      // Render the blend if the pre-rendered ImageData is ready.
+      if (this._blendOldData && this._blendNewData && !this._blendComplete) {
+        blendFromImageData(
+          this._spectrogram, this._blendOldData, this._blendNewData,
+          drive.processingProgress, this._blendRevealOrder, this._blendRevealed,
+          this._blendOutBuf, this._blendOutImage,
         );
         if (drive.processingProgress >= 1) this._blendComplete = true;
       }
@@ -427,6 +456,7 @@ export class ProcessingScreen {
       cancelAnimationFrame(this._progressRaf);
       this._progressRaf = null;
     }
+    this._stopTuningGame();
     this._hideProgress();
   }
 
@@ -435,22 +465,24 @@ export class ProcessingScreen {
    *  target loaded late) or refreshes the spectrogram directly. */
   _onProcessingComplete(drive) {
     drive.tickProcessing();
+    this._stopTuningGame();
     this._hideProgress();
     this._renderActions(this._actions);
     this._renderMediaButtons(drive);
 
-    if (this._blendOldResult && this._blendNewResult) {
+    if (this._blendOldData && this._blendNewData) {
       if (!this._blendComplete) {
-        // Target loaded but blend wasn't finished — run a quick final RAF
-        // loop to complete the reveal, then refresh.
+        // Target loaded but blend wasn't finished — complete the reveal,
+        // then refresh.
         const finishBlend = () => {
-          if (!this._spectrogram || !this._blendOldResult || !this._blendNewResult) {
+          if (!this._spectrogram || !this._blendOldData || !this._blendNewData) {
             this._refreshAfterProcessing(drive);
             return;
           }
-          renderBlend(
-            this._spectrogram, this._blendOldResult, this._blendNewResult,
-            1, this._blendRevealOrder, this._vizOpts(),
+          blendFromImageData(
+            this._spectrogram, this._blendOldData, this._blendNewData,
+            1, this._blendRevealOrder, this._blendRevealed,
+            this._blendOutBuf, this._blendOutImage,
           );
           this._stopBlend();
           this._refreshAfterProcessing(drive);
@@ -482,15 +514,109 @@ export class ProcessingScreen {
   _updateProgress(drive) {
     const pct = (drive.processingProgress * 100).toFixed(0);
     if (this._progressFill) this._progressFill.style.width = `${pct}%`;
-    const secs = Math.ceil(drive.processingRemainingMs / 1000);
-    if (this._progressLabel) this._progressLabel.textContent = `Processing… ${secs}s`;
+    if (this._progressLabel) this._progressLabel.textContent = `Processing… ${pct}%`;
+  }
+
+  // ── Tuning minigame ────────────────────────────────────────
+
+  /** Create the tuning game, show the UI, and reset the game state. */
+  _startTuningGame(drive) {
+    this._stopTuningGame();
+    this._tuningGame = new TuningGame();
+    this._tuningGame.reset();
+    this._isDragging = false;
+    this._lastTuningTime = 0;
+    // Reset the slider to centre.
+    if (this._tuningSlider) this._tuningSlider.value = '0.5';
+    if (this._tuningContainer) this._tuningContainer.style.display = 'flex';
+  }
+
+  /** Stop the tuning game and hide the UI. */
+  _stopTuningGame() {
+    this._tuningGame = null;
+    this._isDragging = false;
+    if (this._tuningContainer) this._tuningContainer.style.display = 'none';
+  }
+
+  /** Advance the tuning game by dt seconds and feed overlap to the drive. */
+  _updateTuningGame(dt, drive) {
+    if (!this._tuningGame) return;
+    const sliderValue = this._isDragging
+      ? (Number(this._tuningSlider?.value ?? 0.5) - 0.5) * 2
+      : 0;
+    const wasOverlapping = this._tuningGame.overlapping;
+    this._tuningGame.update(dt, sliderValue);
+    // Feed overlap time to the drive.
+    if (this._tuningGame.overlapping) {
+      drive.accumulateProcessing(dt);
+    }
+    this._renderTuningGame();
+  }
+
+  /** Draw the target zone and crosshair on the tuning canvas. */
+  _renderTuningGame() {
+    const canvas = this._tuningCanvas;
+    const game = this._tuningGame;
+    if (!canvas || !game) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background line.
+    ctx.fillStyle = 'rgba(0, 200, 180, 0.05)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Target zone.
+    const zoneW = TARGET_ZONE_WIDTH * w;
+    const zoneX = game.targetPos * w - zoneW / 2;
+    ctx.fillStyle = game.overlapping
+      ? 'rgba(0, 200, 180, 0.35)'
+      : 'rgba(0, 200, 180, 0.15)';
+    ctx.fillRect(zoneX, 0, zoneW, h);
+
+    // Crosshair.
+    const cx = game.crosshairPos * w;
+    ctx.strokeStyle = '#00dcc8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.stroke();
+
+    // Crosshair glow.
+    ctx.strokeStyle = 'rgba(0, 220, 200, 0.3)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, h);
+    ctx.stroke();
+  }
+
+  /** Wire pointer events on the tuning slider for drag tracking and
+   *  snap-back to centre on release. */
+  _installTuningListeners() {
+    if (!this._tuningSlider) return;
+    this._tuningSlider.addEventListener('pointerdown', () => {
+      this._isDragging = true;
+    });
+    const release = () => {
+      if (!this._isDragging) return;
+      this._isDragging = false;
+      if (this._tuningSlider) this._tuningSlider.value = '0.5';
+    };
+    this._tuningSlider.addEventListener('pointerup', release);
+    this._tuningSlider.addEventListener('pointerleave', release);
+    this._tuningSlider.addEventListener('lostpointercapture', release);
   }
 
   // ── Spectrogram blend transition ───────────────────────────
 
   /** Pre-load the target spectrogram for the blend transition. Called by
    *  the upgrade button's onClick so the target is ready (or loading)
-   *  while the 30 s processing timer runs. The blend runs DURING
+   *  while the player plays the tuning minigame. The blend runs DURING
    *  processing — not after — so the reveal tracks the progress bar. */
   async prepareBlend(drive) {
     this._stopBlend();
@@ -509,7 +635,7 @@ export class ProcessingScreen {
       }
       const audioBuffer = await decodeAudio(targetUrl, this._audioContext);
       if (!this._spectrogram) return;  // screen closed during load
-      const newResult = computeSpectrogram(audioBuffer);
+      const newResult = await computeSpectrogram(audioBuffer);
       this._setupBlend(oldResult, newResult);
     } catch {
       // Target audio failed to load — blend won't run; completion will
@@ -517,13 +643,48 @@ export class ProcessingScreen {
     }
   }
 
-  /** Set up the blend state (reveal order + cached results). Called once
-   *  the target spectrogram has loaded. The progress RAF loop picks up
-   *  the blend on its next frame. */
+  /** Set up the blend state. Pre-renders both spectrograms to ImageData
+   *  once so the per-frame blend is just a column copy — no pixel math. */
   _setupBlend(oldResult, newResult) {
     this._blendOldResult = oldResult;
     this._blendNewResult = newResult;
     this._blendComplete = false;
+
+    const opts = this._vizOpts();
+    const visibleBins = oldResult.bins;
+
+    // Pre-render both spectrograms to ImageData (one-time cost).
+    this._blendOldData = renderToImageData(oldResult, opts.gain, opts.contrast);
+
+    const newVisibleBins = newResult.bins;
+    const newImageData = renderToImageData(newResult, opts.gain, opts.contrast);
+
+    // Scale the new spectrogram to match the old dimensions if they differ.
+    if (newResult.frames !== oldResult.frames || newVisibleBins !== visibleBins) {
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = oldResult.frames;
+      scaledCanvas.height = visibleBins;
+      const sCtx = scaledCanvas.getContext('2d');
+      // Draw the new ImageData to a temp canvas, then scale.
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = newResult.frames;
+      tmpCanvas.height = newVisibleBins;
+      const tmpCtx = tmpCanvas.getContext('2d');
+      tmpCtx.putImageData(newImageData, 0, 0);
+      sCtx.imageSmoothingEnabled = true;
+      sCtx.drawImage(tmpCanvas, 0, 0, oldResult.frames, visibleBins);
+      this._blendNewData = sCtx.getImageData(0, 0, oldResult.frames, visibleBins);
+    } else {
+      this._blendNewData = newImageData;
+    }
+
+    // Reusable scratch array for the column reveal bitmask.
+    this._blendRevealed = new Uint8Array(oldResult.frames);
+
+    // Pre-allocate output buffers so the per-frame blend reuses them
+    // instead of allocating ~4 MB every frame at 60 fps.
+    this._blendOutBuf = new Uint8ClampedArray(this._blendOldData.data.length);
+    this._blendOutImage = new ImageData(this._blendOutBuf, oldResult.frames, visibleBins);
 
     // Build a randomised column reveal order (localised shuffles so the
     // progression is generally left-to-right with bursty chunks).
@@ -550,5 +711,10 @@ export class ProcessingScreen {
     this._blendNewResult = null;
     this._blendRevealOrder = null;
     this._blendComplete = false;
+    this._blendOldData = null;
+    this._blendNewData = null;
+    this._blendRevealed = null;
+    this._blendOutBuf = null;
+    this._blendOutImage = null;
   }
 }

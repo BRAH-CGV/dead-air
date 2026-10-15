@@ -56,7 +56,8 @@ export class DriveSnapshot {
         corrupted: drive.corrupted,
         signalName: drive.signalName,
         signalLevel: drive.signalLevel,
-        processingEndTime: drive.processingEndTime,
+        processingStarted: drive.processingStarted,
+        processingAccumulated: drive.processingAccumulated,
         owner: drive._snapOwner ?? null,
         slotIndex: drive._snapSlotIndex ?? null,
         position,
@@ -117,9 +118,10 @@ export class DriveSnapshot {
       if (state.saved && state.signalLevel > 1) {
         item.setSignalLevel?.(state.signalLevel);
       }
-      // Restore any in-flight processing timer.
+      // Restore any in-flight processing state.
       if (state.saved) {
-        item.processingEndTime = state.processingEndTime ?? null;
+        item.processingStarted = state.processingStarted ?? false;
+        item.processingAccumulated = state.processingAccumulated ?? 0;
       }
     }
 

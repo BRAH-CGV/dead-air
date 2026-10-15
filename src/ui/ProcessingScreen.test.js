@@ -8,6 +8,8 @@ vi.mock('./Spectrogram.js', () => ({
   compute: vi.fn(),
   render: vi.fn(),
   renderBlend: vi.fn(),
+  renderToImageData: vi.fn(() => new ImageData(1, 1)),
+  blendFromImageData: vi.fn(),
 }));
 
 import { ProcessingScreen } from './ProcessingScreen.js';
@@ -32,6 +34,23 @@ function makeDOM() {
   canvas.height = 360;
   preview.appendChild(canvas);
   root.appendChild(preview);
+
+  const tuningGame = document.createElement('div');
+  tuningGame.id = 'tuning-game';
+  const tuningCanvas = document.createElement('canvas');
+  tuningCanvas.id = 'tuning-canvas';
+  tuningCanvas.width = 480;
+  tuningCanvas.height = 60;
+  tuningGame.appendChild(tuningCanvas);
+  const tuningSlider = document.createElement('input');
+  tuningSlider.type = 'range';
+  tuningSlider.id = 'tuning-slider';
+  tuningSlider.min = '0';
+  tuningSlider.max = '1';
+  tuningSlider.step = '0.01';
+  tuningSlider.value = '0.5';
+  tuningGame.appendChild(tuningSlider);
+  root.appendChild(tuningGame);
 
   const audio = document.createElement('audio');
   audio.id = 'processing-audio';
@@ -248,7 +267,7 @@ describe('ProcessingScreen', () => {
     screen.open(null, [{ id: 'freq', label: 'Frequency', enabled: true, render: renderFn }]);
 
     expect(renderFn).toHaveBeenCalledOnce();
-    const slider = domRoot.querySelector('input[type="range"]');
+    const slider = domRoot.querySelector('#processing-controls input[type="range"]');
     expect(slider).not.toBeNull();
     expect(slider.dataset.actionId).toBe('freq');
     // No default button was created.

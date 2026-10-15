@@ -235,17 +235,30 @@ describe('ServerRoom', () => {
 
     // Simulate a saved, level-1 drive inserted in the slot.
     let level = 1;
-    let processingEnd = null;
+    let processingStarted = false;
+    let processingAccumulated = 0;
+    const PROCESSING_DURATION = 12;
     const fakeDrive = {
       saved: true, corrupted: false, signalLevel: 1,
       get canUpgradeLevel() { return this.saved && !this.corrupted && this.signalLevel < 2 && !this.isProcessing; },
-      get isProcessing() { return processingEnd != null && Date.now() < processingEnd; },
-      get processingRemainingMs() { return processingEnd == null ? 0 : Math.max(0, processingEnd - Date.now()); },
-      get processingProgress() { return this.isProcessing ? 0 : (processingEnd != null ? 1 : 0); },
-      startProcessing() { processingEnd = Date.now() + 30_000; },
+      get isProcessing() { return processingStarted && processingAccumulated < PROCESSING_DURATION; },
+      get processingProgress() { return processingStarted ? Math.min(1, processingAccumulated / PROCESSING_DURATION) : 0; },
+      beginProcessing() { processingStarted = true; processingAccumulated = 0; },
+      accumulateProcessing(dt) {
+        if (!processingStarted) return false;
+        processingAccumulated += dt;
+        if (processingAccumulated >= PROCESSING_DURATION) {
+          processingStarted = false;
+          processingAccumulated = 0;
+          this.setSignalLevel(this.signalLevel + 1);
+          return true;
+        }
+        return false;
+      },
       tickProcessing() {
-        if (processingEnd == null || Date.now() < processingEnd) return false;
-        processingEnd = null;
+        if (!processingStarted || processingAccumulated < PROCESSING_DURATION) return false;
+        processingStarted = false;
+        processingAccumulated = 0;
         this.setSignalLevel(this.signalLevel + 1);
         return true;
       },
@@ -271,7 +284,7 @@ describe('ServerRoom', () => {
     expect(fakeScreen.refreshActions).toHaveBeenCalled();
 
     // After processing finishes, tickProcessing applies the upgrade.
-    processingEnd = Date.now() - 1; // simulate time passing
+    processingAccumulated = PROCESSING_DURATION; // simulate enough overlap
     fakeDrive.tickProcessing();
     expect(level).toBe(2);
   });

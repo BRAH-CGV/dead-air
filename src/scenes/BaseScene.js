@@ -764,7 +764,8 @@ export class BaseScene extends Scene {
         origOnRemoved?.(drive);
         // Removing a drive from the processing console cancels any in-flight
         // signal upgrade — the player must start over with a fresh insertion.
-        drive.processingEndTime = null;
+        drive.processingStarted = false;
+        drive.processingAccumulated = 0;
         addDriveToRoom(drive);
       };
     }
