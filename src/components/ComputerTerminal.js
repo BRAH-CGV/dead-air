@@ -264,10 +264,11 @@ export class ComputerTerminal extends Component {
     this.radar?.setInfo('Scanning… keep dish aimed!');
   }
 
-  /** Called after auto-save — clear hover and return to RADAR. */
+  /** Called after auto-save — clear hover and close the terminal: the
+   *  drive is full, so there is nothing left to scan from this seat. */
   _onSignalResolved() {
     this._hoveredSignal = null;
-    this._enterRadar();
+    this.exit();
   }
 
   /** Clean up any in-progress scan state without transitioning. */
@@ -350,7 +351,7 @@ export class ComputerTerminal extends Component {
     // ── SCANNING: background scan on Satellite, just check for completion ──
     if (this.state === 'scanning') {
       // Scan accumulation happens in Satellite._update (background)
-      // Just check if scan completed — auto-save and return to radar.
+      // Just check if scan completed — auto-save and close the terminal.
       if (this.satellite?._scanComplete) {
         this.saveSignal();
         this._onSignalResolved();

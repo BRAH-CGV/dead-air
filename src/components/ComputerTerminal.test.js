@@ -605,7 +605,8 @@ describe('ComputerTerminal', () => {
 
   // ── SCANNING → AUTO-SAVE ──
 
-  it('auto-saves the signal and returns to radar when scan completes', () => {
+  it('auto-saves the signal and closes the terminal when scan completes', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -625,12 +626,17 @@ describe('ComputerTerminal', () => {
     sat.isScanning = false;
     sat._scanComplete = true;
 
-    // The scanning handler auto-saves and returns to radar.
-    term.saveSignal();
-    term._onSignalResolved();
-    expect(term.state).toBe('radar');
+    // The scanning handler auto-saves, then closes the terminal — the
+    // drive is full, so the player is put back into the room.
+    term.onUpdate(1 / 60);
+    expect(term.state).toBe('idle');
     expect(sig.saved).toBe(true);
     expect(driveMgr.saveToDrive).toHaveBeenCalled();
+    expect(radar.hide).toHaveBeenCalled();
+    expect(crosshair.show).toHaveBeenCalled();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
   });
 
   it('scan progress bar updates during scanning state', () => {
