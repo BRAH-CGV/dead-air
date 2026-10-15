@@ -701,16 +701,16 @@ One beep, mixed by us from three Freesound recordings, all Creative Commons 0 �
 | **Used for** | The security monitor's static, looped while a feed comes in (`CameraTerminal`) |
 | **Modifications** | Cut to its first 4 s, at MPEG frame boundaries with no re-encode; renamed |
 
-### Spotlight
+### Camera flash switch
 
-"Spotlight" (Pixabay sound 91359), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spotlight-91359.mp3`.
+"MECHSwtch_small_electric_switch_on_off.wav" (https://freesound.org/people/DBS_Sounds/sounds/613657/) by DBS_Sounds on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.wav` |
+| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.mp3` |
 | **Manifest key** | `sfx:camera-spotlight`, `sfx:camera-spotlight-off` |
 | **Used for** | A security camera's flash coming on, and going off (`CameraTerminal`) |
-| **Modifications** | Renamed. The off sound is made from it: its first 0.7 s, slowed to 0.8× (lower in pitch) and faded out after 0.25 s, rendered to WAV |
+| **Modifications** | Its two clicks cut apart: the switch going on, and going off |
 
 ### Drive box knocks
 
@@ -744,6 +744,28 @@ Six clips, mixed by us from three Freesound recordings: "Opening Closing Tape De
 | **Manifest key** | `sfx:drive-insert-1`, `sfx:drive-insert-2`, `sfx:drive-insert-3`, `sfx:drive-remove-1`, `sfx:drive-remove-2`, `sfx:drive-remove-3` |
 | **Used for** | A drive going into a reader and coming out of it (`DriveSlot`), one of three picked at random each way |
 | **Modifications** | The recordings cut, layered and mixed down; split into three insert clips and three remove clips |
+
+### Corrupted drive sparks
+
+Three spark clips, cut by us from a mix of two Freesound recordings, both used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/): "CRT Screen Static Sparks" by SiriusBizdness (https://freesound.org/people/SiriusBizdness/sounds/565193/) and "Sparks.wav" by Juan_Matthys_OW (https://freesound.org/people/Juan_Matthys_OW/sounds/655732/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spark-1.mp3`, `spark-2.mp3`, `spark-3.mp3` |
+| **Manifest key** | `sfx:spark-1`, `sfx:spark-2`, `sfx:spark-3` |
+| **Used for** | The corrupted drive sparking on each hop (`EvilSignal`), one picked at random |
+| **Modifications** | The recordings mixed and cut into three short clips |
+
+### Evil signal hum
+
+"mechanical hum.wav" (https://freesound.org/people/patchytherat/sounds/531562/) by patchytherat on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/evil-hum.mp3` |
+| **Manifest key** | `sfx:evil-hum` |
+| **Used for** | The faint hum while a corrupted drive's countdown runs (`EvilSignal`) |
+| **Modifications** | Cut to a short clip; crossfaded into a seamless loop at load |
 
 ### Base ambience (room tone loops)
 

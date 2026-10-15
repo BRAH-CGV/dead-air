@@ -138,6 +138,12 @@ export class GeneratorSound extends Component {
     this.sounds.stop?.isPlaying && this.sounds.stop.setVolume(v);
   }
 
+  /** The ears were moved (onto a security camera, or back): the next frame
+   *  is heard from where they are now, not eased toward it. */
+  jump() {
+    this._place = null;
+  }
+
   /** 1 by the generator, falling off with distance outdoors; a sliver of
    *  that indoors. Eased, so the airlock doesn't snap it. */
   _placeLevel(dt) {

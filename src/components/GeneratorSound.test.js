@@ -104,6 +104,18 @@ describe('GeneratorSound', () => {
     expect(sounds.running.volume).toBeGreaterThan(out * 0.2);
   });
 
+  it('jump(): the ears were moved (a security camera) — heard from the new place at once', () => {
+    const inside = makeRig({ outside: false, ear: [0, 1.2, 0] });
+    const outside = makeRig({ outside: true });
+    run(inside.gen, 3);
+    run(outside.gen, 3);
+    inside.hooks.isOutside.mockReturnValue(true);
+    inside.hooks.listenerPosition = out => out.set(7, 1.2, 11);
+    inside.gen.jump();
+    inside.gen.onUpdate(0.05);
+    expect(inside.sounds.running.volume).toBeCloseTo(outside.sounds.running.volume);
+  });
+
   it('with the breakers tripped, switching on does nothing — not even the start-up', () => {
     const { gen, grid, sounds } = makeRig();
     grid.breakLights();

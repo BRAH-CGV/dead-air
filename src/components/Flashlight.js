@@ -15,6 +15,9 @@ import { Component } from '../core/Component.js';
 // hand-held torch, so it follows the view — and the debug fly camera, which
 // carries the camera off with it.
 //
+// It clicks on and off: the same switch as the security cameras' flash
+// (FLASHLIGHT_SOUNDS), in the player's own ears, not placed in the world.
+//
 // Off is intensity 0, never `visible = false`: three.js compiles the light
 // count into every lit material's shader, so hiding a light recompiles the
 // whole scene and the first press would hitch. A zero-intensity light costs
@@ -40,6 +43,13 @@ export const FLASHLIGHT_STUTTER = Object.freeze({
   dropoutMin: 0.03,
   dropoutMax: 0.08,
 });
+
+/** The switch's two clicks, and their levels against the clips' own. */
+export const FLASHLIGHT_SOUNDS = {
+  keys: { on: 'sfx:camera-spotlight', off: 'sfx:camera-spotlight-off' },
+  on: 0.4,
+  off: 0.4,
+};
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -123,6 +133,8 @@ export class Flashlight extends Component {
    * @param {number} [opts.color=0xffe6c4] Warm, slightly yellow incandescent bulb.
    * @param {typeof FLASHLIGHT_STUTTER} [opts.stutter]  How it stutters under interference.
    * @param {() => number} [opts.rand]  The stutter's dice.
+   * @param {{ on?: THREE.Audio|null, off?: THREE.Audio|null }} [opts.sounds]
+   *        The clicks. Left out, built from the asset cache on awake.
    */
   constructor({
     intensity = 40,
@@ -132,6 +144,7 @@ export class Flashlight extends Component {
     color = 0xffe6c4,
     stutter = FLASHLIGHT_STUTTER,
     rand = Math.random,
+    sounds = null,
   } = {}) {
     super();
     this.intensity = intensity;
@@ -142,6 +155,8 @@ export class Flashlight extends Component {
     this.stutter   = new FlashlightStutter({ tuning: stutter, rand });
     /** Who is interfering, by name. */
     this._interference = new Set();
+    this.sounds = sounds;
+    if (sounds) this._setLevels();
   }
 
   /** Something is interfering with it: on, it stutters. */
@@ -176,6 +191,10 @@ export class Flashlight extends Component {
   onAwake() {
     const camera = this._engine?.camera;
     if (!camera || this.light) return;
+    if (!this.sounds) {
+      this.sounds = { on: this._sound(FLASHLIGHT_SOUNDS.keys.on), off: this._sound(FLASHLIGHT_SOUNDS.keys.off) };
+      this._setLevels();
+    }
 
     // decay 2 is physical inverse-square falloff — the reason the beam fades
     // out fast instead of carrying evenly to `distance`.
@@ -198,10 +217,37 @@ export class Flashlight extends Component {
   toggle() {
     this.on = !this.on;
     if (this.light) this.light.intensity = this.on ? this.intensity : 0;
+    const { on, off } = this.sounds ?? {};
+    // Going out cuts the coming-on short.
+    if (!this.on && on?.isPlaying) on.stop();
+    const click = this.on ? on : off;
+    if (click) {
+      if (click.isPlaying) click.stop();
+      click.play();
+    }
     return this.on;
   }
 
+  /** A click from the asset cache, in the player's ears. Null without audio. */
+  _sound(key) {
+    const { audioListener, assets } = this._engine ?? {};
+    if (!audioListener || !assets?.has?.(key)) return null;
+    const audio = new THREE.Audio(audioListener);
+    audio.setBuffer(assets.get(key));
+    return audio;
+  }
+
+  _setLevels() {
+    this.sounds.on?.setVolume(FLASHLIGHT_SOUNDS.on);
+    this.sounds.off?.setVolume(FLASHLIGHT_SOUNDS.off);
+  }
+
   onDestroy() {
+    for (const sound of Object.values(this.sounds ?? {})) {
+      if (!sound) continue;
+      if (sound.isPlaying) sound.stop();
+      try { sound.disconnect?.(); } catch (_) { /* never connected */ }
+    }
     if (!this.light) return;
     this.light.removeFromParent();
     this.light.target.removeFromParent();

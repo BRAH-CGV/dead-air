@@ -70,6 +70,10 @@ export class Engine {
   /** Optional post-processing pass (e.g. RedOut). When set, preRender()
    *  redirects the scene render to a target and postRender() composites.
    *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
+  /** Drawn over the finished frame, in order, after postProcess — each
+   *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
+   *  scene that added them: emptied on every scene load.
+   *  @type {{ render(): void }[]} */ screenPasses = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -432,6 +436,7 @@ export class Engine {
     this.shadows.release();
     this._teardownScene();
     this.viewCamera = null;
+    this.screenPasses = [];
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this);
@@ -809,6 +814,7 @@ export class Engine {
     this.postProcess?.preRender();
     this.renderer.render(this.scene, this.renderCamera);
     this.postProcess?.postRender();
+    for (const pass of this.screenPasses) pass.render();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);
