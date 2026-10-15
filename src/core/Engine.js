@@ -101,8 +101,10 @@ export class Engine {
   paused = false;
 
   /** How fast game time runs: the updates are handed frameDt × timeScale.
-   *  A nap sets it (Nap.js) to fast-forward the night; physics keeps real
-   *  time, since many more steps a frame would only cost frames. */
+   *  A nap sets it above 1 (Nap.js) to fast-forward the night; the journal
+   *  sets it below 1 (Journal.js), so it reads in slowed time. Physics keeps
+   *  real time either way, since many more steps a frame would only cost
+   *  frames. The frame and its input never change speed. */
   timeScale = 1;
   /** Real seconds in the frame being simulated, whatever timeScale is: for
    *  what must keep real speed through a nap (getting into and out of bed,
