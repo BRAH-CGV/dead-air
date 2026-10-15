@@ -652,16 +652,16 @@ const PLACED = {
   // and the yawn of a tired one (FatigueEffects); a
   // ration dropping from the office dispenser (BaseScene._addStamina).
   //
-  // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
-  // final audio — all but the yawn and the whispers, which are real (see
-  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
-  // public/assets/audio/, named after its key (any format: heartbeat.mp3 is
+  // The ration is a PLACEHOLDER, for the sound owner to replace: a short
+  // synthesised wav, not final audio. The whispers, the heartbeat and the yawn
+  // are real (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // public/assets/audio/, named after its key (any format: ration.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
   // sound owner".
   'sfx:heartbeat': {
     type: 'audio',
-    url: 'assets/audio/heartbeat.wav',
+    url: 'assets/audio/heartbeat.mp3',
   },
   'sfx:yawn': {
     type: 'audio',

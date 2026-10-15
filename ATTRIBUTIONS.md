@@ -635,6 +635,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | The tired player's yawns (`FatigueEffects`) |
 | **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
 
+### Heartbeat
+
+"my heart beat for Halloween+.mp3" by strongheartbeat (https://freesound.org/people/strongheartbeat/sounds/62120/), used under Creative Commons Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/) — sampling and remixing allowed, attribution required.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/heartbeat.mp3` |
+| **Manifest key** | `sfx:heartbeat` |
+| **Used for** | A tired player's heartbeat, looped, louder and faster towards empty (`FatigueEffects`) |
+| **Modifications** | Cut to a five-beat loop, time-stretched 1.3× with the pitch kept (55 → 72 bpm), converted to mono mp3 |
+
 ### Creepy whispering
 
 Many whispering voices, mixed by us from Freesound recordings by JoelMcDaniel: "Creepy, Whispering Latin Paragraph 1" (https://freesound.org/people/JoelMcDaniel/sounds/851765/), "Creepy, Whispering Latin Paragraph 3" (https://freesound.org/people/JoelMcDaniel/sounds/851767/) and "Creepy, Whispering Latin Paragraph 4" (https://freesound.org/people/JoelMcDaniel/sounds/851768/), used under Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/) — free to use, attribution not required, credited here anyway.

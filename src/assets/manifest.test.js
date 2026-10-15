@@ -104,6 +104,14 @@ describe('manifest', () => {
     expect(credits).toMatch(/Young tired male yawns[\s\S]*?`sfx:yawn`/);
   });
 
+  it('the heartbeat is a real recording (Freesound), on disk and credited — not the synthesised placeholder', () => {
+    const { url } = ASSETS['sfx:heartbeat'];
+    expect(url).toBe('assets/audio/heartbeat.mp3');
+    expect(existsSync(resolve(ROOT, 'public', url))).toBe(true);
+    const credits = readFileSync(resolve(ROOT, 'ATTRIBUTIONS.md'), 'utf8');
+    expect(credits).toMatch(/my heart beat for Halloween[\s\S]*?`sfx:heartbeat`/);
+  });
+
   it('has no validation problems', () => {
     expect(validateManifest(ASSETS)).toEqual([]);
   });
