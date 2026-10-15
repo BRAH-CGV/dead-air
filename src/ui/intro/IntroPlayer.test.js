@@ -65,6 +65,16 @@ describe('IntroPlayer', () => {
   const caption = () => root.querySelector('.intro-caption');
   const card = () => root.querySelector('.intro-card');
 
+  /** The same intro with nothing to draw on, for a test that runs most of
+   *  it: the clock and the captions don't need the canvas, and recording
+   *  every draw call over hundreds of frames is slow. */
+  const undrawn = () => {
+    intro = new IntroPlayer(root, {
+      raf: frames.raf, caf: frames.caf, now: () => frames.now,
+      random: () => 0.5, context: () => null, onBegin,
+    });
+  };
+
   it('builds its canvas, caption and end card into the root, hidden until played', () => {
     expect(root.querySelector('canvas')).not.toBeNull();
     expect(caption()).not.toBeNull();
@@ -94,6 +104,7 @@ describe('IntroPlayer', () => {
   });
 
   it('names the array it posts the player to', () => {
+    undrawn();
     intro.play();
     frames.run(beatStart('landing') + 1);
     expect(caption().textContent).toMatch(/^You have been assigned to ARRAY [A-Z]-\d{2}/);
@@ -108,6 +119,7 @@ describe('IntroPlayer', () => {
   });
 
   it('holds the end card, with the array on it, until the player begins', () => {
+    undrawn();
     intro.play();
     frames.run(INTRO_SECONDS + 3, 100);
     expect(intro.atEnd).toBe(true);

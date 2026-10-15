@@ -351,6 +351,8 @@ function buggy(ctx, x, y, size, time) {
 // ── The beats ──────────────────────────────
 
 const _ship = { x: 0, y: 0, angle: 0 };
+/** The lander comes down on its burn: nose up, flame to the ground. */
+const NOSE_UP = -Math.PI / 2;
 
 const PAINTERS = {
   voyage(ctx, w, h, p, time, scene) {
@@ -454,7 +456,7 @@ const PAINTERS = {
       const r = landingZoom(p) * m;
       const sink = smooth(seg(p, 0, 0.55));
       planet(ctx, w * lerp(0.5, 0.5, sink), h * 0.5 + r * sink * 0.92, r, 'mars');
-      ship(ctx, w * 0.5, h * lerp(0.35, 0.3, sink), m * 0.03, Math.PI / 2, time);
+      ship(ctx, w * 0.5, h * lerp(0.35, 0.3, sink), m * 0.03, NOSE_UP, time);
       return;
     }
     // Down to the ground, the flame kicking up dust.
@@ -464,8 +466,9 @@ const PAINTERS = {
     ground(ctx, w, h, horizon);
     const land = smooth(seg(q, 0, 0.75));
     const y = lerp(-h * 0.1, horizon - m * 0.04, land);
-    ship(ctx, w * 0.5, y, m * 0.045, Math.PI / 2, time, { flame: land < 1 });
-    const dust = seg(q, 0.55, 1);
+    ship(ctx, w * 0.5, y, m * 0.045, NOSE_UP, time, { flame: land < 1 });
+    // Dust kicked up by the burn, once it is near the ground.
+    const dust = seg(q, 0.62, 1);
     if (dust > 0) {
       ctx.fillStyle = `rgba(150, 90, 60, ${0.5 * (1 - dust)})`;
       ctx.beginPath();
