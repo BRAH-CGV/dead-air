@@ -59,6 +59,10 @@ describe('BaseScene security cameras', () => {
     terminal = scene.cameraTerminal;
   });
 
+  it('without a renderer (headless), the terminal switches at once: no switch pass', () => {
+    expect(terminal.signal).toBeNull();
+  });
+
   it('builds six cameras', () => {
     expect(cams).toHaveLength(6);
     for (const cam of cams) expect(cam).toBeInstanceOf(SecurityCamera);

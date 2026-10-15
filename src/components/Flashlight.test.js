@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { Flashlight, FlashlightStutter, FLASHLIGHT_STUTTER as S } from './Flashlight.js';
+import { Flashlight, FlashlightStutter, FLASHLIGHT_STUTTER as S, FLASHLIGHT_SOUNDS } from './Flashlight.js';
 import { Component } from '../core/Component.js';
 import { GameObject } from '../core/GameObject.js';
 import { makeRandom } from '../core/Random.js';
@@ -252,5 +252,63 @@ describe('Flashlight interference', () => {
     torch.setInterference(true, 'test');
     frames(torch, 120);
     expect(torch.light.visible).toBe(true);
+  });
+});
+
+describe('Flashlight click', () => {
+  function fakeSound() {
+    const sound = {
+      isPlaying: false, plays: 0, volume: 1,
+      play: vi.fn(() => { sound.isPlaying = true; sound.plays++; }),
+      stop: vi.fn(() => { sound.isPlaying = false; }),
+      setVolume: vi.fn((v) => { sound.volume = v; }),
+    };
+    return sound;
+  }
+  const withSounds = () => {
+    const sounds = { on: fakeSound(), off: fakeSound() };
+    return { ...buildPlayer({ sounds }), sounds };
+  };
+
+  it('clicks on as it lights, and off as it goes out', () => {
+    const { engine, torch, sounds } = withSounds();
+    pressF(engine, torch);
+    expect(sounds.on.plays).toBe(1);
+    expect(sounds.off.plays).toBe(0);
+    pressF(engine, torch);
+    expect(sounds.on.plays).toBe(1);
+    expect(sounds.off.plays).toBe(1);
+  });
+
+  it('going out cuts the on click short', () => {
+    const { engine, torch, sounds } = withSounds();
+    pressF(engine, torch);
+    pressF(engine, torch);
+    expect(sounds.on.stop).toHaveBeenCalled();
+    expect(sounds.on.isPlaying).toBe(false);
+  });
+
+  it('at its own level', () => {
+    const { sounds } = withSounds();
+    expect(sounds.on.volume).toBe(FLASHLIGHT_SOUNDS.on);
+    expect(sounds.off.volume).toBe(FLASHLIGHT_SOUNDS.off);
+  });
+
+  it('is the camera flash’s switch', () => {
+    expect(FLASHLIGHT_SOUNDS.keys).toEqual({ on: 'sfx:camera-spotlight', off: 'sfx:camera-spotlight-off' });
+  });
+
+  it('never clicks for the stutter: only the switch does', () => {
+    const { engine, torch, sounds } = withSounds();
+    pressF(engine, torch);
+    torch.setInterference(true, 'demon');
+    for (let i = 0; i < 120; i++) torch.onUpdate(1 / 60);
+    expect(sounds.on.plays + sounds.off.plays).toBe(1);
+  });
+
+  it('toggles silently on an engine with no audio', () => {
+    const { engine, torch } = buildPlayer();
+    expect(() => { pressF(engine, torch); pressF(engine, torch); }).not.toThrow();
+    expect(torch.on).toBe(false);
   });
 });
