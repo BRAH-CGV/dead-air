@@ -132,6 +132,7 @@ src/
 │   ├── ScreenFade.js    # Fade to black and back (#fade in index.html)
 │   ├── WhiteOut.js      # Fade to white and hold, for the UFO's catch (#whiteout)
 │   ├── FatigueOverlay.js # A tired player's tunnel vignette and eyelids (#fatigue)
+│   ├── EventBanner.js   # Centred on-screen event messages (#event-banner); BannerTimer (pure) + DOM wrapper
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── CameraOverlay.js # The security monitor's label, hints and static (#cctv)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
@@ -487,6 +488,28 @@ scene.setStormQuality(q);   // 0 thinnest … 1 the storm as tuned (the default)
 - **Not the grit or the fog.** `DustStorm`'s points and the scene fog are as they were at any quality. If the grit turns out to cost, give `setStormQuality` its draw range too; the fog is free.
 - **Wired to the settings.** Settings → VIDEO → Dust storm quality (`stormQuality` in `SCHEMA`, `src/app/SettingsStore.js`) is handed to it by `applySettings`, which runs at startup, on every change and after every scene build: a new scene starts at 1, so it is set again each time.
 - **Trying it now**, in a dev build's browser console, at full storm (the dev console's `storm`) with the FPS readout on (`perf`): `__engine.activeScene.setStormQuality(0)`, then `(1)`.
+
+## Messages
+
+`scene.banner.show` is the one way to show an event. Two kinds of message, two places on screen:
+
+| Kind | Example | Where | API |
+|---|---|---|---|
+| **Event** — something just happened | Nap alarm, quota met, shift over | `scene.banner.show(text, { tone })` — centred, upper third, fades in/hold/fades out |
+| **Standing objective** — what to do next | "Hold out until 6:00 AM", "Get some sleep" | `hud.setPrompt(text)` — top-right, 13 px |
+
+Events by tone:
+
+| Message | Tone | Trigger |
+|---|---|---|
+| Nap alarm went off | `info` | `NAP.alarmMessage` |
+| Lamps' buzzing / roar overhead | `warning` | Nap alarms (startled wake) |
+| Quota met | `info` | `GameController._updateShiftPrompt` |
+| 6:00 AM — shift over | `info` | `GameController._morning` |
+
+Unchanged: interaction prompts (`[E] …` by the crosshair), the "EVA suit on" status, and deaths / failed nights (WhiteOut and the end screens own those).
+
+The banner's timing runs on real time (`engine.realDt`), ticked by `BannerTicker` on `GameplaySystems`, so a nap's 15× timeScale doesn't rush it and a pause holds it.
 
 ## App flow and menus
 
