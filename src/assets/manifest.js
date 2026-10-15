@@ -276,6 +276,17 @@ const PLACED = {
     castShadow: false,
     receiveShadow: false,
   },
+  // Ragno, the camera entity: a rigged, four-legged spider thing, already in
+  // metres (2.2 m tall, 1.8 m across the feet as downloaded). Render-only;
+  // its legs are walked by IK (RagnoFigure). Four fifths of its size keeps
+  // the thin stance under a 2.2 m doorway. No shadow: a moving caster
+  // outside would redraw the moonlight's whole map every frame.
+  'model:ragno': {
+    type: 'model',
+    url: 'assets/models/ragno.glb',
+    scale: 0.8,
+    castShadow: false,
+  },
   'model:trash-bin': {
     type: 'model',
     url: 'assets/models/trash-bin.glb',
@@ -679,6 +690,31 @@ const PLACED = {
   'sfx:knocks': {
     type: 'audio',
     url: 'assets/audio/knocks.mp3',
+  },
+  // Ragno, the camera entity (Ragno.js): its legs walking, looped at the
+  // pace of its steps and heard only indoors; the call, cut into its soft
+  // chirps (outside, under the wind) and its loud bursts (the rare screech,
+  // pitched down); two attacks for a flinch or the aggro; and the third for
+  // the death screen, its loud part only.
+  'sfx:spider-walking': {
+    type: 'audio',
+    url: 'assets/audio/spider-walking.mp3',
+  },
+  'sfx:spider-call': {
+    type: 'audio',
+    url: 'assets/audio/spider-call.mp3',
+  },
+  'sfx:spider-attack-2': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-2.mp3',
+  },
+  'sfx:spider-attack-4': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-4.mp3',
+  },
+  'sfx:spider-attack-8': {
+    type: 'audio',
+    url: 'assets/audio/spider-attack-8.mp3',
   },
 };
 

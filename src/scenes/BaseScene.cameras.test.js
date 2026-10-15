@@ -14,7 +14,7 @@ import { Interactable } from '../components/Interactable.js';
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 // ─────────────────────────────────────────────
-// The security cameras, in the base as built: six cameras, the monitor on
+// The security cameras, in the base as built: eight cameras, the monitor on
 // the desk's left wing that shows them, and the one flash they share.
 // ─────────────────────────────────────────────
 
@@ -63,8 +63,8 @@ describe('BaseScene security cameras', () => {
     expect(terminal.signal).toBeNull();
   });
 
-  it('builds six cameras', () => {
-    expect(cams).toHaveLength(6);
+  it('builds eight cameras (the last two watch the vents)', () => {
+    expect(cams).toHaveLength(8);
     for (const cam of cams) expect(cam).toBeInstanceOf(SecurityCamera);
   });
 
@@ -229,9 +229,15 @@ describe('BaseScene security cameras', () => {
     expect(indoor.map).toBe(inner.map);
   });
 
+  it('keeps ground round the farthest cameras (the poles), so no button hangs off the map', () => {
+    const [across, down] = scene.cameraMap.margin;
+    expect(across).toBeGreaterThanOrEqual(3);
+    expect(down).toBeGreaterThanOrEqual(3);
+  });
+
   it('hands the overlay a map: the rooms, the corridors, the yard and every camera', () => {
     const plan = scene.cameraMap;
-    expect(plan.cameras).toHaveLength(6);
+    expect(plan.cameras).toHaveLength(8);
     plan.cameras.forEach((c, i) => {
       const p = worldPos(cams[i]);
       expect(c.x).toBeCloseTo(p.x, 3);
@@ -247,7 +253,7 @@ describe('BaseScene security cameras', () => {
     });
     const labels = plan.rooms.map(r => r.label);
     expect(labels).toEqual(expect.arrayContaining(['OFFICE', 'QTRS', 'SRVR', 'A/L', 'YARD']));
-    expect(plan.cameras.map(c => c.label)).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(plan.cameras.map(c => c.label)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
     expect(plan.rooms.find(r => r.label === 'YARD').outline).toBe(true);
     // Room beside the building, so the end-wall cameras read as outside it.
     expect(plan.margin[0]).toBeGreaterThanOrEqual(4);

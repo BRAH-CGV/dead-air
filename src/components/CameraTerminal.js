@@ -62,7 +62,7 @@ import { CameraTransition } from '../gameplay/CameraTransition.js';
 export const CAMERA_FLASH = { intensity: 90, angle: 0.55, penumbra: 0.35, decay: 1.4, color: 0xf2f6ff };
 
 /** Levels, against each clip's own: the motor is faint by request. */
-export const CAMERA_SOUNDS = { servo: 0.14, static: 0.18, spotlight: 0.4, spotlightOff: 0.4 };
+export const CAMERA_SOUNDS = { servo: 0.14, static: 0.18, spotlight: 0.4, spotlightOff: 0.4, glitch: 0.55 };
 
 /** How closely the hiss follows the switch's grain (per second, see
  *  LoopVoice): tight, so picture and sound move as one, with just enough
@@ -205,6 +205,32 @@ export class CameraTerminal extends Component {
     if (this.feed.index !== before) this._showCamera();
   }
 
+  /** The camera actually on screen: its index, whether its picture is in
+   *  (not covered by a switch), and whether its flash is lit. Null away from
+   *  the monitor. Ragno reads it to know when a flash is on him. */
+  get onAir() {
+    if (this.state !== 'viewing' || this._onAir === null) return null;
+    const index = this._onAir;
+    return {
+      index,
+      camera: this.cameras[index],
+      live: this.feed.live && this.feed.index === index && this.transition.phase !== 'drop' && this.transition.phase !== 'wait',
+      flash: this.feed.flash && this.feed.index === index,
+    };
+  }
+
+  /**
+   * Camera `i`'s picture breaks up under static for `seconds` — only if it
+   * is the one on screen. Something has reached a vent in front of it.
+   * @returns {boolean} whether it was on screen
+   */
+  interfere(i, seconds) {
+    if (this.state !== 'viewing' || this._onAir !== i) return false;
+    this.transition.glitch(seconds);
+    this.signal?.set(this.transition);
+    return true;
+  }
+
   /** Stop the loops. The next frame starts again whatever is still wanted. */
   silence() {
     this._loop(this.sounds.servo, false);
@@ -273,7 +299,10 @@ export class CameraTerminal extends Component {
     this.signal?.set(this.transition);
     this.signal?.tick(dt);
     this.overlay?.setConnecting(this.transition.waitingLong);
-    this._static.set(CAMERA_SOUNDS.static * this.transition.hiss, dt);
+    // A glitch (something at a vent) hisses louder than a switch: the
+    // camera's own sound is cut under it (listenFrom, below), storm or not.
+    const hissLevel = this.transition.phase === 'glitch' ? CAMERA_SOUNDS.glitch : CAMERA_SOUNDS.static;
+    this._static.set(hissLevel * this.transition.hiss, dt);
     if (this._onAir !== null) this.hooks.listenFrom?.(this.cameras[this._onAir].lens, 1 - this.transition.hiss);
     this._applyFlash();
   }
