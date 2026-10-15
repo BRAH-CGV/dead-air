@@ -1384,6 +1384,17 @@ describe('SleepDemon while you nap: in the darkened view', () => {
     expect(fromEye()).toBeCloseTo(reached, 1);
   });
 
+  it('says when it stands watching a sleeper (watchingSleeper): the nap holds the night to real time then', () => {
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(false);          // nothing yet
+    sleeper.peeking = true;
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(true);
+    sleeper.peeking = false;
+    run(1 / 60);
+    expect(demon.watchingSleeper).toBe(false);
+  });
+
   it('with no corner in view it does not show', () => {
     sleeper.watchSpots = () => [new THREE.Vector3(6, 0, 6)];
     sleeper.peeking = true;

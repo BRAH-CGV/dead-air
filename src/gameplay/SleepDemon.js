@@ -89,7 +89,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // slow walk (NAP_WATCH), on the real clock, so through a nap's
 // fast-forwarded night it still looks like a slow walk. Never all the way
 // to the bed. The sleeper wakes and it is gone; the next nap it may be
-// there again. On the other naps the darkened view shows an empty room.
+// there again. While it stands watching (watchingSleeper) the nap holds the
+// night to real time; the other naps race all the way.
 // Out of bed, its rules start over.
 //
 // At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
@@ -401,6 +402,12 @@ export class SleepDemon extends Component {
    *  'over' until the night starts again. For a sound to follow. */
   get deathPhase() {
     return this._death.phase;
+  }
+
+  /** It stands watching a sleeper, in view: the nap holds the night to real
+   *  time while it does. */
+  get watchingSleeper() {
+    return this._napping && this._napWatched && this.figure.object3d.visible;
   }
 
   /**

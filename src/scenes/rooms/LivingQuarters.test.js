@@ -8,6 +8,7 @@ import { Interactable } from '../../components/Interactable.js';
 import { Bed } from '../../components/Bed.js';
 import * as THREE from 'three';
 import { PRELOAD } from '../../assets/manifest.js';
+import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -232,6 +233,48 @@ describe('LivingQuarters', () => {
     const beside = { x0: bunk.x1, x1: bunk.x1 + 0.8, z0: -3.0, z1: bunk.z1 };
     for (const name of FURNITURE.filter(n => n !== 'Bunk')) {
       expect(overlaps(footprint(room.root.find(name)), beside), name).toBe(false);
+    }
+  });
+
+  it('a clock on the side table, its face turned to the sleeper and in the middle of their view (#113)', () => {
+    const clock = room.bedsideClock;
+    const table = room.root.find('SideTable');
+    room.root.object3d.updateMatrixWorld(true);
+    const at = clock.object3d.getWorldPosition(new THREE.Vector3());
+    const top = new THREE.Box3().setFromObject(table.object3d);
+    expect(at.y).toBeCloseTo(top.max.y, 2);                             // standing on it
+    expect(at.x).toBeGreaterThan(top.min.x);
+    expect(at.x).toBeLessThan(top.max.x);
+    expect(at.z).toBeGreaterThan(top.min.z);
+    expect(at.z).toBeLessThan(top.max.z);
+
+    const pillow = room.bed.pillowPose();
+    const toEye = pillow.position.clone().sub(at);
+    toEye.y = 0;
+    const face = new THREE.Vector3(0, 0, 1).applyQuaternion(clock.object3d.getWorldQuaternion(new THREE.Quaternion()));
+    expect(THREE.MathUtils.radToDeg(face.angleTo(toEye.normalize()))).toBeLessThan(25);
+
+    const view = new THREE.Vector3(0, 0, -1)
+      .applyEuler(new THREE.Euler(pillow.pitch, pillow.yaw, 0, 'YXZ'));
+    const toClock = at.clone().setY(at.y + 0.055).sub(pillow.position).normalize();
+    expect(THREE.MathUtils.radToDeg(view.angleTo(toClock))).toBeLessThan(15);
+  });
+
+  it('the Sleep Demon watches a sleeper from inside the room, in view of the pillow, not beside it', () => {
+    const pillow = room.bed.pillowPose();
+    const view = new THREE.Vector3(0, 0, -1)
+      .applyEuler(new THREE.Euler(pillow.pitch, pillow.yaw, 0, 'YXZ')).setY(0).normalize();
+    const spots = room.bed.watchSpots();
+    expect(spots.length).toBeGreaterThan(0);
+    for (const spot of spots) {
+      const name = spot.toArray().join();
+      expect(Math.abs(spot.x), name).toBeLessThan(room.width / 2 - room.wallThick);
+      expect(Math.abs(spot.z), name).toBeLessThan(room.depth / 2 - room.wallThick);
+      const to = spot.clone().sub(pillow.position).setY(0);
+      expect(to.length(), name).toBeGreaterThan(NAP_WATCH.floor);
+      // Within 40° of the middle of the view: on screen at 4:3 and the
+      // narrowest field of view the settings allow.
+      expect(THREE.MathUtils.radToDeg(view.angleTo(to.normalize())), name).toBeLessThan(40);
     }
   });
 

@@ -43,7 +43,7 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   engine.press = () => { engine.held = true; engine.consumed = false; };
   const hud = { setPrompt: vi.fn() };
   const hint = { show: vi.fn(), hide: vi.fn() };
-  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
+  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false), watched: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
     controller, engine, hud, hooks, rest, hint,
@@ -251,16 +251,23 @@ describe('Nap', () => {
   });
 
   describe('the demon\'s stretches: the night holds to real time while the demon is there', () => {
-    it('runs at real time while the stretch is on, and fast again once it ends', () => {
-      const { nap, engine, rest } = rig;
-      rest.peeking = false;
+    it('runs at real time while the demon stands watching, and fast again once it goes', () => {
+      const { nap, engine, hooks } = rig;
       nap.start();
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(1);
-      rest.peeking = false;
+      hooks.watched.mockReturnValue(false);
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(NAP.timeScale);
+    });
+
+    it('a nap nobody watches races all the way: the stretches alone hold nothing back', () => {
+      const { nap, engine, rest } = rig;
+      nap.start();
+      rest.peeking = true;
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
     });
@@ -274,10 +281,10 @@ describe('Nap', () => {
     });
 
     it('so the alarm cannot cut the scene short: the clock barely moves through a stretch', () => {
-      const { nap, controller, rest } = rig;
+      const { nap, controller, hooks } = rig;
       controller.nightClock.currentTime = 1;
       nap.start(0.5);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(nap.napping).toBe(true);
     });

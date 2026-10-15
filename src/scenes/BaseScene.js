@@ -1829,6 +1829,7 @@ export class BaseScene extends Scene {
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),
         restless:        ufoBusy,
+        watched:         () => !!this.sleepDemon?.watchingSleeper,
       },
       alarms: [
         { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },

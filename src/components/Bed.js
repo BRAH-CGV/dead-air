@@ -44,14 +44,14 @@ import { keyName } from '../app/keyNames.js';
  *   sit     the eye sitting on its edge, legs out, facing the room
  *   out     the feet standing beside it, clear of its collider by more than
  *           the player's radius, facing the room — where you get up to
- *   watch   where the Sleep Demon stands to watch a sleeper: corners of the
- *           bedroom in view of the pillow
+ *   watch   where the Sleep Demon stands to watch a sleeper: across the
+ *           bedroom in front of the pillow, in its view
  */
 export const BUNK_POSES = Object.freeze({
   pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -1.68, pitch: 0.1, roll: 0.22 }),
   sit: Object.freeze({ position: [0.4, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
   out: Object.freeze({ position: [1.0, 0, 0.35], yaw: -Math.PI / 2 }),
-  watch: Object.freeze([[1.84, 0, 2.28], [1.94, 0, -0.52], [1.14, 0, -2.5]]),
+  watch: Object.freeze([[1.94, 0, -0.52], [2.74, 0, 0.28], [2.64, 0, 1.28]]),
 });
 
 const _q = new THREE.Quaternion();

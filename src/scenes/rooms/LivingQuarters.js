@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
-import { Bed } from '../../components/Bed.js';
+import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 
 // ─────────────────────────────────────────────
@@ -94,12 +94,15 @@ export class LivingQuarters extends Room {
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
     this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
 
-    // A digital clock on the side table, its face toward the pillow so the
-    // sleeper can watch the minutes race. The scene hands it the NightClock.
+    // A digital clock on the side table, its face (+z) turned to the pillow
+    // so a napper watches the minutes race (#113). The scene hands it the
+    // NightClock.
     this.bedsideClock = this._own(new DigitalClock('BedsideClock'));
-    this.bedsideClock.object3d.position.set(-1.3, 0.5, -3.5);
-    // Face toward the pillow (bunk-local −x, slight +z): ~170° about Y.
-    this.bedsideClock.object3d.rotation.y = THREE.MathUtils.degToRad(170);
+    const clock = this.bedsideClock.object3d;
+    clock.position.set(-1.3, 0.5, -3.5);
+    const [px, , pz] = BUNK_POSES.pillow.position;   // the bunk is not turned
+    const { x: bx, z: bz } = bunk.object3d.position;
+    clock.rotation.y = Math.atan2(bx + px - clock.position.x, bz + pz - clock.position.z);
     this.root.addChild(this.bedsideClock);
 
     // Three lockers in one model, against the back wall past the side

@@ -74,7 +74,9 @@ function run(rig, seconds) {
 
 const world = camera => camera.getWorldPosition(new THREE.Vector3());
 const angles = camera => new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()), 'YXZ');
-const lastLid = overlay => overlay.set.mock.calls.at(-1)?.[1];
+/** The bed's darkness as last written (FatigueOverlay.set's third
+ *  argument): BedRest writes it in place of the lids, in and out of bed. */
+const lastLid = overlay => overlay.set.mock.calls.at(-1)?.[2];
 
 describe('BedRest', () => {
   let rig;
@@ -126,15 +128,14 @@ describe('BedRest', () => {
       const { rest, overlay } = rig;
       rest.lieDown(() => {});
       run(rig, T.lieDown * 0.7);
-      // During the lie-down the transition writes lids (not yet asleep).
       expect(lastLid(overlay)).toBeGreaterThan(0);
       expect(lastLid(overlay)).toBeLessThan(1);
       run(rig, T.lieDown * 0.3 + 0.05);                   // just asleep
-      // Asleep: darkness is the third parameter, lids are 0.
-      const lastCall = overlay.set.mock.calls.at(-1);
-      expect(lastCall[2]).toBe(1);                          // full darkness
-      expect(lastCall[1]).toBe(0);                          // no lids in bed
-      expect(lastCall[0]).toBe(0);                          // no tunnel in bed
+      expect(lastLid(overlay)).toBe(1);                     // full darkness
+      for (const [tunnel, lids] of overlay.set.mock.calls) {
+        expect(tunnel).toBe(0);                             // no tunnel in bed
+        expect(lids).toBe(0);                               // and never the black lids: no pop into the dark view
+      }
     });
 
     it('not twice', () => {
@@ -211,6 +212,18 @@ describe('BedRest', () => {
       startled.rest.getUp('startled', upStartled);
       run(startled, 0.95);
       expect(upStartled).toHaveBeenCalledOnce();
+    });
+
+    it('getting up lifts the darkness smoothly, never through the black lids', () => {
+      const { rest, overlay } = rig;
+      asleep();
+      overlay.set.mockClear();
+      rest.getUp('calm');
+      run(rig, 3);
+      const dark = overlay.set.mock.calls.map(c => c[2]);
+      expect(Math.max(...dark)).toBeLessThanOrEqual(1);
+      for (let i = 1; i < dark.length; i++) expect(dark[i]).toBeLessThanOrEqual(dark[i - 1]);
+      for (const [, lids] of overlay.set.mock.calls) expect(lids).toBe(0);
     });
 
     it('startled: the lids snap open', () => {
@@ -338,9 +351,7 @@ describe('BedRest', () => {
       peeked = rest.peeking;
     }
     expect(peeked).toBe(true);
-    // In bed the darkness is the third parameter, not the lids.
-    const lastCall = rig.overlay.set.mock.calls.at(-1);
-    expect(lastCall[2]).toBeGreaterThan(0);               // darkness on
+    expect(lastLid(rig.overlay)).toBe(1);                 // the darkness holds through it
     expect(rest.watchSpots().length).toBeGreaterThan(0);
   });
 

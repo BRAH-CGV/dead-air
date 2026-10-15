@@ -9,7 +9,7 @@ import { PLAYER_BODY } from './PlayerBody.js';
 // BedTransition holds the steps; this maps them onto the scene, the way
 // SleepDemon maps SleepDemonDeath. There is no player body to animate, so
 // it is the view: the camera's place, pitch and roll, and the
-// FatigueOverlay's darkness (in bed) or eyelids (outside it).
+// FatigueOverlay's darkness (the bed's closed eyes, not the black lids).
 //
 //   lieDown(onAsleep)    from where you stand to the bunk's pillow, the
 //                        darkness closing; onAsleep once it is fully down
@@ -177,11 +177,11 @@ export class BedRest extends Component {
   }
 
   // FatigueEffects writes the lids in its update: these are written after.
-  // In bed the darkness replaces the lids; outside it the lids run as usual.
+  // From lying down to standing up it is the darkness, never the lids, so
+  // the view dims and lifts without a cut to black between.
   onLateUpdate() {
     if (!this.active || this.isFrozen()) return;
-    if (this.asleep) this.overlay?.set(0, 0, this.transition.lid);
-    else this.overlay?.set(0, this.transition.lid, 0);
+    this.overlay?.set(0, 0, this.transition.lid);
   }
 
   // ── Private ──

@@ -34,9 +34,10 @@ import { Component } from '../core/Component.js';
 // frame by frame, so a longer nap restores more and one cut short gives
 // back only what was slept.
 //
-// While the sleeper is in the darkened view (BedRest.asleep) the night
-// runs at real time on a watched nap (the demon comes), and at NAP.timeScale
-// on an unwatched one. Nothing else changes.
+// Asleep, the view is darkened, not shut: the bedside clock races at
+// NAP.timeScale. While the Sleep Demon stands watching (hooks.watched) the
+// night holds to real time, so the scene plays at the speed it is seen and
+// an alarm can't cut it short; the digits slow to a crawl while it is there.
 //
 // The lids black the screen out, HUD and all, so for the whole nap a line
 // over them (`hint`, NAP.wakeHint) says E wakes you.
@@ -83,7 +84,7 @@ export class Nap extends Component {
    *           getUp(style: 'calm'|'startled'): boolean, cancel(): void }|null} [opts.rest]
    *        The bed animation (BedRest).
    * @param {{ setPrompt: (text: string) => void }} [opts.hud]
-   * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean }} [opts.hooks]
+   * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean, watched?: () => boolean }} [opts.hooks]
    * @param {{ test: () => boolean, message: string }[]} [opts.alarms]
    * @param {{ show(text: string): void, hide(): void }|null} [opts.hint]  Over the lids: "[E] Wake up".
    * @param {{ restore(amount: number): void }|null} [opts.stamina]  Topped up while asleep.
@@ -153,10 +154,9 @@ export class Nap extends Component {
       // handed straight back.
       if (state === 'morning') return this.wake();
       if (state !== 'playing') return this._abandon();
-      // In the darkened view on a watched nap the night holds to real
-      // time, so the demon can be seen creeping; on an unwatched one
-      // there is nothing to show, so the night races.
-      if (this._asleep) this.engine.timeScale = this.rest?.peeking ? 1 : NAP.timeScale;
+      // The demon standing there holds the night to real time; otherwise
+      // it races.
+      if (this._asleep) this.engine.timeScale = this.hooks.watched?.() ? 1 : NAP.timeScale;
       this._rest();
       if (this.wakeAt !== null && this.controller.nightClock?.currentTime >= this.wakeAt) {
         return this.wake(NAP.alarmMessage);
