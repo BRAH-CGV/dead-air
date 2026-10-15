@@ -15,29 +15,29 @@ import { FatigueLogic, tunnel, heartbeat } from '../gameplay/Fatigue.js';
 //   - a yawn, now and then, once tired.
 //
 // And what the Sleep Demon's walk-down does to a heavy-legged player
-// (setDread): the heart beats faster than the stamina alone would have it,
-// and their own breathing comes in over it. Eased both ways, and let go by
-// itself outside the shift.
+// (setDread): the heart beats faster than the stamina alone would have it.
+// Eased both ways, and let go by itself outside the shift. (What fills the
+// walk-down besides is the demon's own endless whisper: SleepDemon.)
 //
-// Every night that starts resets the logic's timers; outside 'playing'
-// everything settles — eyes open, lights steady, the heart quiet. The fly
-// camera sees the scene clear.
+// Every night that starts resets the logic's timers; outside 'playing',
+// and while the player is in bed (isResting: BedRest, through a nap), everything
+// settles — eyes open, lights steady, the heart quiet, no yawns. BedRest
+// writes the lids itself then. The fly camera sees the scene clear.
 // ─────────────────────────────────────────────
 
-/** Manifest key behind each sound. All placeholders for the sound owner to
- *  replace (see the manifest): the keys stay, the files swap. The breathing
- *  is the player's own, under the walk-down's dread. */
-export const FATIGUE_SOUNDS = { heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn', breathing: 'sfx:breathing' };
+/** Manifest key behind each sound. The heartbeat is a placeholder for the
+ *  sound owner to replace (see the manifest): the key stays, the file swaps. */
+export const FATIGUE_SOUNDS = { heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn' };
 
 const YAWN_VOLUME = 0.6;
 const HEARTBEAT_VOLUME = 0.9;
 /** How much faster the heart beats at empty than when it is first heard. */
 const HEARTBEAT_QUICKEN = 0.35;
 
-/** The walk-down's dread (SleepDemon.setDread), as levels 0 … 1: the
- *  player's breathing at full grip, the floor under the heartbeat, and the
- *  seconds it is eased in and out over. */
-export const FATIGUE_DREAD = Object.freeze({ breath: 0.5, heart: 0.8, ease: 0.6 });
+/** The walk-down's dread (SleepDemon.setDread): the floor under the
+ *  heartbeat at full grip (0 … 1), and the seconds it is eased in and out
+ *  over. */
+export const FATIGUE_DREAD = Object.freeze({ heart: 0.8, ease: 0.6 });
 
 export class FatigueEffects extends Component {
   /**
@@ -47,15 +47,18 @@ export class FatigueEffects extends Component {
    * @param {{set(tunnel: number, eyelid: number): void, clear?(): void}|null} [opts.overlay]  FatigueOverlay
    * @param {{setFactor(key: string, value: number): void}|null} [opts.grid]  PowerGrid
    * @param {() => boolean} [opts.isFrozen]  The debug fly camera is on.
+   * @param {() => boolean} [opts.isResting]  In bed: getting in, asleep or getting out.
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from FATIGUE_SOUNDS when left out.
    * @param {() => number} [opts.rand]
    */
-  constructor({ stamina, controller, overlay = null, grid = null, isFrozen = () => false, sounds = null, rand = Math.random }) {
+  constructor({
+    stamina, controller, overlay = null, grid = null, isFrozen = () => false, isResting = () => false,
+    sounds = null, rand = Math.random,
+  }) {
     super();
-    Object.assign(this, { stamina, controller, overlay, grid, isFrozen, sounds });
+    Object.assign(this, { stamina, controller, overlay, grid, isFrozen, isResting, sounds });
     this.logic = new FatigueLogic({ rand, onYawn: () => this._yawn() });
     this._heart = 0;     // the heartbeat's level as last written, in hundredths
-    this._breath = 0;    // the breathing's, likewise
     this._dread = 0;     // the walk-down's grip, eased
     this._dreadTo = 0;   // what the last setDread() asked for
     this._off = null;
@@ -77,7 +80,7 @@ export class FatigueEffects extends Component {
   }
 
   onUpdate(dt) {
-    const playing = this.controller.state === 'playing';
+    const playing = this.controller.state === 'playing' && !this.isResting();
     const v = this.stamina.value;
     if (playing) this.logic.update(dt, v);
     else this.logic.reset();
@@ -95,11 +98,10 @@ export class FatigueEffects extends Component {
     else this.overlay?.set(playing ? tunnel(v) : 0, this.logic.eyelid);
     this.grid?.setFactor('dread', this.logic.dread);
     this._beat(playing ? Math.max(heartbeat(v), this._dread * FATIGUE_DREAD.heart) : 0);
-    this._breathe(this._dread * FATIGUE_DREAD.breath);
   }
 
   /** The Sleep Demon's walk-down, 0 … 1: it slows the player scene-side and
-   *  tells this how hard its grip is. Eased into the breath and the heart;
+   *  tells this how hard its grip is. Eased into the heart;
    *  dropped by itself outside the shift. */
   setDread(level) {
     this._dreadTo = Math.min(1, Math.max(0, level));
@@ -133,26 +135,8 @@ export class FatigueEffects extends Component {
     yawn.play();
   }
 
-  /** The player's own breathing at `level` (0 … 1), louder the harder the
-   *  walk-down grips: silent and stopped at 0, written only when its
-   *  hundredths change, like the heart. */
-  _breathe(level) {
-    const step = Math.round(level * 100);
-    if (step === this._breath) return;
-    this._breath = step;
-    const breath = this.sounds?.breathing;
-    if (!breath) return;
-    const l = step / 100;
-    breath.setVolume(l);
-    if (l > 0) {
-      if (!breath.isPlaying) breath.play();
-    } else if (breath.isPlaying) {
-      breath.stop();
-    }
-  }
-
-  /** One THREE.Audio per clip from the preloaded buffers, the heart and the
-   *  breath looping (the yawn is a one-shot). Missing ones are left out —
+  /** One THREE.Audio per clip from the preloaded buffers, the heart
+   *  looping (the yawn is a one-shot). Missing ones are left out —
    *  silence, not a crash. */
   _buildSounds() {
     const engine = this.gameObject?.scene?.userData?.engine;

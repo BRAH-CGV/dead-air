@@ -164,13 +164,21 @@ export class App {
     }));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
+    // The main menu's shot over the office computer (#115), fitted to the
+    // window as it changes. The Engine's own resize listener, added first,
+    // has already fitted the game camera this copies.
+    this._offs.push(flow.onChange(() => this._syncMenuShot()));
+    this._listen(win, 'resize', () => this._syncMenuShot());
+
     // Music under the main menu (and the screens opened from it), faded out
     // for the game. It can only sound once the audio is awake, and the
     // menu's buttons aren't the canvas whose click wakes it — so the first
     // click or key anywhere does. Listed before the listener below, which
     // swallows keys while a menu is open.
     this.music.load();
-    this._offs.push(flow.onChange(() => this.music.setPlaying(flow.state === 'mainMenu')));
+    // The main menu, and the end credits (the run complete): not the game's
+    // own pause or Night failed screens.
+    this._offs.push(flow.onChange(() => this.music.setPlaying(flow.state === 'mainMenu' || flow.screen === 'runComplete')));
     this._listen(win, 'pointerdown', () => this._wakeAudio(), { capture: true });
     this._listen(win, 'keydown', () => this._wakeAudio(), { capture: true });
 
@@ -233,8 +241,10 @@ export class App {
     this._offController = null;
     engine.loadScene(engine.activeScene.constructor);
     // The camera outlives the scene, and nothing ticks under the menu to
-    // turn it back: face the way a fresh player does.
-    engine.camera?.rotation?.set(0, 0, 0);
+    // turn it back: face the way the fresh player does (beside the bunk,
+    // looking at the desk — not world forward).
+    const ctrl = engine.playerController;
+    engine.camera?.rotation?.set(ctrl?.pitch ?? 0, ctrl?.yaw ?? 0, 0);
     this.flow.markClean();
   }
 
@@ -461,8 +471,33 @@ export class App {
    *  back with hard-coded values) and follow the new GameController. */
   _onSceneLoaded(scene) {
     this._applySettings();
+    this._syncMenuShot();
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
+  }
+
+  /** The main menu looks through the scene's own shot (`menuCamera`, #115):
+   *  over the office computer, out of the window at the dish, wherever the
+   *  player wakes. It takes the game camera's aspect and far plane, so it
+   *  fits the window and the render distance. Once the main menu is left,
+   *  the frame goes back to the player's eyes; a view someone else set (a
+   *  security camera on the monitor) is left alone. */
+  _syncMenuShot() {
+    const { engine } = this;
+    const shot = engine.activeScene?.menuCamera;
+    if (!shot) return;
+    const { state } = this.flow;
+    if (state === 'loading' || state === 'mainMenu') {
+      const { aspect, far } = engine.camera;
+      if (shot.aspect !== aspect || shot.far !== far) {
+        shot.aspect = aspect;
+        shot.far = far;
+        shot.updateProjectionMatrix();
+      }
+      engine.viewCamera = shot;
+    } else if (engine.viewCamera === shot) {
+      engine.viewCamera = null;
+    }
   }
 
   _applySettings(values = this.settings.values) {
@@ -474,6 +509,7 @@ export class App {
    *  isn't redrawn (that would drop it mid-drag); everything else is. */
   _onSettingsChanged(values, keys) {
     this._applySettings(values);
+    this._syncMenuShot();
     const sliderOnly = keys.length === 1 && SCHEMA[keys[0]]?.type === 'number';
     if (this.flow.screen === 'settings' && !sliderOnly) this._render();
   }

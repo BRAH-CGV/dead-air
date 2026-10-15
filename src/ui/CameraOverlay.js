@@ -4,23 +4,18 @@
 // The picture itself is the game's own frame, drawn through the camera
 // (Engine.viewCamera); this is what goes over it: the camera's name, a REC
 // mark, the flash indicator, the controls, a map of the base to click a
-// camera on (setMap, onSelect), and static while the picture isn't through
-// yet (CameraFeed.live).
+// camera on (setMap, onSelect), and CONNECTING while a switch waits long.
+// The switch itself — the frozen frame and its grain — is drawn on the GPU
+// (CameraSignalPass), not here.
 //
 //   overlay.show();
 //   overlay.setCamera({ index: 0, count: 6, label: 'LIVING QUARTERS' });
-//   overlay.setLive(false);   // static
-//   overlay.tick();           // once a frame: new noise while static shows
+//   overlay.setConnecting(true);   // a long wait for a camera to load
 //
 // Wraps #cctv in index.html (markup and styles live there, like the other
-// overlays). The static is a small canvas of noise, scaled up by CSS, and
-// redrawn only while it shows. Without a DOM, or a 2D context, every call is
-// a no-op.
+// overlays). Without a DOM every call is a no-op.
 // ─────────────────────────────────────────────
 
-/** Pixels of noise across and down — scaled up to the screen, blocky. */
-const NOISE_W = 160;
-const NOISE_H = 90;
 /** Metres of plan kept round the map's edge, [across, down], unless the
  *  plan gives its own. */
 const MAP_MARGIN = [1.5, 1.5];
@@ -36,22 +31,12 @@ export class CameraOverlay {
     this._label = root?.querySelector('#cctv-label') ?? null;
     this._hint  = root?.querySelector('#cctv-hint') ?? null;
     this._map   = root?.querySelector('#cctv-map') ?? null;
-    this._live = true;
     /** The map's camera buttons, in camera order. @type {HTMLButtonElement[]} */
     this._camButtons = [];
     this._active = null;
     /** Called with a camera's index when its button on the map is clicked.
      *  @type {((index: number) => void)|null} */
     this.onSelect = null;
-
-    this._canvas = root?.querySelector('#cctv-static') ?? null;
-    if (this._canvas) {
-      this._canvas.width = NOISE_W;
-      this._canvas.height = NOISE_H;
-    }
-    /** Fetched the first time static is drawn. @type {CanvasRenderingContext2D|null|undefined} */
-    this._ctx = undefined;
-    this._noise = null;
   }
 
   show() {
@@ -60,7 +45,7 @@ export class CameraOverlay {
   }
 
   hide() {
-    this.root?.classList.remove('is-on', 'is-flash');
+    this.root?.classList.remove('is-on', 'is-flash', 'is-connecting');
     if (this.root) this.root.ownerDocument.body.classList.remove('cctv-on');
   }
 
@@ -131,10 +116,10 @@ export class CameraOverlay {
     if (this._active != null) this._camButtons.forEach((b, i) => b.classList.toggle('is-active', i === this._active));
   }
 
-  /** @param {boolean} live  false shows static. */
-  setLive(live) {
-    this._live = live;
-    this.root?.classList.toggle('is-static', !live);
+  /** A switch has been waiting long on a camera that is loading: say so,
+   *  so a slow machine's wait reads as the feed connecting. */
+  setConnecting(on) {
+    this.root?.classList.toggle('is-connecting', !!on);
   }
 
   setFlash(on) {
@@ -143,23 +128,5 @@ export class CameraOverlay {
 
   setHint(text) {
     if (this._hint) this._hint.textContent = text;
-  }
-
-  /** A new frame of noise, while static shows. */
-  tick() {
-    if (this._live || !this._canvas) return;
-    if (this._ctx === undefined) {
-      // jsdom has no canvas: getContext is unimplemented there.
-      try { this._ctx = this._canvas.getContext('2d'); } catch (_) { this._ctx = null; }
-      this._noise = this._ctx?.createImageData(NOISE_W, NOISE_H) ?? null;
-    }
-    if (!this._ctx || !this._noise) return;
-    const data = this._noise.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const v = (Math.random() * 255) | 0;
-      data[i] = data[i + 1] = data[i + 2] = v;
-      data[i + 3] = 255;
-    }
-    this._ctx.putImageData(this._noise, 0, 0);
   }
 }

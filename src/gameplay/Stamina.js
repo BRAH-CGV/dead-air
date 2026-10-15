@@ -2,8 +2,9 @@
 // Stamina  –  how awake the player is, 1 → 0 over the night
 // ─────────────────────────────────────────────
 // A value that drains while the shift runs. Food from the office's ration
-// dispenser restores it. The Sleep Demon reads it; the HUD shows it as a
-// bar, and FatigueEffects turns it into yawns, a narrowing view and dread.
+// dispenser and naps at the bunk restore it. The Sleep Demon reads it; the
+// HUD shows it as a bar, and FatigueEffects turns it into yawns, a narrowing
+// view and dread.
 //
 // Pure — no scene, no DOM. StaminaDrain (on GameplaySystems) ticks it only
 // while a night is being played and fills it when a night starts.
@@ -14,7 +15,8 @@ export const STAMINA = Object.freeze({
    *  of a midnight-to-6 shift, whatever its length in real seconds. The
    *  Sleep Demon is about from half stamina (SLEEP_DEMON.appearBelow),
    *  2:24 AM with no food, faint at first, and creeps nearer the tireder
-   *  the player gets. */
+   *  the player gets. A nap stops the drain and gives some back
+   *  (NAP.staminaPerHour). */
   emptyAt: 0.8,
   /** What one ration gives back. */
   ration: 0.35,
