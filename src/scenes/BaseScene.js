@@ -786,6 +786,8 @@ export class BaseScene extends Scene {
     const { wallClock, deskClock, signalLight, windowGlass } = this.rooms.MainOffice;
     if (wallClock) wallClock.clock = this.nightClock;
     if (deskClock) deskClock.clock = this.nightClock;
+    const { bedsideClock } = this.rooms.LivingQuarters;
+    if (bedsideClock) bedsideClock.clock = this.nightClock;
     // The window's smudges show by the night outside too, and by the dawn.
     windowGlass?.addLight(this.ambientLight, 1 / Math.PI);
     if (signalLight) {

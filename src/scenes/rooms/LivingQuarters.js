@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
 import { Bed } from '../../components/Bed.js';
+import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -36,6 +37,9 @@ import { Bed } from '../../components/Bed.js';
 export class LivingQuarters extends Room {
   /** On the bunk, from buildProps(). @type {Bed|null} */
   bed = null;
+
+  /** On the side table beside the bunk, from buildProps(). @type {DigitalClock|null} */
+  bedsideClock = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -89,6 +93,14 @@ export class LivingQuarters extends Room {
 
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
     this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+
+    // A digital clock on the side table, its face toward the pillow so the
+    // sleeper can watch the minutes race. The scene hands it the NightClock.
+    this.bedsideClock = this._own(new DigitalClock('BedsideClock'));
+    this.bedsideClock.object3d.position.set(-1.3, 0.5, -3.5);
+    // Face toward the pillow (bunk-local −x, slight +z): ~170° about Y.
+    this.bedsideClock.object3d.rotation.y = THREE.MathUtils.degToRad(170);
+    this.root.addChild(this.bedsideClock);
 
     // Three lockers in one model, against the back wall past the side
     // table, the doors facing into the room: the bed, the table and the
