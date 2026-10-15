@@ -1689,6 +1689,11 @@ export class BaseScene extends Scene {
         crunch.play();
       };
     }
+    // Dream crater death penalty: 60 % stamina instead of full.
+    if (this.engine._dreamCraterDeath) {
+      this.engine._dreamCraterDeath = false;
+      this.stamina.value = 0.6;
+    }
     this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
       stamina:      this.stamina,
       controller:   this.gameController,

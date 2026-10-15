@@ -24,6 +24,7 @@ import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
 import { DreamScene } from '../scenes/DreamScene.js';
+import { DreamCraterScene } from '../scenes/DreamCraterScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
 
@@ -344,6 +345,7 @@ export class Engine {
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
     this.registerScene('DreamScene', DreamScene);
+    this.registerScene('DreamCraterScene', DreamCraterScene);
     // Not compiled here: warmUp, below, does that and more.
     this.loadScene(BaseScene, { compile: false });
 
