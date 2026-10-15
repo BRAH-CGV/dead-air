@@ -23,8 +23,11 @@
 // remembered for `doubleTakeWindow`: look back in time and the two add up
 // (the double take). Walking up to it does the same as a look: the player
 // closing in by `nearCloser` to within `nearFade`, with all of it in view.
-// It always shows outside the cone, so it only ever appears where the eye
-// isn't quite looking. Below `holdBelow` it no longer fades from either;
+// And it never stays right beside the player: within `closeFade` of them,
+// behind them or half off the screen, it fades away as from a look, and it
+// never shows that near. It always shows outside the cone, so it only ever
+// appears where the eye isn't quite looking. Below `holdBelow` it no longer
+// fades from any of these;
 // below `walkBelow` it walks in on the player, seen or not. At `smileBelow`
 // it smiles, and keeps it through the kill. At empty it takes the player.
 //
@@ -77,6 +80,11 @@ export const SLEEP_DEMON = Object.freeze({
    *  it landed never count) to within `nearFade`, with all of it in view. */
   nearFade: 2.5,
   nearCloser: 0.25,
+  /** Metres from the player's eye, along the floor, within which it never
+   *  stays, whatever the view: behind them or beside them, it fades away
+   *  as from a look, and no showing lands nearer. Above holdBelow only;
+   *  the stare and the walk-in come right up to them. */
+  closeFade: 1,
   /** Below this it no longer fades from a look: it stands, and stares. */
   holdBelow: 0.10,
   /** Below this it walks in on the player, seen or not. */
@@ -343,14 +351,18 @@ export class SleepDemonLogic {
     if (this.shown) {
       const angle = this.lookAngle();
       const looked = this._looked(dt, Number.isFinite(angle) && angle < this.focus);
-      this._gapFrom = Math.max(this._gapFrom, this.gap());
+      const gap = this.gap();
+      this._gapFrom = Math.max(this._gapFrom, gap);
+      if (stamina >= t.holdBelow && gap < t.closeFade) {
+        // Right beside the player, wherever the view is: it never stays.
+        this._banish(stamina);
+        return;
+      }
       if (Number.isFinite(angle)) {
         // Seen.
         this._stuck = 0;
         if (stamina >= t.holdBelow && (looked || this._walkedUp())) {
-          this._vanish();
-          this.side = -this.side;
-          this._gone = this._goneFor(stamina);
+          this._banish(stamina);
           return;
         }
         if (stamina < t.walkBelow) this._walkIn(dt);
@@ -369,14 +381,18 @@ export class SleepDemonLogic {
         }
       }
     }
-    if (!this.shown && (this._gone -= dt) <= 0) this._show();
+    if (!this.shown && (this._gone -= dt) <= 0) this._show(stamina);
   }
 
   // ── Private ──
 
-  _show() {
+  _show(stamina) {
     const { closeness: c, tuning: t } = this;
-    const spot = { distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c), focus: this.focus };
+    const spot = {
+      distance: lerp(t.farthest, t.nearest, c), edge: lerp(t.edgeFar, t.edgeNear, c), focus: this.focus,
+      // Above the stare it never shows right beside them.
+      minDistance: stamina >= t.holdBelow ? t.closeFade : t.minDistance,
+    };
     // Nobody is watching that way — the screen covers the view, or the roll
     // sends it round behind the player.
     const covered = this.lookAngle() === null;
@@ -388,7 +404,7 @@ export class SleepDemonLogic {
     });
     // What it crept unseen, or walked in, it keeps.
     if (this._crept || this._walkFrom !== null) {
-      spot.distance = Math.min(spot.distance, Math.max(t.minDistance, this.distance));
+      spot.distance = Math.min(spot.distance, Math.max(spot.minDistance, this.distance));
     }
     for (const side of [this.side, -this.side]) {
       const at = this.place({ ...spot, side });
@@ -405,6 +421,13 @@ export class SleepDemonLogic {
     this.ambush = false;
     this.hide();             // it may still stand where it was
     this._gone = t.retryAfter;
+  }
+
+  /** Sent away, by a look or the player near: back later at the other side. */
+  _banish(stamina) {
+    this._vanish();
+    this.side = -this.side;
+    this._gone = this._goneFor(stamina);
   }
 
   _vanish() {

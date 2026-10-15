@@ -41,6 +41,7 @@ import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -61,6 +62,8 @@ import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { CameraSignalPass } from '../core/CameraSignalPass.js';
+import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -201,6 +204,14 @@ const UFO_HOVER_HEIGHT = 35;
  *  `glass` is how much of it the window's smudges show by (WindowGlass). */
 const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angle: 0.7, glass: 0.04 };
 
+/** The main menu's shot (_buildMenuShot, #115): over the office computer,
+ *  out of the window at the dish. `eye` is office-local metres, just behind
+ *  the desk and above its screen. It looks at a point `look` m up the tower,
+ *  `lead` m along x from it, so the dish sits right of centre, clear of the
+ *  menu panel on the left. A narrower `fov` than the player's keeps the
+ *  dish big; the window frames it at any screen shape from 4:3 to 21:9. */
+const MENU_SHOT = { eye: [0.15, 1.35, -1.9], look: 3.5, lead: -6, fov: 60 };
+
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
  *  the corner's two walls, and down from the ceiling. Outdoors: how far off
  *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
@@ -287,6 +298,7 @@ export class BaseScene extends Scene {
     this._addGround();
     this._addLighting();
     this._buildOutside();
+    this._buildMenuShot();
     this._addSecurityCameras();
     this._addWindDust();
     this._spawnPlayer();
@@ -324,6 +336,14 @@ export class BaseScene extends Scene {
     // the zones a camera asked for go back to the airlock's choice.
     this.cameraTerminal?.exit();
     this.cameraOverlay?.hide();
+    if (this.cameraSignal) {
+      const passes = this.engine.screenPasses;
+      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
+      this.cameraSignal.dispose();
+      this.cameraSignal = null;
+    }
+    this.monitorSpeaker?.dispose();
+    this.monitorSpeaker = null;
     this._offCameraState?.();
     this._offCameraPause?.();
     for (const cam of this.securityCameras ?? []) cam.dispose();
@@ -571,7 +591,7 @@ export class BaseScene extends Scene {
     });
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       // Testing only: the dev console's `music spooky|ambient|off` swings
       // one in under the game. Dev builds only, so the production bundle
       // never loads the extra track for it.
@@ -583,7 +603,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new AirlockSound({
       airlock: rooms.Airlock,
       sound:   this._sound(AIRLOCK_SOUND.key),
-      isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
+      isInside: () => airlock.box.containsPoint(this._ears(_airlockEar)),
     }));
 
     // In a storm, sand on the office window: heard in the office, louder
@@ -592,7 +612,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new WindowSand({
       window: this._officeWindow(),
       storm:  () => this.sandstorm?.level ?? 0,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       isInside: p => officeShell.containsPoint(p),
     }));
   }
@@ -819,6 +839,12 @@ export class BaseScene extends Scene {
       signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
+    // The previous operator's notebook (#79): tonight's entry, on paper.
+    const { journal } = this.rooms.LivingQuarters;
+    if (journal) {
+      journal.controller = this.gameController;
+      journal.panel = new JournalPanel();
+    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
@@ -1123,6 +1149,24 @@ export class BaseScene extends Scene {
     this.dishPad = dishPad;
   }
 
+  /** The camera the main menu is drawn through (`menuCamera`, #115): over
+   *  the office computer, looking out of the window at the dish. App hands
+   *  it to `engine.viewCamera` while the main menu is up and fits its
+   *  aspect and far plane to the game camera's, so the shot stays the same
+   *  wherever the player wakes. It belongs to no GameObject: nothing moves
+   *  it, so its matrices are set once here. */
+  _buildMenuShot() {
+    const [ox, oy, oz] = this.rooms.MainOffice.position;
+    const [ex, ey, ez] = MENU_SHOT.eye;
+    const camera = new THREE.PerspectiveCamera(MENU_SHOT.fov, 16 / 9, 0.1, this.engine.camera?.far ?? 1000);
+    camera.name = 'MenuShot';
+    camera.position.set(ox + ex, oy + ey, oz + ez);
+    const tower = this.satellite.object3d.position;
+    camera.lookAt(tower.x + MENU_SHOT.lead, MENU_SHOT.look, tower.z);
+    camera.updateMatrixWorld();
+    this.menuCamera = camera;
+  }
+
   // ──────────────────────────────────────────
   // Security cameras (watched from the monitor on the desk's left wing)
   // ──────────────────────────────────────────
@@ -1270,20 +1314,37 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
+    // The switch, drawn over the frame: the old picture frozen and degraded
+    // while the new camera loads. Needs the renderer; headless (tests) the
+    // terminal switches at once.
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this.cameraSignal = new CameraSignalPass();
+      this.cameraSignal.attach(renderer);
+      screenPasses.push(this.cameraSignal);
+    }
+    // The monitor's speaker: everything the camera on screen hears
+    // (_listenFrom), and the flash's clicks, thin and fuzzy through it. The
+    // servo's clip is fuzzy already and the static is the speaker's own:
+    // out of it as they are, never heard from the lens.
+    this.monitorSpeaker = new MonitorSpeaker(this.engine.audioListener);
+    const speaker = this.monitorSpeaker;
     this.cameraTerminal = new CameraTerminal({
+      signal:    this.cameraSignal ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,
       crosshair: this.engine.crosshair,
       sounds: {
-        servo:     this._sound('sfx:camera-servo'),
-        static:    this._sound('sfx:camera-static'),
-        spotlight:    this._sound('sfx:camera-spotlight'),
-        spotlightOff: this._sound('sfx:camera-spotlight-off'),
+        servo:     speaker.route(this._sound('sfx:camera-servo'), { dry: true }),
+        static:    speaker.route(this._sound('sfx:camera-static'), { dry: true }),
+        spotlight:    speaker.route(this._sound('sfx:camera-spotlight')),
+        spotlightOff: speaker.route(this._sound('sfx:camera-spotlight-off')),
       },
       hooks: {
         setViewZones: zones => this.portal?.setViewZones(zones),
         isReady:      zone => this.zones?.isReady(zone) ?? true,
+        listenFrom:   (lens, level) => this._listenFrom(lens, level),
         // The mouse goes to the page, for the map — as for the breaker panel.
         // Taken off the monitor by the shift ending (a game over, the
         // morning), the pointer lock isn't asked back: there was no click.
@@ -1351,7 +1412,7 @@ export class BaseScene extends Scene {
     // Start-up on, wind-down off, a hum between — a whisper from indoors.
     const sound = generator.addComponent(new GeneratorSound({
       grid,
-      hooks: { listenerPosition: out => this.engine.camera.getWorldPosition(out), isOutside: p => this._isOutside(p) },
+      hooks: { listenerPosition: out => this._ears(out), isOutside: p => this._isOutside(p) },
     }));
     this.generatorSound = sound;
     // After a UFO blow-out the breakers are tripped: the switch is dead
@@ -1433,6 +1494,32 @@ export class BaseScene extends Scene {
     return audio;
   }
 
+  /** Where the player's ears are: on the player, or on the lens of the
+   *  security camera on screen (_listenFrom). Every sound that works out
+   *  its own level from where it is heard reads this. */
+  _ears(out) {
+    const ears = this.engine.audioListener?.parent ? this.engine.audioListener : this.engine.camera;
+    return ears ? ears.getWorldPosition(out) : out;
+  }
+
+  /** Hear what `lens` hears, as if standing there, through the monitor's
+   *  speaker at `level` (0..1) — or, with null, the player's own ears
+   *  again. The ears themselves move (the AudioListener goes onto the
+   *  lens), so every sound placed in the world is heard from the camera,
+   *  and the sounds that work out their own level (_ears) cut straight
+   *  over rather than easing across. */
+  _listenFrom(lens, level) {
+    const { audioListener: listener, camera } = this.engine;
+    if (!listener || !camera) return;
+    const host = lens ?? camera;
+    if (listener.parent !== host) {
+      host.add(listener);
+      this.ambience?.jump();
+      this.generatorSound?.jump();
+    }
+    this.monitorSpeaker?.engage(!!lens, level);
+  }
+
   /** Hand the mouse to a DOM panel (true) or back to looking around. The
    *  player stands still meanwhile; the pointer lock comes back on the way
    *  out — a click or a key press, so the browser allows it. */
@@ -1450,13 +1537,20 @@ export class BaseScene extends Scene {
     }
   }
 
-  /** Back to where the night starts: the office, facing the window. */
+  /** Back to where the night starts: beside the bunk, facing the desk. */
   _respawn() {
     this.suit?.takeOff();
+    const { position, yaw } = this._spawnPoint();
     const player = this.engine.player;
     const ctrl = player?.getComponent(FirstPersonController);
-    if (ctrl) ctrl.teleport(PLAYER_SPAWN, { yaw: 0, pitch: 0 });
-    else player?.object3d.position.set(...PLAYER_SPAWN);
+    if (ctrl) ctrl.teleport(position, { yaw, pitch: 0 });
+    else player?.object3d.position.set(...position);
+  }
+
+  /** Where the player wakes (#79): the bedroom's spawn, beside the bunk —
+   *  they sleep the day through there. The office centre if it's missing. */
+  _spawnPoint() {
+    return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
@@ -1500,6 +1594,7 @@ export class BaseScene extends Scene {
       hud:          this.hud,
       grid:         this.power,
       onNightStart: () => dispenser?.reset(),
+      isResting:    () => !!this.nap?.napping,
     }));
   }
 
@@ -1553,6 +1648,12 @@ export class BaseScene extends Scene {
       overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
       fade:            this.screenFade ?? null,
       listener:        engine.audioListener ?? null,
+      // In bed its rules wait; through the half-open eyes of a nap it
+      // watches, on the real clock, seen from inside the bunk's box.
+      sleeper:         this.bedRest ?? null,
+      realDt:          () => engine.realDt,
+      napRayHit:       sightRay(engine.world, engine.player?.rigidBody ?? null,
+        this.rooms.LivingQuarters.bed?.gameObject?.collider ?? null),
     }));
   }
 
@@ -1567,15 +1668,17 @@ export class BaseScene extends Scene {
       overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
       grid:       this.power,
       isFrozen:   () => !!engine.debugCamera?.active,
+      isResting:  () => !!this.bedRest?.active,
     }));
   }
 
   // ──────────────────────────────────────────
   // Getting into and out of the bunk (BedRest)
   // ──────────────────────────────────────────
-  /** The view to the pillow and back, the lids, the peeks. It writes the
-   *  lids last (its late update).
-   *  The bunk and the nap are handed it. */
+  /** The view to the pillow and back, the lids, the peeks. Built before the
+   *  fatigue effects and the demon, so within a frame the demon sees where
+   *  it got to; it writes the lids last (its late update). The bunk, the nap
+   *  and the demon are handed it. */
   _addBedRest() {
     const { engine } = this;
     const bed = this.rooms.LivingQuarters.bed;
@@ -1838,6 +1941,7 @@ export class BaseScene extends Scene {
       banner:     this.banner,
       // Over the closed lids (#nap-hint): the HUD is under them.
       hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
+      stamina:    this.stamina,
       hooks: {
         setPlayerLocked: locked => this._setPlayerLocked(locked),
         restless:        ufoBusy,
@@ -2053,7 +2157,9 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   _spawnPlayer() {
     const { engine } = this;
-    engine.buildPlayer({ position: PLAYER_SPAWN });
+    const spawn = this._spawnPoint();
+    engine.buildPlayer({ position: spawn.position });
+    engine.player?.getComponent(FirstPersonController)?.teleport?.(spawn.position, { yaw: spawn.yaw, pitch: 0 });
     const transitions = new RoomTransitionSystem({
       doors: Object.values(this.rooms).flatMap(r => r.doors),
       rooms: Object.values(this.rooms),

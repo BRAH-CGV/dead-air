@@ -3,13 +3,16 @@ import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { CameraFeed } from '../gameplay/CameraFeed.js';
 import { keyName } from '../app/keyNames.js';
+import { LoopVoice } from './LoopVoice.js';
+import { CameraTransition } from '../gameplay/CameraTransition.js';
 
 // ─────────────────────────────────────────────
 // CameraTerminal  –  Component (attach to the security monitor)
 // ─────────────────────────────────────────────
 // [E] on the monitor puts the base's security cameras on screen. The frame
 // is drawn through the camera's own lens (Engine.viewCamera); the player
-// stays at the desk, held still, hearing the office — only the picture moves.
+// stays at the desk, held still — only the picture moves, and what the
+// monitor's speaker plays.
 //
 //   idle ──[E]──▶ viewing ──Q / Esc / power lost / BaseScene says so──▶ idle
 //
@@ -25,16 +28,27 @@ import { keyName } from '../app/keyNames.js';
 // page, for the map (BaseScene._usePanel, as for the breaker panel).
 //
 // Sound (`sounds`, THREE.Audio each, any of them may be missing): the pan
-// motor loops faintly while a camera actually turns, the static loops while
-// a picture comes in, and the flash clunks as it comes on and as it goes out
+// motor loops faintly while a camera actually turns, the static hisses with
+// the switch's grain (CameraTransition.hiss), and the flash clicks as it comes on and as it goes out
 // (by F, a switch or leaving — whatever puts it out). They come from the
 // monitor's speaker, not the camera, so they aren't placed in the world. The
 // audio clock runs on through a pause, so the scene calls silence() then.
 //
-// Static covers every switch (CameraFeed): at least a moment of it, and for
-// as long as the zones the camera sees are still loading — the yard is left
-// undrawn while the player is indoors (BaseScene._buildOcclusion), so
-// `hooks.setViewZones` asks for it and `hooks.isReady` says when it's in.
+// The speaker also plays everything the camera on screen hears, as if the
+// player stood there: `hooks.listenFrom(lens, level)` every frame (the
+// scene moves the ears onto the lens, through a MonitorSpeaker). The level
+// is cut under the static of a switch and comes back as the picture does
+// (1 - hiss), so a lost signal is lost sound too; leaving says
+// listenFrom(null, 0).
+//
+// A switch (CameraTransition, drawn by CameraSignalPass) freezes the screen
+// as it stands, degrades it, and holds it for as long as the zones the new
+// camera sees are still loading — the yard is left undrawn while the player
+// is indoors (BaseScene._buildOcclusion), so `hooks.setViewZones` asks for
+// it and `hooks.isReady` says when it's in (CameraFeed.live). Only then does
+// the live picture resolve out of the grain; a long wait says CONNECTING.
+// The camera and its zones change one frame after the switch is asked for,
+// once the pass has copied the old picture (_showCamera → _applyCamera).
 //
 // The flash is one SpotLight for every camera, built with the scene (so the
 // boot warm-up compiles the lit shaders for it) and moved to whichever
@@ -48,7 +62,12 @@ import { keyName } from '../app/keyNames.js';
 export const CAMERA_FLASH = { intensity: 90, angle: 0.55, penumbra: 0.35, decay: 1.4, color: 0xf2f6ff };
 
 /** Levels, against each clip's own: the motor is faint by request. */
-export const CAMERA_SOUNDS = { servo: 0.2, static: 0.35, spotlight: 0.4, spotlightOff: 0.4 };
+export const CAMERA_SOUNDS = { servo: 0.14, static: 0.18, spotlight: 0.4, spotlightOff: 0.4 };
+
+/** How closely the hiss follows the switch's grain (per second, see
+ *  LoopVoice): tight, so picture and sound move as one, with just enough
+ *  easing to take the click off a frame's step. */
+const HISS_FOLLOW = { rateUp: 200, rateDown: 120 };
 
 /** The one-shot sounds; every other one loops. */
 const ONE_SHOTS = new Set(['spotlight', 'spotlightOff']);
@@ -78,8 +97,11 @@ export class CameraTerminal extends Component {
    *  power. Set by createCameraInteractable(). @type {Interactable|null} */
   _interactable = null;
 
-  /** Whether the flash was lit when last applied: its clunks go with a change. */
+  /** Whether the flash was lit when last applied: its clicks go with a change. */
   _flashLit = false;
+
+  /** The camera actually drawn — a switch changes it a frame late. */
+  _onAir = null;
 
   /**
    * @param {object} opts
@@ -91,17 +113,28 @@ export class CameraTerminal extends Component {
    * @param {(zone: string) => boolean} [opts.hooks.isReady]
    * @param {(held: boolean) => void} [opts.hooks.holdPlayer]  Hold the player
    *        still and free the mouse for the map (true), or give both back.
+   * @param {(lens: THREE.Object3D|null, level: number) => void} [opts.hooks.listenFrom]
+   *        What the monitor's speaker hears from, and how loud (0..1); null
+   *        for the player's own ears.
    * @param {{ show(): void, hide(): void }} [opts.crosshair]
    * @param {{ servo?: THREE.Audio, static?: THREE.Audio, spotlight?: THREE.Audio, spotlightOff?: THREE.Audio }} [opts.sounds]
+   * @param {import('../core/CameraSignalPass.js').CameraSignalPass} [opts.signal]  Draws
+   *        the switch over the frame. Without one, a switch is immediate.
    */
-  constructor({ cameras, flash = null, overlay = null, hooks = {}, crosshair = null, sounds = {} }) {
+  constructor({ cameras, flash = null, overlay = null, hooks = {}, crosshair = null, sounds = {}, signal = null }) {
     super();
+    this.signal = signal;
     this.cameras = cameras;
     this.flash = flash;
     this.overlay = overlay;
     this.hooks = hooks;
     this.crosshair = crosshair;
     this.sounds = sounds;
+    this._static = new LoopVoice({ sound: sounds.static ?? null, ...HISS_FOLLOW });
+    /** The switch's timeline: the frozen frame, its grain, the hiss. */
+    this.transition = new CameraTransition({
+      reducedMotion: typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)')?.matches,
+    });
     for (const [name, sound] of Object.entries(sounds)) {
       if (!sound) continue;
       sound.setVolume?.(CAMERA_SOUNDS[name] ?? 1);
@@ -136,7 +169,9 @@ export class CameraTerminal extends Component {
     this.overlay?.show();
     this.overlay?.setHint(this._hint());
     this.feed.open();
-    this._showCamera();
+    // Nothing worth freezing yet — it would be the desk — so the cover is
+    // grain over black, behind the monitor's overlay.
+    this._showCamera({ blank: true });
   }
 
   /** Back to the desk: the player's own eyes, the zones as the airlock
@@ -147,6 +182,12 @@ export class CameraTerminal extends Component {
     this.feed.close();
     this._applyFlash();
     this.silence();
+    this.signal?.cancel();
+    this.transition.reset();
+    this.signal?.set(this.transition);
+    this.overlay?.setConnecting(false);
+    this._onAir = null;
+    this.hooks.listenFrom?.(null, 0);
     const engine = this._engine;
     if (engine) engine.viewCamera = null;
     this.hooks.setViewZones?.(null);
@@ -167,7 +208,7 @@ export class CameraTerminal extends Component {
   /** Stop the loops. The next frame starts again whatever is still wanted. */
   silence() {
     this._loop(this.sounds.servo, false);
-    this._loop(this.sounds.static, false);
+    this._static.silence();
   }
 
   /** The power came or went; losing it drops the picture. */
@@ -228,9 +269,12 @@ export class CameraTerminal extends Component {
     }
 
     this.feed.update(dt);
-    this._loop(this.sounds.static, !this.feed.live);
-    this.overlay?.setLive(this.feed.live);
-    this.overlay?.tick();
+    this.transition.update(dt, this.feed.live);
+    this.signal?.set(this.transition);
+    this.signal?.tick(dt);
+    this.overlay?.setConnecting(this.transition.waitingLong);
+    this._static.set(CAMERA_SOUNDS.static * this.transition.hiss, dt);
+    if (this._onAir !== null) this.hooks.listenFrom?.(this.cameras[this._onAir].lens, 1 - this.transition.hiss);
     this._applyFlash();
   }
 
@@ -238,15 +282,32 @@ export class CameraTerminal extends Component {
   // Internals
   // ──────────────────────────────────────────
 
-  /** Put the feed's camera on screen. */
-  _showCamera() {
+  /** A switch to the feed's camera: the label at once, the switch's
+   *  timeline from the top, and the picture once the screen as it stands
+   *  has been captured — the pass copies it after this frame is drawn, then
+   *  runs _applyCamera. Without a pass, or with `blank` (sitting down:
+   *  nothing to freeze, grain over black instead), at once. */
+  _showCamera({ blank = false } = {}) {
     const cam = this.cameras[this.feed.index];
+    this.overlay?.setCamera({ index: this.feed.index, count: this.cameras.length, label: cam.label });
+    this.overlay?.setFlash(false);
+    this.transition.cut({ blank });
+    // Handed over before this frame is drawn: a blank cover is opaque from
+    // the first frame, so the camera can go on screen under it at once.
+    this.signal?.set(this.transition);
+    if (this.signal && !blank) this.signal.capture(() => this._applyCamera());
+    else this._applyCamera();
+  }
+
+  /** Draw through the feed's camera, and ask for the zones it sees. Only
+   *  while still at the monitor: a switch dropped by leaving does nothing. */
+  _applyCamera() {
+    if (this.state !== 'viewing') return;
+    this._onAir = this.feed.index;
+    const cam = this.cameras[this._onAir];
     const engine = this._engine;
     if (engine) engine.viewCamera = cam.lens;
     this.hooks.setViewZones?.(cam.zones);
-    this.overlay?.setCamera({ index: this.feed.index, count: this.cameras.length, label: cam.label });
-    this.overlay?.setLive(false);
-    this.overlay?.setFlash(false);
     this._applyFlash();
   }
 
@@ -265,7 +326,7 @@ export class CameraTerminal extends Component {
   }
 
   /** Light the flash on the camera on screen, aimed down its view — or zero
-   *  it. Its clunk on or off goes with the change, whatever made it. */
+   *  it. Its click on or off goes with the change, whatever made it. */
   _applyFlash() {
     const lit = this.feed.active && this.feed.flash;
     if (lit !== this._flashLit) {

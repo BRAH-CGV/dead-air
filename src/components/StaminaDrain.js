@@ -8,8 +8,9 @@ import { STAMINA } from '../gameplay/Stamina.js';
 // within a frame the demon reads this frame's stamina.
 //
 // Every night that starts (the next one, or a retry) fills the stamina and
-// calls onNightStart — the dispenser's reset. It drains only while playing;
-// the day and a failed night hold it. Shows it on the HUD every frame —
+// calls onNightStart — the dispenser's reset. It drains only while playing,
+// and not while the player rests (isResting: a nap, which gives stamina back
+// itself); the day and a failed night hold it. Shows it on the HUD every frame —
 // HUD.setStamina only writes the DOM when the percent changes.
 //
 // A tired player sees the base dim: below 'tired' the lights sink smoothly
@@ -38,14 +39,16 @@ export class StaminaDrain extends Component {
    * @param {{ setStamina(value: number, level: string): void }|null} [opts.hud]
    * @param {(() => void)|null} [opts.onNightStart]  e.g. the dispenser's reset
    * @param {{ setFactor(key: string, value: number): void }|null} [opts.grid]  The PowerGrid.
+   * @param {(() => boolean)|null} [opts.isResting]  True while napping: no drain.
    */
-  constructor({ stamina, controller, hud = null, onNightStart = null, grid = null }) {
+  constructor({ stamina, controller, hud = null, onNightStart = null, grid = null, isResting = null }) {
     super();
     this.stamina = stamina;
     this.controller = controller;
     this.hud = hud;
     this.onNightStart = onNightStart;
     this.grid = grid;
+    this.isResting = isResting;
     this._off = null;
   }
 
@@ -65,7 +68,7 @@ export class StaminaDrain extends Component {
   }
 
   onUpdate(dt) {
-    if (this.controller.state === 'playing') this.stamina.update(dt);
+    if (this.controller.state === 'playing' && !this.isResting?.()) this.stamina.update(dt);
     this.hud?.setStamina(this.stamina.value, this.stamina.level);
     this.grid?.setFactor('fatigue', fatigueLight(this.stamina.value));
   }

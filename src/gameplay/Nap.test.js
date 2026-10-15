@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Nap, NAP } from './Nap.js';
+import { Stamina } from './Stamina.js';
 
 // ─────────────────────────────────────────────
 // Nap — sleep through part of the night, fast-forwarded, until something
@@ -318,6 +319,61 @@ describe('Nap', () => {
       nap.onUpdate(1);
       expect(nap.napping).toBe(false);
       expect(banner.show).toHaveBeenLastCalledWith('The power went out.', { tone: 'warning' });
+    });
+  });
+
+  describe('stamina', () => {
+    function napRig(startValue) {
+      const r = makeRig();
+      const stamina = new Stamina();
+      stamina.value = startValue;
+      r.nap.stamina = stamina;
+      return { ...r, stamina };
+    }
+    /** Run the clock on `hours`, a frame at a time, while napping. */
+    function sleepFor(r, hours, steps = 20) {
+      for (let i = 0; i < steps; i++) {
+        r.controller.nightClock.currentTime += hours / steps;
+        r.nap.onUpdate(0.5);
+      }
+    }
+
+    it('gives stamina back by the clock hours slept: a longer nap restores more', () => {
+      const short = napRig(0.1);
+      short.nap.start(1);
+      sleepFor(short, 1);
+      const long = napRig(0.1);
+      long.nap.start(3);
+      sleepFor(long, 3);
+      expect(short.stamina.value).toBeCloseTo(0.1 + NAP.staminaPerHour);
+      expect(long.stamina.value).toBeCloseTo(0.1 + 3 * NAP.staminaPerHour);
+      expect(long.stamina.value).toBeGreaterThan(short.stamina.value);
+    });
+
+    it('woken early, only what was slept is given back', () => {
+      const r = napRig(0.2);
+      r.nap.start(3);
+      sleepFor(r, 0.5);
+      r.engine.press();
+      r.nap.onUpdate(0.5);
+      expect(r.nap.napping).toBe(false);
+      const v = r.stamina.value;
+      expect(v).toBeCloseTo(0.2 + 0.5 * NAP.staminaPerHour);
+      r.controller.nightClock.currentTime += 1;
+      r.nap.onUpdate(0.5);
+      expect(r.stamina.value).toBe(v);
+    });
+
+    it('never past full', () => {
+      const r = napRig(0.9);
+      r.nap.start(3);
+      sleepFor(r, 3);
+      expect(r.stamina.value).toBe(1);
+    });
+
+    it('the alarm lengths on offer restore a sensible spread: 1 h is a fair top-up, 3 h most of a bar', () => {
+      expect(NAP.staminaPerHour).toBeGreaterThan(0.1);
+      expect(3 * NAP.staminaPerHour).toBeLessThan(1);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EvilSignal, EVIL } from './EvilSignal.js';
+import { EvilSignal, EVIL, SPARK_SOUNDS, HUM } from './EvilSignal.js';
+import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 
@@ -27,7 +28,7 @@ function makeDrive() {
   };
 }
 
-function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
+function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humVoice } = {}) {
   const controller = {
     state: 'playing',
     nightNumber: night,
@@ -65,12 +66,14 @@ function makeRig({ night = 1, drive = null, random = () => 0.5 } = {}) {
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
   const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
-  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random });
+  const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
+  const hum = humVoice ?? { set: vi.fn(() => true), dispose: vi.fn() };
+  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random, voice, hum });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum };
 }
 
 /** The single red target in the manager's list. */
@@ -687,6 +690,149 @@ describe('EvilSignal redOut — last-moment red filter', () => {
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal hum — the countdown', () => {
+  const level = rig => rig.hum.set.mock.calls.at(-1)[0];
+
+  function infect(rig) {
+    rig.evil.summon();
+    rig.evil.hover(evilSig(rig.signalManager));
+    rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
+  }
+
+  it('is off until a drive is corrupted', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    rig.evil.onUpdate(0.1);
+    expect(rig.hum.set).toHaveBeenCalled();
+    expect(level(rig)).toBe(0);
+  });
+
+  it('is faint while the drive is corrupted, and a little louder as the timer runs down', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    infect(rig);
+    rig.evil.onUpdate(0.5);
+    const early = level(rig);
+    expect(early).toBeGreaterThan(0);
+    rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
+    const late = level(rig);
+    expect(late).toBeGreaterThan(early);
+    // Subtle: never more than a faint level, even at the end.
+    expect(late).toBeLessThanOrEqual(HUM.volume);
+    expect(HUM.volume).toBeLessThanOrEqual(0.2);
+    // A real climb, if a gentle one: the end is at least half as loud again.
+    expect(HUM.minLevel).toBeLessThanOrEqual(0.5);
+    expect(early).toBeGreaterThanOrEqual(HUM.volume * HUM.minLevel * 0.99);
+  });
+
+  it('is heard from the corrupted drive, at the frame time', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    infect(rig);
+    rig.evil.onUpdate(0.25);
+    const [, dt, host] = rig.hum.set.mock.calls.at(-1);
+    expect(dt).toBe(0.25);
+    expect(host).toBe(drive);
+  });
+
+  it('fades out where the drive was, rather than jumping to the player', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    infect(rig);
+    rig.evil.onUpdate(0.25);
+    drive.setEjected();
+    rig.evil.onUpdate(0.1);
+    expect(rig.hum.set.mock.calls.at(-1)[2]).toBe(drive);
+  });
+
+  it('is pitched down', () => {
+    expect(HUM.detune).toBeLessThan(0);
+  });
+
+  it('is placed on the drive, not all around you', () => {
+    expect(HUM.placed.refDistance).toBeGreaterThan(0);
+  });
+
+  it('goes away when the drive is wiped, the shift ends, or the scene is torn down', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    infect(rig);
+    rig.evil.onUpdate(0.5);
+    expect(level(rig)).toBeGreaterThan(0);
+    drive.setEjected();
+    rig.evil.onUpdate(0.1);
+    expect(level(rig)).toBe(0);
+
+    const second = makeRig({ drive: makeDrive() });
+    infect(second);
+    second.evil.onUpdate(0.5);
+    second.controller.state = 'morning';
+    second.evil.onUpdate(0.1);
+    expect(level(second)).toBe(0);
+
+    second.evil.onDestroy();
+    expect(second.hum.dispose).toHaveBeenCalled();
+  });
+
+  it('has its clip ready before the first infection', () => {
+    expect(ASSETS[HUM.key]).toMatchObject({ type: 'audio', url: 'assets/audio/evil-hum.mp3' });
+    expect(PRELOAD).toContain(HUM.key);
+  });
+});
+
+describe('EvilSignal sparks — sound', () => {
+  /** Infect a drive, then run one hop interval. */
+  function hopOnce(rig) {
+    rig.evil.summon();
+    rig.evil.hover(evilSig(rig.signalManager));
+    rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+  }
+
+  it('sparks with one of three clips, from the drive, on each hop', () => {
+    const drive = makeDrive();
+    drive.corrupted = true;
+    const rig = makeRig({ drive });
+    hopOnce(rig);
+    expect(rig.voice.play).toHaveBeenCalledTimes(1);
+    const [from, set, volume] = rig.voice.play.mock.calls[0];
+    expect(from).toBe(drive);
+    expect(set.keys).toEqual(SPARK_SOUNDS.clips);
+    expect(SPARK_SOUNDS.clips).toHaveLength(3);
+    expect(volume).toBeGreaterThan(0);
+  });
+
+  it('is louder as the countdown runs out', () => {
+    const rig = makeRig({ drive: makeDrive() });
+    hopOnce(rig);
+    const first = rig.voice.play.mock.calls[0][2];
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
+    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    const lateCalls = rig.voice.play.mock.calls;
+    expect(lateCalls.at(-1)[2]).toBeGreaterThan(first);
+    expect(lateCalls.at(-1)[2]).toBeLessThanOrEqual(1);
+  });
+
+  it('is silent when the drive is wiped, and lets go of its voice with the scene', () => {
+    const drive = makeDrive();
+    const rig = makeRig({ drive });
+    hopOnce(rig);
+    drive.setEjected();
+    rig.voice.play.mockClear();
+    rig.evil.onUpdate(EVIL.driveHopSeconds * 3);
+    expect(rig.voice.play).not.toHaveBeenCalled();
+    rig.evil.onDestroy();
+    expect(rig.voice.dispose).toHaveBeenCalled();
+  });
+
+  it('has its clips ready before the first hop', () => {
+    for (const key of SPARK_SOUNDS.clips) {
+      expect(ASSETS[key], key).toMatchObject({ type: 'audio', url: `assets/audio/${key.slice(4)}.mp3` });
+      expect(PRELOAD, key).toContain(key);
+    }
   });
 });
 

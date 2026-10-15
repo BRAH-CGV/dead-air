@@ -61,14 +61,19 @@ export class Engine {
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
   /** A camera to draw the frame through instead of the player's — a
-   *  security camera on the monitor (CameraTerminal). The player's camera
-   *  keeps the ears (audioListener) and the interaction ray; only the
-   *  picture moves. Cleared on every scene load.
+   *  security camera on the monitor (CameraTerminal), or the main menu's
+   *  shot (App, the scene's `menuCamera`). The player's camera keeps the
+   *  ears (audioListener) and the interaction ray; only the picture moves.
+   *  Cleared on every scene load.
    *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
   /** Optional post-processing pass (e.g. RedOut). When set, preRender()
    *  redirects the scene render to a target and postRender() composites.
    *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
+  /** Drawn over the finished frame, in order, after postProcess — each
+   *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
+   *  scene that added them: emptied on every scene load.
+   *  @type {{ render(): void }[]} */ screenPasses = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -101,8 +106,10 @@ export class Engine {
   paused = false;
 
   /** How fast game time runs: the updates are handed frameDt × timeScale.
-   *  A nap sets it (Nap.js) to fast-forward the night; physics keeps real
-   *  time, since many more steps a frame would only cost frames. */
+   *  A nap sets it above 1 (Nap.js) to fast-forward the night; the journal
+   *  sets it below 1 (Journal.js), so it reads in slowed time. Physics keeps
+   *  real time either way, since many more steps a frame would only cost
+   *  frames. The frame and its input never change speed. */
   timeScale = 1;
   /** Real seconds in the frame being simulated, whatever timeScale is: for
    *  what must keep real speed through a nap (getting into and out of bed,
@@ -429,6 +436,7 @@ export class Engine {
     this.shadows.release();
     this._teardownScene();
     this.viewCamera = null;
+    this.screenPasses = [];
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this);
@@ -806,6 +814,7 @@ export class Engine {
     this.postProcess?.preRender();
     this.renderer.render(this.scene, this.renderCamera);
     this.postProcess?.postRender();
+    for (const pass of this.screenPasses) pass.render();
     // After render: renderer.info now holds this frame's totals, shadow
     // passes included. No-op while the readout is hidden.
     this.perfStats?.update(frameDt, this.renderer.info);
