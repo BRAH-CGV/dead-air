@@ -79,6 +79,18 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // footsteps are not part of the ambience, so it walks over the silence.
 // Hidden, out of view, outside the shift or on a new night, it lets go.
 //
+// While the player is in bed (the sleeper, BedRest: getting in, asleep,
+// getting out) its rules wait and it never kills. And now and then — one
+// nap in ten (NAP_WATCH.chance, rolled as the player lies down) — it
+// watches: whenever the sleeper's eyes come half open (a peek), it is there,
+// standing in a corner of the room in view of the pillow (the bunk's watch
+// spots), plainly visible, facing the bed, just watching — and creeping
+// toward it at a slow walk (NAP_WATCH), on the real clock, so through a
+// nap's fast-forwarded night it still looks like a slow walk. Never all the
+// way to the bed. The eyes shut and it is gone; the next peek finds it where
+// it had got to. On the other naps the peeks show an empty room.
+// Out of bed, its rules start over.
+//
 // At empty the player falls asleep on it (SleepDemonDeath): frozen, the lids
 // slam shut as the view drops to the floor and the world's sound falls away;
 // black; the eyes flare open on it looming right over them; a cut to black,
@@ -105,6 +117,12 @@ export const SLEEP_DEMON_FIGURE = Object.freeze({ height: 1.8, radius: 0.26 });
  *  between steps while it walks in, seen … creeps in, unseen: slow, careful
  *  steps. Standing still it makes no sound. */
 const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
+
+/** Watching a sleeper (the half-open eyes of a nap): the share of naps it
+ *  watches (rolled once per nap, as the player lies down), how there it is,
+ *  the metres a second it creeps toward the bed (a slow walk, in real time),
+ *  and the nearest it comes, level metres from the eye. */
+export const NAP_WATCH = Object.freeze({ chance: 0.1, presence: 0.85, creep: 0.3, floor: 1.6 });
 
 /** The walk-down's grip: the share of the player's speed it leaves them
  *  while it walks in on them. The breathing and the heartbeat floor come
@@ -160,9 +178,11 @@ function halfWidth(camera) {
  * player's own body don't count.
  * @param {import('@dimforge/rapier3d').World|null} world
  * @param {import('@dimforge/rapier3d').RigidBody|null} [excludeBody]
+ * @param {import('@dimforge/rapier3d').Collider|null} [excludeCollider]  One more to see past:
+ *        the bunk, for a sleeper whose eye is inside its box
  * @returns {(from: THREE.Vector3, dir: THREE.Vector3, max: number) => number}
  */
-export function sightRay(world, excludeBody = null) {
+export function sightRay(world, excludeBody = null, excludeCollider = null) {
   if (!world?.castRay) return () => Infinity;
   let ray = null;                            // built on first use, then reused
   return (from, dir, max) => {
@@ -170,7 +190,7 @@ export function sightRay(world, excludeBody = null) {
     ray.origin.x = from.x; ray.origin.y = from.y; ray.origin.z = from.z;
     ray.dir.x = dir.x; ray.dir.y = dir.y; ray.dir.z = dir.z;
     const hit = world.castRay(
-      ray, max, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, SIGHT_GROUPS, undefined, excludeBody,
+      ray, max, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, SIGHT_GROUPS, excludeCollider ?? undefined, excludeBody,
     );
     return hit ? hit.timeOfImpact : Infinity;
   };
@@ -205,6 +225,12 @@ export class SleepDemon extends Component {
    * @param {{ play(onDark?: () => void): boolean }|null} [opts.fade]  The ScreenFade for the cut.
    * @param {THREE.AudioListener|null} [opts.listener]  Whose volume falls away.
    * @param {typeof SLEEP_DEMON_DEATH} [opts.deathTuning]
+   * @param {{ active: boolean, peeking: boolean, watchSpots(): THREE.Vector3[] }|null} [opts.sleeper]
+   *        The bed animation (BedRest): in bed its rules wait; through a peek it watches.
+   * @param {(() => number)|null} [opts.realDt]  The frame's real seconds (engine.realDt).
+   * @param {((from: THREE.Vector3, dir: THREE.Vector3, max: number) => number)|null} [opts.napRayHit]
+   *        The sight ray for a sleeper: one that sees past the bunk the eye lies in. rayHit when left out.
+   * @param {() => number} [opts.random]  Whether it watches a nap (below NAP_WATCH.chance). rand when left out.
    */
   constructor({
     controller, stamina, figure, camera = null, terminal = null, rayHit = () => Infinity,
@@ -212,7 +238,7 @@ export class SleepDemon extends Component {
     tuning = SLEEP_DEMON, sounds = null, rand = Math.random, flashlight = null,
     ambience = null,
     player = null, overlay = null, fade = null, listener = null, deathTuning = SLEEP_DEMON_DEATH,
-    fatigue = null,
+    fatigue = null, sleeper = null, realDt = null, napRayHit = null, random = rand,
   }) {
     super();
     Object.assign(this, {
@@ -222,6 +248,16 @@ export class SleepDemon extends Component {
     this.ambience = ambience;
     this.rand = rand;
     this.fatigue = fatigue;
+    this.sleeper = sleeper;
+    this.realDt = realDt;
+    this.napRayHit = napRayHit;
+    this.random = random;
+    /** In bed: its rules set aside. Whether it watches this time in bed
+     *  (rolled as the player lies down), and whether it has found its
+     *  corner (it keeps the ground it crept between peeks). */
+    this._napping = false;
+    this._napWatched = false;
+    this._napPlaced = false;
     Object.assign(this, { player, overlay, fade, listener, deathTuning });
     /** What the death took over, to give back: the camera's pose, the drop
      *  to the floor and which way the view tips. Null when it took nothing. */
@@ -291,6 +327,7 @@ export class SleepDemon extends Component {
   /** A new or retried night: away, silent, nothing counted. */
   reset() {
     this._wake();
+    this._napping = false;
     this.logic.start();
     this._hide();
     this._smile(false);
@@ -313,6 +350,7 @@ export class SleepDemon extends Component {
       this._release();
       this._hasEye = false;
       this._duck(1);
+      this._napping = false;
       return;
     }
     if (this.isFrozen()) {
@@ -323,6 +361,11 @@ export class SleepDemon extends Component {
       this._hasEye = false;
       return;
     }
+    if (this.sleeper?.active && !this._death.active) {
+      this._napWatch(this.realDt?.() ?? dt);
+      return;
+    }
+    if (this._napping) this._outOfBed();
     if (this._death.active) {
       this._smile(true);                    // it kept its smile for this
       // Still on it as it looms over them: the torch in their hand stutters.
@@ -438,12 +481,17 @@ export class SleepDemon extends Component {
     return d;
   }
 
+  /** The sight ray for now: in bed, the sleeper's own (it sees past the bunk). */
+  _ray(from, dir, max) {
+    return (this._napping && this.napRayHit ? this.napRayHit : this.rayHit)(from, dir, max);
+  }
+
   /** Is something standing on the floor at (x, z), taller than a threshold
    *  and no taller than the figure? A ray down from its full height. */
   _occupied(x, z) {
     _probe.set(x, terrainHeightAt(x, z) + this.height, z);
     const reach = this.height - CLEAR;
-    return this.rayHit(_probe, DOWN, reach) < reach;
+    return this._ray(_probe, DOWN, reach) < reach;
   }
 
   /** Is any of it, standing at `feet`, inside the camera's view? */
@@ -615,7 +663,7 @@ export class SleepDemon extends Component {
     // The same checks as _place makes of a new spot, so it never walks into
     // a shelf, onto a desk, or (a walk-down, seen) out of view. A sneak
     // waives only the view: what hides it still stops it.
-    if (this.rayHit(_eye, _dir, d + t.wallGap) < d + t.wallGap) return false;
+    if (this._ray(_eye, _dir, d + t.wallGap) < d + t.wallGap) return false;
     _spot.copy(_eye).addScaledVector(_dir, d);
     if (this._occupied(_spot.x, _spot.z)) return false;
     _spot.y = terrainHeightAt(_spot.x, _spot.z);
@@ -712,6 +760,88 @@ export class SleepDemon extends Component {
     this.figure.object3d.add(audio);
     sounds.footstep = audio;
     return sounds;
+  }
+
+  // ── A sleeper ──
+
+  /** A frame in bed: nothing of its rules, and through a peek of a watched
+   *  nap, watching. */
+  _napWatch(dt) {
+    if (!this._napping) {
+      this._napping = true;
+      this._napWatched = this.random() < NAP_WATCH.chance;
+      this._napPlaced = false;
+      this.logic.start();
+      this._hide();
+      this._smile(false);
+      this._hushStep();
+      this._release();
+      this.flashlight?.setInterference(false, 'sleep-demon');
+      this._hasEye = false;
+      this._duck(1);
+    }
+    const o = this.figure.object3d;
+    if (!this._napWatched || !this.sleeper.peeking) {
+      if (o.visible) this._hide();
+      this._hushStep();
+      this._stepIn = 0;
+      return;
+    }
+    if (!o.visible) {
+      if (!this._napPlaced && !this._napCorner()) return;
+      this._napPlaced = true;
+      o.visible = true;
+      this._fadeDir = 0;
+      this._applyOpacity(NAP_WATCH.presence);   // there as the eyes open: no fade
+      this._facePlayer();
+      this.onFigureChanged?.();
+    }
+    this._napCreep(dt);
+  }
+
+  /** Stand it in a watch spot the sleeper can see: in view, nothing in
+   *  between. The first such, from a random start. False: none. */
+  _napCorner() {
+    const camera = this.camera;
+    const spots = this.sleeper.watchSpots?.() ?? [];
+    if (!camera || !spots.length) return false;
+    camera.getWorldPosition(_eye);
+    const first = Math.floor(this.rand() * spots.length) % spots.length;
+    for (let i = 0; i < spots.length; i++) {
+      const spot = spots[(first + i) % spots.length];
+      if (!this._inView(spot)) continue;
+      _sight.set(spot.x, spot.y + this.height * FACE, spot.z).sub(_eye);
+      const far = _sight.length();
+      if (this._ray(_eye, _sight.divideScalar(far), far) < far - SIGHT_SLACK) continue;
+      this.figure.object3d.position.copy(spot);
+      return true;
+    }
+    return false;
+  }
+
+  /** A slow walk toward the bed, `dt` real seconds of it, no nearer than
+   *  NAP_WATCH.floor; heard as it goes. Blocked, it holds. */
+  _napCreep(dt) {
+    const camera = this.camera;
+    if (!camera) return;
+    const o = this.figure.object3d;
+    camera.getWorldPosition(_eye);
+    const now = Math.hypot(o.position.x - _eye.x, o.position.z - _eye.z);
+    const step = Math.min(NAP_WATCH.creep * dt, now - NAP_WATCH.floor);
+    if (step <= 0 || this._approach(step, true) === false) {
+      this._stepIn = 0;
+      return;
+    }
+    if ((this._stepIn -= dt) <= 0) this._playStep();
+  }
+
+  /** Out of bed: gone, and its rules from the start. */
+  _outOfBed() {
+    this._napping = false;
+    this._hide();
+    this._hushStep();
+    this._stepIn = 0;
+    this.logic.start();
   }
 
   // ── The death ──
