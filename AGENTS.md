@@ -99,6 +99,8 @@ src/
 │   ├── GrowPlant.js     # A procedural cherry-tomato plant: stems, leaflets, fruit (three geometries)
 │   ├── BunkerShell.js   # The building's outside: sloped concrete berm, roof cap, rust band, window embrasure (baked textures)
 │   ├── SignalMast.js    # Lattice relay mast on the bunker roof; red lamp flashing (SignalBlink), no light
+│   ├── RagnoFigure.js   # Ragno's body: the rig's loose bones reattached, legs walked by CCDIKSolver, idle clip, fog-free indoor materials
+│   ├── WallVent.js      # The air vents Ragno uses: a duct hood on the end wall's slope, a grille inside
 │   └── Ufo.js           # Saucer model, beacon, shadow-casting searchlight, beam cone shader, teleport flash
 ├── gameplay/
 │   ├── NightClock.js    # 6:00 PM → 6:00 AM: one twelve-hour shift (SHIFT, NIGHT_SECONDS)
@@ -109,6 +111,11 @@ src/
 │   ├── SleepDemon.js    # Those rules on the camera, sight rays, the figure and its footsteps; every night
 │   ├── SleepDemonDeath.js # Its kill: pass out, black, eyes open on it, cut to black (pure)
 │   ├── DustEyes.js      # Eyes in the storm: spawn, stare, chase, escape through the airlock
+│   ├── RagnoLogic.js    # The camera entity's rules: stare and dart, vent, watch, chase, prowl, flee; the night's visits (pure)
+│   ├── RagnoGait.js     # Its four feet: planted until their home drifts, diagonal pairs, the thin stance (pure)
+│   ├── RagnoPaths.js    # Its routes: the window's edge, the yard side, the slope to the vent; the rooms as a graph (pure)
+│   ├── RagnoSounds.js   # Cutting its clips (findBursts, loudSpan) and synthesising the duct crawl (pure)
+│   ├── Ragno.js         # Those on the world: senses (flash, torch, window glance), sounds, vent static, the kill
 │   ├── StormOutage.js   # A strong storm may choke the generator: lamps flicker, then the power cuts
 │   ├── Nap.js           # Nap at the bunk: the night fast-forwarded (engine.timeScale) until the alarm, 6 AM or something wakes you
 │   ├── BedTransition.js # The bed animation's steps: lie down, asleep (with half-open peeks), open, sit up, stand (pure)
@@ -118,7 +125,7 @@ src/
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
 │   ├── CameraFeed.js    # Which camera is on screen, its pan, flash, and when the picture is live (pure)
-│   └── CameraTransition.js # A camera switch as one timeline: drop → wait → resolve, for picture and hiss (pure)
+│   └── CameraTransition.js # A camera switch as one timeline: drop → wait → resolve, for picture and hiss; glitch() for a vent (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
 │   └── rooms/           # Room, Corridor, MainOffice, ServerRoom, LivingQuarters, Airlock
@@ -402,21 +409,23 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
 
 ### Security cameras
 
-A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMonitor`); `BaseScene._addCameraTerminal` hangs a `CameraTerminal` and its Interactable on it ("[E] Use the security cameras"). Six `SecurityCamera`s, placed by `BaseScene._addSecurityCameras` off the rooms' bounds and the fence (tuning in `SECURITY_CAMERAS`):
+A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMonitor`); `BaseScene._addCameraTerminal` hangs a `CameraTerminal` and its Interactable on it ("[E] Use the security cameras"). Eight `SecurityCamera`s, placed by `BaseScene._addSecurityCameras` off the rooms' bounds and the fence (tuning in `SECURITY_CAMERAS`):
 
 | # | Label | Where |
 |---|---|---|
 | 1 | LIVING QUARTERS | the left room, high in its outer back corner (top left from the desk) |
 | 2 | SERVER ROOM | the right room, high in the middle of its back wall, straight down the room |
-| 3 | EXTERIOR — QUARTERS END | outside the left end wall, about its middle, on the bunker's roof band, looking out |
+| 3 | EXTERIOR — QUARTERS END | outside the left end wall, about its middle, on the bunker's roof band, looking out (turned a little toward the window side, `outside.aimBack`) |
 | 4 | EXTERIOR — SERVER END | outside the right end wall, about its middle, looking out |
 | 5 | YARD — QUARTERS SIDE | in the fenced yard, on the bunker's roof band by the left end of the fence, looking straight out; pans a full 90° each way |
 | 6 | YARD — SERVER SIDE | the same by the right end |
+| 7 | POLE — QUARTERS SIDE | on a CCTV pole in the clearing behind the left wing, looking out over it at the trees Ragno comes out of; held to ±0.35 rad, so it never sees the building |
+| 8 | POLE — SERVER SIDE | the same behind the right wing |
 
 - **The picture** is the game's own frame drawn through the camera's lens: `engine.viewCamera` (cleared on every scene load; the main menu's shot uses it too, see App flow); `engine.renderCamera` is what the frame is drawn through (the fly camera wins). The player's camera keeps the ears and the interaction ray. The sky dome, the wind dust and the storm grit follow `renderCamera`.
 - **Mounting.** A bracket turned off square to its wall stands on a wedge (`SecurityCamera` `mount`: a corner's x/z, or one wall's plane), so it never hangs in the air: the living-quarters corner camera and the two yard cameras have one. On a single wall, a turned bracket is also stood off until its nearer edge just touches the wall. Square ones (server room, the end walls) get none. A wedge is drawn in the material of the wall it is on (`mount.material`): the room's lining indoors, the room's shell outside.
 - **Pan limits** (`SecurityCamera.panLimits`, [right, left]). Within `panRange`, and for a mounted camera never so far round that the lens — 28 cm out on the head, at the end of a 12 cm arm — swings behind a wall's face (`CAMERA_CLEARANCE.lens`, 10 cm), which put the picture inside the building: the angled yard cameras could see into the quarters. On a single wall the view also stops `maxView` off square (`CAMERA_CLEARANCE.view`, 75°, unless the camera is given its own); the two yard cameras are given π/2 with a π/2 `panRange`, so from square they turn all the way round to look along the building either way. A scene test pans every camera through its limits and checks the lens stays in its room, or out of every shell.
-- **Controls:** A/D or ←/→ pan (within the camera's `panLimits`; each keeps where it was left), W/S or ↑/↓ step, 1–6 jump, F the flash, Q or Esc back to the desk. The player is held still meanwhile.
+- **Controls:** A/D or ←/→ pan (within the camera's `panLimits`; each keeps where it was left), W/S or ↑/↓ step, 1–8 jump, F the flash, Q or Esc back to the desk. The player is held still meanwhile.
 - **The map**, bottom left (`CameraOverlay.setMap`, built by `BaseScene._cameraMap`): the rooms, corridors and fenced yard from above, back (the window) at the top, and a numbered button per camera where it hangs, pushed off its wall the way the camera faces (`dir`) by just enough to clear it — wholly inside its room for a room camera, wholly outside for the rest (`CAMERA_SQUARE`, 26 px, sets the square's size and the push). `SECURITY_CAMERAS.mapMargin` keeps 6 m of ground either side, so the end-wall cameras read as outside. Clicking one switches to it. While watching, the mouse is handed to the page (`BaseScene._usePanel`, as for the breaker panel); `#cctv` takes the clicks so one beside the map doesn't relock the pointer.
 - **The picture's look** is CSS on `#cctv`: scanlines crawling slowly down and a faint band rolling through every 7 s (still under `prefers-reduced-motion`), and a dark edge.
 - **Sound** (`CAMERA_SOUNDS` levels): `sfx:camera-servo` loops faintly while a camera actually turns (not against its end stop); `sfx:camera-static` hisses with the switch (`CameraTransition.hiss`: full from the cut, a 0.04 s tail once the picture is live; through a `LoopVoice` that follows it within a frame or two; leaving the monitor or a pause cuts it at once), at most 0.18; `sfx:camera-spotlight` plays as the flash comes on and `sfx:camera-spotlight-off` as it goes out, whatever puts it out (F, a switch, leaving); going out cuts the on click short. They are the two clicks of one switch recording, on and off, cut apart. From the monitor, not placed in the world.
@@ -463,6 +472,46 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 - For testing, `summon()` (the console's `eyes`) brings one to the yard and one to the window, wherever the player is — starting a storm first if none is blowing. `summon('fence')` / `summon('window')` (`eyes fence`, `eyes window`) bring just one. It works on night 1; nothing comes on its own before night 2.
 
 **The fence's wire mesh discards its gaps** (`alphaTest` on the lattice material in `PerimeterFence`). A transparent card still writes depth over its whole face, so before this anything drawn after it from beyond the fence — the dust eyes, the grit — was hidden by the invisible gaps.
+
+### Ragno (the camera entity)
+
+`Ragno` (on `GameplaySystems`, after the sandstorm, before the nap) is STORY.md's camera entity: a long-haired, four-legged spider thing that comes in through a side room's air vent. The rules are `RagnoLogic` (pure), the walk `RagnoGait` (pure) on `RagnoFigure`, the routes `RagnoPaths` (pure), laid out from the rooms by `BaseScene._ragnoLayout`. The plan it was built from is `docs/RAGNO-PLAN.md`. "Window side" is the building's back (−z), "yard side" its front (+z).
+
+- **When.** `scheduleVisits(night)`: night 1 once, at midnight, calm (`RAGNO.night1Hour`); night 2 one or two visits, night 3 two to four (`RAGNO.visits`), between 9 PM and 4:30 AM, at least 1.25 h apart, each from a random side and end. Never during the UFO's visit (a visit due then waits); one at a time; a night start, a retry or the shift ending sends him away.
+- **Outside** he comes out of the trees and makes for the vent on his end (`approachRoute`) by a rounded walk, then a straight run in, square to the end wall (`RAGNO_PATHS.straightOut`, 5 m).
+  - **From the window side** he starts with one far glimpse at the edge of the window's view from the desk (`glimpse`, 1.5° inside it), then curves away out of it, across the clearing behind his wing, in front of the pole camera.
+  - **From the yard side** he comes down the strip outside the fence's side run.
+  - **In view.** `BaseScene.ragno.test.js` checks that some outdoor camera, at rest, sees him for at least 75 % of each walk, and 60 % counting the trees.
+  - **Trees cleared.** The vegetation belt keeps the ground in front of each pole (`_poleView`) and the yard-side strip (`_yardWalk`) clear of trees.
+  - **Pace.** He stares at the nearest camera (snapped round at once), then darts in a short burst with long pauses (`RAGNO.mood.*`: `stare`, `dartSpeed`, `dartDistance`, `dartPause`, `burst`). A night-2 walk in takes two to three minutes; night 3 (`aggressive`) pauses less; night 1 (`calm`) creeps slowly.
+  - **Seen** through the window (the player looks at him through the glass within 9° for 0.3 s) or by the player outside within 12 m: he scurries to the next `hide` point on his route, beside the building and out of the window's view, then carries on.
+  - **In the player's sight from the yard** (the player outside, within 30 m, only the fence between, wherever they look; `exposed`): he bolts `RAGNO.evadeDistance` (10 m) straight out from the building into the trees (`evade`), waits there until he has been out of their sight for `evadeHold` (3 s), then comes back to his way in. Not once he is climbing.
+  - **Flashed** by the camera on screen (`CameraTerminal.onAir`: lit, the picture live, him in the flash's cone and reach, the building not in between): he flinches, runs out of its sight and is gone.
+  - **The vent.** He climbs the end wall's slope (`climbRoute`, to just under the hood) and goes in (`ventIn`). The camera on screen breaks into heavy static for 1.6 s (`CameraTerminal.interfere` → `CameraTransition.glitch`) if it can see the hood, is an outdoor camera within 16 m of it (the end wall's, the vent just below its frame), or is the camera in his room; and again as he comes out of the grille. Its hiss (`CAMERA_SOUNDS.glitch`, 0.55) is three times a switch's, and the camera's own sound is cut under it, so a storm's wind never covers it. The duct crawl sounds from that end, moving toward the grille inside.
+  - **Night 1** he reaches the foot of the slope, lingers, and goes back the way he came.
+- **Inside** (`ductSeconds`, 7–12 s, later) he comes head first down the wall from the grille and stands facing his room's doorway (`watch`), toward the back of the room, out of the line of sight through it, so he can't be seen from the corridor (`RAGNO_WATCH`; a scene test checks every spot in the corridor).
+  - **Flashed by the room's camera:** he flinches, runs back up into the grille (static, `ventOut`) and is gone.
+  - **The player** in his room or the corridor to it, or `watch` running out (45–75 s; 25–40 s on night 3): he screeches (`aggro`) and chases (`chaseSpeed` 4.2 / 4.5 m/s, under the player's 5 m/s run), straight at them when he can walk there through nothing, else by the rooms' graph (`NavGraph`). Within 1.1 m he catches them.
+  - **Walls.** Whether he can walk somewhere straight (`Ragno._walkable`) is two Rapier rays, low and at his body's height, with 0.1 m of slack: a ray that stops at a wall a step short of the player (standing half in the airlock's door) is a wall in the way. Finding his way, he starts from the nearest spot he can walk straight to (`RagnoLogic._reachable`), never one that is only near through a wall.
+  - **Doorways:** near a door node his stance goes thin (`stance` → `RagnoGait`'s `thin` and `RagnoFigure`'s `THIN_HIP`): about 0.95 m wide and 1.6 m tall, for the 1.2 × 2.2 m doors.
+  - **Chasing, the cameras don't stop him.** The way out: run through the airlock and cut the generator. With the power off, the player's **flashlight** (on him, in its cone, nothing between) sends him back to his vent; with it on, the torch does nothing.
+  - **The airlock:** with the player in it, or outside, he breaks off to `prowl` from spot to spot, none within `airlockKeepOut` (6 m) of its door. Back inside, they are hunted again after `returnGrace` (4 s); out longer than `prowlTimeout` (60 s), he leaves by his vent.
+  - **Caught:** the player is locked, he lunges into the view (0.25 s) as it drains to red (`RedOut`, as for the evil signal), the third attack's loud part plays, the screen cuts to red-black (`WhiteOut`, `tone: 'blood'`, the message 0.7 s later) and `controller.fail` ends the night; `[E]` retries.
+- **The figure** (`RagnoFigure`, under `Threats` on the scene root, built hidden).
+  - **The rig.** The download's legs were IK-driven in Blender, and the constraints didn't survive the export: each leg is a 5-bone chain up to the knee, and the shins, knee spikes and tail are loose bones on the root joint. `rigRagno` reattaches them (`Object3D.attach`, so the skinning is unchanged) and builds one `CCDIKSolver` entry per leg (links shin → knee → chain, 8 iterations). Its targets are plain objects: CCDIKSolver reads only `skeleton.bones`.
+  - **Each frame** the legs relax 12 % toward their rest (or the thin stance's), the idle clip plays on everything but the legs, and the solve lands each foot where `RagnoGait` planted it.
+  - **Where feet land** (`cast`, along the body's own down): indoors, Rapier rays (floor, walls, furniture); outside, the terrain and the end wall's slope as a plane (the bunker's colliders are sheer hulls, not the slope).
+  - **The head** (`assembleHead`, `RAGNO_HEAD`). The export dropped the head's own nodes, so its face, hair and eyes came out of the shared skin at the wrong size and place (a centimetre-high face on the floor, 1.6 m of hair, the eyes behind it). At load each is copied, bound wholly to the spine's tip (`Bone.003`) so the three move as one, and moved and scaled to where the creator's thumbnail has them: the fanged face at the front of the body, in a fall of hair to about knee height, the eyes glowing in its sockets. `RAGNO_HEAD.parts` is metres in the model's space at rest: each part's middle and its scale.
+  - **The model.** No shadow: a moving caster outside would redraw the moonlight's map every frame. Indoors he wears fog-free copies of his materials, and a hidden second clone in them gets them compiled at boot.
+- **Cameras 7 and 8** are on CCTV poles (`WallVent.createCameraPole`, the camera's bracket bolted to the post) watching where he comes from (see Security cameras). The end-wall cameras see his vents; `BaseScene.ragno.test.js` checks some camera can see each hood, and that no pan of a pole camera shows the building.
+- **The vents** (`BaseScene._addVents`, `WallVent`): a duct hood on each end wall's slope near the roof, hung on the bunker (always drawn), and a grille on the wall inside, where the floor below is clear (`RAGNO_VENTS`).
+- **Sounds** (`RAGNO_SOUNDS`):
+  - **Outside:** soft chirps cut from `sfx:spider-call` (`findBursts`, peaks under −22 dB), low-passed at 1.4 kHz, every 3–8 s, carrying far (`callRefDistance` 10 m, `callRolloff` 0.6) and half as loud heard from indoors. Rarely (10 %) a shriek instead, 700 cents down and louder: one of the call's loud bursts, or either attack clip.
+  - **Indoors only:** his legs (`sfx:spider-walking`, looped, `walkRate` following his speed).
+  - **A flinch or the aggro:** `sfx:spider-attack-2` or `-4`. **The kill:** `sfx:spider-attack-8`, its loud part only (`loudSpan`).
+  - **In the duct:** a synthesised crawl (`synthDuctCrawl`, a placeholder for the sound owner), placed at the vent he is in, so it is heard from that side.
+  - Night 1 is at 45 %. The tension music rises on the aggro (`setTension(1, 'ragno')`).
+- **A nap** is woken by him hunting ("Something skittering in the corridor woke you.").
 
 ### Storm outages
 
@@ -592,6 +641,7 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 | `storm` | `Sandstorm.summon` | **Testing only.** Start a sandstorm now, on any night; ignored while one is blowing or outside a shift |
 | `eyes [fence\|window\|both]` | `DustEyes.summon` | **Testing only.** Bring dust eyes now, wherever you are (with a storm, if none is blowing); ignored outside a shift or during a UFO visit |
 | `evil` | `EvilSignal.summon` | **Testing only.** Put the evil signal in the sky now, on any night; ignored while one is up or outside a shift |
+| `ragno [window\|yard] [left\|right]`, `ragno off` | `Ragno.summon` / `dismiss` | **Testing only.** A night-3 Ragno now, from the side and end given (random if left out); ignored while one is out, during a UFO visit or outside a shift. `off` sends him away |
 | `music [spooky\|ambient\|off]` | `Ambience.testMusic` | **Testing only.** Swing a music track in, or take it out |
 | `help [command]`, `clear` | `DevConsole` | List the commands or explain one; clear the log |
 

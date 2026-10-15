@@ -177,4 +177,44 @@ describe('CameraTransition', () => {
     expect(t.hiss).toBe(0);
     expect(t.waitingLong).toBe(false);
   });
+
+  describe('glitch (something reaching a vent on camera: Ragno)', () => {
+    it('breaks up the live picture under heavy grain, with the hiss at full, without freezing it', () => {
+      const t = new CameraTransition();
+      t.glitch(0.6);
+      expect(t.phase).toBe('glitch');
+      expect(t.active).toBe(true);
+      expect(t.frozen).toBe(false);
+      run(t, 0.1, true);
+      expect(t.noise).toBeGreaterThan(SIGNAL.waitNoise);
+      expect(t.tear).toBeGreaterThan(0);
+      expect(t.hiss).toBe(1);
+    });
+
+    it('lasts its seconds, then the picture clears as from a switch', () => {
+      const t = new CameraTransition();
+      t.glitch(0.5);
+      run(t, 0.45, true);
+      expect(t.phase).toBe('glitch');
+      run(t, 0.1, true);
+      expect(t.phase).toBe('resolve');
+      run(t, SIGNAL.resolve + 0.05, true);
+      expect(t.phase).toBe('idle');
+    });
+
+    it('never cuts into a switch already under way', () => {
+      const t = new CameraTransition();
+      t.cut();
+      t.glitch(1);
+      expect(t.phase).toBe('drop');
+    });
+
+    it('with reduced motion: grain, no tear', () => {
+      const t = new CameraTransition({ reducedMotion: true });
+      t.glitch(0.5);
+      run(t, 0.1, true);
+      expect(t.tear).toBe(0);
+      expect(t.noise).toBeGreaterThan(0);
+    });
+  });
 });
