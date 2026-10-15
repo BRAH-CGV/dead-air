@@ -36,6 +36,9 @@ export const PITCH_MAX = -8 * (Math.PI / 180);   // shallowest up
 const BASE_REQUIRED = 3;
 const QUOTA_SCALE = 1.5;
 
+/** Night 0, the tutorial: one signal, to learn the loop on. */
+export const TUTORIAL_QUOTA = 1;
+
 /** Signals in a night: at the rate the old five-minute night had them (one
  *  every ~42 s of their window), over the longer night. */
 export const SIGNALS_PER_NIGHT = 10;
@@ -86,7 +89,7 @@ export class SignalManager {
     this.signals = [];
     this.required = Math.min(
       this.signalsPerNight,
-      Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
+      nightNumber === 0 ? TUTORIAL_QUOTA : Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
     );
 
     // Shuffle the pool for non-repeating assignment.

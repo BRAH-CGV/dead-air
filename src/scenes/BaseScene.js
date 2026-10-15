@@ -76,6 +76,7 @@ import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
 import { Nap } from '../gameplay/Nap.js';
+import { Tutorial } from '../components/Tutorial.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
@@ -89,6 +90,7 @@ import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
+import { TutorialOverlay, tutorialKeys } from '../ui/TutorialOverlay.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
@@ -358,6 +360,7 @@ export class BaseScene extends Scene {
     this._addSandstorm();
     this._addRagno();
     this._addNap();
+    this._addTutorial();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
@@ -668,7 +671,9 @@ export class BaseScene extends Scene {
   // Night progression
   // ──────────────────────────────────────────
   _setupNights() {
-    this.nights = new NightManager();
+    // Night 0 is the tutorial: New game opens on it (App), the scene
+    // itself is built on night 1.
+    this.nights = new NightManager({ minNight: 0 });
   }
 
   // ──────────────────────────────────────────
@@ -2369,6 +2374,71 @@ export class BaseScene extends Scene {
     this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
     const { bed } = this.rooms.LivingQuarters;
     if (bed) bed.nap = this.nap;
+  }
+
+  /** Night 0, the tutorial (Tutorial): its steps on the live scene, with
+   *  big words and an arrow (#tutorial). Added after the nap, last on
+   *  GameplaySystems, so it reads everything after it has moved this frame.
+   *  Off on every other night. */
+  _addTutorial() {
+    const office = this.rooms.MainOffice;
+    const airlock = this.rooms.Airlock;
+    const boxes = office.driveBoxes ?? [];
+    const eye = new THREE.Vector3();
+    const at = new THREE.Vector3();
+    // The drive box nearest the player, for "put it in a box".
+    const nearestBox = () => {
+      if (!boxes.length || !this.engine.camera) return null;
+      this.engine.camera.getWorldPosition(eye);
+      let best = null;
+      let bestDist = Infinity;
+      for (const box of boxes) {
+        const d = box.object3d.getWorldPosition(at).distanceToSquared(eye);
+        if (d < bestDist) { bestDist = d; best = box.object3d; }
+      }
+      return best;
+    };
+    const bed = this.rooms.LivingQuarters.bed;
+    this.tutorial = new Tutorial({
+      controller:    this.gameController,
+      clock:         this.nightClock,
+      stamina:       this.stamina ?? null,
+      signalManager: this.signalManager,
+      terminal:      this.terminal,
+      driveManager:  this.driveManager,
+      drives:        office.drives ?? [],
+      driveBoxes:    boxes,
+      quotaDock:     airlock.quotaDock ?? null,
+      grid:          this.power ?? null,
+      suit:          this.suit ?? null,
+      nap:           this.nap ?? null,
+      bedRest:       this.bedRest ?? null,
+      cargoDock:     this.buggyCargo?.dock ?? null,
+      sendOff:       this.buggySendOff ?? null,
+      sandstorm:     this.sandstorm ?? null,
+      stormOutage:   this.stormOutage ?? null,
+      bed,
+      flashlight:    this.engine.player?.getComponent(Flashlight) ?? null,
+      onDesk:        (p) => office.isOnDesk(p),
+      overlay:       new TutorialOverlay(undefined, {
+        keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
+      }),
+      camera:        this.engine.camera ?? null,
+      // The breaker panel has the mouse (_usePanel): it covers the words.
+      covered:       () => !!this.engine.uiHasMouse,
+      targets: {
+        reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
+        computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
+        box:       { object: nearestBox, lift: 0.1 },
+        desk:      { object: office.boxSpot ?? null, lift: 0.1 },
+        dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
+        locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
+        generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
+        bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },
+        buggy:     { object: this.buggyBoot?.object3d ?? null, lift: 0.6 },
+      },
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);
   }
 
   /** The solid things standing in the yard, as ground-plan rectangles —

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
+import { SignalManager, TUTORIAL_QUOTA, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
 import { SHIFT, NIGHT_SECONDS } from './NightClock.js';
 
 const POOL = [
@@ -66,6 +66,14 @@ describe('SignalManager', () => {
 
     mgr.startNight(3);
     expect(mgr.required).toBe(8);   // a full drive box
+  });
+
+  // Night 0 is the tutorial: one drive is enough to learn the loop.
+  it('asks for TUTORIAL_QUOTA (one signal) on night 0', () => {
+    const mgr = new SignalManager({ signalsPerNight: 10, payloadPool: POOL });
+    mgr.startNight(0);
+    expect(TUTORIAL_QUOTA).toBe(1);
+    expect(mgr.required).toBe(1);
   });
 
   it('has as many signals as the old night had per minute: twice as many over twice the night', () => {

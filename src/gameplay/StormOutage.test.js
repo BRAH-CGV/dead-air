@@ -148,6 +148,18 @@ describe('StormOutage — not every storm (#107)', () => {
     expect(rig.grid.on).toBe(true);
   });
 
+  // The tutorial's storm has to take the power, and soon.
+  it('force(at) makes this storm take the power at that point, whatever the roll', () => {
+    const rig = makeRig({ chance: 0 });
+    rig.outage.force(0.1);
+    through(rig, 0, 0.05, 4);
+    expect(rig.sounds.flicker.play).not.toHaveBeenCalled();
+    through(rig, 0.05, 0.12, 4);
+    expect(rig.sounds.flicker.play).toHaveBeenCalledTimes(1);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+  });
+
   it('a storm that hits takes it as before', () => {
     const rig = makeRig({ chance: 0.5, random: () => 0.1 });
     through(rig, 0, 0.9);

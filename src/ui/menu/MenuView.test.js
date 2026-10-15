@@ -62,6 +62,13 @@ describe('MenuView', () => {
       expect(view.panel.querySelector('.menu-music-credit')).toBeNull();
     });
 
+    it('offers the tutorial when the scene has one, after Continue', () => {
+      view.show('main', { ...model, continueNight: 2, tutorial: true });
+      expect(items(view).map(b => b.dataset.action))
+        .toEqual(['newGame', 'continue', 'tutorial', 'nightSelect', 'settings', 'credits']);
+      expect(byAction(view, 'tutorial').textContent).toMatch(/tutorial/i);
+    });
+
     it('offers Continue with the saved night', () => {
       view.show('main', { ...model, continueNight: 2 });
       expect(byAction(view, 'continue').textContent).toMatch(/night 2/i);
