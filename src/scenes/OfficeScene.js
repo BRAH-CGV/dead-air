@@ -10,6 +10,7 @@ import { createMarsSky, directionFromAngles, DEFAULT_MOONS } from '../gameobject
 import { createMarsTerrain } from '../gameobjects/MarsTerrain.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { SignalRegistry } from '../gameplay/SignalRegistry.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { SignalAlertLight } from '../gameobjects/SignalAlertLight.js';
@@ -107,14 +108,11 @@ export class OfficeScene extends Scene {
     this.nightClock = new NightClock();
 
     // ── Signal manager ──
-    // Payload URLs are direct paths to the placeholder images, not
-    // manifest keys — they're displayed via HTML <img>, not Three.js.
-    const payloadPool = Array.from({ length: 8 }, (_, i) =>
-      `assets/signals/signal-${i + 1}.png`,
-    );
+    // Signal names come from the registry (build-time .wav discovery).
+    this.signalRegistry = new SignalRegistry();
     this.signalManager = new SignalManager({
       signalsPerNight: 5,
-      payloadPool,
+      signalNames: this.signalRegistry.names,
     });
 
     // ── UI wrappers (read from DOM elements in index.html) ──

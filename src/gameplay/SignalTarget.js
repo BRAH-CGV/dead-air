@@ -2,8 +2,8 @@
 // SignalTarget  –  Data for one sky signal
 // ─────────────────────────────────────────────
 // Created by SignalManager at night start. Carries the sky direction
-// (yaw/pitch), scan parameters, a payload image URL, and resolution
-// state (scanned → saved | deleted).
+// (yaw/pitch), scan parameters, a signal name (resolved via SignalRegistry
+// to an audio URL), and resolution state (scanned → saved | deleted).
 // ─────────────────────────────────────────────
 
 export class SignalTarget {
@@ -22,8 +22,9 @@ export class SignalTarget {
   /** Seconds the dish must stay aimed to complete the scan. */
   scanTime;
 
-  /** URL path to the signal's payload image (shown during REVIEW). */
-  payloadUrl;
+  /** The signal's internal name — resolved to an audio URL by
+   *  SignalRegistry for playback and spectrogram rendering. */
+  name;
 
   /** True after scan completes, before the player chooses save/delete. */
   scanned = false;
@@ -61,19 +62,19 @@ export class SignalTarget {
    * @param {number} opts.pitch
    * @param {number} [opts.tolerance]
    * @param {number} [opts.scanTime]
-   * @param {string} [opts.payloadUrl]
+   * @param {string} [opts.name]
    * @param {number} [opts.appearAt]
    * @param {number} [opts.fadeSeconds=3]
    * @param {number} [opts.visibleSeconds=15]
    * @param {boolean} [opts.evil=false]
    */
-  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, payloadUrl = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15, evil = false }) {
+  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, name = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15, evil = false }) {
     this.id = id;
     this.yaw = yaw;
     this.pitch = pitch;
     this.tolerance = tolerance;
     this.scanTime = scanTime;
-    this.payloadUrl = payloadUrl;
+    this.name = name;
     this.appearAt = appearAt;
     this.fadeSeconds = fadeSeconds;
     this.visibleSeconds = visibleSeconds;

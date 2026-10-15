@@ -102,9 +102,9 @@ export class Drive extends GameObject {
   /** Whether this drive currently shows the "saved" indicator. */
   saved = false;
 
-  /** Which signal (by SignalManager id) is stored on this drive, or null
-   *  when the drive holds no signal. Set by DriveManager.saveToDrive(). */
-  signalIndex = null;
+  /** Which signal (by name) is stored on this drive, or null when the
+   *  drive holds no signal. Set by DriveManager.saveToDrive(). */
+  signalName = null;
 
   /** Processing level of the stored signal. 1 is the default (just saved);
    *  higher levels are reached by processing at a dedicated console. The
@@ -324,13 +324,13 @@ export class Drive extends GameObject {
 
   /** Turn the indicator on — colour follows signalLevel (SIGNAL_LEVEL_COLORS),
    *  red when the signal was the anomalous one ({ corrupted: true }).
-   *  Turning it off clears both flags and the signal index. */
-  setSaved(saved, { corrupted = false, signalIndex = null } = {}) {
+   *  Turning it off clears both flags and the signal name. */
+  setSaved(saved, { corrupted = false, signalName = null } = {}) {
     // Any state change stops a running glow fade — the new look stands.
     this._doomFadeRemaining = null;
     this.saved = saved;
     this.corrupted = saved && corrupted;
-    this.signalIndex = saved ? signalIndex : null;
+    this.signalName = saved ? signalName : null;
     if (!saved) this.signalLevel = 1;
     if (this.saved) {
       const color = this.corrupted

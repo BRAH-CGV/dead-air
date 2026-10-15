@@ -199,7 +199,7 @@ export class ComputerTerminal extends Component {
     if (!mgr || !this._hoveredSignal) return;
 
     mgr.saveSignal(this._hoveredSignal.id);
-    this.driveManager?.saveToDrive(this._hoveredSignal.id);
+    this.driveManager?.saveToDrive(this._hoveredSignal.name);
   }
 
   // ──────────────────────────────────────────────────────────

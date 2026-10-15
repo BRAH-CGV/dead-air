@@ -1,5 +1,13 @@
+
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
+// Mock the Spectrogram module so tests don't need a real AudioContext.
+vi.mock('./Spectrogram.js', () => ({
+  decode: vi.fn(),
+  compute: vi.fn(),
+  render: vi.fn(),
+}));
 
 import { ProcessingScreen } from './ProcessingScreen.js';
 
@@ -17,10 +25,21 @@ function makeDOM() {
 
   const preview = document.createElement('div');
   preview.id = 'processing-preview';
-  const img = document.createElement('img');
-  img.id = 'processing-image';
-  preview.appendChild(img);
+  const canvas = document.createElement('canvas');
+  canvas.id = 'processing-spectrogram';
+  canvas.width = 480;
+  canvas.height = 360;
+  preview.appendChild(canvas);
   root.appendChild(preview);
+
+  const audio = document.createElement('audio');
+  audio.id = 'processing-audio';
+  audio.preload = 'auto';
+  root.appendChild(audio);
+
+  const media = document.createElement('div');
+  media.id = 'processing-media';
+  root.appendChild(media);
 
   const controls = document.createElement('div');
   controls.id = 'processing-controls';
@@ -34,8 +53,15 @@ function makeDOM() {
   return root;
 }
 
-function makeSignalManager(signals) {
-  return { signals };
+function makeSignalRegistry(urlMap = {}) {
+  return {
+    names: Object.keys(urlMap),
+    getAudioUrl(name, level) {
+      // Try level variant first, then fall back to base.
+      const key = `${name}_L${level}`;
+      return urlMap[key] || urlMap[name] || '';
+    },
+  };
 }
 
 function makeEngine() {
@@ -74,7 +100,9 @@ describe('ProcessingScreen', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
     expect(screen.root).toBe(domRoot);
-    expect(screen._image).not.toBeNull();
+    expect(screen._spectrogram).not.toBeNull();
+    expect(screen._audio).not.toBeNull();
+    expect(screen._media).not.toBeNull();
     expect(screen._controls).not.toBeNull();
   });
 
@@ -127,56 +155,83 @@ describe('ProcessingScreen', () => {
     const actions = [
       { id: 'upgrade', label: 'Upgrade Signal', enabled: false },
     ];
-    screen.open({ saved: true, signalIndex: 's1' }, actions);
+    screen.open({ saved: true, signalName: 'deep_hum' }, actions);
 
     let btn = domRoot.querySelector('.processing-btn');
     expect(btn.disabled).toBe(true);
 
     // Now refresh with the action enabled.
     actions[0].enabled = true;
-    screen.refreshActions({ saved: true, signalIndex: 's1' });
+    screen.refreshActions({ saved: true, signalName: 'deep_hum' });
 
     btn = domRoot.querySelector('.processing-btn');
     expect(btn.disabled).toBe(false);
   });
 
-  it('looks up the signal payload URL via signalManager and shows the image', () => {
+  it('resolves the audio URL via signalRegistry and sets the audio source', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
-    screen.signalManager = makeSignalManager([
-      { id: 's1', payloadUrl: 'signals/s1.png' },
-    ]);
+    screen.signalRegistry = makeSignalRegistry({
+      'deep_hum': '/assets/signals/deep_hum_0.wav',
+    });
 
-    const drive = { saved: true, signalIndex: 's1' };
+    const drive = { saved: true, signalName: 'deep_hum', signalLevel: 1 };
     screen.open(drive, []);
 
-    const img = domRoot.querySelector('#processing-image');
-    expect(img.src).toContain('signals/s1.png');
-    expect(img.style.display).toBe('');
+    const audio = domRoot.querySelector('#processing-audio');
+    expect(audio.src).toContain('/assets/signals/deep_hum_0.wav');
   });
 
-  it('hides the image when no drive is provided', () => {
+  it('renders media buttons — play/pause and stop', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
-    screen.signalManager = makeSignalManager([
-      { id: 's1', payloadUrl: 'signals/s1.png' },
-    ]);
+    screen.signalRegistry = makeSignalRegistry({
+      'deep_hum': '/assets/signals/deep_hum_0.wav',
+    });
+
+    const drive = { saved: true, signalName: 'deep_hum', signalLevel: 1 };
+    screen.open(drive, []);
+
+    const mediaBtns = domRoot.querySelectorAll('.media-btn');
+    expect(mediaBtns.length).toBe(2);
+    expect(mediaBtns[0].textContent).toBe('Play');
+    expect(mediaBtns[0].dataset.actionId).toBe('play-pause');
+    expect(mediaBtns[0].disabled).toBe(false);
+    expect(mediaBtns[1].textContent).toBe('Stop');
+    expect(mediaBtns[1].dataset.actionId).toBe('stop');
+    expect(mediaBtns[1].disabled).toBe(false);
+  });
+
+  it('clears the spectrogram canvas when no drive is provided', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    screen.signalRegistry = makeSignalRegistry({
+      'deep_hum': '/assets/signals/deep_hum_0.wav',
+    });
 
     screen.open(null, []);
 
-    const img = domRoot.querySelector('#processing-image');
-    expect(img.style.display).toBe('none');
+    // Media buttons should be disabled (no audio).
+    const mediaBtns = domRoot.querySelectorAll('.media-btn');
+    expect(mediaBtns.length).toBe(2);
+    expect(mediaBtns[0].disabled).toBe(true);
+    expect(mediaBtns[1].disabled).toBe(true);
+
+    // Audio src should be empty.
+    const audio = domRoot.querySelector('#processing-audio');
+    expect(audio.src).toBe('');
   });
 
-  it('hides the image when the drive has no matching signal', () => {
+  it('clears the spectrogram canvas when the drive has no matching signal', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
-    screen.signalManager = makeSignalManager([]);
+    screen.signalRegistry = makeSignalRegistry({});
 
-    screen.open({ saved: true, signalIndex: 'unknown' }, []);
+    screen.open({ saved: true, signalName: 'unknown' }, []);
 
-    const img = domRoot.querySelector('#processing-image');
-    expect(img.style.display).toBe('none');
+    const mediaBtns = domRoot.querySelectorAll('.media-btn');
+    expect(mediaBtns[0].disabled).toBe(true);
+    expect(mediaBtns[1].disabled).toBe(true);
   });
 
   it('custom render hook is called instead of the default button', () => {
@@ -228,18 +283,18 @@ describe('ProcessingScreen', () => {
     expect(domRoot.style.display).toBe('none');
   });
 
-  it('dispose cleans up engine and signalManager references', () => {
+  it('dispose cleans up engine and signalRegistry references', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
     const engine = makeEngine();
     screen.setEngine(engine);
-    screen.signalManager = makeSignalManager([]);
+    screen.signalRegistry = makeSignalRegistry({});
 
     screen.open(null, []);
     screen.dispose();
 
     expect(screen._engine).toBeNull();
-    expect(screen.signalManager).toBeNull();
+    expect(screen.signalRegistry).toBeNull();
     expect(domRoot.style.display).toBe('none');
   });
 });

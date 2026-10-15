@@ -141,12 +141,12 @@ export class DriveManager {
   /** Save a signal to the inserted drive. Marks the drive as saved (turns
    *  it green/cyan depending on level) so it cannot accept more signals
    *  until cleared.
-   *  @param {number} [signalIndex]  The signal's id in SignalManager.
+   *  @param {string} [signalName]  The signal's internal name.
    *  @returns {number} the new signalsOnDrive count */
-  saveToDrive(signalIndex) {
+  saveToDrive(signalName) {
     if (!this.insertedDrive) return this.signalsOnDrive;
     this.signalsOnDrive++;
-    this.insertedDrive.setSaved(true, { signalIndex });
+    this.insertedDrive.setSaved(true, { signalName });
     return this.signalsOnDrive;
   }
 

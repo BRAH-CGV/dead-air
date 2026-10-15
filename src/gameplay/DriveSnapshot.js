@@ -54,7 +54,7 @@ export class DriveSnapshot {
         drive,
         saved: drive.saved,
         corrupted: drive.corrupted,
-        signalIndex: drive.signalIndex,
+        signalName: drive.signalName,
         signalLevel: drive.signalLevel,
         owner: drive._snapOwner ?? null,
         slotIndex: drive._snapSlotIndex ?? null,
@@ -110,7 +110,7 @@ export class DriveSnapshot {
     const { owner, slotIndex, position, quaternion } = state;
     const item = state.box ?? state.drive;
     if (state.saved !== undefined) {
-      item.setSaved?.(state.saved, { corrupted: state.corrupted, signalIndex: state.signalIndex });
+      item.setSaved?.(state.saved, { corrupted: state.corrupted, signalName: state.signalName });
       // Restore the signal level after setSaved (which resets it to 1 when
       // clearing). Only matters for saved drives — the colour follows level.
       if (state.saved && state.signalLevel > 1) {

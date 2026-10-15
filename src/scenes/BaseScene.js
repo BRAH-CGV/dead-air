@@ -35,6 +35,7 @@ import { SuitVisor } from '../components/SuitVisor.js';
 import { Daylight } from '../components/Daylight.js';
 import { NightClock } from '../gameplay/NightClock.js';
 import { SignalManager } from '../gameplay/SignalManager.js';
+import { SignalRegistry } from '../gameplay/SignalRegistry.js';
 import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
@@ -611,14 +612,10 @@ export class BaseScene extends Scene {
   _addGameplaySystems() {
     this.nightClock = new NightClock();
 
-    // Payload URLs are direct paths to the placeholder images, not manifest
-    // keys — they are displayed through an HTML <img>, not a Three.js
-    // texture. Relative, like every other path that has to survive the
-    // upload to a LAMP subdirectory.
-    const payloadPool = Array.from({ length: 8 }, (_, i) =>
-      `assets/signals/signal-${i + 1}.png`,
-    );
-    this.signalManager = new SignalManager({ payloadPool });
+    // Signal registry discovers .wav files at build time; SignalManager
+    // shuffles the names each night and assigns one per target.
+    this.signalRegistry = new SignalRegistry();
+    this.signalManager = new SignalManager({ signalNames: this.signalRegistry.names });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -702,8 +699,8 @@ export class BaseScene extends Scene {
     const processingSlot = this.rooms.ServerRoom?.driveSlot;
 
     // Wire the processing screen to the ServerRoom console and the signal
-    // manager (for payload URL lookup from the drive's signal index).
-    this.processingScreen.signalManager = this.signalManager;
+    // registry (for audio URL lookup from the drive's signal name).
+    this.processingScreen.signalRegistry = this.signalRegistry;
     this.processingScreen.setEngine(this.engine);
     if (this.rooms.ServerRoom) {
       this.rooms.ServerRoom.processingScreen = this.processingScreen;

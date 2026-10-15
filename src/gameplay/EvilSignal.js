@@ -220,7 +220,7 @@ export class EvilSignal extends Component {
       pitch: sky.pitch,
       tolerance: EVIL.tolerance,
       scanTime: 0,                    // it never runs through a scan
-      payloadUrl: '',
+      name: '',
       appearAt: 0,
       fadeSeconds: EVIL.fadeSeconds,
       visibleSeconds: EVIL.visibleSeconds,

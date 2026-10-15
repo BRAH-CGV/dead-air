@@ -551,11 +551,10 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController).toBeInstanceOf(GameController);
   });
 
-  it('draws signal payloads from a pool of relative image paths', () => {
-    for (const url of scene.signalManager.payloadPool) {
-      expect(url.startsWith('/')).toBe(false);
-      expect(url).toMatch(/^assets\/signals\/signal-\d+\.png$/);
-    }
+  it('builds a signal registry and wires it to the signal manager', () => {
+    expect(scene.signalRegistry).toBeDefined();
+    expect(scene.signalManager.signalNames).toStrictEqual(scene.signalRegistry.names);
+    expect(scene.signalRegistry.names.length).toBeGreaterThan(0);
   });
 
   it('attaches the terminal to the office computer desk', () => {

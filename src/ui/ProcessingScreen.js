@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────
 // ProcessingScreen  –  Signal processing console overlay
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 // A DOM overlay (same pattern as RadarOverlay / BreakerPanel) shown when
 // the player interacts with the ServerRoom processing console. Displays
-// the signal image from the inserted drive and an abstract set of controls
-// (buttons, sliders, knobs …) below it.
+// a spectrogram of the signal stored on the inserted drive, with media
+// controls (play/pause, stop) and an abstract set of gameplay actions
+// (upgrade button, etc.) below.
 //
-// The controls are described by an array of action objects:
+// The actions are described by an array of action objects:
 //   { id, label, enabled, onClick, render? }
 // The default renderer creates a <button>; a custom `render(container, action)`
 // hook lets callers draw sliders, knobs or any other widget.
@@ -16,10 +17,11 @@
 // ─────────────────────────────────────────────
 
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram } from './Spectrogram.js';
 
 export class ProcessingScreen {
-  /** @type {import('../gameplay/SignalManager.js').SignalManager|null} */
-  signalManager = null;
+  /** @type {import('../gameplay/SignalRegistry.js').SignalRegistry|null} */
+  signalRegistry = null;
 
   /** Engine reference for input locking. Set by the scene that owns it. */
   _engine = null;
@@ -33,12 +35,32 @@ export class ProcessingScreen {
   /** Key handler for Q-to-close. */
   _keyHandler = null;
 
+  /** Shared AudioContext for decoding. Created lazily. */
+  _audioContext = null;
+
+  /** Pending spectrogram render (cancellable). */
+  _renderAbort = null;
+
+  /** Cached spectrogram result for live slider re-render. */
+  _spectrogramResult = null;
+
+  /** requestAnimationFrame handle for the scanline. */
+  _scanlineRaf = null;
+
   constructor(root = typeof document !== 'undefined' ? document.getElementById('processing-screen') : null) {
     this.root = root;
-    this._image   = root?.querySelector('#processing-image')   ?? null;
-    this._controls = root?.querySelector('#processing-controls') ?? null;
-    this._hint    = root?.querySelector('#processing-hint')    ?? null;
-    this._title   = root?.querySelector('#processing-title')   ?? null;
+    this._spectrogram = root?.querySelector('#processing-spectrogram') ?? null;
+    this._audio       = root?.querySelector('#processing-audio')       ?? null;
+    this._media       = root?.querySelector('#processing-media')       ?? null;
+    this._controls    = root?.querySelector('#processing-controls')    ?? null;
+    this._hint        = root?.querySelector('#processing-hint')        ?? null;
+    this._title       = root?.querySelector('#processing-title')       ?? null;
+    this._gainSlider   = root?.querySelector('#viz-gain')              ?? null;
+    this._contrastSlider = root?.querySelector('#viz-contrast')        ?? null;
+    this._volumeSlider = root?.querySelector('#viz-volume')            ?? null;
+    this._scanline     = root?.querySelector('#processing-scanline')   ?? null;
+    this._installVizListeners();
+    this._installVolumeListener();
   }
 
   /** Wire the engine so open/close can lock input and hide the crosshair.
@@ -53,7 +75,8 @@ export class ProcessingScreen {
     if (!this.root) return;
     this._drive = drive;
     this._actions = actions;
-    this._updateImage(drive);
+    this._updateSpectrogram(drive);
+    this._renderMediaButtons(drive);
     this._renderActions(actions);
     this.root.style.display = 'flex';
     this._lockInput(true);
@@ -64,19 +87,23 @@ export class ProcessingScreen {
   close() {
     if (!this.root) return;
     this.root.style.display = 'none';
-    this._clearImage();
+    this._stopScanline();
+    this._clearSpectrogram();
+    this._clearMediaButtons();
     this._clearActions();
     this._lockInput(false);
     this._removeKeyHandler();
     this._drive = null;
     this._actions = [];
+    if (this._audio) { this._audio.pause(); this._audio.currentTime = 0; }
   }
 
   /** Re-render the controls with updated enabled/label state. Call after
    *  an action changes the drive (e.g. upgrade). */
   refreshActions(drive) {
     this._drive = drive;
-    this._updateImage(drive);
+    this._updateSpectrogram(drive);
+    this._renderMediaButtons(drive);
     this._renderActions(this._actions);
   }
 
@@ -85,38 +112,191 @@ export class ProcessingScreen {
   dispose() {
     this.close();
     this._engine = null;
-    this.signalManager = null;
-  }
-
-  // ── Internals ──────────────────────────────────────────────
-
-  /** Look up the signal's payload URL and show it, or clear the image. */
-  _updateImage(drive) {
-    if (!this._image) return;
-    const url = this._payloadUrl(drive);
-    if (url) {
-      this._image.src = url;
-      this._image.style.display = '';
-    } else {
-      this._image.src = '';
-      this._image.style.display = 'none';
+    this.signalRegistry = null;
+    if (this._audioContext) {
+      this._audioContext.close().catch(() => {});
+      this._audioContext = null;
     }
   }
 
-  _clearImage() {
-    if (!this._image) return;
-    this._image.src = '';
-    this._image.style.display = 'none';
+  // ─ Internals ──────────────────────────────────────────────
+
+  /** Resolve the audio URL for a drive via the signal registry. */
+  _audioUrl(drive) {
+    if (!drive?.saved || !drive.signalName) return '';
+    const reg = this.signalRegistry;
+    if (!reg) return '';
+    return reg.getAudioUrl(drive.signalName, drive.signalLevel ?? 1);
   }
 
-  /** Resolve the payload URL from the drive's signalIndex via the
-   *  SignalManager. Returns '' if nothing can be shown. */
-  _payloadUrl(drive) {
-    if (!drive?.saved || drive.signalIndex == null) return '';
-    const mgr = this.signalManager;
-    if (!mgr) return '';
-    const sig = mgr.signals.find(s => s.id === drive.signalIndex);
-    return sig?.payloadUrl ?? '';
+  /** Decode the audio and render the spectrogram. Cancels any in-flight
+   *  render so a rapid refresh doesn't race. */
+  async _updateSpectrogram(drive) {
+    // Cancel any previous render.
+    if (this._renderAbort) {
+      this._renderAbort.cancelled = true;
+      this._renderAbort = null;
+    }
+    const token = { cancelled: false };
+    this._renderAbort = token;
+
+    const url = this._audioUrl(drive);
+    if (!url || !this._spectrogram) {
+      this._spectrogramResult = null;
+      this._clearSpectrogram();
+      return;
+    }
+
+    try {
+      // Lazily create a shared AudioContext.
+      if (!this._audioContext) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        this._audioContext = new Ctx();
+      }
+      const audioBuffer = await decodeAudio(url, this._audioContext);
+      if (token.cancelled) return;
+      const result = computeSpectrogram(audioBuffer);
+      if (token.cancelled) return;
+      this._spectrogramResult = result;
+      renderSpectrogram(this._spectrogram, result, this._vizOpts());
+    } catch (err) {
+      // Decoding or rendering failed — leave the canvas blank.
+      console.error('[ProcessingScreen] spectrogram error:', err);
+      if (!token.cancelled) this._clearSpectrogram();
+    }
+  }
+
+  /** Read current slider values into a render-opts object. */
+  _vizOpts() {
+    return {
+      gain:     Number(this._gainSlider?.value)     || 1,
+      contrast: Number(this._contrastSlider?.value) || 1,
+    };
+  }
+
+  /** Re-render the cached spectrogram with current slider values. */
+  _rerenderSpectrogram() {
+    if (!this._spectrogramResult || !this._spectrogram) return;
+    renderSpectrogram(this._spectrogram, this._spectrogramResult, this._vizOpts());
+  }
+
+  /** Wire slider input events to live re-render the spectrogram. */
+  _installVizListeners() {
+    const onChange = () => this._rerenderSpectrogram();
+    this._gainSlider?.addEventListener('input', onChange);
+    this._contrastSlider?.addEventListener('input', onChange);
+  }
+
+  /** Wire the volume slider to the audio element. */
+  _installVolumeListener() {
+    const apply = () => {
+      if (this._audio && this._volumeSlider) {
+        this._audio.volume = Number(this._volumeSlider.value);
+      }
+    };
+    this._volumeSlider?.addEventListener('input', apply);
+    // Set initial volume.
+    apply();
+  }
+
+  /** Start the scanline animation loop. */
+  _startScanline() {
+    if (!this._scanline || !this._audio) return;
+    this._scanline.style.display = 'block';
+    const tick = () => {
+      if (this._audio.paused || this._audio.ended) {
+        this._stopScanline();
+        return;
+      }
+      const dur = this._audio.duration || 1;
+      const pct = (this._audio.currentTime / dur) * 100;
+      // Map percentage across the spectrogram canvas width within the preview.
+      this._scanline.style.left = `${pct}%`;
+      this._scanlineRaf = requestAnimationFrame(tick);
+    };
+    this._scanlineRaf = requestAnimationFrame(tick);
+  }
+
+  /** Stop the scanline animation and hide it. */
+  _stopScanline() {
+    if (this._scanlineRaf) {
+      cancelAnimationFrame(this._scanlineRaf);
+      this._scanlineRaf = null;
+    }
+    if (this._scanline) this._scanline.style.display = 'none';
+  }
+
+  _clearSpectrogram() {
+    if (!this._spectrogram) return;
+    const ctx = this._spectrogram.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, this._spectrogram.width, this._spectrogram.height);
+    }
+  }
+
+  /** Render play/pause and stop buttons into the media container.
+   *  Buttons are disabled when no audio URL is available. */
+  _renderMediaButtons(drive) {
+    if (!this._media) return;
+    this._clearMediaButtons();
+    const url = this._audioUrl(drive);
+    const audio = this._audio;
+    if (!audio) return;
+
+    // Set the audio source (changing src resets playback state).
+    if (audio.src !== url) {
+      audio.src = url || '';
+      audio.load();
+    }
+
+    const hasAudio = !!url;
+
+    // Play/Pause toggle.
+    const playBtn = document.createElement('button');
+    playBtn.className = 'media-btn';
+    playBtn.textContent = 'Play';
+    playBtn.disabled = !hasAudio;
+    playBtn.dataset.actionId = 'play-pause';
+    if (hasAudio) {
+      playBtn.addEventListener('click', () => {
+        if (audio.paused) {
+          audio.play().catch(() => {});
+          playBtn.textContent = 'Pause';
+          this._startScanline();
+        } else {
+          audio.pause();
+          playBtn.textContent = 'Play';
+          this._stopScanline();
+        }
+      });
+      // Sync button label and scanline when playback ends naturally.
+      audio.addEventListener('ended', () => {
+        playBtn.textContent = 'Play';
+        this._stopScanline();
+      });
+    }
+    this._media.appendChild(playBtn);
+
+    // Stop button.
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'media-btn';
+    stopBtn.textContent = 'Stop';
+    stopBtn.disabled = !hasAudio;
+    stopBtn.dataset.actionId = 'stop';
+    if (hasAudio) {
+      stopBtn.addEventListener('click', () => {
+        audio.pause();
+        audio.currentTime = 0;
+        playBtn.textContent = 'Play';
+        this._stopScanline();
+      });
+    }
+    this._media.appendChild(stopBtn);
+  }
+
+  _clearMediaButtons() {
+    if (!this._media) return;
+    this._media.innerHTML = '';
   }
 
   /** Render the action descriptors into the controls container. Each
