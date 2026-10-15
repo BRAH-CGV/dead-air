@@ -220,8 +220,8 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
     },
     {
-      name: 'ragno', usage: 'ragno [window|yard] [left|right] | ragno off',
-      help: 'Bring a night-3 Ragno now, by the window side or the yard, at the quarters (left) or server (right) end',
+      name: 'ragno', usage: 'ragno [creep] [window|yard] [left|right] | ragno off',
+      help: 'Bring a night-3 Ragno now (or a creep: partway in, linger, back out), by the window side or the yard, at the quarters (left) or server (right) end',
       run: (args) => {
         const ragno = system('ragno', 'Ragno');
         const words = args.map(a => a.toLowerCase());
@@ -229,18 +229,19 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           ragno.dismiss();
           return 'Ragno dismissed';
         }
-        let approach, side;
+        let approach, side, creep = false;
         for (const w of words) {
-          if (RAGNO_APPROACHES.includes(w) && approach === undefined) approach = w;
+          if (w === 'creep' && !creep) creep = true;
+          else if (RAGNO_APPROACHES.includes(w) && approach === undefined) approach = w;
           else if (w in RAGNO_SIDES && side === undefined) side = RAGNO_SIDES[w];
           else throw new UsageError(`"${w}": window or yard, left or right`);
         }
-        if (!ragno.summon({ approach, side })) {
+        if (!ragno.summon(creep ? { approach, side, creep: true } : { approach, side })) {
           throw new CommandError('Ragno not summoned: no shift, the UFO is over the base, or he is already out');
         }
         const from = approach ? `${approach} side` : 'either side';
         const end = side === undefined ? 'either end' : side < 0 ? 'quarters end (left)' : 'server end (right)';
-        return `Ragno summoned: ${from}, ${end}`;
+        return `Ragno ${creep ? 'creeping' : 'summoned'}: ${from}, ${end}`;
       },
     },
     {

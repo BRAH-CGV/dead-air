@@ -215,12 +215,12 @@ export class Ragno extends Component {
    * @param {{ approach?: 'window'|'yard', side?: -1|1 }} [opts]
    * @returns {boolean} whether one came
    */
-  summon({ approach, side } = {}) {
+  summon({ approach, side, creep = false } = {}) {
     if (this.controller.state !== 'playing' || this.logic.active || this.hooks.ufoBusy?.()) return false;
     this._spawn({
       approach: approach ?? (this.rand() < 0.5 ? 'window' : 'yard'),
       side: side ?? (this.rand() < 0.5 ? -1 : 1),
-      mood: moodFor(3),
+      ...(creep ? { kind: 'creep', mood: 'calm', partway: true } : { kind: 'attack', mood: moodFor(3) }),
     });
     return true;
   }
@@ -236,13 +236,25 @@ export class Ragno extends Component {
     // The duct's sound runs on a moment after he has gone in by a grille.
     this._tickDuct(dt);
     const logic = this.logic;
+    const next = this.visits[0];
+    const due = !!next && (this.clock?.currentTime ?? -Infinity) >= next.hour && !this.hooks.ufoBusy?.();
     if (!logic.active) {
-      const next = this.visits[0];
-      if (next && (this.clock?.currentTime ?? -Infinity) >= next.hour && !this.hooks.ufoBusy?.()) {
+      this._makingWay = false;
+      if (due) {
         this.visits.shift();
         this._spawn(next);
       }
       return;
+    }
+    if (due) {
+      // One of him at a time. A creep due while he is out is let go; an
+      // attack due while he is only creeping sends the creeper off,
+      // silently, and comes once he has gone.
+      if (next.kind === 'creep') this.visits.shift();
+      else if (logic.creep && !this._makingWay) {
+        this._makingWay = true;
+        logic.runOff();
+      }
     }
 
     logic.update(dt, this._sense(dt));
@@ -587,8 +599,8 @@ export class Ragno extends Component {
     if (this._walk.set(walking, dt, this.figure) && this._walk.sound && walking > 0) {
       this._walk.sound.setPlaybackRate?.(Math.max(walkRate(speed), 0.6));
     }
-    // Calls outside, now and then.
-    if (!logic.indoors && logic.visible) {
+    // Calls outside, now and then — not while making way for an attack.
+    if (!logic.indoors && logic.visible && !this._makingWay) {
       this._chirpIn -= dt;
       if (this._chirpIn <= 0) {
         const [lo, hi] = RAGNO_SOUNDS.chirpEvery;

@@ -477,7 +477,12 @@ A placeholder monitor stands on the desk's left wing (`rooms.MainOffice.cameraMo
 
 `Ragno` (on `GameplaySystems`, after the sandstorm, before the nap) is STORY.md's camera entity: a long-haired, four-legged spider thing that comes in through a side room's air vent. The rules are `RagnoLogic` (pure), the walk `RagnoGait` (pure) on `RagnoFigure`, the routes `RagnoPaths` (pure), laid out from the rooms by `BaseScene._ragnoLayout`. The plan it was built from is `docs/RAGNO-PLAN.md`. "Window side" is the building's back (−z), "yard side" its front (+z).
 
-- **When.** `scheduleVisits(night)`: night 1 once, at midnight, calm (`RAGNO.night1Hour`); night 2 one or two visits, night 3 two to four (`RAGNO.visits`), between 9 PM and 4:30 AM, at least 1.25 h apart, each from a random side and end. Never during the UFO's visit (a visit due then waits); one at a time; a night start, a retry or the shift ending sends him away.
+- **When.** `scheduleVisits(night)` gives each visit a `kind`.
+  - **Night 1:** one creep at midnight (`RAGNO.night1Hour`), calm, all the way to the vent and back.
+  - **Attacks:** night 2 one or two, night 3 two to four (`RAGNO.visits`), between 9 PM and 4:30 AM, at least 1.25 h apart, each from a random side and end.
+  - **Creeps between them** (`RAGNO.creeps`: one or two on night 2, two or three on night 3, `creepClear` 0.75 h off any attack): calm, `partway` — he comes only `creepStop` (35–60 %) of his way in, lingers there in sight of a camera (`creepLinger`, 6–12 s), and goes back.
+  - **One of him at a time.** A creep due while he is out is let go. An attack due while he is only creeping sends the creeper off at once (`RagnoLogic.runOff`: out of sight fast, no flinch, no call or shriek), and the attack comes once he has gone.
+  - Never during the UFO's visit (a visit due then waits); a night start, a retry or the shift ending sends him away.
 - **Outside** he comes out of the trees and makes for the vent on his end (`approachRoute`) by a rounded walk, then a straight run in, square to the end wall (`RAGNO_PATHS.straightOut`, 5 m).
   - **From the window side** he starts with one far glimpse at the edge of the window's view from the desk (`glimpse`, 1.5° inside it), then curves away out of it, across the clearing behind his wing, in front of the pole camera.
   - **From the yard side** he comes down the strip outside the fence's side run.
@@ -642,7 +647,7 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 | `storm` | `Sandstorm.summon` | **Testing only.** Start a sandstorm now, on any night; ignored while one is blowing or outside a shift |
 | `eyes [fence\|window\|both]` | `DustEyes.summon` | **Testing only.** Bring dust eyes now, wherever you are (with a storm, if none is blowing); ignored outside a shift or during a UFO visit |
 | `evil` | `EvilSignal.summon` | **Testing only.** Put the evil signal in the sky now, on any night; ignored while one is up or outside a shift |
-| `ragno [window\|yard] [left\|right]`, `ragno off` | `Ragno.summon` / `dismiss` | **Testing only.** A night-3 Ragno now, from the side and end given (random if left out); ignored while one is out, during a UFO visit or outside a shift. `off` sends him away |
+| `ragno [creep] [window\|yard] [left\|right]`, `ragno off` | `Ragno.summon` / `dismiss` | **Testing only.** A night-3 Ragno now (with `creep`, a creep: partway in, linger, back out), from the side and end given (random if left out); ignored while one is out, during a UFO visit or outside a shift. `off` sends him away |
 | `music [spooky\|ambient\|off]` | `Ambience.testMusic` | **Testing only.** Swing a music track in, or take it out |
 | `help [command]`, `clear` | `DevConsole` | List the commands or explain one; clear the log |
 

@@ -289,6 +289,41 @@ describe('RagnoLogic — outside', () => {
     expect(aggressive).toBeLessThan(normal);
   });
 
+  it('a creep partway in lingers out there, well short of the vent, then goes back the way he came', () => {
+    const logic = makeLogic();
+    logic.spawn({ side: -1, approach: 'window', mood: 'calm', kind: 'creep', partway: true });
+    const foot = LAYOUT.sides[-1].climb[0];
+    let lingeredAt = null, lingered = 0;
+    const seen = run(logic, {
+      seconds: 1500,
+      until: l => l.state === 'off',
+      onFrame: (l) => {
+        if (l.state === 'linger') { lingered += 1 / 30; lingeredAt ??= l.pos.clone(); }
+      },
+    });
+    expect(seen).toContain('linger');
+    expect(seen).toContain('gone');
+    expect(seen).not.toContain('ventIn');
+    expect(Math.hypot(lingeredAt.x - foot.x, lingeredAt.z - foot.z)).toBeGreaterThan(5);
+    expect(lingered).toBeGreaterThanOrEqual(RAGNO.creepLinger[0] - 0.1);
+  });
+
+  it('told to make way (an attack is due), a creeper runs off out of sight: no flinch, and gone', () => {
+    const logic = makeLogic();
+    logic.spawn({ side: -1, approach: 'window', mood: 'calm', kind: 'creep' });
+    expect(logic.creep).toBe(true);
+    run(logic, { seconds: 30 });
+    const from = logic.pos.clone();
+    logic.runOff();
+    let fastest = 0;
+    const seen = run(logic, { until: l => l.state === 'off', onFrame: (l) => { fastest = Math.max(fastest, l.velocity.length()); } });
+    expect(seen).not.toContain('flinch');
+    expect(seen).toContain('gone');
+    expect(fastest).toBeGreaterThan(RAGNO.fleeSpeed * 0.9);
+    // Away from the building, not toward it.
+    expect(Math.abs(logic.pos.x) + Math.abs(logic.pos.z)).toBeGreaterThan(Math.abs(from.x) + Math.abs(from.z));
+  });
+
   it('night 1 (calm): creeps to the vent, lingers, and goes back without going in', () => {
     const logic = makeLogic();
     logic.spawn({ side: -1, approach: 'window', mood: 'calm' });
@@ -577,19 +612,25 @@ describe('RagnoLogic — inside', () => {
 });
 
 describe('scheduleVisits', () => {
-  it('night 1: once, at midnight, calm', () => {
+  const attacks = visits => visits.filter(v => v.kind === 'attack');
+  const creeps = visits => visits.filter(v => v.kind === 'creep');
+
+  it('night 1: once, at midnight, a creep', () => {
     for (let seed = 1; seed < 20; seed++) {
       const visits = scheduleVisits(1, seeded(seed));
       expect(visits).toHaveLength(1);
       expect(visits[0].hour).toBe(RAGNO.night1Hour);
+      expect(visits[0].kind).toBe('creep');
       expect(visits[0].mood).toBe('calm');
+      // Night 1's comes all the way to the vent.
+      expect(visits[0].partway).toBeFalsy();
     }
   });
 
-  it('night 2: one or two, after dark, spaced out', () => {
+  it('night 2: one or two attacks, after dark, spaced out', () => {
     const counts = new Set();
     for (let seed = 1; seed < 60; seed++) {
-      const visits = scheduleVisits(2, seeded(seed));
+      const visits = attacks(scheduleVisits(2, seeded(seed)));
       counts.add(visits.length);
       for (const v of visits) {
         expect(v.hour).toBeGreaterThanOrEqual(RAGNO.firstHour);
@@ -603,14 +644,38 @@ describe('scheduleVisits', () => {
     expect([...counts].sort()).toEqual([1, 2]);
   });
 
-  it('night 3: two to four, aggressive', () => {
+  it('night 3: two to four attacks, aggressive', () => {
     const counts = new Set();
     for (let seed = 1; seed < 80; seed++) {
-      const visits = scheduleVisits(3, seeded(seed));
+      const visits = attacks(scheduleVisits(3, seeded(seed)));
       counts.add(visits.length);
       for (const v of visits) expect(v.mood).toBe('aggressive');
     }
     expect([...counts].sort()).toEqual([2, 3, 4]);
+  });
+
+  it('from night 2, creeps between the attacks: calm, after dark, never right on an attack', () => {
+    for (const [night, [lo, hi]] of [[2, RAGNO.creeps.normal], [3, RAGNO.creeps.aggressive]]) {
+      const counts = new Set();
+      for (let seed = 1; seed < 80; seed++) {
+        const visits = scheduleVisits(night, seeded(seed));
+        const c = creeps(visits);
+        counts.add(c.length);
+        for (const v of c) {
+          expect(v.mood).toBe('calm');
+          // Only partway in: to linger in sight, not to the vent.
+          expect(v.partway).toBe(true);
+          expect(v.hour).toBeGreaterThanOrEqual(RAGNO.firstHour);
+          expect(v.hour).toBeLessThanOrEqual(RAGNO.lastHour);
+          for (const at of attacks(visits)) expect(Math.abs(v.hour - at.hour)).toBeGreaterThanOrEqual(RAGNO.creepClear - 1e-9);
+        }
+        // In order through the night.
+        for (let i = 1; i < visits.length; i++) expect(visits[i].hour).toBeGreaterThanOrEqual(visits[i - 1].hour);
+      }
+      expect(Math.min(...counts)).toBeGreaterThanOrEqual(lo - 1);
+      expect(Math.max(...counts)).toBeLessThanOrEqual(hi);
+      expect(Math.max(...counts)).toBeGreaterThanOrEqual(lo);
+    }
   });
 
   it('a mood per night', () => {

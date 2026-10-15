@@ -39,6 +39,15 @@ export const RAGNO = {
   lastHour: 4.5,
   minGapHours: 1.25,
   night1Hour: 0,
+  /** From night 2, creeps between the attacks: he comes partway in, lingers
+   *  in sight of a camera, and goes back — as night 1's visit, short of the
+   *  vent. How many, [fewest, most]; hours kept clear of an attack (and of
+   *  each other); how far along his way in he stops (a share of it); and
+   *  how long he lingers there. */
+  creeps: { normal: [1, 2], aggressive: [2, 3] },
+  creepClear: 0.75,
+  creepStop: [0.35, 0.6],
+  creepLinger: [6, 12],
 
   /** Outside he spends far more time still than moving: a long stare at
    *  the nearest camera, then a short burst of darts with long pauses. A
@@ -115,18 +124,30 @@ export function moodFor(night) {
 export function scheduleVisits(night, rand = Math.random, t = RAGNO) {
   const mood = moodFor(night);
   const pick = () => ({ side: rand() < 0.5 ? -1 : 1, approach: rand() < 0.5 ? 'window' : 'yard' });
-  if (mood === 'calm') return [{ hour: t.night1Hour, mood, ...pick() }];
-  const [lo, hi] = t.visits[mood];
-  const n = lo + Math.min(Math.floor(rand() * (hi - lo + 1)), hi - lo);
-  // One in each of n equal slots, never in the last `minGapHours` of its
-  // slot, so any two are at least that far apart.
+  // Night 1: one creep, all the way to the vent and back.
+  if (mood === 'calm') return [{ hour: t.night1Hour, kind: 'creep', mood, ...pick() }];
+  const count = ([lo, hi]) => lo + Math.min(Math.floor(rand() * (hi - lo + 1)), hi - lo);
+  const n = count(t.visits[mood]);
+  // One attack in each of n equal slots, never in the last `minGapHours` of
+  // its slot, so any two are at least that far apart.
   const span = (t.lastHour - t.firstHour) / n;
   const out = [];
   for (let i = 0; i < n; i++) {
     const start = t.firstHour + i * span;
-    out.push({ hour: start + rand() * Math.max(span - t.minGapHours, 0), mood, ...pick() });
+    out.push({ hour: start + rand() * Math.max(span - t.minGapHours, 0), kind: 'attack', mood, ...pick() });
   }
-  return out;
+  // The creeps in between, clear of the attacks and of each other; one with
+  // no room for it is left out.
+  const creeps = count(t.creeps[mood]);
+  for (let i = 0; i < creeps; i++) {
+    for (let tries = 0; tries < 20; tries++) {
+      const hour = t.firstHour + rand() * (t.lastHour - t.firstHour);
+      if (out.some(v => Math.abs(v.hour - hour) < t.creepClear)) continue;
+      out.push({ hour, kind: 'creep', mood: 'calm', partway: true, ...pick() });
+      break;
+    }
+  }
+  return out.sort((a, b) => a.hour - b.hour);
 }
 
 const UP = [0, 1, 0];
@@ -189,11 +210,19 @@ export class RagnoLogic {
   get sideSpec() { return this.layout.sides[this.side]; }
 
   /** A visit begins, at the start of its route, out of sight. */
-  spawn({ side, approach, mood }) {
+  spawn({ side, approach, mood, kind = 'attack', partway = false }) {
     this.side = side;
     this.mood = mood;
     this.approach = approach;
+    /** A creep: he comes to look, not to come in, and makes way for an attack. */
+    this.creep = kind === 'creep';
+    this._partway = partway;
     this._route = this.sideSpec.approach[approach];
+    if (partway) {
+      // Only so far along, then he lingers there.
+      const k = Math.round((this._route.length - 1) * between(this.rand, this.t.creepStop));
+      this._route = this._route.slice(0, Math.max(k, 2) + 1);
+    }
     this._setPath(this._route, 1);
     this._place(this._route[0]);
     this.visible = true;
@@ -205,8 +234,16 @@ export class RagnoLogic {
     this._stare();
   }
 
+  /** A creeper makes way for an attack: off out of sight, fast and
+   *  without a sound (no flinch), and gone. */
+  runOff() {
+    if (this.state === 'off' || this.indoors || this.state === 'retreat') return;
+    this._runAway(null);
+  }
+
   /** Gone at once (a night start, the shift ending, the console). */
   despawn() {
+    this.creep = false;
     this.state = 'off';
     this.mode = null;
     this.visible = false;
@@ -299,7 +336,7 @@ export class RagnoLogic {
   _arrived() {
     if (this.mood === 'calm') {
       this._enter('linger');
-      this._timer = between(this.rand, this.tune.linger);
+      this._timer = between(this.rand, this._partway ? this.t.creepLinger : this.tune.linger);
       this.events.push('linger');
       return;
     }
@@ -556,12 +593,16 @@ export class RagnoLogic {
       this._setPath(this._ventPath(), 1);
       return;
     }
-    // Outside: down off the slope if he's on it, then away from the camera
-    // and a little aside, until he's out of its sight.
+    this._runAway(this._from);
+  }
+
+  /** Outside: down off the slope if he's on it, then away from `from` (a
+   *  camera; else the building) and a little aside, out of sight, and gone. */
+  _runAway(fromPoint) {
     const start = [this._here()];
     if (this.up.y < 0.9) start.push(this.sideSpec.climb[0]);
     const last = start[start.length - 1];
-    const from = this._from ?? _b.set(0, 0, 0);
+    const from = fromPoint ?? _b.set(0, 0, 0);
     _dir.set(last.x - from.x, 0, last.z - from.z);
     if (_dir.lengthSq() < 1e-6) _dir.set(this.side, 0, 0);
     _dir.normalize().applyAxisAngle(_up.set(0, 1, 0), (this.rand() < 0.5 ? -1 : 1) * 0.35);

@@ -397,6 +397,11 @@ describe('createCommands', () => {
       expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: undefined, side: undefined });
     });
 
+    it('ragno creep brings a creeper, from where you say', () => {
+      expect(run('ragno creep yard left').out).toEqual(['Ragno creeping: yard side, quarters end (left)']);
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: 'yard', side: -1, creep: true });
+    });
+
     it('ragno off sends him away', () => {
       expect(run('ragno off').out).toEqual(['Ragno dismissed']);
       expect(scene.ragno.dismiss).toHaveBeenCalledOnce();
@@ -405,7 +410,7 @@ describe('createCommands', () => {
     it('ragno with a bad word is a usage error; a refused one says why', () => {
       const { ok, out } = run('ragno ceiling');
       expect(ok).toBe(false);
-      expect(out.at(-1)).toBe('Usage: ragno [window|yard] [left|right] | ragno off');
+      expect(out.at(-1)).toBe('Usage: ragno [creep] [window|yard] [left|right] | ragno off');
       scene.ragno.summon.mockReturnValue(false);
       expect(run('ragno').out[0]).toMatch(/^Ragno not summoned/);
     });

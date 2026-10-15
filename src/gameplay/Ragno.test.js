@@ -130,8 +130,10 @@ describe('Ragno', () => {
 
   describe('when he comes', () => {
     it('schedules tonight\'s visits as the night starts', () => {
-      expect(ragno.visits.length).toBeGreaterThanOrEqual(1);
-      expect(ragno.visits.length).toBeLessThanOrEqual(2);
+      const attacks = ragno.visits.filter(v => v.kind === 'attack');
+      expect(attacks.length).toBeGreaterThanOrEqual(1);
+      expect(attacks.length).toBeLessThanOrEqual(2);
+      expect(ragno.visits.some(v => v.kind === 'creep')).toBe(true);
     });
 
     it('nobody before the first visit\'s hour; then he is out, shown', () => {
@@ -201,6 +203,50 @@ describe('Ragno', () => {
     it('summon() does nothing off shift', () => {
       controller.state = 'morning';
       expect(ragno.summon()).toBe(false);
+    });
+  });
+
+  describe('creeps between the attacks', () => {
+    it('an attack due while a creeper is out: he runs off without a sound, then the attack comes', () => {
+      const attack = { play: vi.fn(), stop: vi.fn(), isPlaying: false, context: { state: 'running' },
+        setVolume: vi.fn(), setDetune: vi.fn(), setRefDistance: vi.fn(), setRolloffFactor: vi.fn() };
+      build(2, { sounds: { attacks: [attack, attack], call: null } });
+      ragno.visits = [
+        { hour: 0, kind: 'creep', mood: 'calm', side: -1, approach: 'window' },
+        { hour: 1, kind: 'attack', mood: 'normal', side: 1, approach: 'yard' },
+      ];
+      clock.currentTime = 0;
+      run(5);
+      expect(ragno.logic.creep).toBe(true);
+      clock.currentTime = 1;
+      run(1 / 30);
+      expect(ragno.logic.state).toBe('retreat');
+      for (let t = 0; t < 30 && ragno.logic.creep; t += 1 / 30) ragno.onUpdate(1 / 30);
+      expect(attack.play).not.toHaveBeenCalled();
+      run(0.2);
+      expect(ragno.logic.active).toBe(true);
+      expect(ragno.logic.creep).toBe(false);
+      expect(ragno.logic.mood).toBe('normal');
+    });
+
+    it('a creep due while an attack is out is let go', () => {
+      ragno.visits = [
+        { hour: 0, kind: 'attack', mood: 'normal', side: 1, approach: 'yard' },
+        { hour: 1, kind: 'creep', mood: 'calm', side: -1, approach: 'window' },
+      ];
+      clock.currentTime = 0;
+      run(1);
+      clock.currentTime = 1;
+      run(1);
+      expect(ragno.visits).toHaveLength(0);
+      expect(ragno.logic.creep).toBe(false);
+      expect(ragno.logic.state).not.toBe('retreat');
+    });
+
+    it('summon({ creep: true }) brings a creeper (the console command ragno creep)', () => {
+      expect(ragno.summon({ creep: true })).toBe(true);
+      expect(ragno.logic.creep).toBe(true);
+      expect(ragno.logic.mood).toBe('calm');
     });
   });
 
