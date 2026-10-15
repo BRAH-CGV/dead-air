@@ -15,7 +15,7 @@ import { GameObject } from '../core/GameObject.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 import { Stamina } from './Stamina.js';
-import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, SLEEP_DEMON_DUCK, SLEEP_DEMON_DREAD, NAP_WATCH, WHISPER, KNOCK, sightRay } from './SleepDemon.js';
+import { SleepDemon, SLEEP_DEMON_KILL, SLEEP_DEMON_FIGURE, SLEEP_DEMON_BEAM, SLEEP_DEMON_DUCK, SLEEP_DEMON_DREAD, NAP_WATCH, WHISPER, KNOCK, SLEEP_DEMON_SOUNDS, sightRay } from './SleepDemon.js';
 import { SLEEP_DEMON as T } from './SleepDemonLogic.js';
 import { SLEEP_DEMON_DEATH as D } from './SleepDemonDeath.js';
 
@@ -97,7 +97,7 @@ describe('SleepDemon', () => {
     demon = new SleepDemon({
       controller, stamina, figure, camera, terminal, rayHit, onFigureChanged,
       isFrozen: () => frozen,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.9,                      // the right-hand side first
     });
     demon.onStart();
@@ -119,7 +119,6 @@ describe('SleepDemon', () => {
     expect(at.angle).toBeCloseTo(side * Math.max(edge * HALF_WIDTH, focus + T.showMargin), 5);
     expect(Math.abs(at.angle)).toBeGreaterThan(demon.logic.focus);
     expect(Math.abs(at.angle)).toBeLessThan(HALF_WIDTH);
-    expect(demon.sounds.scrape.play).not.toHaveBeenCalled();   // it fades in; it doesn't walk in
 
     const feet = figure.object3d.position;
     expect(feet.y).toBeCloseTo(terrainHeightAt(feet.x, feet.z));
@@ -287,7 +286,6 @@ describe('SleepDemon', () => {
     }
     expect(visible()).toBe(true);
     expect(figure.object3d.position.distanceTo(spot)).toBeLessThan(1e-9);
-    expect(demon.sounds.scrape.play).not.toHaveBeenCalled();
   });
 
   it('the tireder the player, the nearer it shows, and the nearer the middle of the view', () => {
@@ -337,7 +335,7 @@ describe('SleepDemon', () => {
     expect(visible()).toBe(true);
   });
 
-  it('turned away from, it stays where it stood and creeps in slowly along the same line, scrapes as it goes', () => {
+  it('turned away from, it stays where it stood and creeps in slowly along the same line', () => {
     stamina.value = 0.25;
     run(4);
     const spot = figure.object3d.position.clone();
@@ -349,7 +347,6 @@ describe('SleepDemon', () => {
     expect(crept).toBeCloseTo(5 * (T.sneakFar + (T.sneakNear - T.sneakFar) * 0.5), 1);
     expect(crept).toBeLessThan(1.5);        // slowly
     expect(Math.atan2(now.x, now.z)).toBeCloseTo(Math.atan2(spot.x, spot.z), 5);
-    expect(demon.sounds.scrape.play).toHaveBeenCalled();
   });
 
   it('some showings land behind the player by the roll: out of sight, creeping nearer', () => {
@@ -357,7 +354,7 @@ describe('SleepDemon', () => {
     demon = new SleepDemon({
       controller, stamina, figure, camera, terminal, rayHit, onFigureChanged,
       isFrozen: () => frozen,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.1,                      // inside behindChance: the roll fires
     });
     demon.onStart();
@@ -369,24 +366,6 @@ describe('SleepDemon', () => {
     expect(distance).toBeLessThan(4);       // nearer than the edge of the view's 5.4 m
     run(2);                                 // nobody looking: it creeps in
     expect(seen().distance).toBeLessThan(distance - 0.3);
-  });
-
-  it('its scrapes are heard only while it creeps: slow, careful steps', () => {
-    demon.onDestroy();
-    const scrapes = fakeSound();
-    demon = new SleepDemon({
-      controller, stamina, camera, figure,
-      sounds: { scrape: scrapes },
-      rand: () => 0,                        // shows behind by the roll, then paces at the ticks
-    });
-    demon.onStart();
-    stamina.value = 0.25;
-    run(4);                                 // shows at 3.5 s and creeps from there
-    expect(demon.logic.sneaking).toBe(true);
-    const heard = scrapes.play.mock.calls.length;
-    expect(heard).toBeGreaterThan(0);
-    run(3);                                 // a step every 0.9 s
-    expect(scrapes.play.mock.calls.length).toBeGreaterThanOrEqual(heard + 3);
   });
 
   it('shut out by something in between, it fades in again in front of it', () => {
@@ -533,7 +512,7 @@ describe('SleepDemon', () => {
     demon.onDestroy();
     demon = new SleepDemon({
       controller, stamina, figure, camera, terminal, rayHit, onFigureChanged,
-      sounds: { scrape: fakeSound() }, rand: () => 0.9, tuning: { ...T, stareDown: false },
+      sounds: {}, rand: () => 0.9, tuning: { ...T, stareDown: false },
     });
     demon.onStart();
     stamina.value = 0.0235;
@@ -685,7 +664,7 @@ describe('SleepDemon and the flashlight', () => {
     frozen = false;
     demon = new SleepDemon({
       controller, stamina, figure, camera, isFrozen: () => frozen,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.9,                      // the right-hand side first
       flashlight: torch,
     });
@@ -768,69 +747,8 @@ describe('SleepDemon and the flashlight', () => {
 });
 
 describe('SleepDemon sound', () => {
-  it('steps only while it moves: never as it shows, never standing, never from nowhere', () => {
-    const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 200);
-    camera.position.set(0, EYE, 0);
-    camera.updateMatrixWorld(true);
-    const look = (x, z) => { camera.lookAt(x, EYE, z); camera.updateMatrixWorld(true); };
-    const stamina = new Stamina();
-    const controller = fakeController();
-    const scrapes = fakeSound();
-    const figure = new GameObject('SleepDemon');
-    const demon = new SleepDemon({
-      controller, stamina, camera, figure,
-      sounds: { scrape: scrapes }, rand: () => 0.9,
-    });
-    demon.onStart();
-    const run = seconds => { for (let t = 0; t < seconds - 1e-9; t += 0.1) demon.onUpdate(0.1); };
-    const plays = () => scrapes.play.mock.calls.length;
-
-    run(1);
-    expect(plays()).toBe(0);
-
-    stamina.value = 0.4706;
-    run(1);                                 // about, but nowhere yet: no step from nowhere
-    expect(plays()).toBe(0);
-    run(6);                                 // shows at 5.7 s: silently, it fades in
-    expect(figure.object3d.visible).toBe(true);
-    expect(plays()).toBe(0);
-    run(5);                                 // seen, standing: not a sound
-    expect(plays()).toBe(0);
-
-    look(0, 10);                            // turned away: it creeps, and is heard
-    run(2);
-    expect(plays()).toBeGreaterThanOrEqual(1);
-    const far = scrapes.volume;
-    expect(far).toBeGreaterThan(0);
-
-    stamina.value = 0.0235;                   // near empty: nearer, louder
-    run(3);
-    expect(scrapes.volume).toBeGreaterThan(far);
-
-    stamina.value = 0.2941;                    // a ration: it flees a look again
-    const at = figure.object3d.position;
-    look(at.x, at.z);
-    run(0.1);
-    const heard = plays();
-    run(2);                                 // looked at: fading away — and no steps from nowhere
-    expect(figure.object3d.visible).toBe(false);
-    expect(plays()).toBe(heard);
-
-    run(3);                                 // back, seen: silent
-    expect(figure.object3d.visible).toBe(true);
-    expect(plays()).toBe(heard);
-    look(-camera.getWorldDirection(new THREE.Vector3()).x * 10, -camera.getWorldDirection(new THREE.Vector3()).z * 10);
-    run(0.1);                               // turned away: the first step at once
-    expect(plays()).toBeGreaterThan(heard);
-    expect(scrapes.isPlaying).toBe(true);  // mid-step at the very moment…
-    controller.state = 'morning';
-    run(0.1);
-    expect(scrapes.isPlaying).toBe(false); // …the shift cuts it
-
-    controller.startNight(2);
-    expect(scrapes.isPlaying).toBe(false);
-    demon.onDestroy();
-    expect(scrapes.isPlaying).toBe(false);
+  it('makes no sound of its own as it moves: no footsteps, no scraping — only whispers and knocks', () => {
+    expect(Object.keys(SLEEP_DEMON_SOUNDS).sort()).toEqual(['knock', 'whisper', 'whisperBed']);
   });
 
   it('works with no sound at all (no audio loaded)', () => {
@@ -847,7 +765,7 @@ describe('SleepDemon sound', () => {
 });
 
 describe('SleepDemon voices: whispers and knocks, from where it stands', () => {
-  let camera, stamina, controller, figure, whisper, whisperBed, knock, scrape, demon;
+  let camera, stamina, controller, figure, whisper, whisperBed, knock, demon;
 
   const run = (seconds, dt = 0.1) => { for (let t = 0; t < seconds - 1e-9; t += dt) demon.onUpdate(dt); };
   const look = (x, z) => { camera.lookAt(x, EYE, z); camera.updateMatrixWorld(true); };
@@ -866,10 +784,9 @@ describe('SleepDemon voices: whispers and knocks, from where it stands', () => {
     whisper = Object.assign(fakeSound(), { buffer: { duration: 10.08 } });
     whisperBed = Object.assign(fakeSound(), { buffer: { duration: 10.08 } });
     knock = fakeSound();
-    scrape = fakeSound();
     demon = new SleepDemon({
       controller, stamina, camera, figure,
-      sounds: { whisper, whisperBed, knock, scrape }, rand: () => 0.9,
+      sounds: { whisper, whisperBed, knock }, rand: () => 0.9,
     });
     demon.onStart();
   });
@@ -1256,7 +1173,7 @@ describe('SleepDemon dread: it walks you down', () => {
     fatigue = { setDread: vi.fn() };
     demon = new SleepDemon({
       controller, stamina, figure, camera, player, fatigue,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.9,
     });
     demon.onStart();
@@ -1390,7 +1307,7 @@ describe('SleepDemon dead air', () => {
     });
     demon = new SleepDemon({
       controller, stamina, figure, camera, terminal, ambience,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.9,                      // the right-hand side first
     });
     demon.onStart();
@@ -1532,7 +1449,7 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
     demon = new SleepDemon({
       controller, stamina, figure, camera, onFigureChanged,
       isFrozen: () => frozen,
-      sounds: { scrape: fakeSound() },
+      sounds: {},
       rand: () => 0.9,
       player, overlay, fade, listener,
     });
@@ -1707,7 +1624,7 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
 
 describe('SleepDemon while you nap: through half-open eyes', () => {
   const PILLOW = 0.62;
-  let camera, figure, stamina, controller, sleeper, rayHit, realDt, demon, scrape;
+  let camera, figure, stamina, controller, sleeper, rayHit, realDt, demon;
 
   const visible = () => figure.object3d.visible;
   /** Frames of `seconds` real time; the update is handed the nap's 15× game time. */
@@ -1735,12 +1652,11 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       watchSpots: () => [new THREE.Vector3(6, 0, 6), new THREE.Vector3(1.5, 0, -4)],
     };
     rayHit = vi.fn(() => Infinity);
-    scrape = fakeSound();
     realDt = 1 / 60;
     demon = new SleepDemon({
       controller, stamina, figure, camera, rayHit, sleeper,
       realDt: () => realDt,
-      sounds: { scrape },
+      sounds: {},
       rand: () => 0,
     });
     demon.onStart();
@@ -1772,7 +1688,6 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     const crept = start - fromEye();
     expect(crept).toBeCloseTo(2 * NAP_WATCH.creep, 1);
     expect(NAP_WATCH.creep).toBeLessThan(0.6);              // slowly
-    expect(scrape.play).toHaveBeenCalled();               // and is heard
   });
 
   it('never all the way to the bed', () => {
@@ -1807,7 +1722,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     const clear = vi.fn(() => Infinity);
     const sleeping = new SleepDemon({
       controller, stamina, figure, camera, rayHit, napRayHit: clear, sleeper,
-      realDt: () => realDt, sounds: { scrape }, rand: () => 0,
+      realDt: () => realDt, sounds: {}, rand: () => 0,
     });
     sleeping.onStart();
     sleeper.peeking = true;
@@ -1851,7 +1766,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       const random = vi.fn(() => rolls.shift() ?? 0);
       const d = new SleepDemon({
         controller, stamina, figure, camera, rayHit, sleeper,
-        realDt: () => realDt, sounds: { scrape }, rand: () => 0, random,
+        realDt: () => realDt, sounds: {}, rand: () => 0, random,
       });
       d.onStart();
       return d;
@@ -1876,10 +1791,9 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
       expect(NAP_WATCH.chance).toBeCloseTo(0.1);
     });
 
-    it('an unwatched nap never shows it, at any peek, nor makes a sound', () => {
+    it('an unwatched nap never shows it, at any peek', () => {
       const d = rolling(NAP_WATCH.chance);           // the roll misses: anything from the chance up
       expect(nap(d, 8)).toBe(false);
-      expect(scrape.play).not.toHaveBeenCalled();
     });
 
     it('a watched one does', () => {
@@ -1899,7 +1813,7 @@ describe('SleepDemon while you nap: through half-open eyes', () => {
     it('rand still rolls it when no random is given', () => {
       const d = new SleepDemon({
         controller, stamina, figure, camera, rayHit, sleeper,
-        realDt: () => realDt, sounds: { scrape }, rand: () => 0.99,
+        realDt: () => realDt, sounds: {}, rand: () => 0.99,
       });
       d.onStart();
       expect(nap(d)).toBe(false);

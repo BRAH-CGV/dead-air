@@ -48,9 +48,7 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //             instead — mostly knocks at first, mostly whispers as the
 //             player tires — and a showing's turn is sometimes silent,
 //             more often while the player is fresh.
-//   scraping  quiet (SCRAPE), only while it moves: creeping in unseen, or
-//             walking in below walkBelow.
-// No breathing, no growl.
+// It moves without a sound: no footsteps, no breathing, no growl.
 //
 // The figure is a hidden, body-less GameObject the scene builds and owns,
 // under a group at the world origin, so its position is a world position.
@@ -77,8 +75,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //
 // Out of sight — turned away from, or something in between — it sneaks (the
 // rules' sneak): it takes up the player's own retreat and more (sneakSpeed),
-// at any stamina, and the scraping quickens with it. Only a look that
-// banishes it, the hold coming back, or a night start gives the ground back.
+// at any stamina. Only a look that banishes it, the hold coming back, or a
+// night start gives the ground back.
 //
 // The torch betrays it: while it shows, the flashlight stutters whenever its
 // beam (the cone, and a margin) falls on any of it. At the stamina of the
@@ -125,7 +123,6 @@ export const SLEEP_DEMON_SOUNDS = Object.freeze({
   whisper: 'sfx:whispering',
   whisperBed: 'sfx:whispering',             // the endless whisper's second voice
   knock: 'sfx:knocks',
-  scrape: 'sfx:demon-scrape',
 });
 
 /** The placeholder figure, metres: person-sized, so right beside the player
@@ -164,12 +161,6 @@ export const KNOCK = Object.freeze({
   shareFar: 0.7, shareNear: 0.3, volume: 0.3, far: 0.6, refDistance: 2, rolloff: 0.7, detune: 80,
   clips: Object.freeze([[0, 1.48, 1], [1.5, 1.62, 1], [3.14, 0.87, 1.6]]),
 });
-
-/** The scraping as it moves: its volume right beside the player, the share
- *  of that when it first shows, the distance it is that loud at, and the
- *  seconds between scrapes while it walks in, seen … creeps in, unseen.
- *  Standing still it makes no sound. */
-const SCRAPE = { volume: 0.35, far: 0.35, refDistance: 1.2, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
 
 /** Watching a sleeper (the half-open eyes of a nap): the share of naps it
  *  watches (rolled once per nap, as the player lies down), how there it is,
@@ -324,7 +315,6 @@ export class SleepDemon extends Component {
       onPhase: phase => this._onDeathPhase(phase),
       onDone: () => this._died(),
     });
-    this._stepIn = 0;
     /** Seconds of silence left before the next whisper, of the whisper
      *  playing now, and whether it showed last frame (a new showing
      *  whispers at once). */
@@ -341,9 +331,6 @@ export class SleepDemon extends Component {
     this._freshShow = false;
     this._voice = null;
     this._lastKnock = -1;
-    /** The last cadence's mode (0 standing, 1 sneaking, 2 walking in), so a
-     *  change of pace re-times the next step. */
-    this._stepMode = 0;
     /** Metres the eye backed away from it this frame (playerDrift), and the
      *  eye's last position — no frame before the first. */
     this._away = 0;
@@ -452,7 +439,6 @@ export class SleepDemon extends Component {
     this._smile(logic.smiling);
     if (this.figure.object3d.visible) this._facePlayer();
     this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
-    this._scrapes(dt);
     this._voices(dt);
     // Walking in on them: heavy-legged, with the dread on the heart.
     // Anything else, let go.
@@ -750,42 +736,6 @@ export class SleepDemon extends Component {
     return d;
   }
 
-  /** One scrape, now: the nearer it stands, the louder, and what the next
-   *  one is timed from. Not part of the ambience, so dead air doesn't take
-   *  it with it. */
-  _playStep() {
-    this._stepIn = this._stepEvery();
-    const sound = this.sounds?.scrape;
-    if (!sound) return;
-    sound.setVolume(SCRAPE.volume * lerp(SCRAPE.far, 1, this.logic.closeness));
-    if (sound.isPlaying) sound.stop();
-    sound.play();
-  }
-
-  /** How long to the next step: walking in, seen, or creeping, unseen. */
-  _stepEvery() {
-    const [lo, hi] = this.logic.walking ? SCRAPE.walk : SCRAPE.sneak;
-    return lo + (hi - lo) * this.rand();
-  }
-
-  /** Scrapes only while it moves: the first as it sets off, then at the
-   *  cadence. Standing still, fading in or gone: nothing. */
-  _scrapes(dt) {
-    const logic = this.logic;
-    const mode = !logic.shown ? 0 : logic.walking ? 2 : logic.sneaking ? 1 : 0;
-    if (!mode) {
-      this._stepIn = 0;
-      this._stepMode = 0;
-      return;
-    }
-    if (mode !== this._stepMode) {
-      this._stepMode = mode;
-      this._stepIn = Math.min(this._stepIn, this._stepEvery());
-    }
-    if ((this._stepIn -= dt) > 0) return;
-    this._playStep();
-  }
-
   /** A voice the moment it shows, then now and then while the look isn't
    *  on it: a turn, a gap, another. Each turn is a knock or a whisper —
    *  mostly knocks at first, mostly whispers as the player tires; a
@@ -1003,7 +953,7 @@ export class SleepDemon extends Component {
     const engine = this.gameObject?.scene?.userData?.engine;
     const sounds = {};
     if (!engine?.audioListener || !engine.assets) return sounds;
-    const voices = { whisper: WHISPER, whisperBed: WHISPER, knock: KNOCK, scrape: SCRAPE };
+    const voices = { whisper: WHISPER, whisperBed: WHISPER, knock: KNOCK };
     for (const [name, { refDistance, rolloff }] of Object.entries(voices)) {
       const key = SLEEP_DEMON_SOUNDS[name];
       if (engine.assets.has && !engine.assets.has(key)) continue;
@@ -1041,7 +991,6 @@ export class SleepDemon extends Component {
     if (!this._napWatched || !this.sleeper.peeking) {
       if (o.visible) this._hide();
       this._hush();
-      this._stepIn = 0;
       return;
     }
     if (!o.visible) {
@@ -1077,7 +1026,7 @@ export class SleepDemon extends Component {
   }
 
   /** A slow walk toward the bed, `dt` real seconds of it, no nearer than
-   *  NAP_WATCH.floor; heard as it goes. Blocked, it holds. */
+   *  NAP_WATCH.floor. Blocked, it holds. */
   _napCreep(dt) {
     const camera = this.camera;
     if (!camera) return;
@@ -1085,11 +1034,7 @@ export class SleepDemon extends Component {
     camera.getWorldPosition(_eye);
     const now = Math.hypot(o.position.x - _eye.x, o.position.z - _eye.z);
     const step = Math.min(NAP_WATCH.creep * dt, now - NAP_WATCH.floor);
-    if (step <= 0 || this._approach(step, true) === false) {
-      this._stepIn = 0;
-      return;
-    }
-    if ((this._stepIn -= dt) <= 0) this._playStep();
+    if (step > 0) this._approach(step, true);
   }
 
   /** Out of bed: gone, and its rules from the start. */
@@ -1097,7 +1042,6 @@ export class SleepDemon extends Component {
     this._napping = false;
     this._hide();
     this._hush();
-    this._stepIn = 0;
     this.logic.start();
   }
 
