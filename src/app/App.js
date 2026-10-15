@@ -155,7 +155,9 @@ export class App {
     // click or key anywhere does. Listed before the listener below, which
     // swallows keys while a menu is open.
     this.music.load();
-    this._offs.push(flow.onChange(() => this.music.setPlaying(flow.state === 'mainMenu')));
+    // The main menu, and the end credits (the run complete): not the game's
+    // own pause or Night failed screens.
+    this._offs.push(flow.onChange(() => this.music.setPlaying(flow.state === 'mainMenu' || flow.screen === 'runComplete')));
     this._listen(win, 'pointerdown', () => this._wakeAudio(), { capture: true });
     this._listen(win, 'keydown', () => this._wakeAudio(), { capture: true });
 
