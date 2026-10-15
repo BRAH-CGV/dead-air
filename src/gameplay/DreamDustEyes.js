@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { synthGrowl } from './Growl.js';
+import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
 // DreamDustEyes  –  the things in the crater dream that watch
 // ─────────────────────────────────────────────
 // A simplified dust-eyes manager for the dream crater. No yard/window
 // distinction, no random spawning, no aggro rolls, no storm dependency.
-// All eyes are pre-placed in a ring around the player at build time; they
-// stay passive until the player looks directly at one, then it growls,
-// leaps and chases. Once aggro'd it never calms down — it chases until
-// it catches the player or the dream ends.
+// All eyes are pre-placed in three concentric rings around the player at
+// build time; they stay passive until the player looks directly at one,
+// then it growls, leaps and chases. Once aggro'd it never calms down —
+// it chases until it catches the player or the dream ends.
 //
 //   passive ──stared at (stareSeconds)──▶ growling ──growlSeconds──▶ leaping ──▶ chasing
 //      │                 (still, red eyes, jaws shut,      (jaws open, a hop
@@ -30,11 +31,11 @@ import { synthGrowl } from './Growl.js';
 
 /** Tuning. Seconds and metres unless stated. */
 export const DREAM_EYES = {
-  /** Total eyes in the pool (all spawn; >= 12 required). */
-  poolSize: 16,
-  /** Spawn distance from the player (metres). */
-  spawnDistance: [14, 28],
-  /** Height above the ground. */
+  /** Total eyes in the pool (all spawn; 3 rings of equal share). */
+  poolSize: 36,
+  /** Each sub-array is one ring: [minDist, maxDist] from the player. */
+  spawnRings: [[14, 28], [45, 70], [90, 130]],
+  /** Height above the local terrain surface. */
   height: [1.9, 2.6],
   /** Degrees off the middle of the view that still counts as looking. */
   gazeAngle: 8,
@@ -49,15 +50,15 @@ export const DREAM_EYES = {
   leapHeight: 0.9,
   /** Chase speed (m/s) — the player runs at 5. */
   chaseSpeed: 3.6,
-  /** Walking bob: cycles per metre travelled, vertical amplitude. */
-  bobCyclesPerMetre: 2.2,
-  bobAmplitude: 0.18,
+  /** Walking bob: frequency (Hz), vertical amplitude (m). */
+  bobFrequency: 2,
+  bobAmplitude: 0.015,
   /** It has the player at this distance. */
   catchDistance: 1.5,
   /** Fade in/out duration. */
   fadeSeconds: 1.5,
   /** Farthest it can be seen from. */
-  sightRange: 35,
+  sightRange: 50,
   /** The slow side-to-side drift while watching. */
   swayAmplitude: 1.5,
   swayRate: 0.35,
@@ -90,8 +91,8 @@ class Slot {
     /** The leap, start to end. */
     this.leapFrom = new THREE.Vector3();
     this.leapTo = new THREE.Vector3();
-    /** Cumulative distance walked while chasing (drives the bob). */
-    this.walkDist = 0;
+    /** Phase of the walking bob (radians, accumulated over time). */
+    this.bobPhase = 0;
   }
   get position() { return this.go.object3d.position; }
   get mode() { return this.go.mode; }
@@ -138,20 +139,23 @@ export class DreamDustEyes extends Component {
     }
   }
 
-  /** Place every eye in a ring around the player. */
+  /** Place every eye in one of three rings around the player. */
   _spawnAll() {
     const eye = this.hooks.eyePosition(_eye);
     const count = this.slots.length;
+    const rings = DREAM_EYES.spawnRings;
+    const ringSize = Math.ceil(count / rings.length);
     for (let i = 0; i < count; i++) {
       const slot = this.slots[i];
+      const ringIdx = Math.min(Math.floor(i / ringSize), rings.length - 1);
+      const ring = rings[ringIdx];
       const angle = (i / count) * Math.PI * 2 + (this.random() - 0.5) * 0.5;
-      const dist = lerp(DREAM_EYES.spawnDistance[0], DREAM_EYES.spawnDistance[1], this.random());
-      const y = lerp(DREAM_EYES.height[0], DREAM_EYES.height[1], this.random());
-      slot.anchor.set(
-        eye.x + Math.cos(angle) * dist,
-        y,
-        eye.z + Math.sin(angle) * dist,
-      );
+      const dist = lerp(ring[0], ring[1], this.random());
+      const x = eye.x + Math.cos(angle) * dist;
+      const z = eye.z + Math.sin(angle) * dist;
+      const groundY = terrainHeightAt(x, z);
+      const y = groundY + lerp(DREAM_EYES.height[0], DREAM_EYES.height[1], this.random());
+      slot.anchor.set(x, y, z);
       // Sway across the player's line of sight.
       const dx = slot.anchor.x - eye.x;
       const dz = slot.anchor.z - eye.z;
@@ -255,7 +259,7 @@ export class DreamDustEyes extends Component {
     const ease = 1 - (1 - u) * (1 - u);
     slot.position.lerpVectors(slot.leapFrom, slot.leapTo, ease);
     slot.position.y += Math.sin(Math.PI * u) * DREAM_EYES.leapHeight;
-    if (u >= 1) { slot.phase = 'chasing'; slot.t = 0; slot.walkDist = 0; }
+    if (u >= 1) { slot.phase = 'chasing'; slot.t = 0; slot.bobPhase = 0; }
   }
 
   /** Straight at the player with a walking bob. Never calms down once aggro'd. */
@@ -268,12 +272,12 @@ export class DreamDustEyes extends Component {
     const d = _way.length();
     const step = Math.min(DREAM_EYES.chaseSpeed * dt, d);
     if (d > 1e-6) {
-      // Horizontal stride toward the player.
+      // Stride toward the player.
       slot.position.addScaledVector(_way, step / d);
-      // Walking bob: sine wave keyed to distance travelled.
-      slot.walkDist += step;
-      slot.position.y += Math.sin(slot.walkDist * DREAM_EYES.bobCyclesPerMetre * Math.PI * 2) * DREAM_EYES.bobAmplitude;
     }
+    // Walking bob: time-based so the cadence stays steady regardless of speed.
+    slot.bobPhase += dt * DREAM_EYES.bobFrequency * Math.PI * 2;
+    slot.position.y += Math.sin(slot.bobPhase) * DREAM_EYES.bobAmplitude;
   }
 
   _catch(slot) {

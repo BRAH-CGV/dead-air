@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { describe, it, expect, vi } from 'vitest';
 import { DreamDustEyes, DREAM_EYES } from './DreamDustEyes.js';
 import { DustEye } from '../gameobjects/DustEye.js';
+import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
 // DreamDustEyes — the things in the crater dream
@@ -38,16 +39,34 @@ const run = (system, seconds, step = 0.05) => {
 };
 
 describe('spawn', () => {
-  it('places all pool members around the player at the correct distances', () => {
-    const rig = makeRig({ count: 16 });
+  it('places all pool members in the correct rings and above the terrain', () => {
+    const rig = makeRig({ count: DREAM_EYES.poolSize });
     const active = rig.system.active;
-    expect(active.length).toBe(16);
-    for (const slot of active) {
+    expect(active.length).toBe(DREAM_EYES.poolSize);
+    const rings = DREAM_EYES.spawnRings;
+    const ringSize = Math.ceil(DREAM_EYES.poolSize / rings.length);
+    for (let i = 0; i < active.length; i++) {
+      const slot = active[i];
+      const ringIdx = Math.min(Math.floor(i / ringSize), rings.length - 1);
+      const ring = rings[ringIdx];
       const d = Math.hypot(slot.position.x - rig.pos.x, slot.position.z - rig.pos.z);
-      expect(d).toBeGreaterThanOrEqual(DREAM_EYES.spawnDistance[0] - 0.1);
-      expect(d).toBeLessThanOrEqual(DREAM_EYES.spawnDistance[1] + 0.1);
-      expect(slot.position.y).toBeGreaterThanOrEqual(DREAM_EYES.height[0]);
-      expect(slot.position.y).toBeLessThanOrEqual(DREAM_EYES.height[1]);
+      expect(d).toBeGreaterThanOrEqual(ring[0] - 0.1);
+      expect(d).toBeLessThanOrEqual(ring[1] + 0.1);
+      const groundY = terrainHeightAt(slot.position.x, slot.position.z);
+      expect(slot.position.y).toBeGreaterThanOrEqual(groundY + DREAM_EYES.height[0] - 0.1);
+      expect(slot.position.y).toBeLessThanOrEqual(groundY + DREAM_EYES.height[1] + 0.1);
+    }
+  });
+
+  it('distributes eyes evenly across all three rings', () => {
+    const rig = makeRig({ count: DREAM_EYES.poolSize });
+    const rings = DREAM_EYES.spawnRings;
+    const ringSize = Math.ceil(DREAM_EYES.poolSize / rings.length);
+    expect(rings.length).toBe(3);
+    for (let r = 0; r < rings.length; r++) {
+      const start = r * ringSize;
+      const end = Math.min(start + ringSize, DREAM_EYES.poolSize);
+      expect(end - start).toBeGreaterThanOrEqual(4);
     }
   });
 
@@ -166,7 +185,7 @@ describe('attack', () => {
     target.position.set(20, 2, 0);
     target.phase = 'chasing';
     target.go.setMode('aggressive');
-    target.walkDist = 0;
+    target.bobPhase = 0;
     // Collect y values over several ticks.
     const ys = new Set();
     for (let i = 0; i < 40; i++) {
@@ -175,8 +194,8 @@ describe('attack', () => {
     }
     // The bob should produce more than one y value — it's not a flat slide.
     expect(ys.size).toBeGreaterThan(1);
-    // And walkDist should have accumulated.
-    expect(target.walkDist).toBeGreaterThan(0);
+    // And bobPhase should have accumulated.
+    expect(target.bobPhase).toBeGreaterThan(0);
   });
 });
 
