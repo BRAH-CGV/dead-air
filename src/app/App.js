@@ -20,8 +20,9 @@
 //   • While a menu is open, a capture-phase keydown listener eats every
 //     keydown (never keyup) so the game's keys and the review panel's S / D
 //     can't fire behind it.
-//   • New game plays the intro first (src/ui/intro/), a screen over the
-//     main menu; its end card's click is the gesture that takes the lock.
+//   • New game and the Tutorial play the intro first (src/ui/intro/), a
+//     screen over the main menu; its end card's click is the gesture that
+//     takes the lock, and starts whichever opened it (night 1 or night 0).
 //     A page without #intro goes straight in.
 //   • The developer console (dev builds) is a menu screen too: ` opens it
 //     from play, paused under it, and ` again plays on — the keydown is the
@@ -101,7 +102,10 @@ export class App {
     this.engine = engine;
     this.music = music;
     this.intro = intro;
-    if (intro) intro.onBegin = () => { if (!this._busy) this._beginShift(); };
+    /** What the intro's end card starts: New game's night 1, or the
+     *  Tutorial's night 0. Set by whichever button opened it. */
+    this._afterIntro = () => this._beginShift();
+    if (intro) intro.onBegin = () => { if (!this._busy) this._afterIntro(); };
     this.flow = new AppFlow();
     this.pointerLock = pointerLock;
     this.view = view;
@@ -251,13 +255,19 @@ export class App {
   /** New game: the intro first, whose end card begins the shift
    *  (`intro.onBegin`). The menu music plays on under it. */
   async _newGame() {
-    if (this.intro && this.flow.screen === 'main') {
-      this._wakeAudio();
-      this.flow.openIntro();
-      this.intro.play();
-      return;
-    }
+    if (this._playIntro(() => this._beginShift())) return;
     await this._beginShift();
+  }
+
+  /** The intro over the main menu, its end card to run `then`. False where
+   *  there is none to play (no #intro, or not from the main menu). */
+  _playIntro(then) {
+    if (!this.intro || this.flow.screen !== 'main') return false;
+    this._wakeAudio();
+    this._afterIntro = then;
+    this.flow.openIntro();
+    this.intro.play();
+    return true;
   }
 
   /** Into the first night, from New game or the intro's end card — either
@@ -279,10 +289,16 @@ export class App {
     });
   }
 
-  /** The tutorial, night 0, on the fresh scene the menu sits over. It is
-   *  no part of a run: Continue is left as it was, and night 0 is never
-   *  saved (_onGameState). */
+  /** The tutorial: the intro first, like New game, then night 0. */
   async _tutorial() {
+    if (this._playIntro(() => this._beginTutorial())) return;
+    await this._beginTutorial();
+  }
+
+  /** Night 0, on the fresh scene the menu sits over, from the Tutorial
+   *  button or the intro's end card. It is no part of a run: Continue is
+   *  left as it was, and night 0 is never saved (_onGameState). */
+  async _beginTutorial() {
     this._wakeAudio();
     const lock = this.pointerLock.request();   // inside the click, or it's refused
     await this._run(async () => {
@@ -291,6 +307,8 @@ export class App {
         this.engine.activeScene?.nights?.setNight(0);
         this.flow.newGame();
         this.engine.setPaused(false);
+      } else if (this.flow.screen === 'intro') {
+        this.intro?.setHint(COPY.lockRefused);
       } else {
         this._setHint(COPY.lockRefused);
       }

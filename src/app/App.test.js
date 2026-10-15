@@ -1425,6 +1425,59 @@ describe('App intro (New game)', () => {
     expect(intro.advance).not.toHaveBeenCalled();
   });
 
+  describe('the Tutorial plays it too', () => {
+    /** An app over a scene with a night 0 (where the Tutorial button shows). */
+    async function withTutorial() {
+      app.dispose();
+      engine = makeEngine();
+      engine.activeScene.nights.minNight = 0;
+      app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+      await app.start();
+    }
+
+    it('over the main menu, still paused, no lock asked for yet', async () => {
+      await withTutorial();
+      await click('tutorial');
+      expect(app.flow.screen).toBe('intro');
+      expect(intro.play).toHaveBeenCalledOnce();
+      expect(engine.paused).toBe(true);
+      expect(lock.request).not.toHaveBeenCalled();
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    it('its end card begins night 0, and Continue is left as it was', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2, highest: 2 }));
+      await withTutorial();
+      await click('tutorial');
+      await begin();
+      expect(lock.request).toHaveBeenCalledOnce();
+      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(app.flow.state).toBe('playing');
+      expect(engine.paused).toBe(false);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2, highest: 2 });
+    });
+
+    it('a refused lock keeps the end card up, and says why', async () => {
+      await withTutorial();
+      await click('tutorial');
+      lock.grant = false;
+      await begin();
+      expect(app.flow.screen).toBe('intro');
+      expect(intro.setHint).toHaveBeenCalledWith(expect.stringMatching(/click again/i));
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    it('backed out of with Esc, New game\'s intro then begins night 1, not night 0', async () => {
+      await withTutorial();
+      await click('tutorial');
+      key('Escape');
+      await click('newGame');
+      await begin();
+      expect(app.flow.state).toBe('playing');
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+  });
+
   it('Continue skips it', async () => {
     storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2 }));
     app.dispose();
