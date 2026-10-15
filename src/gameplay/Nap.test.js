@@ -250,8 +250,8 @@ describe('Nap', () => {
     });
   });
 
-  describe('the half-open eyes (a peek): the night holds still while you look', () => {
-    it('runs at real time while the eyes are half open, and fast again once they shut', () => {
+  describe('the demon\'s stretches: the night holds to real time while the demon is there', () => {
+    it('runs at real time while the stretch is on, and fast again once it ends', () => {
       const { nap, engine, rest } = rig;
       rest.peeking = false;
       nap.start();
@@ -265,7 +265,7 @@ describe('Nap', () => {
       expect(engine.timeScale).toBe(NAP.timeScale);
     });
 
-    it('not before the eyes have shut: getting in stays at real time', () => {
+    it('not before the darkness has closed: getting in stays at real time', () => {
       const r = makeRig({ instant: false });
       r.rest.peeking = false;
       r.nap.start();
@@ -273,7 +273,7 @@ describe('Nap', () => {
       expect(r.engine.timeScale).toBe(1);
     });
 
-    it('so the alarm cannot cut the scene short: the clock barely moves through it', () => {
+    it('so the alarm cannot cut the scene short: the clock barely moves through a stretch', () => {
       const { nap, controller, rest } = rig;
       controller.nightClock.currentTime = 1;
       nap.start(0.5);

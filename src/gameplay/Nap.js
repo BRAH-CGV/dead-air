@@ -34,9 +34,9 @@ import { Component } from '../core/Component.js';
 // frame by frame, so a longer nap restores more and one cut short gives
 // back only what was slept.
 //
-// While the eyes are half open (BedRest.peeking) the night runs at real
-// time, so the scene plays at the speed it is seen and an alarm can't cut
-// it short; once they shut it races on again.
+// While the sleeper is in the darkened view (BedRest.asleep) the night
+// runs at real time on a watched nap (the demon comes), and at NAP.timeScale
+// on an unwatched one. Nothing else changes.
 //
 // The lids black the screen out, HUD and all, so for the whole nap a line
 // over them (`hint`, NAP.wakeHint) says E wakes you.
@@ -153,7 +153,9 @@ export class Nap extends Component {
       // handed straight back.
       if (state === 'morning') return this.wake();
       if (state !== 'playing') return this._abandon();
-      // Eyes half open: the night holds to real time while you look.
+      // In the darkened view on a watched nap the night holds to real
+      // time, so the demon can be seen creeping; on an unwatched one
+      // there is nothing to show, so the night races.
       if (this._asleep) this.engine.timeScale = this.rest?.peeking ? 1 : NAP.timeScale;
       this._rest();
       if (this.wakeAt !== null && this.controller.nightClock?.currentTime >= this.wakeAt) {
