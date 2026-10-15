@@ -170,18 +170,13 @@ describe('Engine onSceneLoaded', () => {
 });
 
 describe('Engine devTools gate', () => {
-  it('defaults on, so code without an app layer keeps its debug keys', () => {
+  it('defaults on, so code without an app layer keeps its dev tools', () => {
     expect(new Engine().devTools).toBe(true);
   });
 
-  it('debugKeysActive is false when dev tools are off or the game is paused', () => {
-    const engine = new Engine();
-    expect(engine.debugKeysActive).toBe(true);
-    engine.devTools = false;
-    expect(engine.debugKeysActive).toBe(false);
-    engine.devTools = true;
-    engine.setPaused(true);
-    expect(engine.debugKeysActive).toBe(false);
+  it('binds no debug keys: the dev console drives the tools', () => {
+    const binds = Object.keys(new Engine().keyBinds);
+    expect(binds).toEqual(['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld']);
   });
 });
 

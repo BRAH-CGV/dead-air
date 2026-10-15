@@ -45,7 +45,7 @@ import { synthGrowl } from './Growl.js';
 // While they watch, they drift slowly from side to side. A yard eye is
 // never put in the trees, nor where a tree or something solid (the buggy,
 // the generator) stands between it and the player (sightBlocked), and it
-// mostly comes in front of them (inViewChance — always, for the J key), and a chasing or
+// mostly comes in front of them (inViewChance — always, for the console's `eyes`), and a chasing or
 // leaping eye goes round the solid things in the yard — the buggy, the
 // generator (`obstacles`, steerAround) — never through them.
 //
@@ -78,7 +78,7 @@ import { synthGrowl } from './Growl.js';
 //
 // The eyes are a pool of DustEye objects built with the scene, so their
 // shaders are compiled behind the loading screen; hidden ones cost nothing.
-// For testing, summon() — the J key — brings one to the yard and one to the
+// For testing, summon() — the dev console's `eyes` — brings one to the yard and one to the
 // window now; summon('fence') or summon('window') brings just one (and a storm, if none
 // is blowing). The scene hands it hooks for the camera, whether the player
 // is outside, and whether the airlock hatch is shut; the fence and the
@@ -630,9 +630,9 @@ export class DustEyes extends Component {
   }
 
   /**
-   * Bring one now — the J debug key, which always brings one to the yard,
+   * Bring one now — the dev console's `eyes`, which always brings one to the yard,
    * wherever the player is. `kind` 'window' brings one to the window instead
-   * (cooldown ignored). With no storm up, starts one (the K key's summon) and
+   * (cooldown ignored). With no storm up, starts one (the console's `storm`) and
    * the eye comes as soon as it is strong enough.
    * @param {'both'|'fence'|'window'} [kind='both']
    * @returns {boolean} whether one is coming
@@ -975,7 +975,7 @@ export class DustEyes extends Component {
    * Bring one out, in the yard ('fence') or through the window ('window'),
    * if there is room for that kind tonight.
    * @param {'fence'|'window'} kind
-   * @param {{ debug?: boolean }} [opts]  debug: the J key — works on night 1,
+   * @param {{ debug?: boolean }} [opts]  debug: the console's `eyes` — works on night 1,
    *        and ignores the window's cooldown.
    */
   _spawn(kind, { debug = false, force = false } = {}) {
@@ -997,7 +997,7 @@ export class DustEyes extends Component {
     }
 
     if (kind === 'window') this._windowWait = DUST_EYES.windowCooldown;
-    // In front of the player — always for the J key, mostly otherwise.
+    // In front of the player — always for the console's `eyes`, mostly otherwise.
     this._place(slot, kind, { inView: debug || this.random() < DUST_EYES.inViewChance });
     return true;
   }

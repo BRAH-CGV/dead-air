@@ -127,7 +127,7 @@ The tools already exist:
   every scene build.
 
 Take readings standing in each room, in a corridor, and outside, and
-compare against the budgets from `ROOM-BASED-SCENE-PLAN.md` §3:
+compare against these budgets:
 
 | Metric | Target |
 |---|---|

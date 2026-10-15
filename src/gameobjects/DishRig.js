@@ -91,6 +91,10 @@ export function cursorToSky(x, y) {
   };
 }
 
+/** The longest step the spring-damper takes, seconds: a game frame. Well
+ *  inside its stability (damping × dt < 2) at any frame rate. */
+const MAX_STEP = 1 / 60;
+
 export class DishRig {
   // ── Pose ──
   /** Where the dish points now, radians. */
@@ -157,8 +161,16 @@ export class DishRig {
 
   /** Slew both axes toward the target with spring-damper momentum. The dish
    *  accelerates toward its target, decelerates as it approaches, and never
-   *  exceeds maxRotationSpeed. */
+   *  exceeds maxRotationSpeed. A long frame is taken in steps of at most
+   *  MAX_STEP: stepped whole, the damper overshoots once damping × dt
+   *  passes 2 — a nap's 15× time does that — and the dish swings back and
+   *  forth at full slew, its drive heard the whole nap. */
   update(dt) {
+    const steps = Math.max(1, Math.ceil(dt / MAX_STEP - 1e-9));
+    for (let i = 0; i < steps; i++) this._step(dt / steps);
+  }
+
+  _step(dt) {
     // Yaw axis
     const yawErr = angleDelta(this.currentYaw, this.targetYaw);
     this.velYaw -= this.velYaw * this.angularDamping * dt;

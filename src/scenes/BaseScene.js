@@ -50,6 +50,7 @@ import { PLAYER_BODY } from '../components/PlayerBody.js';
 import { Component } from '../core/Component.js';
 import { LEDStrip } from '../components/LEDStrip.js';
 import { FirstPersonController } from '../components/FirstPersonController.js';
+import { Flashlight } from '../components/Flashlight.js';
 import { PowerGrid } from '../systems/PowerGrid.js';
 import { Ufo } from '../gameobjects/Ufo.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
@@ -66,12 +67,21 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap } from '../gameplay/Nap.js';
 import { BreakerPanel } from '../ui/BreakerPanel.js';
 import { BreakerPuzzle } from '../gameplay/BreakerPuzzle.js';
 import { sealAgainst } from '../core/ShadowSides.js';
 import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
+import { Stamina } from '../gameplay/Stamina.js';
+import { StaminaDrain } from '../components/StaminaDrain.js';
+import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
+import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
+import { FatigueEffects } from '../components/FatigueEffects.js';
+import { BedRest } from '../components/BedRest.js';
+import { PromptLabel } from '../ui/PromptLabel.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -97,12 +107,13 @@ import { CameraOverlay } from '../ui/CameraOverlay.js';
 // from the office's outer wall face to the side room's, and the side room
 // slides its doorway to the corridor's line.
 //
-// A night is a shift: 12:00 to 6:00 AM on the NightClock, which the office's
-// wall clock and the HUD both show. The last hour brings the dawn (Daylight
-// turns the sky, lights and fog to the Martian day). A met quota makes it
+// A night is a shift: 6:00 PM to 6:00 AM on the NightClock, which the office's
+// wall clock and the HUD both show. It starts at sunset and the first hour is
+// the dusk; the last hour brings the dawn (Daylight turns the sky, lights and
+// fog between the night and the Martian day). A met quota makes it
 // morning, and the bunk in LivingQuarters sleeps through the day to the next
-// night. Press N (Engine keyBinds.nextNight) to skip ahead; it wraps back to
-// night 1 after the last.
+// night. The dev console's `night` skips ahead; it wraps back to night 1
+// after the last.
 // ─────────────────────────────────────────────
 
 const CORRIDOR_LENGTH = 4;
@@ -234,6 +245,13 @@ export class BaseScene extends Scene {
    *  @type {PowerGrid|null} */
   power = null;
 
+  /** How awake the player is: drained through the shift, topped up by a
+   *  ration. The Sleep Demon and the fatigue effects read it.
+   *  @type {Stamina|null} */
+  stamina = null;
+  /** The thing in the corner of the eye, every night. @type {SleepDemon|null} */
+  sleepDemon = null;
+
   /** GPU resources the scene itself created (ground, moon). */
   _owned = [];
   /** Sounds the scene itself plays (the breaker panel's click). */
@@ -269,15 +287,20 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addStamina();
+    this._addBedRest();
+    this._addFatigue();
+    this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
+    this._addNap();
     this._buildOcclusion();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
   }
 
-  /** Phase 12 budget check (see docs/ROOM-BASED-SCENE-PLAN.md): how many
+  /** Budget check (see docs/PERFORMANCE-PLAN.md): how many
    *  physics bodies and Object3Ds one BaseScene build produces. */
   _logBuildStats() {
     const { engine } = this;
@@ -541,10 +564,10 @@ export class BaseScene extends Scene {
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
       listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
-      // Testing only — remove before release. Each key swings a music
-      // track in, and back out on the next press: M the spooky one, comma
-      // the ambient one. Dev builds only: the production bundle has no keys.
-      testKeys: import.meta.env?.DEV ? { KeyM: AMBIENCE.music, Comma: AMBIENCE.ambientMusic } : null,
+      // Testing only: the dev console's `music spooky|ambient|off` swings
+      // one in under the game. Dev builds only, so the production bundle
+      // never loads the extra track for it.
+      testTracks: import.meta.env?.DEV ? { spooky: AMBIENCE.music, ambient: AMBIENCE.ambientMusic } : null,
     }));
 
     // The silence of the sealed airlock is filled by its pressure release:
@@ -583,7 +606,7 @@ export class BaseScene extends Scene {
    *  Built after the rooms, the outside area and the player, because it
    *  reaches into all three. */
   _addGameplaySystems() {
-    this.nightClock = new NightClock({ nightDuration: 300 });
+    this.nightClock = new NightClock();
 
     // Payload URLs are direct paths to the placeholder images, not manifest
     // keys — they are displayed through an HTML <img>, not a Three.js
@@ -592,7 +615,7 @@ export class BaseScene extends Scene {
     const payloadPool = Array.from({ length: 8 }, (_, i) =>
       `assets/signals/signal-${i + 1}.png`,
     );
-    this.signalManager = new SignalManager({ signalsPerNight: 5, payloadPool });
+    this.signalManager = new SignalManager({ payloadPool });
 
     // ── Drive manager (physical hard drives) ──
     this.driveManager = new DriveManager();
@@ -1067,7 +1090,7 @@ export class BaseScene extends Scene {
     // door. Scaled against the doorway it stands next to: the model is 3.3 m
     // tall as downloaded, which beside a 2.2 m door reads as a machine that
     // could not get through it. BUGGY_SCALE brings the roof to just over the
-    // lintel. Position and heading placed by hand in the level editor (F2).
+    // lintel. Position and heading placed by hand in the level editor.
     this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
 
     // The generator, in the far corner of the fenced yard, on the side away
@@ -1456,6 +1479,125 @@ export class BaseScene extends Scene {
   }
 
   // ──────────────────────────────────────────
+  // Stamina and the Sleep Demon (every night)
+  // ──────────────────────────────────────────
+  /** Stamina drains through the shift and the office's ration dispenser
+   *  tops it up. The drain ticks on GameplaySystems after the controller,
+   *  and before the demon and the fatigue effects, so within a frame both
+   *  read this frame's stamina. */
+  _addStamina() {
+    this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
+    const dispenser = this.rooms.MainOffice.rationDispenser;
+    if (dispenser) {
+      dispenser.stamina = this.stamina;
+      const crunch = this._sound('sfx:ration', 0.8);   // a placeholder sound: see the manifest
+      dispenser.onEat = () => {
+        if (!crunch) return;
+        if (crunch.isPlaying) crunch.stop();
+        crunch.play();
+      };
+    }
+    this._sceneRoot.find('GameplaySystems').addComponent(new StaminaDrain({
+      stamina:      this.stamina,
+      controller:   this.gameController,
+      hud:          this.hud,
+      grid:         this.power,
+      onNightStart: () => dispenser?.reset(),
+    }));
+  }
+
+  /** The Sleep Demon, in the corner of the player's eye once they tire (see
+   *  SleepDemon). Its figure is a placeholder under a Threats group on the
+   *  scene root, which sits at the world origin: the demon writes world
+   *  positions, and no occlusion zone ever hides it. It is a shadow in
+   *  itself: a pitch-black shade no light shows, and it casts none — a solid
+   *  shadow under a faint figure gave it away — so moving it never redraws
+   *  the frozen shadow maps. */
+  /** The screens at the desk that fill the view: the terminal's radar or
+   *  review and the security monitor. Whichever is up is the state; 'idle'
+   *  while neither is. Read every frame, so it allocates nothing. */
+  _screens() {
+    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    return {
+      get state() {
+        for (let i = 0; i < screens.length; i++) {
+          if (screens[i].state !== 'idle') return screens[i].state;
+        }
+        return 'idle';
+      },
+    };
+  }
+
+  _addSleepDemon() {
+    const { engine } = this;
+    // Its body is the baked model (sleep-demon.glb); without it (a test's
+    // stub asset manager) the placeholder capsule stands in.
+    const model = engine.assets?.has?.('model:sleep-demon') ? engine.assets.get('model:sleep-demon').scene : null;
+    const figure = createMonsterFigure({
+      name: 'SleepDemon', ...SLEEP_DEMON_FIGURE, shade: true, castShadow: false, placeholderFor: 'sleep-demon.glb', model,
+    });
+    this._group('Threats').addChild(figure);
+    this._ownResourcesOf(figure);
+    this.sleepDemon = this._sceneRoot.find('GameplaySystems').addComponent(new SleepDemon({
+      controller:      this.gameController,
+      stamina:         this.stamina,
+      figure,
+      camera:          engine.camera ?? null,
+      terminal:        this._screens(),
+      rayHit:          sightRay(engine.world, engine.player?.rigidBody ?? null),
+      isFrozen:        () => !!engine.debugCamera?.active,
+      flashlight:      engine.player?.getComponent(Flashlight) ?? null,
+      // Dead air: the room dies as the view comes round to it.
+      ambience:        this.ambience,
+      // Walking them down: the breath and the heart carry the dread.
+      fatigue:         this.fatigueEffects,
+      // Its death (falling asleep on it) takes these over, and gives them back.
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      fade:            this.screenFade ?? null,
+      listener:        engine.audioListener ?? null,
+    }));
+  }
+
+  /** What low stamina does to the player: the tunnel and the eyelids, the
+   *  lights stuttering ('dread' on the grid), the heartbeat and the yawns.
+   *  Built before the demon, which tells it how hard the walk-down grips. */
+  _addFatigue() {
+    const { engine } = this;
+    this.fatigueEffects = this._sceneRoot.find('GameplaySystems').addComponent(new FatigueEffects({
+      stamina:    this.stamina,
+      controller: this.gameController,
+      overlay:    this._fatigueOverlay ??= new FatigueOverlay(),   // shared with the demon: one cache of what is shown
+      grid:       this.power,
+      isFrozen:   () => !!engine.debugCamera?.active,
+    }));
+  }
+
+  // ──────────────────────────────────────────
+  // Getting into and out of the bunk (BedRest)
+  // ──────────────────────────────────────────
+  /** The view to the pillow and back, the lids, the peeks. It writes the
+   *  lids last (its late update).
+   *  The bunk and the nap are handed it. */
+  _addBedRest() {
+    const { engine } = this;
+    const bed = this.rooms.LivingQuarters.bed;
+    if (!bed) return;
+    this.bedRest = this._sceneRoot.find('GameplaySystems').addComponent(new BedRest({
+      engine,
+      camera:          engine.camera ?? null,
+      player:          engine.player?.getComponent(FirstPersonController) ?? null,
+      interaction:     engine.player?.getComponent(InteractionSystem) ?? null,
+      overlay:         this._fatigueOverlay ??= new FatigueOverlay(),
+      bed,
+      controller:      this.gameController,
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      isFrozen:        () => !!engine.debugCamera?.active,
+    }));
+    bed.rest = this.bedRest;
+  }
+
+  // ──────────────────────────────────────────
   // The UFO (once a night — UfoThreat)
   // ──────────────────────────────────────────
   /** The saucer comes in high and stops directly over the office, where its
@@ -1534,6 +1676,7 @@ export class BaseScene extends Scene {
       whiteOut:    this.whiteOut,
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.ufoThreat);
   }
@@ -1621,6 +1764,7 @@ export class BaseScene extends Scene {
       },
       nightDuration: this.nightClock.nightDuration,
       nightHours:    this.nightClock.endHour - this.nightClock.startHour,
+      startHour:     this.nightClock.startHour,
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.sandstorm);
     this._addDustEyes();
@@ -1675,6 +1819,40 @@ export class BaseScene extends Scene {
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.dustEyes);
+  }
+
+  /** Naps at the bunk: the night fast-forwarded until 6 AM, until the
+   *  player presses E, or until something loud enough to wake a sleeper —
+   *  the lamps buzzing before a storm outage, the UFO's roar. Silent things
+   *  (the power simply going, the radar blob, eyes at the window) don't.
+   *  No nap with the UFO on its way. Getting into and out of the bunk is
+   *  the bed animation (BedRest): the night speeds up only once the eyes
+   *  are shut. Added last, so it reads every threat after it has moved this
+   *  frame. */
+  _addNap() {
+    const ufoBusy = () => {
+      const phase = this.ufoThreat?.phase;
+      return !!phase && phase !== 'waiting' && phase !== 'gone';
+    };
+    this.nap = new Nap({
+      controller: this.gameController,
+      engine:     this.engine,
+      rest:       this.bedRest ?? null,
+      hud:        this.hud,
+      // Over the closed lids (#nap-hint): the HUD is under them.
+      hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
+      hooks: {
+        setPlayerLocked: locked => this._setPlayerLocked(locked),
+        restless:        ufoBusy,
+      },
+      alarms: [
+        { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },
+        { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.' },
+      ],
+    });
+    this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
+    const { bed } = this.rooms.LivingQuarters;
+    if (bed) bed.nap = this.nap;
   }
 
   /** The solid things standing in the yard, as ground-plan rectangles —
@@ -1853,7 +2031,7 @@ export class BaseScene extends Scene {
    * body rather than on the floor, so dropped at y = 0 the wheels end up
    * buried, and this is measured off the model's own bounds so swapping it
    * cannot quietly sink it again. Passing `y` explicitly overrides that with
-   * a value read straight from the level editor (F2): easier to trust than
+   * a value read straight from the level editor: easier to trust than
    * the computed one once someone has actually looked at where the wheels
    * land, and the fix if that ever needs revisiting.
    */

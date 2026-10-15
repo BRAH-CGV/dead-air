@@ -174,7 +174,7 @@ const PLACED = {
     // indented on one face only. Desk-local metres (+Z is the kneehole's
     // side, toward the chair); `deskBox` converts them to the model's units.
     //
-    // The body, floor to 0.73 m, was measured in the level editor (F2): a
+    // The body, floor to 0.73 m, was measured in the level editor: a
     // back region and two side walls, with the kneehole (+Z) open.
     //
     // The top (#76) is read off the .glb's own vertices, flush with what is
@@ -265,6 +265,16 @@ const PLACED = {
     url: 'assets/models/metal-chair.glb',
     scale: 0.365,
     physics: 'static',
+  },
+  // The Sleep Demon's body: render-only (monsters are not physics), drawn
+  // with MonsterFigure's shade. Baked from the download by
+  // scripts/bake-sleep-demon.mjs — metres, feet on the origin, facing +Z,
+  // with EyeL / EyeR / Mouth / MouthAxis marker nodes.
+  'model:sleep-demon': {
+    type: 'model',
+    url: 'assets/models/sleep-demon.glb',
+    castShadow: false,
+    receiveShadow: false,
   },
   'model:trash-bin': {
     type: 'model',
@@ -617,6 +627,38 @@ const PLACED = {
   'sfx:monster-bite': {
     type: 'audio',
     url: 'assets/audio/monster-bite.mp3',
+  },
+  // Stamina and the Sleep Demon, from the first minute of night 1: the
+  // demon's footsteps on its figure (SleepDemon); the heartbeat, looped, the
+  // yawn and the player's own breathing of a tired one (FatigueEffects); a
+  // ration dropping from the office dispenser (BaseScene._addStamina).
+  //
+  // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
+  // final audio — all but the yawn, which is a real recording (Mixkit, see
+  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // public/assets/audio/, named after its key (any format: footsteps.mp3 is
+  // fine), and changing its `url` below. The key stays, so nothing else
+  // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
+  // sound owner".
+  'sfx:breathing': {
+    type: 'audio',
+    url: 'assets/audio/breathing.wav',
+  },
+  'sfx:heartbeat': {
+    type: 'audio',
+    url: 'assets/audio/heartbeat.wav',
+  },
+  'sfx:yawn': {
+    type: 'audio',
+    url: 'assets/audio/yawn.mp3',
+  },
+  'sfx:ration': {
+    type: 'audio',
+    url: 'assets/audio/ration.wav',
+  },
+  'sfx:footsteps': {
+    type: 'audio',
+    url: 'assets/audio/footsteps.wav',
   },
 };
 

@@ -94,6 +94,16 @@ export class InteractionSystem extends Component {
   }
 
   // ── Every rendered frame ────────────────────────────────────
+  /** Hide the prompt and forget what was targeted, so the next frame shows
+   *  the prompt afresh — for something that takes the player over a while
+   *  with this switched off (the bed animation), and gives them back. */
+  resetPrompt() {
+    this._prevTarget?.onHoverEnd?.();
+    this._prevTarget = null;
+    this._prevLabel = null;
+    this.prompt?.hide();
+  }
+
   onUpdate(_dt) {
     if (!this.gameObject?.scene) return;
 

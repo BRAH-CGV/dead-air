@@ -87,6 +87,22 @@ describe('InteractionSystem prompt', () => {
     expect(prompt.show).toHaveBeenCalledTimes(1);
   });
 
+  it('resetPrompt() hides the prompt and forgets the target, so the next frame shows it afresh (after the bed animation)', () => {
+    const target = new GameObject('Bunk');
+    target.addComponent(new class extends Interactable {
+      promptLabel = '[E] Nap';
+    }());
+    const collider = { parent: () => ({ handle: 1 }) };
+    const { sys, engine, prompt } = makePlayer({ hit: { collider, timeOfImpact: 1 } });
+    engine._bodyToGO.set(1, target);
+
+    sys.onUpdate(0);
+    sys.resetPrompt();
+    expect(prompt.hide).toHaveBeenCalledTimes(1);
+    sys.onUpdate(0);
+    expect(prompt.show).toHaveBeenCalledTimes(2);
+  });
+
   it('re-shows the prompt when the hovered target changes its label (a toggle)', () => {
     // The suit locker flips between "Put on" and "Take off" while the player
     // is still looking at it — the prompt must not keep the stale verb.

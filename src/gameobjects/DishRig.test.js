@@ -52,6 +52,28 @@ describe('DishRig', () => {
     expect(rig.velYaw).toBeGreaterThanOrEqual(-1 - 0.001);
   });
 
+  it('settles in a nap\'s long frames too: 15× game time is no excuse to swing back and forth', () => {
+    // A nap hands every update 15× the frame (0.25 s at 60 fps). Stepped
+    // whole, the damper overshoots each step and the dish swings at full
+    // slew the whole nap — its drive heard through every nap.
+    for (const dt of [0.25, 0.5, 1.5]) {
+      const rig = new DishRig({ currentYaw: 0, targetYaw: 0.5, currentPitch: 0, targetPitch: -0.3 });
+      for (let t = 0; t < 30; t += dt) rig.update(dt);
+      expect(Math.abs(rig.velYaw), `dt ${dt}`).toBeLessThan(1e-3);
+      expect(Math.abs(rig.velPitch), `dt ${dt}`).toBeLessThan(1e-3);
+      expect(rig.isRotating(), `dt ${dt}`).toBe(false);
+    }
+  });
+
+  it('a long frame moves it the same as the short ones it stands for', () => {
+    const long = new DishRig({ currentYaw: 0, targetYaw: 1 });
+    const short = new DishRig({ currentYaw: 0, targetYaw: 1 });
+    long.update(0.25);
+    for (let i = 0; i < 15; i++) short.update(0.25 / 15);
+    expect(long.currentYaw).toBeCloseTo(short.currentYaw, 6);
+    expect(long.velYaw).toBeCloseTo(short.velYaw, 6);
+  });
+
   it('settles near target with damping', () => {
     const rig = new DishRig();
     rig.maxRotationSpeed = 2;

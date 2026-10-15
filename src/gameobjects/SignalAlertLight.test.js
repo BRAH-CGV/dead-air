@@ -198,4 +198,44 @@ describe('SignalAlertLight', () => {
       }
     });
   });
+
+  describe('a nap', () => {
+    // A nap hands every update 15× the frame's real seconds (engine.timeScale);
+    // the engine keeps the real ones as realDt.
+    const napping = (light) => {
+      const engine = { timeScale: 15, realDt: 0 };
+      light.scene = { userData: { engine } };
+      return (frame) => { engine.realDt = frame; light._update(frame * engine.timeScale); };
+    };
+
+    it('blinks on real time: one real second is a blink or two, not nineteen', () => {
+      const light = new SignalAlertLight();
+      light.signalManager = mgr([sig()]);
+      const tick = napping(light);
+      let lightUps = 0, was = false;
+      for (let i = 0; i < 60; i++) {
+        tick(1 / 60);
+        if (light.lit && !was) lightUps++;
+        was = light.lit;
+      }
+      expect(lightUps).toBeGreaterThanOrEqual(1);
+      expect(lightUps).toBeLessThanOrEqual(2);
+    });
+
+    it('flashes frantic on real time too', () => {
+      const light = new SignalAlertLight();
+      light.frantic = true;
+      const tick = napping(light);
+      let flips = 0, was = null;
+      for (let i = 0; i < 60; i++) {
+        tick(1 / 60);
+        if (was !== null && light.lit !== was) flips++;
+        was = light.lit;
+      }
+      // Each burst or gap holds at least FRANTIC_MIN (0.03 s, two frames):
+      // on game time every 15× frame outlasted one and it flipped every frame.
+      expect(flips).toBeGreaterThan(6);
+      expect(flips).toBeLessThanOrEqual(30);
+    });
+  });
 });

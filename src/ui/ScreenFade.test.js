@@ -79,6 +79,8 @@ describe('ScreenFade.fadeIn', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  const dark = () => root.classList.contains('is-dark');
+
   it('cuts to black at once, then fades to clear over the given time', () => {
     fade.fadeIn(1500);
     expect(root.classList.contains('is-dark')).toBe(true);
@@ -107,5 +109,40 @@ describe('ScreenFade.fadeIn', () => {
     const done = vi.fn();
     new ScreenFade(null).fadeIn(1000, done);
     expect(done).toHaveBeenCalledOnce();
+  });
+
+  it('cover() fades to black and stays there until uncover() — for a nap', () => {
+    const onDark = vi.fn();
+    expect(fade.cover(onDark)).toBe(true);
+    expect(dark()).toBe(true);
+    vi.advanceTimersByTime(600);
+    expect(onDark).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(60_000);
+    expect(dark()).toBe(true);                 // held for as long as it takes
+    expect(fade.playing).toBe(true);
+    expect(fade.play(vi.fn())).toBe(false);    // nothing else fades meanwhile
+
+    fade.uncover();
+    expect(dark()).toBe(false);
+    vi.advanceTimersByTime(600);
+    expect(fade.playing).toBe(false);
+  });
+
+  it('uncover() before the screen is black cancels the callback', () => {
+    const onDark = vi.fn();
+    fade.cover(onDark);
+    vi.advanceTimersByTime(300);
+    fade.uncover();
+    vi.advanceTimersByTime(600);
+    expect(onDark).not.toHaveBeenCalled();
+    expect(dark()).toBe(false);
+  });
+
+  it('without a DOM, cover() runs the callback at once', () => {
+    const bare = new ScreenFade(null);
+    const onDark = vi.fn();
+    expect(bare.cover(onDark)).toBe(true);
+    expect(onDark).toHaveBeenCalledOnce();
+    expect(() => bare.uncover()).not.toThrow();
   });
 });
