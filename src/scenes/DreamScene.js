@@ -9,6 +9,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { Component } from '../core/Component.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { DreamFilter } from '../core/DreamFilter.js';
 import { BaseScene } from './BaseScene.js';
 
 // ─────────────────────────────────────────────
@@ -96,6 +97,12 @@ export class DreamScene extends Scene {
     this._spawnPlayer();
     this._addWalk();
 
+    // The dream's look: desaturated with subtle cel-shading.
+    this._dreamFilter = new DreamFilter();
+    this._dreamFilter.attach(this.engine);
+    this._dreamFilter.setIntensity(1);
+    this.engine.postProcess = this._dreamFilter;
+
     // Eyes open: falling asleep in the bunk shuts the eyelids (BedRest), and
     // nothing in the dream would ever open them again.
     new FatigueOverlay().clear();
@@ -134,6 +141,13 @@ export class DreamScene extends Scene {
     if (fog && this._prevFog) {
       fog.density = this._prevFog.density;
       fog.color.setHex(this._prevFog.color);
+    }
+    if (this._dreamFilter) {
+      if (this.engine.postProcess === this._dreamFilter) {
+        this.engine.postProcess = null;
+      }
+      this._dreamFilter.dispose();
+      this._dreamFilter = null;
     }
     for (const resource of this._owned) resource.dispose();
     this._owned.length = 0;

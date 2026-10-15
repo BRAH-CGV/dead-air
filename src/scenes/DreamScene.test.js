@@ -8,6 +8,7 @@ import { DreamScene } from './DreamScene.js';
 import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { DreamWalk } from '../components/DreamWalk.js';
+import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
 // Imports and builds against the whole base scene module: as slow as
@@ -16,6 +17,10 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 function makeDreamEngine() {
   const engine = makeEngine();
+  engine.renderer = {
+    setRenderTarget: vi.fn(),
+    render: vi.fn(),
+  };
   engine.scene = new THREE.Scene();
   engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.camera = new THREE.PerspectiveCamera(75);
@@ -185,6 +190,13 @@ describe('DreamScene (#101)', () => {
     scene.dispose();
     expect(engine.scene.fog.density).toBeCloseTo(0.02);
     expect(engine.scene.fog.color.getHex()).toBe(0x1a1a2e);
+  });
+
+  it('attaches a DreamFilter as the post-process on build, clears it on dispose', () => {
+    expect(engine.postProcess).toBeInstanceOf(DreamFilter);
+    expect(engine.postProcess.active).toBe(true);
+    scene.dispose();
+    expect(engine.postProcess).toBeNull();
   });
 
   it('scatters rocks over the valley, so walking (and slowing) can be seen (playtest)', () => {

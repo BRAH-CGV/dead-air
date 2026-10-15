@@ -7,12 +7,17 @@ import { DreamCraterScene, DREAM_CRATER } from './DreamCraterScene.js';
 import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
+import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
 vi.setConfig({ testTimeout: 30_000 });
 
 function makeDreamEngine() {
   const engine = makeEngine();
+  engine.renderer = {
+    setRenderTarget: vi.fn(),
+    render: vi.fn(),
+  };
   engine.scene = new THREE.Scene();
   engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.camera = new THREE.PerspectiveCamera(75);
@@ -131,5 +136,12 @@ describe('DreamCraterScene', () => {
     scene.dispose();
     expect(engine.scene.fog.density).toBeCloseTo(0.02);
     expect(engine.scene.fog.color.getHex()).toBe(0x1a1a2e);
+  });
+
+  it('attaches a DreamFilter as the post-process on build, clears it on dispose', () => {
+    expect(engine.postProcess).toBeInstanceOf(DreamFilter);
+    expect(engine.postProcess.active).toBe(true);
+    scene.dispose();
+    expect(engine.postProcess).toBeNull();
   });
 });

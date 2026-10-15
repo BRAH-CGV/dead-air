@@ -11,6 +11,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
 import { SANDSTORM, WIND_DIRECTION } from '../gameplay/Sandstorm.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
+import { DreamFilter } from '../core/DreamFilter.js';
 import { BaseScene } from './BaseScene.js';
 
 // ─────────────────────────────────────────────
@@ -85,6 +86,12 @@ export class DreamCraterScene extends Scene {
     this._spawnPlayer();
     this._addDustEyes();
     this._addSurvival();
+
+    // The dream's look: desaturated with subtle cel-shading.
+    this._dreamFilter = new DreamFilter();
+    this._dreamFilter.attach(this.engine);
+    this._dreamFilter.setIntensity(1);
+    this.engine.postProcess = this._dreamFilter;
   }
 
   /** Survived: fade to black, then back to the base. */
@@ -127,6 +134,13 @@ export class DreamCraterScene extends Scene {
     if (fog && this._prevFog) {
       fog.density = this._prevFog.density;
       fog.color.setHex(this._prevFog.color);
+    }
+    if (this._dreamFilter) {
+      if (this.engine.postProcess === this._dreamFilter) {
+        this.engine.postProcess = null;
+      }
+      this._dreamFilter.dispose();
+      this._dreamFilter = null;
     }
     this._whiteOut?.clear();
     clearTimeout(this._catchTimer);
