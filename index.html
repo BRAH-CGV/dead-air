@@ -719,15 +719,18 @@
       @media (prefers-reduced-motion: reduce) {
         #cctv::before, #cctv::after { animation: none; }
       }
-      #cctv-static {
+      /* A switch waiting long on a camera that is loading. The switch
+         itself is drawn on the GPU (CameraSignalPass). */
+      #cctv-connecting {
         position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        image-rendering: pixelated;
-        opacity: 0;
+        top: 42px;
+        right: 22px;
+        letter-spacing: 0.14em;
+        color: #b8c8d8;
+        display: none;
+        animation: cctv-rec 1s steps(1) infinite;
       }
-      #cctv.is-static #cctv-static { opacity: 1; }
+      #cctv.is-connecting #cctv-connecting { display: block; }
       #cctv-label {
         position: absolute;
         top: 18px;
@@ -1013,7 +1016,7 @@
 
     <!-- Security camera monitor (shown while using the camera terminal) -->
     <div id="cctv">
-      <canvas id="cctv-static"></canvas>
+      <div id="cctv-connecting">CONNECTING…</div>
       <div id="cctv-label"></div>
       <div id="cctv-flash">FLASH ON</div>
       <div id="cctv-hint"></div>

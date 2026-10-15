@@ -64,6 +64,8 @@ import { DeleteWarning } from '../ui/DeleteWarning.js';
 import { RedOut } from '../core/RedOut.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
+import { CameraSignalPass } from '../core/CameraSignalPass.js';
+import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
@@ -320,6 +322,14 @@ export class BaseScene extends Scene {
     // the zones a camera asked for go back to the airlock's choice.
     this.cameraTerminal?.exit();
     this.cameraOverlay?.hide();
+    if (this.cameraSignal) {
+      const passes = this.engine.screenPasses;
+      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
+      this.cameraSignal.dispose();
+      this.cameraSignal = null;
+    }
+    this.monitorSpeaker?.dispose();
+    this.monitorSpeaker = null;
     this._offCameraState?.();
     this._offCameraPause?.();
     for (const cam of this.securityCameras ?? []) cam.dispose();
@@ -567,7 +577,7 @@ export class BaseScene extends Scene {
     });
     this.ambience = this._group('Ambience').addComponent(new Ambience({
       mix,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       // Testing only: the dev console's `music spooky|ambient|off` swings
       // one in under the game. Dev builds only, so the production bundle
       // never loads the extra track for it.
@@ -579,7 +589,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new AirlockSound({
       airlock: rooms.Airlock,
       sound:   this._sound(AIRLOCK_SOUND.key),
-      isInside: () => !!engine.camera && airlock.box.containsPoint(engine.camera.getWorldPosition(_airlockEar)),
+      isInside: () => airlock.box.containsPoint(this._ears(_airlockEar)),
     }));
 
     // In a storm, sand on the office window: heard in the office, louder
@@ -588,7 +598,7 @@ export class BaseScene extends Scene {
     this.ambience.gameObject.addComponent(new WindowSand({
       window: this._officeWindow(),
       storm:  () => this.sandstorm?.level ?? 0,
-      listenerPosition: out => engine.camera?.getWorldPosition(out) ?? out,
+      listenerPosition: out => this._ears(out),
       isInside: p => officeShell.containsPoint(p),
     }));
   }
@@ -1294,20 +1304,37 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
+    // The switch, drawn over the frame: the old picture frozen and degraded
+    // while the new camera loads. Needs the renderer; headless (tests) the
+    // terminal switches at once.
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this.cameraSignal = new CameraSignalPass();
+      this.cameraSignal.attach(renderer);
+      screenPasses.push(this.cameraSignal);
+    }
+    // The monitor's speaker: everything the camera on screen hears
+    // (_listenFrom), and the flash's clicks, thin and fuzzy through it. The
+    // servo's clip is fuzzy already and the static is the speaker's own:
+    // out of it as they are, never heard from the lens.
+    this.monitorSpeaker = new MonitorSpeaker(this.engine.audioListener);
+    const speaker = this.monitorSpeaker;
     this.cameraTerminal = new CameraTerminal({
+      signal:    this.cameraSignal ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,
       crosshair: this.engine.crosshair,
       sounds: {
-        servo:     this._sound('sfx:camera-servo'),
-        static:    this._sound('sfx:camera-static'),
-        spotlight:    this._sound('sfx:camera-spotlight'),
-        spotlightOff: this._sound('sfx:camera-spotlight-off'),
+        servo:     speaker.route(this._sound('sfx:camera-servo'), { dry: true }),
+        static:    speaker.route(this._sound('sfx:camera-static'), { dry: true }),
+        spotlight:    speaker.route(this._sound('sfx:camera-spotlight')),
+        spotlightOff: speaker.route(this._sound('sfx:camera-spotlight-off')),
       },
       hooks: {
         setViewZones: zones => this.portal?.setViewZones(zones),
         isReady:      zone => this.zones?.isReady(zone) ?? true,
+        listenFrom:   (lens, level) => this._listenFrom(lens, level),
         // The mouse goes to the page, for the map — as for the breaker panel.
         // Taken off the monitor by the shift ending (a game over, the
         // morning), the pointer lock isn't asked back: there was no click.
@@ -1375,7 +1402,7 @@ export class BaseScene extends Scene {
     // Start-up on, wind-down off, a hum between — a whisper from indoors.
     const sound = generator.addComponent(new GeneratorSound({
       grid,
-      hooks: { listenerPosition: out => this.engine.camera.getWorldPosition(out), isOutside: p => this._isOutside(p) },
+      hooks: { listenerPosition: out => this._ears(out), isOutside: p => this._isOutside(p) },
     }));
     this.generatorSound = sound;
     // After a UFO blow-out the breakers are tripped: the switch is dead
@@ -1455,6 +1482,32 @@ export class BaseScene extends Scene {
     audio.setVolume(volume);
     this._sounds.push(audio);
     return audio;
+  }
+
+  /** Where the player's ears are: on the player, or on the lens of the
+   *  security camera on screen (_listenFrom). Every sound that works out
+   *  its own level from where it is heard reads this. */
+  _ears(out) {
+    const ears = this.engine.audioListener?.parent ? this.engine.audioListener : this.engine.camera;
+    return ears ? ears.getWorldPosition(out) : out;
+  }
+
+  /** Hear what `lens` hears, as if standing there, through the monitor's
+   *  speaker at `level` (0..1) — or, with null, the player's own ears
+   *  again. The ears themselves move (the AudioListener goes onto the
+   *  lens), so every sound placed in the world is heard from the camera,
+   *  and the sounds that work out their own level (_ears) cut straight
+   *  over rather than easing across. */
+  _listenFrom(lens, level) {
+    const { audioListener: listener, camera } = this.engine;
+    if (!listener || !camera) return;
+    const host = lens ?? camera;
+    if (listener.parent !== host) {
+      host.add(listener);
+      this.ambience?.jump();
+      this.generatorSound?.jump();
+    }
+    this.monitorSpeaker?.engage(!!lens, level);
   }
 
   /** Hand the mouse to a DOM panel (true) or back to looking around. The

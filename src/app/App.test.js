@@ -1268,6 +1268,24 @@ describe('App menu music', () => {
     expect(engine.audioListener.context.resume).toHaveBeenCalledTimes(1);
   });
 
+  it('plays it under the end credits (Run complete), and on to the main menu', async () => {
+    await click('newGame');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(false);
+    engine.activeScene.gameController.fire('finished');
+    expect(app.flow.screen).toBe('runComplete');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(true);
+    await click('quit');
+    expect(app.flow.state).toBe('mainMenu');
+    expect(music.setPlaying).toHaveBeenLastCalledWith(true);
+  });
+
+  it('not under Night failed: that is the game\'s own sound', async () => {
+    await click('newGame');
+    engine.activeScene.gameController.fire('gameOver');
+    await flush();
+    expect(music.setPlaying).toHaveBeenLastCalledWith(false);
+  });
+
   it('lets go of the music when disposed', () => {
     app.dispose();
     expect(music.dispose).toHaveBeenCalledOnce();

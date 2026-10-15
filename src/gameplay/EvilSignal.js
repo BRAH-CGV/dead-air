@@ -3,6 +3,8 @@ import { SignalTarget } from './SignalTarget.js';
 import { VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
 import { DriveSparks, SPARKS } from './DriveSparks.js';
+import { ClipVoice, clipSet } from '../components/ClipVoice.js';
+import { LoopVoice } from '../components/LoopVoice.js';
 import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 
 // ─────────────────────────────────────────────
@@ -75,6 +77,30 @@ export const EVIL = {
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
   id: -1,
+};
+
+/** The corrupted drive sparking: one of three clips, at random, from the
+ *  drive on each hop (when the burst of sparks flies). They start at
+ *  `minLevel` of `volume` and climb to it as the silence timer runs out. */
+export const SPARK_SOUNDS = {
+  clips: ['sfx:spark-1', 'sfx:spark-2', 'sfx:spark-3'],
+  volume: 0.7,
+  minLevel: 0.5,
+};
+
+/** The hum under the countdown: a very faint loop for as long as a corrupted
+ *  drive is out, from `minLevel` of `volume` at the start up to `volume` as
+ *  the silence timer runs out. Kept low: it is there to be half noticed.
+ *  It sounds from the drive itself, full within `placed.refDistance` metres
+ *  and fainter beyond, so it leads you to it. */
+export const HUM = {
+  key: 'sfx:evil-hum',
+  volume: 0.2,
+  minLevel: 0.35,
+  placed: { refDistance: 3, rolloff: 1 },
+  /** Cents below the recording's pitch (100 to a semitone); also runs it
+   *  slower: 0.89× at −200. */
+  detune: -200,
 };
 
 export class EvilSignal extends Component {
@@ -170,13 +196,25 @@ export class EvilSignal extends Component {
    * @param {import('./DriveManager.js').DriveManager} [opts.driveManager]
    * @param {import('../gameobjects/Satellite.js').Satellite} [opts.satellite]
    * @param {() => number} [opts.random]
+   * @param {{ play: Function, dispose: Function }} [opts.voice]  Plays the
+   *        sparks; a ClipVoice when left out.
+   * @param {{ set: Function, dispose: Function }} [opts.hum]  The hum under
+   *        the countdown; a LoopVoice when left out.
    */
   constructor({
     controller = null, signalManager = null, terminal = null,
-    driveManager = null, satellite = null, random = Math.random,
+    driveManager = null, satellite = null, random = Math.random, voice = new ClipVoice(),
+    hum = new LoopVoice({ key: HUM.key, placed: HUM.placed, detune: HUM.detune }),
   } = {}) {
     super();
     Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, random });
+    this._voice = voice;
+    this._hum = hum;
+    /** What the hum should be this frame, set by the countdown. */
+    this._humLevel = 0;
+    /** The drive the hum comes from: the corrupted one, and where it fades out. */
+    this._humHost = null;
+    this._sparkClips = clipSet(SPARK_SOUNDS.clips);
   }
 
   onStart() {
@@ -184,6 +222,8 @@ export class EvilSignal extends Component {
   }
 
   onDestroy() {
+    this._voice.dispose();
+    this._hum.dispose();
     this._release();
     this._offNight?.();
     this._offNight = null;
@@ -251,6 +291,13 @@ export class EvilSignal extends Component {
   }
 
   onUpdate(dt) {
+    this._humLevel = 0;
+    this._step(dt);
+    this._hum.set(this._humLevel, dt, this._humHost ?? this.gameObject);
+  }
+
+  /** One frame of the red signal; sets `_humLevel` while a drive is out. */
+  _step(dt) {
     // The shift ended mid-hold: let go, whatever the terminal is doing.
     if (this.controller && this.controller.state !== 'playing') {
       if (this.locked) this._release();
@@ -317,6 +364,8 @@ export class EvilSignal extends Component {
         // Ramp the doom glow: 0 at the start, 1 when the timer expires.
         const doomFraction = 1 - (this._silenceTimer / EVIL.silenceSeconds);
         corrupted.setDoomGlow?.(doomFraction);
+        this._humHost = corrupted;
+        this._humLevel = HUM.volume * (HUM.minLevel + (1 - HUM.minLevel) * Math.min(Math.max(doomFraction, 0), 1));
         this._lastCorruptedDrive = corrupted;
 
         // Position the shared doom light at the corrupted drive and set
@@ -351,10 +400,15 @@ export class EvilSignal extends Component {
             this._sparks?.burst(
               SPARKS.burstCount[0] + (Math.random() * (SPARKS.burstCount[1] - SPARKS.burstCount[0])) | 0,
             );
+            this._voice.play(
+              corrupted, this._sparkClips,
+              SPARK_SOUNDS.volume * (SPARK_SOUNDS.minLevel + (1 - SPARK_SOUNDS.minLevel) * Math.min(doomFraction, 1)),
+            );
           }
         }
 
         if (this._silenceTimer <= 0) {
+          this._humLevel = 0;
           this._disposeSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;

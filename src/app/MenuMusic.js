@@ -12,9 +12,13 @@ import { loopSeam } from '../components/Ambience.js';
 // fades here are scheduled on the audio clock instead (a gain ramp), which
 // needs no frames at all.
 //
-// Once started it is never stopped: out of the menu it loops on at zero, so
-// coming back fades it up from wherever it has got to, and there is never a
+// Once started it loops on at zero out of the menu, and there is never a
 // second copy to overlap the first. A silent loop costs next to nothing.
+// Coming back after it has faded right out, it starts again from its
+// beginning (stopped, then played: still one copy); caught mid fade-out it
+// fades up from wherever it has got to.
+//
+// It plays on the menu and under the end credits (Run complete): App says so.
 //
 // Chrome keeps audio suspended until the player's first click or key press.
 // The music is started regardless and simply waits; App wakes the audio on
@@ -31,6 +35,9 @@ export const MENU_MUSIC = {
   fadeIn: 3,
   fadeOut: 2,
 };
+
+/** A gain at or under this is out of earshot. */
+const SILENT = 1e-3;
 
 function makeSound(listener, buffer) {
   const sound = new THREE.Audio(listener);
@@ -93,8 +100,11 @@ export class MenuMusic {
     if (!this._wanted && !sound.isPlaying) return;
     this._scheduled = this._wanted;
 
-    if (this._wanted && !sound.isPlaying) sound.play();
     const gain = sound.gain.gain;
+    // Out of earshot it has only been looping silently: bring it back from
+    // its beginning, as one copy. Caught mid fade-out it carries on.
+    if (this._wanted && sound.isPlaying && gain.value <= SILENT) sound.stop();
+    if (this._wanted && !sound.isPlaying) sound.play();
     const now = sound.context.currentTime;
     gain.cancelScheduledValues(now);
     gain.setValueAtTime(gain.value, now);
