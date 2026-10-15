@@ -901,9 +901,11 @@ describe('BaseScene occlusion — the airlock decides which side is drawn', () =
   it('the interior zone holds the rooms\' furnishings', () => {
     const interior = zoneContents('interior');
     const office = scene.rooms.MainOffice.root.object3d;
-    for (const prop of ['ComputerDesk', 'CoffeeMachine', 'WindowFrame_Top']) {
+    for (const prop of ['ComputerDesk', 'GrowBeds', 'WindowFrame_Top']) {
       expect(interior.has(named(office, prop)), prop).toBe(true);
     }
+    const bedroom = scene.rooms.LivingQuarters.root.object3d;
+    expect(interior.has(named(bedroom, 'CoffeeMachine')), 'CoffeeMachine').toBe(true);
   });
 
   it('never the shell or the doors — those are the building as seen from outside', () => {

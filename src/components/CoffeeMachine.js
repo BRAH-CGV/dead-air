@@ -1,10 +1,10 @@
 import { Interactable } from './Interactable.js';
 
 // ─────────────────────────────────────────────
-// CoffeeMachine  –  the office's one way back to awake
+// CoffeeMachine  –  the base's one way back to awake
 // ─────────────────────────────────────────────
 // A cup takes brewing: [E] starts one, and it is `brewSeconds` before there
-// is anything to drink — time stood in the office with the night going on
+// is anything to drink — time stood at the machine with the night going on
 // round you. [E] again drinks it, and gives back `amount` stamina. A brewed
 // cup waits for the player, so they can walk off and come back to it.
 //

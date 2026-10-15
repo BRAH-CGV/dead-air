@@ -97,8 +97,8 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(ceiling.intensity).toBe(0);
   });
 
-  it("hands the office's coffee machine the same stamina, with a full rack again each night", () => {
-    const machine = scene.rooms.MainOffice.coffeeMachine;
+  it("hands the bedroom's coffee machine the same stamina, with a full rack again each night", () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
     expect(machine).toBeInstanceOf(CoffeeMachine);
     expect(machine.stamina).toBe(scene.stamina);
     scene.stamina.value = 0.2;
@@ -120,7 +120,7 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? sip : null));
     const other = new BaseScene(makeSceneEngine());
     other.build();
-    const machine = other.rooms.MainOffice.coffeeMachine;
+    const machine = other.rooms.LivingQuarters.coffeeMachine;
     machine.onInteract({});
     expect(sip.play).not.toHaveBeenCalled();
     machine.onUpdate(COFFEE.brewSeconds + 0.1);

@@ -13,7 +13,6 @@ import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
-import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
@@ -41,8 +40,9 @@ const DRIVE_BOX_LAYOUT = [
 // (ambient, moon) belongs to the scene, not the room.
 //
 // Furnished for the job and nothing else: the computer desk facing the
-// window, a coffee machine (a couple of cups a night, between scans), a
-// bin, a shelf of spares, a poster.
+// window, the grow rack and the food dispenser beside it, a bin, a shelf of
+// spares, a poster. The coffee is in the bedroom (LivingQuarters): a cup
+// means leaving the desk.
 //
 // ── Interior layout mock-up ──
 // Placeholder shapes for the planned layout, to walk around in before the
@@ -57,14 +57,15 @@ const DRIVE_BOX_LAYOUT = [
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
 //   • The food corner, down the left wall: a two-tier rack of grow beds
-//     under UV lights (GrowRack.js), then the dispenser and the bin, short
-//     of the doorway.
+//     under UV lights (GrowRack.js), then the food dispenser and the bin,
+//     short of the doorway. The dispenser is idle for now: the crop is to
+//     feed it one day (#109).
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
 // Outside; right → ServerRoom; left → LivingQuarters. None of them lock.
 // The side doorways sit toward the front, leaving the back half of the
-// side walls for the dispenser and the shelf.
+// side walls for the food corner and the shelf.
 //
 // A wall clock hangs right of the window, and a digital one stands on the desk.
 // The room builds them; the scene hands them the NightClock
@@ -72,9 +73,6 @@ const DRIVE_BOX_LAYOUT = [
 // gameplay. Same for the red signal lamp above the computer desk: the room
 // perches it, the scene wires it to the SignalManager and GameController
 // (`signalLight.signalManager` / `.gameController`).
-//
-// The coffee machine on the left wall is `coffeeMachine`, a CoffeeMachine;
-// the scene hands it the stamina a cup restores.
 // ─────────────────────────────────────────────
 
 /** The bars across the window: mullions at ±x, the crossbar's height, and
@@ -128,9 +126,6 @@ export class MainOffice extends Room {
 
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
-
-  /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
-  coffeeMachine = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -226,10 +221,10 @@ export class MainOffice extends Room {
     this._buildDeskClock();
     this._buildGlobe();
 
-    // Left wall, back to front: the grow beds, the coffee machine and a
-    // bin for the cups, all short of the doorway.
+    // Left wall, back to front: the grow beds, the food dispenser and a
+    // bin, all short of the doorway.
     this._buildGrowBeds();
-    this._buildCoffeeMachine();
+    this._buildFoodDispenser();
     this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 1.9] });
 
     // Right wall: spare parts on a shelf; a poster where the eye lands
@@ -264,15 +259,16 @@ export class MainOffice extends Room {
     this._buildDriveBoxes();
   }
 
-  /** The office's coffee: a tall drinks machine against the wall. Built
+  /** Where food will come from: a machine that turns the grow beds' crop
+   *  into meals (#109). Until that is built it does nothing, and only says
+   *  what it is — stamina comes from the bedroom's coffee machine. Built
    *  here rather than imported — the downloaded vending machine is a broken
    *  fragment. The body is the collider the interact ray hits; the face
-   *  details are plain meshes on it. Its status screen shows what it is
-   *  doing (CoffeeMachine colours it); the cup goes in the bay below. */
-  _buildCoffeeMachine() {
+   *  details are plain meshes on it. */
+  _buildFoodDispenser() {
     const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
     const size = [0.7, 1.9, 0.9];
-    const go = this._addStaticBox('CoffeeMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
+    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
 
     // Front face is +x, into the room; positions are relative to the body's
     // centre, 0.95 m up.
@@ -292,11 +288,14 @@ export class MainOffice extends Room {
     }));
 
     detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
-    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // brew button
-    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // cup bay
-    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
+    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // dispense button
+    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
 
-    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
+    // A label under the crosshair, nothing to press yet.
+    const label = new Interactable();
+    label.promptLabel = 'Food dispenser — empty';
+    go.addComponent(label);
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small

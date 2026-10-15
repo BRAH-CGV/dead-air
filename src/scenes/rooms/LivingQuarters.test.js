@@ -6,6 +6,7 @@ import { LivingQuarters } from './LivingQuarters.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Bed } from '../../components/Bed.js';
+import { CoffeeMachine, COFFEE } from '../../components/CoffeeMachine.js';
 import * as THREE from 'three';
 import { PRELOAD } from '../../assets/manifest.js';
 
@@ -31,8 +32,8 @@ const MODEL = {
 };
 const RACKS = Object.keys(MODEL).filter(name => MODEL[name] === RACK);
 const SHELVES = Object.keys(MODEL).filter(name => MODEL[name] === SHELF);
-/** Everything standing on the floor: the spawned models and the one procedural box. */
-const FURNITURE = [...Object.keys(MODEL), 'SideTable'];
+/** Everything standing on the floor: the spawned models and the procedural boxes. */
+const FURNITURE = [...Object.keys(MODEL), 'SideTable', 'CoffeeMachine'];
 
 /** Floor footprint {x0, x1, z0, z1} of a piece of furniture, room-local: a
  *  spawned model's MODEL size turned by its yaw, or a static box's own size. */
@@ -233,6 +234,35 @@ describe('LivingQuarters', () => {
     for (const name of FURNITURE.filter(n => n !== 'Bunk')) {
       expect(overlaps(footprint(room.root.find(name)), beside), name).toBe(false);
     }
+  });
+
+  it('the coffee machine: on the left wall between the bunk and the desk, facing into the room', () => {
+    const at = name => footprint(room.root.find(name));
+    const machine = at('CoffeeMachine'), bunk = at('Bunk'), chair = at('DeskChair');
+    const inX = room.width / 2 - room.wallThick / 2;
+    expect(machine.x0).toBeCloseTo(-inX);                            // against the left wall
+    expect(machine.z0).toBeGreaterThan(bunk.z1 + 0.25);              // past the foot of the bunk
+    expect(machine.z1).toBeLessThan(chair.z0 - 0.5);                 // and short of the desk's corner
+
+    // Its face is on the room side: the status screen stands proud of +x.
+    const go = room.root.find('CoffeeMachine');
+    const use = go.getComponent(Interactable);
+    let screen = null;
+    go.object3d.traverse(o => { if (o.isMesh && o.material === use.screen) screen = o; });
+    expect(screen.position.x).toBeGreaterThan(go._originalSize[0] / 2);
+  });
+
+  it("makes the machine usable: it is the room's CoffeeMachine, raycastable, its screen lit by what it is doing", () => {
+    const go = room.root.find('CoffeeMachine');
+    const use = go.getComponent(Interactable);
+    expect(use).toBeInstanceOf(CoffeeMachine);
+    expect(use).toBe(room.coffeeMachine);
+    expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);
+    expect(use.promptLabel).toMatch(/^\[E\] Brew a coffee/);
+    expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to brew for
+    expect(use.state).toBe('ready');
+    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
+    expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 
   it('stands the furniture apart, nothing overlapping', () => {

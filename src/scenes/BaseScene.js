@@ -1455,13 +1455,13 @@ export class BaseScene extends Scene {
   // Stamina and the Sleep Demon (every night)
   // ──────────────────────────────────────────
   /** Stamina drains through the shift — faster outside, and faster still
-   *  while the player stares at the dust eyes — and the office's coffee
+   *  while the player stares at the dust eyes — and the bedroom's coffee
    *  machine tops it up, a couple of cups a night. The drain ticks on
    *  GameplaySystems after the controller, and before the demon and the
    *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
     this.stamina = new Stamina({ nightSeconds: this.nightClock.nightDuration });
-    const machine = this.rooms.MainOffice.coffeeMachine;
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
       // The ration's placeholder, as the cup is drunk: see the manifest.

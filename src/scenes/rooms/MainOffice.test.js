@@ -35,7 +35,7 @@ vi.mock('@dimforge/rapier3d', () => {
 });
 
 import { MainOffice, WINDOW_CORNER_RADIUS } from './MainOffice.js';
-import { CoffeeMachine, COFFEE } from '../../components/CoffeeMachine.js';
+import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
@@ -152,7 +152,7 @@ function doorwayApproaches(room) {
 }
 
 /** Everything standing on the floor that isn't part of the shell. */
-const FURNITURE = ['ComputerDesk', 'DeskWing_Left', 'DeskWing_Right', 'GrowBeds', 'CoffeeMachine', 'TrashBin', 'Shelf'];
+const FURNITURE = ['ComputerDesk', 'DeskWing_Left', 'DeskWing_Right', 'GrowBeds', 'VendingMachine', 'TrashBin', 'Shelf'];
 
 describe('MainOffice', () => {
   let engine, room;
@@ -462,28 +462,21 @@ describe('MainOffice', () => {
     expect(glows.length).toBe(2);
     expect(new THREE.Box3().setFromObject(rack.object3d).max.y).toBeLessThan(1.9);
 
-    // Front to back along the wall: beds, coffee machine, bin — nothing touching.
-    const d = footprint(room.root.find('CoffeeMachine'));
+    // Front to back along the wall: beds, dispenser, bin — nothing touching.
+    const d = footprint(room.root.find('VendingMachine'));
     const b = footprint(room.root.find('TrashBin'));
     expect(c.z1).toBeLessThan(d.z0);
     expect(d.z1).toBeLessThan(b.z0);
-    expect(room.root.find('CoffeeMachine').object3d.position.z).toBeCloseTo(0.95);
+    expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
-  it('makes the machine usable: it is the room\'s CoffeeMachine, its screen lit by what it is doing', () => {
-    const go = room.root.find('CoffeeMachine');
-    const use = go.getComponent(Interactable);
-    expect(use).toBeInstanceOf(CoffeeMachine);
-    expect(use).toBe(room.coffeeMachine);
-    expect(use.promptLabel).toMatch(/^\[E\] Brew a coffee/);
-    expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to brew for
-    expect(use.state).toBe('ready');
-
-    let screen = null;
-    go.object3d.traverse(o => { if (o.isMesh && o.material === use.screen) screen = o; });
-    expect(screen).not.toBeNull();
-    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
-    expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
+  it('keeps the food dispenser, idle until the grow beds feed it (#109); the coffee is in the bedroom', () => {
+    const use = room.root.find('VendingMachine').getComponent(Interactable);
+    expect(use.promptLabel).toMatch(/food dispenser/i);
+    expect(use.promptLabel).not.toMatch(/\[E\]/);              // a label, nothing to do yet
+    expect(() => use.onInteract({})).not.toThrow();
+    expect(room.root.find('CoffeeMachine')).toBeNull();
+    expect(room.root.descendants().some(go => go.getComponent(CoffeeMachine))).toBe(false);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
