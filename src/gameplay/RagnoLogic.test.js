@@ -81,6 +81,17 @@ function sense(over = {}) {
   };
 }
 
+/** The rooms' walls between them (x ±6.1, ±10.1), crossed only at their
+ *  doors (z 2.9…4.1), as the game's rays find them. */
+function walls(from, to) {
+  for (const x of [-10.1, -6.1, 6.1, 10.1]) {
+    if ((from.x < x) === (to.x < x)) continue;
+    const z = from.z + (to.z - from.z) * (x - from.x) / (to.x - from.x);
+    if (Math.abs(z - 3.5) > 0.6) return false;
+  }
+  return true;
+}
+
 function makeLogic(opts = {}) {
   return new RagnoLogic({ layout: LAYOUT, rand: seeded(opts.seed ?? 7) });
 }
@@ -432,7 +443,7 @@ describe('RagnoLogic — inside', () => {
     let thinnest = 0, fastest = 0;
     run(logic, {
       seconds: 30,
-      s: () => sense({ player: { pos: new THREE.Vector3(0, 1.24, 1), zone: 'MainOffice' } }),
+      s: () => sense({ canWalk: walls, player: { pos: new THREE.Vector3(0, 1.24, 1), zone: 'MainOffice' } }),
       until: l => l.state === 'caught',
       onFrame: (l) => { thinnest = Math.max(thinnest, l.stance); fastest = Math.max(fastest, l.velocity.length()); },
     });
@@ -568,6 +579,107 @@ describe('RagnoLogic — inside', () => {
     });
     expect(furthest).toBeGreaterThan(6.5);
   });
+
+  for (const [from, to, label] of [[1, -1, 'server room to quarters'], [-1, 1, 'quarters to server room']]) {
+    it(`chasing a player who runs from the ${label}, he never turns back, though his sight of them comes and goes`, () => {
+      const logic = makeLogic();
+      logic.spawn({ side: from, approach: 'yard', mood: 'normal' });
+      run(logic, { until: l => l.state === 'watch' });
+      // The player's way: out of his room, down the corridors, across the
+      // office, into the other room — at a run, 5 m/s, a few metres ahead.
+      const way = [[13 * from, 3.5], [10.1 * from, 3.5], [6.1 * from, 3.5], [0, 3.5], [-6.1 * from, 3.5], [-10.1 * from, 3.5], [-13 * to * -1 * -1, 3.5]];
+      way[way.length - 1] = [13 * to, 3.5];
+      let leg = 0, along = 0;
+      const player = new THREE.Vector3(way[0][0], 1.24, way[0][1]);
+      const step = (dt) => {
+        if (leg >= way.length - 1) return;
+        const [ax, az] = way[leg], [bx, bz] = way[leg + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        along += 5 * dt;
+        while (leg < way.length - 1 && along >= Math.hypot(way[leg + 1][0] - way[leg][0], way[leg + 1][1] - way[leg][1])) {
+          along -= Math.hypot(way[leg + 1][0] - way[leg][0], way[leg + 1][1] - way[leg][1]);
+          leg++;
+        }
+        if (leg >= way.length - 1) { player.set(way[leg][0], 1.24, way[leg][1]); return; }
+        const [cx, cz] = way[leg], [ex, ez] = way[leg + 1];
+        const l2 = Math.hypot(ex - cx, ez - cz);
+        player.set(cx + (ex - cx) * along / l2, 1.24, cz + (ez - cz) * along / l2);
+        void len;
+      };
+      // Set off down his corridor, a head start, then run.
+      logic.pos.set(14.4 * from, 0, 3.5);
+      run(logic, { seconds: 1 / 30, s: () => sense({ player: { pos: new THREE.Vector3(8 * from, 1.24, 3.5), zone: from > 0 ? 'OfficeToServer' : 'OfficeToQuarters' } }) });
+      run(logic, { until: l => l.state === 'chase', s: () => sense({ player: { pos: player, zone: 'MainOffice' } }) });
+      for (let i = 0; i < 30; i++) step(1 / 30);
+      let frame = 0, worst = 0, best = logic.pos.x * -from;
+      run(logic, {
+        seconds: 12,
+        s: () => sense({
+          clearToPlayer: (frame % 9) < 4,       // in sight, out of sight, in sight…
+          player: { pos: player.clone(), zone: 'MainOffice' },
+        }),
+        until: l => l.state === 'caught' || l.state === 'prowl',
+        onFrame: (l) => {
+          frame++;
+          step(1 / 30);
+          // Progress toward the far room is −from · x; never lose much of it.
+          const prog = l.pos.x * -from;
+          best = Math.max(best, prog);
+          worst = Math.max(worst, best - prog);
+        },
+      });
+      expect(worst).toBeLessThan(0.5);
+    });
+  }
+
+  it('at the spot nearest the player, he goes on to them: no hovering round the spot', () => {
+    // The player 2.5 m past the last spot (inside a room, just past its
+    // door), out of his sight; the way to them is clear.
+    const g = new NavGraph([{ id: 'A', x: 0, z: 0 }, { id: 'B', x: -6, z: 0 }], [['A', 'B']]);
+    const logic = new RagnoLogic({ layout: { graph: g, sides: {}, airlockDoor: { x: 100, z: 100 } }, rand: seeded(3) });
+    logic.mood = 'normal';
+    logic.state = 'chase';
+    logic.visible = true;
+    logic.indoors = true;
+    logic.pos.set(-3, 0, 0);
+    const seen = run(logic, {
+      seconds: 4,
+      s: () => sense({ clearToPlayer: false, player: { pos: new THREE.Vector3(2.5, 1.2, 0), zone: 'MainOffice' } }),
+      until: l => l.state === 'caught',
+    });
+    expect(seen).toContain('catch');
+  });
+
+  for (const [label, prime] of [['a fresh chase', false], ['losing sight of the player mid-run', true]]) {
+    it(`partway along a stretch whose way on grazes something, he goes on, never back (${label})`, () => {
+      const g = new NavGraph([
+        { id: 'A', x: 0, z: 0 }, { id: 'B', x: 4, z: 0 }, { id: 'C', x: 8, z: 0 }, { id: 'D', x: 12, z: 0 },
+      ], [['A', 'B'], ['B', 'C'], ['C', 'D']]);
+      const logic = new RagnoLogic({ layout: { graph: g, sides: {}, airlockDoor: { x: 100, z: 100 } }, rand: seeded(3) });
+      logic.mood = 'normal';
+      logic.state = 'chase';
+      logic.visible = true;
+      logic.indoors = true;
+      logic.pos.set(2, 0, 0);
+      const player = new THREE.Vector3(14, 1.2, 0);
+      // From partway along A–B the rays to B (and on) graze something; back
+      // to A they are clear.
+      const rays = (a, b) => !(a.x > 0.5 && a.x < 3.9 && b.x >= 4);
+      if (prime) {
+        // In sight a moment (straight at the player), then not.
+        run(logic, { seconds: 0.2, s: () => sense({ canWalk: rays, clearToPlayer: true, player: { pos: player, zone: 'MainOffice' } }) });
+      }
+      const start = logic.pos.x;
+      let worst = 0, best = start;
+      run(logic, {
+        seconds: 4,
+        s: () => sense({ canWalk: rays, clearToPlayer: false, player: { pos: player, zone: 'MainOffice' } }),
+        onFrame: (l) => { best = Math.max(best, l.pos.x); worst = Math.max(worst, best - l.pos.x); },
+      });
+      expect(worst).toBeLessThan(0.05);
+      expect(logic.pos.x).toBeGreaterThan(start + 5);
+    });
+  }
 
   it('catches a player within reach', () => {
     const logic = chasing();

@@ -157,6 +157,8 @@ export function scheduleVisits(night, rand = Math.random, t = RAGNO) {
 }
 
 const UP = [0, 1, 0];
+/** Metres off the line between two spots that still counts as on it. */
+const EDGE_NEAR = 0.6;
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _up = new THREE.Vector3();
@@ -521,7 +523,13 @@ export class RagnoLogic {
       this.events.push('catch');
       return;
     }
-    // Straight at them when nothing is in the way; else by the rooms.
+    // Straight at them when nothing is in the way; else by the rooms —
+    // planned afresh the moment he loses sight of them, not from a stale way.
+    if (s.clearToPlayer) this._direct = true;
+    else if (this._direct) {
+      this._direct = false;
+      this._replanIn = 0;
+    }
     const target = s.clearToPlayer ? s.player.pos : this._wayTo(dt, s.player.pos);
     this._walkTo(dt, target, this.tune.chaseSpeed);
   }
@@ -716,21 +724,20 @@ export class RagnoLogic {
     const graph = this.layout.graph;
     if (this._replanIn <= 0 || !this._way?.length) {
       this._replanIn = this.t.replan;
-      // On from the spot he is already heading for: starting again from
-      // whichever spot is nearest could turn him back and forth for ever.
-      const heading = this._way?.[0];
-      const from = heading && flat(this.pos, heading) >= 0.4 ? heading : this._reachable(this.pos);
-      this._way = graph.route(from.id, graph.nearest(goal).id);
+      const goalNode = graph.nearest(goal);
+      this._way = graph.route(this._startNode(goalNode).id, goalNode.id);
     }
-    // Past the nodes already reached (or that the next one is nearer than).
-    while (this._way.length > 1) {
-      const [a, b] = this._way;
-      if (flat(this.pos, a) < 0.4 || (flat(this.pos, b) < flat(a, b) && this._canWalk(this.pos, b))) this._way.shift();
-      else break;
-    }
+    // Past the spots already reached.
+    while (this._way.length > 1 && flat(this.pos, this._way[0]) < 0.4) this._way.shift();
     const next = this._way[0];
-    // At the player's own spot: straight for them.
-    if (!next || (this._way.length === 1 && flat(this.pos, next) < 0.4)) return goal;
+    // At the spot nearest the player — reached, or already nearer them than
+    // it is, or with a clear way to them — straight for them. Going back to
+    // the spot each re-plan would hover him round it for ever.
+    if (!next) return goal;
+    if (this._way.length === 1
+      && (flat(this.pos, next) < 0.4 || flat(this.pos, goal) < flat(next, goal) || this._canWalk(this.pos, goal))) {
+      return goal;
+    }
     return _b.set(next.x, 0, next.z);
   }
 
@@ -741,10 +748,49 @@ export class RagnoLogic {
     return nodes.find(n => this._canWalk?.(p, n) ?? true) ?? nodes[0];
   }
 
+  /**
+   * Where his way to `goalNode` starts: of the spots he can get to — straight
+   * by the rays, or either end of the stretch he is on (walkable by how the
+   * spots are laid out, whatever grazes a ray along it) — the one with the
+   * shortest whole way. The nearest spot alone could be behind him: he
+   * would turn back, then forward again.
+   */
+  _startNode(goalNode) {
+    const graph = this.layout.graph;
+    const ends = this._edgeEnds(this.pos);
+    let best = null, bestCost = Infinity;
+    for (const n of graph.nodes) {
+      if (!ends.has(n.id) && !(this._canWalk?.(this.pos, n) ?? true)) continue;
+      const way = graph.route(n.id, goalNode.id);
+      if (!way.length) continue;
+      let cost = flat(this.pos, n);
+      for (let i = 1; i < way.length; i++) cost += flat(way[i - 1], way[i]);
+      if (cost < bestCost) { bestCost = cost; best = n; }
+    }
+    return best ?? this._reachable(this.pos);
+  }
+
+  /** The ids of both ends of every stretch between two spots he is on (within
+   *  `EDGE_NEAR` m of the line between them). */
+  _edgeEnds(p) {
+    const graph = this.layout.graph;
+    const out = new Set();
+    for (const a of graph.nodes) {
+      for (const id of graph.links.get(a.id) ?? []) {
+        const b = graph.get(id);
+        const dx = b.x - a.x, dz = b.z - a.z;
+        const l2 = dx * dx + dz * dz || 1;
+        const k = Math.min(Math.max(((p.x - a.x) * dx + (p.z - a.z) * dz) / l2, 0), 1);
+        if (Math.hypot(a.x + dx * k - p.x, a.z + dz * k - p.z) < EDGE_NEAR) { out.add(a.id); out.add(b.id); }
+      }
+    }
+    return out;
+  }
+
   /** A floor path through the rooms to node `id`, from where he is. */
   _nodePath(id) {
     const graph = this.layout.graph;
-    const nodes = graph.route(this._reachable(this.pos).id, id);
+    const nodes = graph.route(this._startNode(graph.get(id)).id, id);
     return [this._here(), ...nodes.map(n => point(n.x, 0, n.z))];
   }
 
