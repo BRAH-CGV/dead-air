@@ -80,9 +80,8 @@ export const EVIL = {
    *  before the normal engage logic fires. */
   pullInSeconds: 0.8,
   /** Seconds over which the red-out post-process ramps from 0 to full
-   *  intensity at the end of the silence timer. The screen freezes for
-   *  the duration so the world stops moving while the red builds. */
-  redoutWindow: 1.5,
+   *  intensity at the end of the silence timer. */
+  redoutWindow: 1,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -201,12 +200,7 @@ export class EvilSignal extends Component {
   _doomLightFadeDuration = 0;
   /** Light intensity at the start of the doom-light fade. */
   _doomLightFadeLevel = 0;
-  /** True while the engine is frozen for the red-out ramp. timeScale is
-   *  0 and the redOut intensity is advanced on real time. @type {boolean} */
-  _frozen = false;
-  /** Real seconds accumulated since the freeze started, used to ramp the
-   *  redOut intensity independently of game time. @type {number} */
-  _freezeAccum = 0;
+
 
   /**
    * @param {object} [opts]
@@ -401,24 +395,12 @@ export class EvilSignal extends Component {
         // Sparks: fly out of the corrupted drive, rate scaling with doom.
         this._sparks?.tick(dt, corrupted, doomFraction);
 
-        // Red filter: freezes the screen and ramps over the final
-        // redoutWindow seconds before the player dies.
+        // Red filter: ramps over the final redoutWindow seconds before
+        // the player dies. The shader drains the world to blood-red
+        // through its luminance-to-red remap as intensity climbs to 1.
         if (this.redOut) {
-          if (!this._frozen && this._silenceTimer < EVIL.redoutWindow) {
-            this._frozen = true;
-            this._freezeAccum = 0;
-            const engine = this.scene?.userData?.engine;
-            if (engine) engine.timeScale = 0;
-          }
-          if (this._frozen) {
-            const engine = this.scene?.userData?.engine;
-            const realDt = engine?.realDt ?? 0;
-            this._freezeAccum += realDt;
-            const t = Math.min(this._freezeAccum / EVIL.redoutWindow, 1);
-            this.redOut.setIntensity(t);
-            // Tick the silence timer on real time so the caught block
-            // fires even though game time is frozen.
-            this._silenceTimer -= realDt;
+          if (this._silenceTimer < EVIL.redoutWindow) {
+            this.redOut.setIntensity(1 - this._silenceTimer / EVIL.redoutWindow);
           } else {
             this.redOut.setIntensity(0);
           }
@@ -662,13 +644,6 @@ export class EvilSignal extends Component {
     this._driveInfected = false;
     this.deleteWarning?.hide();
     this.redOut?.clear();
-    // Restore the engine time scale if the freeze was active.
-    if (this._frozen) {
-      const engine = this.scene?.userData?.engine;
-      if (engine) engine.timeScale = 1;
-    }
-    this._frozen = false;
-    this._freezeAccum = 0;
     this._disposeSparks();
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();

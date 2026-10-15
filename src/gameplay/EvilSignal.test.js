@@ -679,7 +679,7 @@ describe('EvilSignal pull-in — cursor drag before engage', () => {
   });
 });
 
-describe('EvilSignal redOut — freeze and red filter', () => {
+describe('EvilSignal redOut — red filter', () => {
   it('redOut intensity is 0 while the silence timer is above the redout window', () => {
     const drive = makeDrive();
     const { evil, signalManager, redOut } = makeRig({ drive });
@@ -695,45 +695,39 @@ describe('EvilSignal redOut — freeze and red filter', () => {
     expect(redOut.setIntensity).toHaveBeenCalledWith(0);
   });
 
-  it('freezes the engine and ramps redOut when the timer enters the redout window', () => {
+  it('ramps redOut when the timer enters the redout window', () => {
     const drive = makeDrive();
-    const { evil, signalManager, redOut, engine } = makeRig({ drive });
+    const { evil, signalManager, redOut } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
-    // Tick past most of the timer so ~1.0 s remains (inside the 1.5 s window).
+    // Tick past most of the timer so ~1.0 s remains (at the redout window edge).
     evil.onUpdate(EVIL.silenceSeconds - 1.0);
-    expect(evil._frozen).toBe(true);
-    expect(engine.timeScale).toBe(0);
 
-    // Simulate real time passing (engine.realDt).
-    engine.realDt = 0.25;
-    evil.onUpdate(0);  // gameDt = 0 (frozen), but realDt drives the ramp
+    // Tick closer to expiry — intensity ramps with the silence timer.
+    evil.onUpdate(0.5);
     const lastCall = redOut.setIntensity.mock.calls.at(-1)[0];
-    expect(lastCall).toBeCloseTo(0.25 / EVIL.redoutWindow, 3);
+    // silenceTimer ≈ 0.5, intensity ≈ 1 - 0.5/redoutWindow
+    expect(lastCall).toBeCloseTo(1 - 0.5 / EVIL.redoutWindow, 1);
   });
 
-  it('redOut is cleared and timeScale restored on night reset', () => {
+  it('redOut is cleared on night reset', () => {
     const drive = makeDrive();
-    const { evil, controller, signalManager, redOut, engine } = makeRig({ drive });
+    const { evil, controller, signalManager, redOut } = makeRig({ drive });
     evil.summon();
     const sig = evilSig(signalManager);
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
 
-    // Enter the freeze.
+    // Enter the redout window.
     evil.onUpdate(EVIL.silenceSeconds - 0.5);
-    expect(evil._frozen).toBe(true);
-    expect(engine.timeScale).toBe(0);
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
-    expect(engine.timeScale).toBe(1);
-    expect(evil._frozen).toBe(false);
   });
 });
 
