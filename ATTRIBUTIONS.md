@@ -71,18 +71,18 @@ by PolyDavid is licensed under Creative Commons Attribution
 | **Used for** | Tall server rack prop |
 | **Modifications** | None recorded |
 
-### Bunk bed
+### Bed
 
-"bunk bed" (https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
-by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
+"PBR Bed Model" (https://www.cgtrader.com/free-3d-models/furniture/bed/pbr-bed-model)
+from CGTrader (item 1960270), free under the CGTrader Royalty Free License.
 
 | | |
 |---|---|
-| **File** | `public/assets/models/bunk-bed.glb` |
-| **Manifest key** | `model:bunk-bed` |
-| **Used for** | Crew quarters bunk bed |
-| **Modifications** | Base-colour texture edited: red blood marks painted out of the mattress |
+| **File** | `public/assets/models/bed.glb` |
+| **Manifest key** | `model:bed` |
+| **Used for** | Crew quarters bed (replaced the bunk bed, whose ladder hid the bedside clock from the pillow) |
+| **Designer** | Not recorded yet: the CGTrader page wouldn't load here, so add the designer's username from it |
+| **Modifications** | FBX converted to `.glb` in Blender: scaled to 2 m long, turned so the pillow is at −z, origin on the floor; textures cut to 512–1024 px; the Unity metallic/smoothness map turned into a glTF metal/rough map, metalness at 60 % (no environment map to reflect) |
 
 
 ### Locker

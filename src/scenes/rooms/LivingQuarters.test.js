@@ -5,9 +5,10 @@ vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.j
 import { LivingQuarters } from './LivingQuarters.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
-import { Bed } from '../../components/Bed.js';
+import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import * as THREE from 'three';
-import { PRELOAD } from '../../assets/manifest.js';
+import { readFileSync } from 'node:fs';
+import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 
 function childNames(room) {
@@ -22,7 +23,7 @@ const LOCKER = { size: [1.31, 0.44], centre: [0.246, 0.018] };
 const SHELF  = { size: [0.37, 1.03] };
 const RACK   = { size: [0.92, 0.6] };     // bigger-shelf.glb, authored in metres
 const MODEL = {
-  Bunk:      { size: [1.08, 2.0] },
+  Bunk:      { size: [0.9, 2.0] },    // bed.glb, a single bed authored in metres
   Lockers:   LOCKER,
   Desk:      { size: [0.88, 1.76] },   // simple-desk.glb at its manifest scale, long side along z
   DeskChair: { size: [0.44, 0.51] },
@@ -55,6 +56,20 @@ function footprint(go) {
 
 const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1;
 
+/** Each mesh of a .glb under public/, by node name: its bounds { min, max },
+ *  read off the POSITION accessors (the nodes must carry no transform). */
+function glbParts(url) {
+  const glb = readFileSync(new URL(`../../../public/${url}`, import.meta.url));
+  const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+  return Object.fromEntries(json.nodes.filter(node => node.mesh !== undefined).map(node => {
+    expect(node.matrix ?? node.translation ?? node.rotation ?? node.scale, node.name).toBeUndefined();
+    const accessors = json.meshes[node.mesh].primitives.map(prim => json.accessors[prim.attributes.POSITION]);
+    const min = [0, 1, 2].map(i => Math.min(...accessors.map(a => a.min[i])));
+    const max = [0, 1, 2].map(i => Math.max(...accessors.map(a => a.max[i])));
+    return [node.name, { min, max }];
+  }));
+}
+
 describe('LivingQuarters', () => {
   let engine, room;
 
@@ -86,7 +101,7 @@ describe('LivingQuarters', () => {
 
   it('is furnished with real models: bunk, lockers, desk and chair, shelves', () => {
     const expected = {
-      Bunk: 'model:bunk-bed',
+      Bunk: 'model:bed',
       Lockers: 'model:locker',
       Desk: 'model:simple-desk',
       DeskChair: 'model:metal-chair',
@@ -235,6 +250,28 @@ describe('LivingQuarters', () => {
     for (const name of FURNITURE.filter(n => n !== 'Bunk')) {
       expect(overlaps(footprint(room.root.find(name)), beside), name).toBe(false);
     }
+  });
+
+  it('the bed is a single bed, not a bunk: no upper tier or ladder between the pillow and the clock (#113)', () => {
+    const parts = glbParts(ASSETS['model:bed'].url);
+    const all = Object.values(parts);
+    const min = [0, 1, 2].map(i => Math.min(...all.map(part => part.min[i])));
+    const max = [0, 1, 2].map(i => Math.max(...all.map(part => part.max[i])));
+    expect(min[1]).toBeCloseTo(0, 3);                                   // standing on the floor
+    expect(max[0] - min[0]).toBeCloseTo(MODEL.Bunk.size[0], 1);        // the footprint the layout tests use
+    expect(max[2] - min[2]).toBeCloseTo(MODEL.Bunk.size[1], 1);
+    expect(max[1]).toBeLessThan(0.9);                                   // the headboard's arch is its top
+
+    // Lying on the pillow, the eye is over it and above all the bedding;
+    // only the headboard, behind the head, stands taller.
+    const [ex, ey, ez] = BUNK_POSES.pillow.position;
+    for (const [name, part] of Object.entries(parts)) {
+      if (name !== 'Frame') expect(part.max[1], name).toBeLessThan(ey);
+    }
+    expect(ex).toBeGreaterThan(parts.Pillow.min[0]);
+    expect(ex).toBeLessThan(parts.Pillow.max[0]);
+    expect(ez).toBeGreaterThan(parts.Pillow.min[2]);
+    expect(ez).toBeLessThan(parts.Pillow.max[2]);
   });
 
   it('a clock on the side table, its face turned to the sleeper and in the middle of their view (#113)', () => {

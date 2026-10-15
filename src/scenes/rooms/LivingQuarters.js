@@ -18,8 +18,8 @@ import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 // The room is split in three with the furniture, using the models already
 // in the game as stand-ins until better ones are found:
 //
-//   bedroom   back left: the bunk and a side table, with the lockers on the
-//             back wall beside the table
+//   bedroom   back left: the bunk (a single bed) and a side table with the
+//             bedside clock, the lockers on the back wall beside the table
 //   storage   back right: two rows of big racks running front to back (one
 //             against the right wall), with an aisle between
 //   office    front: the desk end-on to the front wall with its chair and a
@@ -95,21 +95,23 @@ export class LivingQuarters extends Room {
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
     // ── Bedroom ──
-    // Back-left corner, its long side along the left wall.
-    const bunk = this._spawnProp('model:bunk-bed', {
-      name: 'Bunk', position: [-inX + 0.56, 0, -inZ + 1.02],
+    // Back-left corner, its long side along the left wall, 3 cm off both
+    // walls (bed.glb is 0.9 × 2 m), the pillow at the back.
+    const bunk = this._spawnProp('model:bed', {
+      name: 'Bunk', position: [-inX + 0.48, 0, -inZ + 1.03],
     });
     this.bed = bunk.addComponent(new Bed());
 
+    // The side table stands just off the bed's open side, by the pillow.
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
-    this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+    const table = this._addStaticBox('SideTable', [-1.45, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
 
     // A digital clock on the side table, its face (+z) turned to the pillow
     // so a napper watches the minutes race (#113). The scene hands it the
     // NightClock.
     this.bedsideClock = this._own(new DigitalClock('BedsideClock'));
     const clock = this.bedsideClock.object3d;
-    clock.position.set(-1.3, 0.5, -3.5);
+    clock.position.set(table.object3d.position.x, 0.5, table.object3d.position.z);
     const [px, , pz] = BUNK_POSES.pillow.position;   // the bunk is not turned
     const { x: bx, z: bz } = bunk.object3d.position;
     clock.rotation.y = Math.atan2(bx + px - clock.position.x, bz + pz - clock.position.z);
