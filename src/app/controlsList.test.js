@@ -4,7 +4,6 @@ import { controlsList } from './controlsList.js';
 const binds = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF',
-  debugFly: 'KeyV',
 };
 
 describe('controlsList', () => {

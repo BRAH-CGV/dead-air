@@ -1,32 +1,53 @@
 import * as THREE from 'three';
-import { describe, it, expect, vi } from 'vitest';
-import { Sandstorm, SANDSTORM, scheduleStorm, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Sandstorm, SANDSTORM, scheduleStorms, stormLevel, WIND_DIRECTION } from './Sandstorm.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 import { UFO } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm — random dust storms from night 2; faint indoors
 // ─────────────────────────────────────────────
 
-const NIGHT = 300;   // real seconds in a shift
-const HOUR = NIGHT / 6;
+const NIGHT = NIGHT_SECONDS;   // real seconds in a shift
+const HOUR = NIGHT / (SHIFT.endHour - SHIFT.startHour);
+/** The night-clock hour `seconds` into the shift. */
+const clockHour = seconds => SHIFT.startHour + seconds / HOUR;
 
-describe('scheduleStorm', () => {
+describe('scheduleStorms', () => {
   it('comes every night — night 1 included — whatever the dice say', () => {
     for (const night of [1, 2, 4]) {
       for (const r of [0, 0.5, 0.999]) {
-        expect(scheduleStorm({ night, nightDuration: NIGHT, random: () => r }), `night ${night}`).not.toBeNull();
+        expect(scheduleStorms({ night, nightDuration: NIGHT, random: () => r }), `night ${night}`).toHaveLength(SANDSTORM.perNight);
       }
     }
   });
 
-  it('starts inside the night and is over before 6 AM', () => {
-    for (const r of [0, 0.25, 0.5]) {
-      const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => r });
-      expect(s.start).toBeGreaterThanOrEqual(SANDSTORM.startHours[0] * HOUR - 1e-9);
-      expect(s.start + s.duration).toBeLessThanOrEqual(NIGHT);
-      expect(s.duration).toBeGreaterThanOrEqual(SANDSTORM.durationHours[0] * HOUR - 1e-9);
+  it('one a night (#107): two left no time for the tension to build', () => {
+    expect(SANDSTORM.perNight).toBe(1);
+  });
+
+  it('blows after dark, in order, never overlapping, and is over before 6 AM', () => {
+    for (const r of [0, 0.25, 0.5, 0.999]) {
+      const storms = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r });
+      let lastEnd = -Infinity;
+      for (const s of storms) {
+        expect(clockHour(s.start)).toBeGreaterThan(SHIFT.darkHour);
+        expect(s.start).toBeGreaterThanOrEqual(lastEnd);
+        expect(clockHour(s.start + s.duration)).toBeLessThanOrEqual(SANDSTORM.stormHours[1] + 1e-9);
+        expect(s.duration).toBeGreaterThanOrEqual(SANDSTORM.durationHours[0] * HOUR - 1e-9);
+        lastEnd = s.start + s.duration;
+      }
+      expect(lastEnd).toBeLessThanOrEqual(NIGHT);
     }
+  });
+
+  it('any time after dark: from the evening to the small hours', () => {
+    const early = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    const late  = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0.999 });
+    expect(clockHour(early[0].start)).toBeCloseTo(SANDSTORM.stormHours[0]);
+    expect(clockHour(early[0].start)).toBeLessThan(-4);   // before 8 PM
+    expect(clockHour(late[0].start)).toBeGreaterThan(2);  // after 2 AM
   });
 });
 
@@ -45,7 +66,7 @@ describe('stormLevel', () => {
 });
 
 
-function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null } = {}) {
+function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null, moon = null, ambient = null } = {}) {
   const listeners = [];
   const controller = {
     state: 'playing',
@@ -60,7 +81,7 @@ function makeRig({ night = 2, random = () => 0, ufo = null, clouds = null } = {}
   // same wherever the player stands, so it never asks whether they are
   // outside or which room they are in.
   const hooks = { listenerPosition: out => out.set(0, 1.2, 0) };
-  const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, nightDuration: NIGHT, random });
+  const storm = new Sandstorm({ controller, fog, sky, dust, ambience, hooks, ufo, clouds, moon, ambient, nightDuration: NIGHT, random });
   storm.onStart();
   return { storm, controller, fog, sky, dust, ambience, hooks, startNight: n => listeners.forEach(fn => fn(n)) };
 }
@@ -72,7 +93,7 @@ const run = (storm, seconds, step = 0.1) => {
 describe('Sandstorm', () => {
   it('blows on night 1 too, at its time', () => {
     const { storm } = makeRig({ night: 1, random: () => 0.999 });
-    const s = scheduleStorm({ night: 1, nightDuration: NIGHT, random: () => 0.999 });
+    const s = scheduleStorms({ night: 1, nightDuration: NIGHT, random: () => 0.999 })[0];
     run(storm, s.start + SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(1);
   });
@@ -103,7 +124,7 @@ describe('Sandstorm', () => {
 
   it('comes at its scheduled time on a storm night', () => {
     const { storm } = makeRig({ night: 2, random: () => 0 });
-    const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 })[0];
     run(storm, s.start - 1);
     expect(storm.level).toBe(0);
     run(storm, SANDSTORM.rampSeconds + 2);
@@ -195,12 +216,18 @@ describe('Sandstorm', () => {
     expect(storm.level).toBe(1);
   });
 
-  it('blows for about an hour and a half of clock time', () => {
+  it('blows for about three hours of clock time (#107: they were too short)', () => {
     for (const r of [0, 0.5, 0.999]) {
-      const s = scheduleStorm({ night: 2, nightDuration: NIGHT, random: () => r * 0.5 });
-      expect(s.duration / HOUR).toBeGreaterThan(1.25);
-      expect(s.duration / HOUR).toBeLessThan(1.75);
+      const s = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r })[0];
+      expect(s.duration / HOUR).toBeGreaterThan(2.4);
+      expect(s.duration / HOUR).toBeLessThan(3.6);
     }
+  });
+
+  it('a summoned storm blows as long', () => {
+    const { storm } = makeRig({ night: 1, random: () => 0 });
+    storm.summon();
+    expect(storm._storm.duration / HOUR).toBeCloseTo(SANDSTORM.durationHours[0]);
   });
 
   it('dies down when the shift ends, and a new night starts calm', () => {
@@ -222,6 +249,81 @@ describe('Sandstorm', () => {
     const { storm, controller } = makeRig();
     controller.state = 'morning';
     expect(storm.summon()).toBe(false);
+  });
+});
+
+describe('Sandstorm — the moonlight', () => {
+  // The night's lights, as the scene builds them.
+  const lights = () => ({
+    moon:    new THREE.DirectionalLight(0xb8c4e0, 1.2),
+    ambient: new THREE.AmbientLight(0x435472, 0.72),
+  });
+
+  it('dims the moonlight and the ambient light with its level', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds / 2);
+    // Part way in, part way down.
+    expect(moon.intensity).toBeLessThan(1.2);
+    expect(moon.intensity).toBeGreaterThan(1.2 * SANDSTORM.moonlight);
+    run(storm, SANDSTORM.rampSeconds);
+    // At full strength, the share the dust lets through.
+    expect(moon.intensity).toBeCloseTo(1.2 * SANDSTORM.moonlight);
+    expect(ambient.intensity).toBeCloseTo(0.72 * SANDSTORM.ambientLight);
+  });
+
+  it('blots out the moon far more than it darkens the night\'s fill', () => {
+    // The moonlight through the window is what read as a clear night; the
+    // ambient light also fills the rooms, which have lamps of their own.
+    expect(SANDSTORM.moonlight).toBeLessThan(0.25);
+    expect(SANDSTORM.ambientLight).toBeGreaterThan(SANDSTORM.moonlight);
+    expect(SANDSTORM.ambientLight).toBeLessThan(1);
+  });
+
+  it('holds steady at full strength: it never dims its own dimming again', () => {
+    // In the morning nothing else rewrites the lights (Daylight writes only
+    // while the clock moves), so a storm that scaled whatever it found would
+    // sink them a little more every frame.
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    const held = moon.intensity;
+    run(storm, 5);
+    expect(moon.intensity).toBe(held);
+    expect(ambient.intensity).toBeCloseTo(0.72 * SANDSTORM.ambientLight);
+  });
+
+  it('hands the lights back exactly as they were once it passes', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ night: 1, moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.durationHours[1] * HOUR + 1);
+    expect(moon.intensity).toBe(1.2);
+    expect(ambient.intensity).toBe(0.72);
+  });
+
+  it('dims whatever the dawn writes meanwhile, and hands that back', () => {
+    const { moon, ambient } = lights();
+    const { storm } = makeRig({ moon, ambient });
+    storm.summon();
+    run(storm, SANDSTORM.rampSeconds + 1);
+    moon.intensity = 2.2;              // Daylight: the morning sun
+    ambient.intensity = 1.4;
+    storm.onUpdate(0.1);
+    expect(moon.intensity).toBeCloseTo(2.2 * SANDSTORM.moonlight);
+    expect(ambient.intensity).toBeCloseTo(1.4 * SANDSTORM.ambientLight);
+    storm.reset(1);
+    storm.onUpdate(0.1);
+    expect(moon.intensity).toBe(2.2);
+    expect(ambient.intensity).toBe(1.4);
+  });
+
+  it('blows without lights to dim', () => {
+    const { storm } = makeRig();
+    storm.summon();
+    expect(() => run(storm, SANDSTORM.rampSeconds + 1)).not.toThrow();
   });
 });
 
@@ -288,7 +390,7 @@ describe('Sandstorm — held, and the UFO', () => {
 
   it('is never scheduled at random on a UFO night', () => {
     for (const night of UFO.nights) {
-      expect(scheduleStorm({ night, nightDuration: NIGHT, random: () => 0 })).toBeNull();
+      expect(scheduleStorms({ night, nightDuration: NIGHT, random: () => 0 })).toEqual([]);
     }
   });
 
@@ -313,6 +415,47 @@ describe('Sandstorm — always after the UFO', () => {
     const { storm } = makeRig({ night: UFO.nights[0], ufo, random: () => 0.999 });
     run(storm, SANDSTORM.afterUfoDelay[1] + SANDSTORM.rampSeconds + 1);
     expect(storm.level).toBe(1);
+  });
+});
+
+describe('Sandstorm — two storms a night, if perNight goes back to two', () => {
+  // One a night for now (#107), but the queue still takes more: it is the
+  // one number to change.
+  let perNight;
+  beforeEach(() => { perNight = SANDSTORM.perNight; SANDSTORM.perNight = 2; });
+  afterEach(() => { SANDSTORM.perNight = perNight; });
+
+  it('fits two of the longer storms after dark, one in each half, never overlapping', () => {
+    for (const r of [0, 0.5, 0.999]) {
+      const [a, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => r });
+      expect(b.start).toBeGreaterThanOrEqual(a.start + a.duration);
+      expect(clockHour(b.start + b.duration)).toBeLessThanOrEqual(SANDSTORM.stormHours[1] + 1e-9);
+    }
+  });
+
+  it('blows the first, falls calm, then blows the second, each its own storm', () => {
+    const { storm } = makeRig({ night: 2, random: () => 0 });
+    const [a, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    run(storm, a.start + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);
+    const first = storm.stormId;
+
+    run(storm, a.duration);                  // blown over
+    expect(storm.level).toBe(0);
+    run(storm, b.start - storm._elapsed + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);
+    expect(storm.stormId).toBe(first + 1);
+    expect(storm.stormProgress).toBeGreaterThan(0);
+  });
+
+  it('summon() stands in for the next storm that hasn\'t started, not the one after', () => {
+    const { storm } = makeRig({ night: 2, random: () => 0 });
+    const [, b] = scheduleStorms({ night: 2, nightDuration: NIGHT, random: () => 0 });
+    storm.summon();
+    run(storm, SANDSTORM.durationHours[1] * HOUR + 1);
+    expect(storm.level).toBe(0);              // the first scheduled one isn't also coming
+    run(storm, b.start - storm._elapsed + SANDSTORM.rampSeconds + 1);
+    expect(storm.level).toBe(1);              // the second still is
   });
 });
 

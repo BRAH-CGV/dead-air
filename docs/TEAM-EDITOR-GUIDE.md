@@ -2,17 +2,25 @@
 
 Everything your team needs to know about the in-browser editor, free camera, and debug tools.
 
+The debug tools have no keys of their own: they are commands in the **developer console**. Press **\`** (backtick) in game, or open Settings → GAME → Developer console, type a command and press Enter. `help` lists them all. The console exists in dev builds (`npm run dev`) only.
+
 ---
 
-## Quick Reference — All Keyboard Shortcuts
+## Quick Reference — Console Commands
+
+| Command | What it does |
+|-----|-------------|
+| `editor` | Toggle Level Editor on/off |
+| `fly` | Toggle DebugCamera (noclip fly mode) on/off |
+| `colliders` | Toggle physics collider wireframe overlay |
+| `models` | Toggle model debug logging (bounds/scale to console) |
+| `fullbright` | Toggle Fullbright (unlit debug lighting) |
+
+## Quick Reference — Keyboard Shortcuts
 
 | Key | What it does |
 |-----|-------------|
-| **F2** | Toggle Level Editor on/off |
-| **V** | Toggle DebugCamera (noclip fly mode) on/off |
-| **\`** (backtick) | Toggle physics collider wireframe overlay |
-| **F4** | Toggle model debug logging (bounds/scale to console) |
-| **B** | Toggle Fullbright (unlit debug lighting) |
+| **\`** (backtick) | Open / close the developer console |
 | **G** | Switch to **Move** mode (editor) |
 | **R** | Switch to **Rotate** mode (editor) |
 | **T** | Switch to **Scale** mode (editor) |
@@ -28,13 +36,13 @@ Everything your team needs to know about the in-browser editor, free camera, and
 
 ---
 
-## Level Editor (F2)
+## Level Editor (`editor`)
 
 ### Getting Started
 
-1. Press **F2** to open the editor panel on the right side of the screen
+1. Type `editor` in the developer console to open the editor panel on the right side of the screen
 2. The game pauses pointer lock so you can click UI elements
-3. Press **F2** again to close the editor and return to normal gameplay
+3. Type `editor` again (open the console with **\`**) to close the editor and return to normal gameplay
 
 ### The Editor Panel — Top to Bottom
 
@@ -443,13 +451,13 @@ myLightGO.object3d.add(fixture);           // add to the SAME GameObject as the 
 
 ---
 
-## DebugCamera (V)
+## DebugCamera (`fly`)
 
 The DebugCamera is a noclip fly camera that lets you inspect the scene from any angle. It's not a separate FreeCam component — it detaches the actual game camera from the player, suspends all player components (movement, look, physics), and lets you fly freely.
 
 ### How to Use
 
-1. Press **V** to toggle the DebugCamera ON
+1. Type `fly` in the developer console, then press **\`** to close it: the DebugCamera is ON
 2. The player freezes in place (all components suspended)
 3. Use these controls:
 
@@ -462,7 +470,7 @@ The DebugCamera is a noclip fly camera that lets you inspect the scene from any 
 | **Shift** | Speed boost (4× normal) |
 | **Mouse** | Look around |
 
-4. Press **V** again to toggle OFF — the camera snaps back to the player's eyes exactly where they left off (the player never moved)
+4. Type `fly` again to toggle OFF — the camera snaps back to the player's eyes exactly where they left off (the player never moved)
 
 ### When to Use DebugCamera
 
@@ -475,9 +483,9 @@ The DebugCamera is a noclip fly camera that lets you inspect the scene from any 
 
 ## Debug Tools
 
-### Physics Collider Overlay (`)
+### Physics Collider Overlay (`colliders`)
 
-Press the **backtick key** (\`) to toggle a wireframe overlay showing every physics collider in the scene.
+Type `colliders` in the developer console to toggle a wireframe overlay showing every physics collider in the scene. It shows at once, behind the console.
 
 - Drawn in Rapier's own colours, straight over the scene
 - Green/colored lines = static colliders (walls, floor, props)
@@ -487,17 +495,15 @@ Press the **backtick key** (\`) to toggle a wireframe overlay showing every phys
 - The wireframe is a fresh snapshot of the physics world every frame — if it disagrees with what you see, the *physics* is wrong, not the drawing
 - Implementation: [src/core/PhysicsDebug.js](../src/core/PhysicsDebug.js)
 
-### Model Debug Logging (F4)
+### Model Debug Logging (`models`)
 
-Press **F4** to toggle per-model console logging. When enabled, the console shows measured bounding box, position, and scale for every loaded model. Turns the logging on and re-spawns the current scene so you get the numbers immediately.
+Type `models` in the developer console to toggle per-model console logging. When enabled, the console shows measured bounding box, position, and scale for every loaded model. Turns the logging on and re-spawns the current scene so you get the numbers immediately.
 
 Useful when a model lands at the wrong size or floats above the floor.
 
-> F4 rather than F1 — Chrome and DevTools own F1, so the key never reached the game.
+### Fullbright (`fullbright`)
 
-### Fullbright (B)
-
-Press **B** to toggle unlit debug lighting. Every lit material is swapped for a `MeshBasicMaterial` twin showing its albedo colour at full brightness — useful for spotting texture issues or checking a scene without shadow darkness. Fog is also disabled while active.
+Type `fullbright` in the developer console to toggle unlit debug lighting. Every lit material is swapped for a `MeshBasicMaterial` twin showing its albedo colour at full brightness — useful for spotting texture issues or checking a scene without shadow darkness. Fog is also disabled while active.
 
 - All standard lit materials (Standard, Physical, Phong, Lambert) are swapped for unlit twins
 - Twins are cached and reused, so memory stays flat
@@ -534,14 +540,14 @@ Every transform edit syncs the physics body to match the visuals:
 
 ### "I want to move all the office furniture together"
 
-1. Press **F2** to open the editor
+1. Type `editor` in the developer console to open the editor
 2. Click **Office** in the tree view (or click any wall/furniture in the 3D view)
 3. Press **G** for Move mode
 4. Use arrow keys to move everything at once
 
 ### "I want to create a custom group of objects"
 
-1. Press **F2**, click **➕ Create Group**, name it
+1. Open the editor (`editor`), click **➕ Create Group**, name it
 2. Select each object you want in the group
 3. Use the **Parent:** dropdown to move each object under your new group
 4. Now selecting the group moves them all together
@@ -572,10 +578,10 @@ Every transform edit syncs the physics body to match the visuals:
 
 ### "I want to fly up and inspect the ceiling"
 
-1. Press **V** to enable the DebugCamera
+1. Type `fly` in the developer console and close it with **\`**
 2. Hold **Space** to ascend
 3. Use **WASD** + mouse to navigate (hold **Shift** for speed boost)
-4. Press **V** again to return to normal controls
+4. Type `fly` again to return to normal controls
 
 ---
 

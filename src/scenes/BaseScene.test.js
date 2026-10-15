@@ -21,6 +21,7 @@ import { Daylight } from '../components/Daylight.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { hiddenFromRegion } from '../systems/Sightlines.js';
 import { Ufo } from '../gameobjects/Ufo.js';
+import { BUNKER } from '../gameobjects/BunkerShell.js';
 import { UfoThreat } from '../gameplay/UfoThreat.js';
 import { EvilSignal } from '../gameplay/EvilSignal.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
@@ -29,6 +30,9 @@ import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
 import { DustEyes, throughWindow } from '../gameplay/DustEyes.js';
 import { StormOutage } from '../gameplay/StormOutage.js';
+import { Nap, NAP } from '../gameplay/Nap.js';
+import { BedRest } from '../components/BedRest.js';
+import { BED_TRANSITION } from '../gameplay/BedTransition.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -43,6 +47,17 @@ function makeSceneEngine() {
   engine.scene = new THREE.Scene();
   engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.assets = { get: vi.fn(() => null) };
+  // The generator arrives drawn, as the real spawn loads it: a box its size
+  // (generator.glb at its manifest scale), so the zones and the dust eyes
+  // have something to measure.
+  const spawn = engine.spawnModel;
+  engine.spawnModel = vi.fn((key, opts) => {
+    const go = spawn(key, opts);
+    if (key === 'model:generator') {
+      go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.24, 0.89).translate(0, 0.62, 0)));
+    }
+    return go;
+  });
   engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
     const player = new GameObject('Player');
     player.object3d.position.set(...position);
@@ -181,9 +196,18 @@ describe('BaseScene', () => {
     }
   });
 
-  it('spawns the player inside the main office', () => {
+  it('wakes the player in the bedroom, beside the bunk (#79)', () => {
     expect(engine.buildPlayer).toHaveBeenCalledTimes(1);
-    expect(scene.rooms.MainOffice.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(scene.rooms.LivingQuarters.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(engine.buildPlayer).toHaveBeenCalledWith(expect.objectContaining({
+      position: scene.rooms.LivingQuarters.spawn.position,
+    }));
+  });
+
+  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
+    const { journal } = scene.rooms.LivingQuarters;
+    expect(journal.controller).toBe(scene.gameController);
+    expect(journal.panel).toBeTruthy();
   });
 
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
@@ -251,14 +275,18 @@ describe('BaseScene', () => {
     expect(-cam.left).toBeGreaterThanOrEqual(extent);
   });
 
-  it('builds the outside area: satellite and generator stand-in, outside every room', () => {
+  it('builds the outside area: satellite and generator, outside every room', () => {
     const outside = sceneRoot.find('Outside');
     const satCall = engine.spawnModel.mock.calls.find(([key]) => key === 'model:dish-tower');
     expect(satCall[1].type).toBe(Satellite);
     expect(outside.find('Satellite')).not.toBeNull();
 
+    // The real model now, not a stand-in box, standing on the ground.
     const generator = outside.find('Generator');
-    expect(generator.placeholderFor).toBe('generator.glb');
+    expect(generator.physicsAssetKey).toBe('model:generator');
+    expect(generator.placeholderFor).toBeFalsy();
+    expect(generator.object3d.position.y).toBe(0);
+    expect(engine._rootObjects).not.toContain(generator);         // updated once, under Outside
     for (const room of Object.values(scene.rooms)) {
       expect(room.containsPoint(worldPos(generator)), room.name).toBe(false);
     }
@@ -290,6 +318,25 @@ describe('BaseScene', () => {
       // bounding box the size of the valley.
       expect(field.isGroup, name).toBe(true);
     }
+  });
+
+  it('tells the airlock of the office\'s front doorway, so the wall it butts against is lined round it', () => {
+    const front = scene.rooms.MainOffice.openings.find(o => o.side === 'front');
+    expect(scene.rooms.Airlock.openEndDoorways).toEqual({ back: { width: front.width, height: front.height } });
+  });
+
+  it('tells each passageway of the doorways at its ends, so the room walls it butts against are lined round them', () => {
+    const door = (room, side) => {
+      const { width, height } = scene.rooms[room].openings.find(o => o.side === side);
+      return { width, height };
+    };
+    // Both run along x: their left end is the −x one.
+    expect(scene.corridors.OfficeToServer.openEndDoorways).toEqual({
+      left: door('MainOffice', 'right'), right: door('ServerRoom', 'left'),
+    });
+    expect(scene.corridors.OfficeToQuarters.openEndDoorways).toEqual({
+      left: door('LivingQuarters', 'right'), right: door('MainOffice', 'left'),
+    });
   });
 
   it('the generator is a raycastable Interactable that switches the power grid', () => {
@@ -583,6 +630,90 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
   }
 
+  /** Run the bed animation on for `seconds` (the fake engine has no realDt:
+   *  BedRest takes the frame's own). */
+  function inBed(seconds, dt = 0.05) {
+    for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
+  }
+
+  it('one bed animation, shared: the bunk, the nap, the demon and the fatigue effects all know it', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const rest = gameplay.getComponent(BedRest);
+    expect(rest).toBe(scene.bedRest);
+    expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
+    expect(scene.nap.rest).toBe(rest);
+    expect(scene.sleepDemon.sleeper).toBe(rest);
+    // It watches on the real clock, and sees past the bunk the pillow is in.
+    expect(scene.sleepDemon.realDt()).toBe(engine.realDt);
+    expect(typeof scene.sleepDemon.napRayHit).toBe('function');
+    expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
+    // The nap's "[E] Wake up" line, over the lids (#nap-hint).
+    expect(typeof scene.nap.hint?.show).toBe('function');
+    expect(typeof scene.nap.hint?.hide).toBe('function');
+    expect(scene.fatigueEffects.isResting()).toBe(false);
+    rest.lieDown();
+    expect(scene.fatigueEffects.isResting()).toBe(true);
+    rest.cancel();
+  });
+
+  it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const nap = gameplay.getComponent(Nap);
+    expect(nap).toBe(scene.nap);
+    expect(bed.nap).toBe(nap);
+
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toMatch(/^\[E\] Nap/);
+    bed.onInteract({});
+    expect(nap.napping).toBe(true);
+    expect(engine.timeScale).not.toBe(NAP.timeScale);   // lying down
+    inBed(BED_TRANSITION.lieDown + 0.1);
+    expect(engine.timeScale).toBe(NAP.timeScale);
+
+    scene.stormOutage._flickering = 0;          // the lamps start to buzz
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(engine.timeScale).toBe(1);
+    expect(nap.wokeBy).toMatch(/buzz/i);
+    expect(scene.bedRest.transition.style).toBe('startled');
+    inBed(1);
+    expect(scene.bedRest.active).toBe(false);
+  });
+
+  it('the scene torn down mid-nap: real time again, and the player given back', () => {
+    const nap = scene.nap;
+    nap.start();
+    inBed(BED_TRANSITION.lieDown + 0.1);
+    expect(engine.timeScale).toBe(NAP.timeScale);
+    engine._rootObjects.find(go => go.name === 'SceneRoot').destroy();
+    expect(engine.timeScale).toBe(1);
+    expect(scene.bedRest.active).toBe(false);
+  });
+
+  it('sleeps through a silent power cut — nothing you could hear from the bunk', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.power.setOn(false);
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    nap.wake();
+    scene.bedRest.cancel();
+  });
+
+  it('the UFO wakes you when you can hear it, not while it is only on the radar — and no nap while it is coming', () => {
+    const nap = scene.nap;
+    nap.start();
+    scene.ufoThreat.phase = 'approaching';      // the blob is on the radar
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(true);
+    scene.ufoThreat._flightStartedAt = 0;       // the roar starts
+    nap.onUpdate(0.016);
+    expect(nap.napping).toBe(false);
+    expect(nap.wokeBy).toMatch(/roar/i);
+    expect(nap.canNap).toBe(false);
+  });
+
   it('the bunk sleeps through the day to the next night, in step across NightManager, controller and HUD', () => {
     const bed = scene.rooms.LivingQuarters.bed;
     expect(bed.controller).toBe(scene.gameController);
@@ -593,12 +724,18 @@ describe('BaseScene gameplay loop', () => {
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
 
-    bed.onInteract({});                  // no DOM: the fade goes black at once
+    bed.onInteract({});
+    expect(scene.nights.currentNight).toBe(1);  // lying down: not asleep yet
+    inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.nights.currentNight).toBe(2);
     expect(scene.gameController.nightNumber).toBe(2);
     expect(scene.gameController.state).toBe('playing');
     expect(setNight).toHaveBeenLastCalledWith(2);
-    expect(scene.nightClock.timeString).toBe('12:00 AM');
+    expect(scene.nightClock.timeString).toBe('6:00 PM');
+    // Up out of bed into the new night.
+    expect(scene.bedRest.transition.style).toBe('calm');
+    inBed(3);
+    expect(scene.bedRest.active).toBe(false);
   });
 
   it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
@@ -618,6 +755,7 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
 
     scene.rooms.LivingQuarters.bed.onInteract({});
+    inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.gameController.nightNumber).toBe(2);
 
     // The docked box: released, parked resting on the floor, drives blank.
@@ -690,11 +828,17 @@ describe('BaseScene gameplay loop', () => {
       .toBeGreaterThan(gameplay.components.indexOf(scene.gameController));
 
     const uDawn = scene.sky.skyUniforms.uDawn;
-    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
-                    fog: engine.scene.fog.color.getHex() };
 
+    // Built at 6 PM: the dusk is on as soon as the engine wakes the scene
+    // (loadScene's _init), before anything ticks — the main menu shows it.
+    gameplay._init(engine.scene, engine.world);
+    expect(uDawn.value).toBe(1);
+
+    scene.nightClock.currentTime = 0;     // midnight: full night
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(0);
+    const night = { ambient: scene.ambientLight.intensity, sun: scene.moonLight.intensity,
+                    fog: engine.scene.fog.color.getHex() };
 
     workTheShift();
     daylight.onUpdate(0.016);
@@ -704,6 +848,10 @@ describe('BaseScene gameplay loop', () => {
     expect(engine.scene.fog.color.getHex()).not.toBe(night.fog);
 
     scene.rooms.LivingQuarters.bed.onInteract({});
+    inBed(BED_TRANSITION.lieDown + 0.1);
+    daylight.onUpdate(0.016);
+    expect(uDawn.value).toBe(1);          // the next shift starts at dusk
+    scene.nightClock.currentTime = 0;
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(0);
     expect(scene.ambientLight.intensity).toBe(night.ambient);
@@ -1332,6 +1480,11 @@ describe('BaseScene dust eyes', () => {
     expect(scene.sandstorm.ufo).toBe(scene.ufoThreat);
   });
 
+  it('hands the storm the moonlight and the night\'s ambient light to dim', () => {
+    expect(scene.sandstorm.moon).toBe(scene.moonLight);
+    expect(scene.sandstorm.ambient).toBe(scene.ambientLight);
+  });
+
   it('builds its eyes up front, hidden, on the scene root', () => {
     expect(scene.dustEyes.slots.length).toBeGreaterThanOrEqual(2);
     for (const { go } of scene.dustEyes.slots) {
@@ -1426,7 +1579,7 @@ describe('BaseScene dust eyes keep out of things', () => {
     expect(scene.dustEyes.occluders.some(b => b.minX === office.min.x && b.maxZ === office.max.z)).toBe(true);
   });
 
-  it('count the airlock as solid, with its hatch as the one way in', () => {
+  it('count the airlock as solid, slopes and all, with its hatch as the one way in', () => {
     const engine = makeSceneEngine();
     const scene = new BaseScene(engine);
     scene.build();
@@ -1434,7 +1587,9 @@ describe('BaseScene dust eyes keep out of things', () => {
     const hatch = worldPos(scene.rooms.Airlock.hatch);
     const box = scene.dustEyes.obstacles.find(b => b.door);
     expect(box).toBeTruthy();
-    expect(box.minX).toBeCloseTo(shell.min.x);
+    // Out to the bunker's slopes either side of it, which a chase goes round.
+    expect(box.minX).toBeCloseTo(shell.min.x - BUNKER.batter);
+    expect(box.maxX).toBeCloseTo(shell.max.x + BUNKER.batter);
     expect(box.maxZ).toBeCloseTo(shell.max.z);
     expect(box.door.x).toBeCloseTo(hatch.x);
     expect(box.door.z).toBeCloseTo(hatch.z);

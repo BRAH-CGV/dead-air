@@ -96,6 +96,20 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 // the real thing means dropping the file into public/assets/ and changing the
 // `url` below — nothing else moves.
 
+// retro-computer.glb is modelled ~100 units wide and has no manifest `scale`:
+// every spawn applies 0.016 to land it at 1.6 m. Its collider parts are written
+// below in desk-local metres and converted to the model's own units here.
+const DESK_UNIT = 0.016;
+const deskBox = (size, position, rotationY = 0) => ({
+  type: 'box',
+  size: size.map(v => v / DESK_UNIT),
+  position: position.map(v => v / DESK_UNIT),
+  ...(rotationY && { rotation: [0, rotationY, 0] }),
+});
+/** A part and its mirror image on the desk's other side (x → −x). */
+const deskPair = (size, [x, y, z], rotationY = 0) =>
+  [deskBox(size, [x, y, z], rotationY), deskBox(size, [-x, y, z], -rotationY)];
+
 /**
  * What the game puts on screen today. These are fetched up front, so the
  * loading bar is only ever as long as this object.
@@ -157,31 +171,39 @@ const PLACED = {
     material: { side: 'front', depthWrite: true, transmission: 0 },
     // Tier 3 compound: a solid auto box blocks the under-desk hiding
     // mechanic. The model is a solid cabinet (not a table on 4 open legs),
-    // indented on one face only.
+    // indented on one face only. Desk-local metres (+Z is the kneehole's
+    // side, toward the chair); `deskBox` converts them to the model's units.
     //
-    // Measured directly in the level editor (F2, box primitives placed
-    // against the rendered model, positions/sizes read off their transform
-    // and handed back) rather than guessed — two guesses in a row from the
-    // raw mesh data got the shape wrong (open on 3 sides, then a top slab
-    // that still blocked walking up to it while standing). No separate top
-    // lid: the back part is tall enough on its own, and the kneehole (+Z,
-    // roughly the front half of the depth) has no ceiling at all, so a
-    // standing player can walk up to it before needing to crouch further
-    // toward the back/sides.
+    // The body, floor to 0.73 m, was measured in the level editor: a
+    // back region and two side walls, with the kneehole (+Z) open.
     //
-    // This model has no manifest-level `scale`, so its measured bounds are
-    // in its native ~100-wide space, not metres — every spawn (MainOffice,
-    // OfficeScene) applies 0.016 on top to land at the real 1.6 m width.
-    // The editor gave real-metre, world-space numbers; converted here by
-    // subtracting the desk's spawn position [0,0,-2.55], undoing its 180°
-    // spawn rotation (x,z each negate), then dividing by 0.016.
+    // The top (#76) is read off the .glb's own vertices, flush with what is
+    // drawn, so things set on the desk rest on it. The top is not a slab: in
+    // front of the keyboard tray, between two rims, a well drops open to the
+    // floor — that is the kneehole, and nothing covers it. A slab over the
+    // whole top (the first fix) was an invisible shelf over the well where
+    // the player stands, and the body alone left the tray's front and its
+    // 45° corners hollow. Every part is solid to everything: the player, the
+    // drives and their boxes. Nothing new reaches below 0.72 m, so the
+    // crouch (0.65 m) still fits under the tray.
     physics: {
       body: 'static',
       shape: [
-        { type: 'box', size: [93.0625, 45.625, 21.25], position: [3.75, 23.125, -14.375] },  // back region, 1.489×0.730×0.340 m @ local (0.06, 0.37, -0.23)
-        { type: 'box', size: [15.625, 45.625, 50],     position: [41.875, 23.125, 0] },      // right side wall, 0.250×0.730×0.800 m @ local (0.67, 0.37, 0)
-        { type: 'box', size: [15.625, 45.625, 50],     position: [-41.875, 23.125, 0] },     // left side wall, 0.250×0.730×0.800 m @ local (-0.67, 0.37, 0)
-        // Front (+Z, roughly z > -0.06 m) is deliberately open — no part — for the kneehole.
+        deskBox([1.489, 0.730, 0.340], [0.06, 0.37, -0.23]),       // back region
+        ...deskPair([0.250, 0.730, 0.800], [0.67, 0.37, 0]),        // side walls
+        deskBox([1.12, 0.14, 0.21], [0, 0.79, -0.295]),            // shelf behind the tray, 0.86
+        deskBox([1.12, 0.03, 0.27], [0, 0.735, -0.055]),           // keyboard tray, 0.75, to its front edge
+        deskBox([0.80, 0.06, 0.18], [0, 0.75, -0.04]),             // the keys on it, 0.78
+        ...deskPair([0.24, 0.14, 0.80], [0.68, 0.79, 0]),           // pillar tops, 0.86 (the drive reader sits on the right)
+        ...deskPair([0.08, 0.03, 0.24], [0.52, 0.735, 0.20]),       // rims beside the well, 0.75
+        ...deskPair([0.04, 0.03, 0.08], [0.54, 0.735, 0.36]),       // … and their front ends
+        // The tray's front corners, cut at 45° from (0.40, 0.08) to (0.48,
+        // 0.16): a turned box whose inner face is the cut.
+        ...deskPair([0.15 * Math.SQRT2, 0.03, 0.10], [0.4754, 0.735, 0.0846], -Math.PI / 4),
+        // The monitor, its sloping top (1.00 at the back, 1.10 at the
+        // screen) in two steps.
+        deskBox([0.48, 0.305, 0.07], [0, 0.8725, -0.365]),
+        deskBox([0.48, 0.36, 0.07], [0, 0.90, -0.295]),
       ],
     },
   },
@@ -215,6 +237,12 @@ const PLACED = {
     url: 'assets/models/dish-tower.glb',
     physics: 'kinematic',
   },
+  // The food corner's grow rack (GrowRack.js): the ceiling light, hung as a
+  // UV grow light.
+  'model:light-ceiling': {
+    type: 'model',
+    url: 'assets/models/light-ceiling.glb',
+  },
   // The airlock's suit locker, and the bedroom's lockers.
   'model:locker': {
     type: 'model',
@@ -238,10 +266,54 @@ const PLACED = {
     scale: 0.365,
     physics: 'static',
   },
+  // The Sleep Demon's body: render-only (monsters are not physics), drawn
+  // with MonsterFigure's shade. Baked from the download by
+  // scripts/bake-sleep-demon.mjs — metres, feet on the origin, facing +Z,
+  // with EyeL / EyeR / Mouth / MouthAxis marker nodes.
+  'model:sleep-demon': {
+    type: 'model',
+    url: 'assets/models/sleep-demon.glb',
+    castShadow: false,
+    receiveShadow: false,
+  },
   'model:trash-bin': {
     type: 'model',
     url: 'assets/models/trash-bin.glb',
     scale: 0.25,
+    physics: 'static',
+  },
+  // The power switch in the yard. Modelled 4.5 m long around a point below
+  // its middle; 0.44 takes it to a 2.0 × 1.24 × 0.89 m diesel set, wheels
+  // on the ground. Its control panel is on its −z side.
+  'model:generator': {
+    type: 'model',
+    url: 'assets/models/generator.glb',
+    scale: 0.44,
+    origin: 'floor',
+    physics: 'static',
+  },
+  // The security cameras' monitor on the office desk's left wing: the
+  // bottom-left screen of wall-screen.glb, cut out, 0.6 m wide, facing +z,
+  // its foot on the floor, its screen dark as if switched off.
+  'model:camera-monitor': {
+    type: 'model',
+    url: 'assets/models/camera-monitor.glb',
+  },
+  // The bedroom's desk. Modelled around its centre at 1.0 × 0.9 × 2.0 m;
+  // 0.88 takes it to a 1.76 × 0.88 m desk with its top at 0.79 m. Its
+  // drawers face +x, its long side runs along z.
+  'model:simple-desk': {
+    type: 'model',
+    url: 'assets/models/simple-desk.glb',
+    scale: 0.88,
+    origin: 'floor',
+    physics: 'static',
+  },
+  // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
+  // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
+  'model:bigger-shelf': {
+    type: 'model',
+    url: 'assets/models/bigger-shelf.glb',
     physics: 'static',
   },
   'model:shelf': {
@@ -556,6 +628,38 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/monster-bite.mp3',
   },
+  // Stamina and the Sleep Demon, from the first minute of night 1: the
+  // demon's footsteps on its figure (SleepDemon); the heartbeat, looped, the
+  // yawn and the player's own breathing of a tired one (FatigueEffects); a
+  // ration dropping from the office dispenser (BaseScene._addStamina).
+  //
+  // PLACEHOLDERS, for the sound owner to replace: short synthesised wavs, not
+  // final audio — all but the yawn, which is a real recording (Mixkit, see
+  // ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // public/assets/audio/, named after its key (any format: footsteps.mp3 is
+  // fine), and changing its `url` below. The key stays, so nothing else
+  // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
+  // sound owner".
+  'sfx:breathing': {
+    type: 'audio',
+    url: 'assets/audio/breathing.wav',
+  },
+  'sfx:heartbeat': {
+    type: 'audio',
+    url: 'assets/audio/heartbeat.wav',
+  },
+  'sfx:yawn': {
+    type: 'audio',
+    url: 'assets/audio/yawn.mp3',
+  },
+  'sfx:ration': {
+    type: 'audio',
+    url: 'assets/audio/ration.wav',
+  },
+  'sfx:footsteps': {
+    type: 'audio',
+    url: 'assets/audio/footsteps.wav',
+  },
 };
 
 /**
@@ -569,16 +673,6 @@ const PLACED = {
  * @type {Record<string, ModelEntry>}
  */
 const LIBRARY = {
-  'model:blast-door-closed': {
-    type: 'model',
-    url: 'assets/models/blast-door-closed.glb',
-    physics: 'static',
-  },
-  'model:blast-door-open': {
-    type: 'model',
-    url: 'assets/models/blast-door-open.glb',
-    physics: 'static',
-  },
   'model:server-console': {
     type: 'model',
     url: 'assets/models/server-console.glb',
@@ -589,23 +683,9 @@ const LIBRARY = {
     url: 'assets/models/server-rack-tall.glb',
     physics: 'static',
   },
-  'model:couch': {
-    type: 'model',
-    url: 'assets/models/couch.glb',
-    physics: 'static',
-  },
   'model:barrel': {
     type: 'model',
     url: 'assets/models/barrel.glb',
-    physics: 'static',
-  },
-  'model:soap-dispenser': {
-    type: 'model',
-    url: 'assets/models/soap-dispenser.glb',
-  },
-  'model:vending-machine': {
-    type: 'model',
-    url: 'assets/models/vending-machine.glb',
     physics: 'static',
   },
   'model:bush': {
@@ -620,20 +700,6 @@ const LIBRARY = {
   'model:door-interior': {
     type: 'model',
     url: 'assets/models/door-interior.glb',
-    physics: 'static',
-  },
-  'model:generator': {
-    type: 'model',
-    url: 'assets/models/generator.glb',
-    physics: 'static',
-  },
-  'model:light-ceiling': {
-    type: 'model',
-    url: 'assets/models/light-ceiling.glb',
-  },
-  'model:simple-desk': {
-    type: 'model',
-    url: 'assets/models/simple-desk.glb',
     physics: 'static',
   },
   'model:wall-light': {

@@ -32,7 +32,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 
 - **The code moved on since the task doc was written.** `Engine.init()` now warms up shaders and holds the loading screen until the frames settle (`FrameSettle`), and then `_reveal()` fades the game in through `engine.screenFade.fadeIn`. While paused the loop still runs `_renderFrame`, so the settle and the reveal work unchanged behind the main menu.
 - **The loop is split into `_simulate(dt)` and `_renderFrame(dt)`.** `_loop` keeps the timing and calls `_simulate` only while unpaused. That makes the pause gate one line, and the frame stays the same order as before.
-- **`engine.devTools` defaults to `true` on the Engine itself.** That way a bare Engine (tests, or code without the app layer) keeps its debug keys. `App` sets it from the setting, which defaults to `import.meta.env.DEV`. The gate is `engine.debugKeysActive` (dev tools on and not paused).
+- **`engine.devTools` defaults to `true` on the Engine itself.** That way a bare Engine (tests, or code without the app layer) keeps its debug keys. `App` sets it from the setting, which defaults to `import.meta.env.DEV`. The gate is `engine.debugKeysActive` (dev tools on and not paused). *Later (`feat/dev-console`): the debug keys and `debugKeysActive` are gone; `devTools` gates the developer console instead.*
 - **`setPaused` clears `input.keys` and `input.pressed` in place, without replacing the objects.** Components hold references to them.
 - **The second `_init` loop in `Engine.init()` is left alone.** No component overrides `onAwake` in a way that breaks on a second call, and removing it isn't needed for this task.
 - **`GameController._setState` fires after `_endShift` has stopped the clock and set the prompt.** A listener therefore sees a fully ended shift.
@@ -70,7 +70,7 @@ Branch: `feat/menus-navigation` · **Base: `main`** (`_aimSun` found on `origin/
 - **Only assets in the game are credited.** An entry whose `Manifest key` row names keys, none of them in `ASSETS`, is left out (Server V2 + console, for now). Removing an asset from the manifest drops it from the credits.
 - **The tagline was clipped** because its typing width used `1ch` per character and ignored the letter-spacing. Each character now counts `1ch + letter-spacing`.
 - **One place for controls.** The pause menu's Controls screen is gone. Settings → CONTROLS holds the rebind rows, then the keys that can't be rebound (Esc, mouse look, the terminal).
-- **The DEVELOPER tab is removed and dev tools aren't a setting.** The debug keys go before release, so `engine.devTools` follows the build: on in `npm run dev`, off in the bundle.
+- **The DEVELOPER tab is removed and dev tools aren't a setting.** The debug keys go before release, so `engine.devTools` follows the build: on in `npm run dev`, off in the bundle. *Later: the keys became the developer console, opened from Settings → GAME or with `` ` ``.*
 - **Render scale is removed.** Ryan saw 50% *lower* performance, it gained nothing, and the engine's own pixel ratio is back in charge.
 - **Returning to the main menu resets where the camera looks.** The camera outlives the scene and nothing ticks under the menu to turn it back, so `rebuild()` zeroes its rotation.
 - **UFO catch.** `fail()` fires before the white-out, so App checks in a microtask. If the white-out started, Night failed waits until "You were taken" has shown for 1.5 s, and it's skipped if the player retried in place with E.

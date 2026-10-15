@@ -2,14 +2,18 @@
 // MenuView  –  draws the current menu screen into #menu
 // ─────────────────────────────────────────────
 // Every screen (main, pause, settings, credits, confirm, night
-// failed, run complete) is drawn from a plain model into #menu-panel. The
-// markup shell and all the styling live in index.html, like the other
-// overlays. This class decides nothing: clicks and edits come out of
-// onIntent(action, data), and App works out what they mean.
+// failed, run complete, the dev console) is drawn from a plain model into
+// #menu-panel. The markup shell and all the styling live in index.html, like
+// the other overlays. This class decides nothing: clicks and edits come out
+// of onIntent(action, data), and App works out what they mean.
 //
 // Options are real <button>s, so Enter / Space / Tab behave natively;
 // handleKey() adds the arrow keys on top. Text is set with textContent, never
 // innerHTML: credits come from ATTRIBUTIONS.md.
+//
+// The console's guesses are the one thing redrawn in place, on every
+// keystroke, so the input keeps its focus and caret: picking one only
+// completes the input, and a line is sent (consoleRun) on Enter.
 //
 // Every method is a no-op without a root (tests, scenes without the markup).
 // ─────────────────────────────────────────────
@@ -44,6 +48,9 @@ function option(action, label, { danger = false, data = {}, focusKey, defaultFoc
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), a[href]';
 
+/** The console input's ghost text, gone as soon as anything is typed. */
+const CONSOLE_PLACEHOLDER = 'Type "help" for a list of commands';
+
 export class MenuView {
   /** @param {HTMLElement|null} [root]  Defaults to the page's #menu */
   constructor(root = typeof document !== 'undefined' ? document.getElementById('menu') : null) {
@@ -53,6 +60,8 @@ export class MenuView {
     this._intent = null;
     this._hint = null;
     this._formats = new Map();   // slider key → value formatter, for live labels
+    /** The console screen's parts while it is up: { input, list, log, suggest, active }. */
+    this._console = null;
     this.screen = null;
 
     if (!this.panel) return;
@@ -74,6 +83,10 @@ export class MenuView {
     });
     this.panel.addEventListener('input', (e) => {
       const input = e.target;
+      if (input === this._console?.input) {
+        this._refreshGuesses();
+        return;
+      }
       if (!input.matches?.('input[type="range"][data-setting]')) return;
       const key = input.dataset.setting;
       const value = Number(input.value);
@@ -101,22 +114,26 @@ export class MenuView {
     this.screen = screen;
     this._formats.clear();
     this._hint = null;
+    this._console = null;
     const draw = {
       main: this._drawMain, pause: this._drawPause, confirm: this._drawConfirm,
       nightSelect: this._drawNightSelect,
       settings: this._drawSettings, credits: this._drawCredits,
       nightFailed: this._drawNightFailed, runComplete: this._drawRunComplete,
+      console: this._drawConsole,
     }[screen];
     this.panel.replaceChildren(...(draw ? draw.call(this, model) : []));
     this.root.dataset.screen = screen;
     this.root.classList.add('is-open');
     this._restoreFocus(focusKey, focusValue);
+    if (this._console) this._settleConsole();
   }
 
   hide() {
     if (!this.root) return;
     this.root.classList.remove('is-open');
     this.screen = null;
+    this._console = null;
     // Focus left on a hidden button would eat the next Space press.
     if (this.root.contains(document.activeElement)) document.activeElement.blur();
   }
@@ -140,6 +157,7 @@ export class MenuView {
   handleKey(e) {
     if (!this.panel || !this.visible) return false;
     const active = document.activeElement;
+    if (this._console && active === this._console.input) return this._consoleKey(e);
     const onSlider = active?.matches?.('input[type="range"]');
     if (e.code === 'ArrowDown' || e.code === 'ArrowUp') {
       this.moveFocus(e.code === 'ArrowDown' ? 1 : -1);
@@ -330,6 +348,43 @@ export class MenuView {
     ];
   }
 
+  /**
+   * @param {{ lines?: { text: string, kind?: 'input'|'output'|'error' }[], draft?: string,
+   *           suggest?: (text: string) => { name: string, usage: string, help: string, format?: true }[] }} m
+   *   draft: what the input holds (a line recalled from the history).
+   *   suggest: the guesses for what is typed — commands, or past a space the
+   *   one command's format line.
+   */
+  _drawConsole({ lines = [], draft = '', suggest = () => [] }) {
+    const log = h('div', { class: 'menu-scroll menu-console-log', role: 'log' },
+      lines.map(l => h('div', {
+        class: `menu-console-line${l.kind === 'input' ? ' is-input' : l.kind === 'error' ? ' is-error' : ''}`,
+      }, l.text)));
+    const input = h('input', {
+      type: 'text', class: 'menu-console-input', value: draft, placeholder: CONSOLE_PLACEHOLDER,
+      'aria-label': 'Console command', dataset: { console: '', focusKey: 'console', defaultFocus: '' },
+    });
+    input.setAttribute('autocomplete', 'off');
+    input.spellcheck = false;
+    const list = h('ul', { class: 'menu-console-suggest', role: 'listbox', 'aria-label': 'Commands', hidden: true });
+    // A press on a guess would take the focus from the input; the click picks it.
+    list.addEventListener('mousedown', (e) => e.preventDefault());
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('li[data-complete]');
+      if (row) this._acceptGuess(row.dataset.complete);
+    });
+    this._console = { input, list, log, suggest, active: -1 };
+    return [
+      h('h2', { class: 'menu-heading' }, 'DEV CONSOLE'),
+      log,
+      h('div', { class: 'menu-console-prompt' },
+        h('span', { class: 'menu-console-caret', 'aria-hidden': 'true' }, '>'),
+        input,
+        list),
+      h('nav', { class: 'menu-list menu-list-inline' }, option('back', 'Back')),
+    ];
+  }
+
   /** blocks: { heading, items: { title?, parts: ({text}|{href,text})[], note?, todo? }[] }[] */
   _creditBlocks(blocks) {
     return blocks.map(b => h('section', { class: 'menu-group' },
@@ -342,6 +397,95 @@ export class MenuView {
         item.note ? h('div', { class: 'menu-credit-note' }, item.note) : null,
       )),
     ));
+  }
+
+  // ── Console ───────────────────────────────
+
+  /** After a draw: the newest line in view, the caret after the draft. */
+  _settleConsole() {
+    const { input, log } = this._console;
+    log.scrollTop = log.scrollHeight;
+    if (document.activeElement === input) {
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    }
+  }
+
+  /** A key in the console's input. Up / Down move through the guesses, or
+   *  the history when there are none to move through; Enter takes a
+   *  highlighted guess, or runs the line; Tab completes. */
+  _consoleKey(e) {
+    const c = this._console;
+    switch (e.code) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        const delta = e.code === 'ArrowDown' ? 1 : -1;
+        if (!this._moveGuess(delta)) this._emit('consoleHistory', { dir: delta < 0 ? 'prev' : 'next' });
+        return true;
+      }
+      case 'Enter':
+      case 'NumpadEnter': {
+        const chosen = this._guessRows()[c.active];
+        if (chosen) this._acceptGuess(chosen.dataset.complete);
+        else this._emit('consoleRun', { line: c.input.value });
+        return true;
+      }
+      case 'Tab': {
+        const rows = this._guessRows();
+        const chosen = rows[c.active] ?? rows[0];
+        if (e.shiftKey || !chosen) return false;
+        this._acceptGuess(chosen.dataset.complete);
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /** Redraw the guesses for what the input holds; none highlighted. */
+  _refreshGuesses() {
+    const c = this._console;
+    const text = c.input.value;
+    const guesses = text.trim() ? c.suggest(text) : [];
+    c.active = -1;
+    c.list.replaceChildren(...guesses.map(g => h('li', {
+      class: `menu-console-option${g.format ? ' is-format' : ''}`,
+      role: 'option',
+      'aria-selected': 'false',
+      'aria-disabled': g.format ? 'true' : undefined,
+      dataset: g.format ? {} : { complete: g.name },
+    },
+    h('span', { class: 'menu-console-usage' }, g.usage),
+    h('span', { class: 'menu-console-help' }, g.help))));
+    c.list.hidden = guesses.length === 0;
+  }
+
+  /** The guesses that can be picked (not a format line), while shown. */
+  _guessRows() {
+    const c = this._console;
+    return c.list.hidden ? [] : [...c.list.querySelectorAll('li[data-complete]')];
+  }
+
+  /** Move the highlight, wrapping. @returns {boolean} false with nothing to move through */
+  _moveGuess(delta) {
+    const c = this._console;
+    const rows = this._guessRows();
+    if (rows.length === 0) return false;
+    c.active = c.active === -1
+      ? (delta > 0 ? 0 : rows.length - 1)
+      : (c.active + delta + rows.length) % rows.length;
+    rows.forEach((row, i) => row.setAttribute('aria-selected', String(i === c.active)));
+    rows[c.active].scrollIntoView?.({ block: 'nearest' });
+    return true;
+  }
+
+  /** Complete the input to a command, ready for its arguments. */
+  _acceptGuess(name) {
+    const { input } = this._console;
+    input.value = `${name} `;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    this._refreshGuesses();
   }
 
   // ── Internals ─────────────────────────────

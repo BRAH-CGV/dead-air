@@ -3,8 +3,8 @@ import * as THREE from 'three';
 // ─────────────────────────────────────────────
 // DebugCamera  –  free-fly spectator camera
 // ─────────────────────────────────────────────
-// A noclip camera for inspecting the level the way the renderer sees it. Press
-// the debug key and the camera detaches from the player Object3D onto the scene
+// A noclip camera for inspecting the level the way the renderer sees it. Type
+// `fly` in the dev console and the camera detaches from the player Object3D onto the scene
 // root — at exactly the pose it had, so the view doesn't jump — and every
 // component on the player is suspended (Component.enabled = false): movement,
 // mouse look and interaction freeze in place mid-stride, and the player's

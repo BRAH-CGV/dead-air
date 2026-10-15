@@ -125,6 +125,10 @@ describe('ComputerTerminal', () => {
 
     mgr.startNight(1);  // required=3, 5 signals
     revealAll(mgr);     // hide the appearance schedule from these tests
+    // Reset cursor to the origin — tests verify movement mechanics from a
+    // known position, independent of the scene's park angles.
+    term._cursorX = 0;
+    term._cursorY = 0;
   });
 
   // ── Initial state ──
@@ -293,6 +297,17 @@ describe('ComputerTerminal', () => {
 
   // ── Hover detection ──
 
+  /** Hide every signal but `sig`. Signals are placed at random, so a test
+   *  that expects nothing under the cursor must not find a neighbour there
+   *  (more likely with ten a night than five). */
+  function onlySignal(sig) {
+    for (const s of mgr.signals) {
+      if (s === sig) continue;
+      s.appeared = false;
+      s.fadeElapsed = 0;
+    }
+  }
+
   it('hover detects signal under cursor', () => {
     term.enter();
     const sig = mgr.signals[0];
@@ -313,6 +328,11 @@ describe('ComputerTerminal', () => {
       mgr.signals[i].appeared = false;
       mgr.signals[i].fadeElapsed = 0;
     }
+    // Both in view (signals appear at random times through the night).
+    for (const sig of [sig1, sig2]) {
+      sig.appeared = true;
+      sig.fadeElapsed = sig.fadeSeconds;
+    }
     // Place both signals at the same spot (within tolerance)
     sig2.yaw = sig1.yaw + sig1.tolerance * 0.3;
     sig2.pitch = sig1.pitch;
@@ -327,12 +347,7 @@ describe('ComputerTerminal', () => {
   it('hover ignores resolved signals', () => {
     term.enter();
     const sig = mgr.signals[0];
-    // Hide the other signals so only the resolved one could be hovered —
-    // their random positions occasionally land close enough to matter.
-    for (let i = 1; i < mgr.signals.length; i++) {
-      mgr.signals[i].appeared = false;
-      mgr.signals[i].fadeElapsed = 0;
-    }
+    onlySignal(sig);
     mgr.saveSignal(sig.id);  // mark as resolved
     const cur = skyToCursor(sig.yaw, sig.pitch);
     term._cursorX = cur.x;
@@ -383,6 +398,7 @@ describe('ComputerTerminal', () => {
   it('hover ignores signals that have completely faded out', () => {
     term.enter();
     const sig = mgr.signals[0];
+    onlySignal(sig);
     sig.appeared = true;
     sig.fadeElapsed = sig.lifeSeconds;   // window over, dot invisible
     const cur = skyToCursor(sig.yaw, sig.pitch);

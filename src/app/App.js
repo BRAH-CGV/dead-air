@@ -18,8 +18,12 @@
 //     ticked, so New game is just "unpause". Leaving a game rebuilds under
 //     a fade.
 //   • While a menu is open, a capture-phase keydown listener eats every
-//     keydown (never keyup) so the debug keys and the review panel's S / D
+//     keydown (never keyup) so the game's keys and the review panel's S / D
 //     can't fire behind it.
+//   • The developer console (dev builds) is a menu screen too: ` opens it
+//     from play, paused under it, and ` again plays on — the keydown is the
+//     gesture the lock needs. Its commands are src/app/devConsole/. In every
+//     build they also run from the browser's console (F12): dev('ufo').
 // ─────────────────────────────────────────────
 
 import { AppFlow } from './AppFlow.js';
@@ -28,6 +32,8 @@ import { controlsList } from './controlsList.js';
 import { SettingsStore, SCHEMA, TABS } from './SettingsStore.js';
 import { applySettings } from './applySettings.js';
 import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
+import { DevConsole } from './devConsole/DevConsole.js';
+import { createCommands } from './devConsole/commands.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -41,6 +47,9 @@ import { version as PACKAGE_VERSION } from '../../package.json';
 /** body[data-app] per flow state — index.html hides the gameplay overlays
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
+
+/** Opens and closes the developer console. Reserved: it can't be rebound. */
+const CONSOLE_KEY = 'Backquote';
 
 /** Where Continue and Select night remember progress: `{ night, highest }`. */
 export const PROGRESS_KEY = 'dead-air.progress.v1';
@@ -59,7 +68,7 @@ export class App {
    * @param {ScreenFade} [deps.fade]
    * @param {string} [deps.version]
    * @param {Storage|null} [deps.storage]  Where settings persist
-   * @param {boolean} [deps.devToolsDefault]  Debug keys: on in `npm run dev`, off in the build
+   * @param {boolean} [deps.devToolsDefault]  The dev console: on in `npm run dev`, off in the build
    * @param {SettingsStore} [deps.settings]
    * @param {boolean} [deps.dev]  Dev build: unconfirmed credits show, and warn
    * @param {Document} [deps.doc]
@@ -95,9 +104,14 @@ export class App {
       storage,
       defaults: { keyBinds: Object.fromEntries(REBINDABLE.map(a => [a, engine.keyBinds[a]])) },
     });
-    // Not a setting: the debug keys go before release, so they simply follow
+    // Not a setting: the dev tools go before release, so they simply follow
     // the build — on in `npm run dev`, off in the production bundle.
     this.devTools = devToolsDefault;
+    /** The developer console's commands and log. Built in every build, for
+     *  F12's dev(); its screen in the menus is dev builds only. */
+    this.devConsole = this._buildConsole();
+    /** What the console's input holds when it is next drawn (a recalled line). */
+    this._consoleDraft = '';
     this.dev = dev;
     // Parsed once: ATTRIBUTIONS.md is inlined at build time (?raw), so a new
     // entry there reaches the credits on the next build.
@@ -135,6 +149,12 @@ export class App {
     this._offs.push(flow.onChange(() => this._render()));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
+    // The main menu's shot over the office computer (#115), fitted to the
+    // window as it changes. The Engine's own resize listener, added first,
+    // has already fitted the game camera this copies.
+    this._offs.push(flow.onChange(() => this._syncMenuShot()));
+    this._listen(win, 'resize', () => this._syncMenuShot());
+
     // Music under the main menu (and the screens opened from it), faded out
     // for the game. It can only sound once the audio is awake, and the
     // menu's buttons aren't the canvas whose click wakes it — so the first
@@ -154,6 +174,9 @@ export class App {
     this._offs.push(this.settings.onChange((values, keys) => this._onSettingsChanged(values, keys)));
     this._offs.push(engine.onSceneLoaded((scene) => this._onSceneLoaded(scene)));
     this._onSceneLoaded(engine.activeScene);
+
+    win.dev = this._devFromBrowser;
+    this._offs.push(() => { if (win.dev === this._devFromBrowser) delete win.dev; });
 
     await engine.revealed;
     flow.ready();
@@ -200,8 +223,10 @@ export class App {
     this._offController = null;
     engine.loadScene(engine.activeScene.constructor);
     // The camera outlives the scene, and nothing ticks under the menu to
-    // turn it back: face the way a fresh player does.
-    engine.camera?.rotation?.set(0, 0, 0);
+    // turn it back: face the way the fresh player does (beside the bunk,
+    // looking at the desk — not world forward).
+    const ctrl = engine.playerController;
+    engine.camera?.rotation?.set(ctrl?.pitch ?? 0, ctrl?.yaw ?? 0, 0);
     this.flow.markClean();
   }
 
@@ -221,7 +246,7 @@ export class App {
   }
 
   /** Continue: the night saved last time, on the fresh scene the menu sits
-   *  over — no rebuild, just the night set (like the N key) once the lock
+   *  over — no rebuild, just the night set (like `night` in the console) once the lock
    *  is ours. Set any earlier and a refused lock would leave New game
    *  starting on that night. */
   async _continue() {
@@ -248,16 +273,22 @@ export class App {
     });
   }
 
-  async _resume() {
-    // A panel still has the mouse: back to it, without taking the lock.
-    if (this.engine.uiHasMouse) {
+  /** Back into the game from the pause screen. `leave` closes whatever is
+   *  over it (the console) once the lock has answered, so it stays up
+   *  meanwhile rather than flashing the pause menu. */
+  async _resume(leave = () => {}) {
+    // A panel or the level editor has the mouse: back to it, without the lock.
+    if (this.engine.uiHasMouse || this.engine.levelEditor?.enabled) {
+      leave();
       this.flow.resume();
       this.engine.setPaused(false);
       return;
     }
     const lock = this.pointerLock.request();
     await this._run(async () => {
-      if (await this._lockHeld(lock)) {
+      const held = await this._lockHeld(lock);
+      leave();
+      if (held) {
         this.flow.resume();
         this.engine.setPaused(false);
       } else {
@@ -266,8 +297,64 @@ export class App {
     });
   }
 
+  /** ` in play: the console over the paused game. The flow moves before the
+   *  lock is released, so the unlock isn't read as a pause. */
+  _openConsole() {
+    this._consoleDraft = '';
+    this.flow.openConsole();
+    this.engine.setPaused(true);
+    this.pointerLock.exit();
+  }
+
+  /** Close a console opened from play and play on: with the lock, or
+   *  without it for the level editor, which wants the mouse free.
+   *  @returns {boolean} false (nothing done) for a console opened from
+   *  Settings: that one goes Back. */
+  _closeConsoleIntoPlay({ lock = true } = {}) {
+    const { flow } = this;
+    if (!flow.consoleOverPlay) return false;
+    if (lock) {
+      this._resume(() => { if (flow.consoleOverPlay) flow.back(); });
+    } else {
+      flow.back();
+      flow.resume();
+      this.engine.setPaused(false);
+    }
+    return true;
+  }
+
+  /** The console's `models`: rebuild the scene on the night being played.
+   *  The console stays up over it. */
+  _reloadScene() {
+    const night = this._currentNight();
+    this.rebuild();
+    this.engine.activeScene?.nights?.setNight(night);
+  }
+
+  _buildConsole() {
+    const devConsole = new DevConsole();
+    const commands = createCommands(this.engine, {
+      closeConsole: (options) => this._closeConsoleIntoPlay(options),
+      rebuild: () => this._reloadScene(),
+      settings: this.settings,
+    });
+    for (const command of commands) devConsole.register(command);
+    return devConsole;
+  }
+
+  /** F12's dev('ufo'): a console command from the browser's console, in
+   *  every build. What it says is logged there, a mistake as a warning. No
+   *  menu opens and nothing pauses. dev() alone lists the commands. */
+  _devFromBrowser = (line) => {
+    const { lines } = this.devConsole.run(String(line ?? '').trim() || 'help');
+    const said = (kind) => lines.filter(l => l.kind === kind).map(l => l.text).join('\n');
+    if (said('output')) console.log(said('output'));
+    if (said('error')) console.warn(said('error'));
+  };
+
   /** Restart (from pause) or Retry (from Night failed): a full rebuild, then
-   *  back to the night that was being played — the same path as the N key.
+   *  back to the night that was being played — the same path as the
+   *  console's `night`.
    *  GameController.retryNight() only resets the clock and signals; this
    *  puts the player back at spawn with the world reset. */
   async _restartNight() {
@@ -345,13 +432,38 @@ export class App {
   // Scene hooks
   // ──────────────────────────────────────────
 
-  /** After every scene load, App's or not (F4, the editor's switcher):
+  /** After every scene load, App's or not (the editor's switcher):
    *  re-apply the settings (buildPlayer and the scene's moon light come
    *  back with hard-coded values) and follow the new GameController. */
   _onSceneLoaded(scene) {
     this._applySettings();
+    this._syncMenuShot();
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
+  }
+
+  /** The main menu looks through the scene's own shot (`menuCamera`, #115):
+   *  over the office computer, out of the window at the dish, wherever the
+   *  player wakes. It takes the game camera's aspect and far plane, so it
+   *  fits the window and the render distance. Once the main menu is left,
+   *  the frame goes back to the player's eyes; a view someone else set (a
+   *  security camera on the monitor) is left alone. */
+  _syncMenuShot() {
+    const { engine } = this;
+    const shot = engine.activeScene?.menuCamera;
+    if (!shot) return;
+    const { state } = this.flow;
+    if (state === 'loading' || state === 'mainMenu') {
+      const { aspect, far } = engine.camera;
+      if (shot.aspect !== aspect || shot.far !== far) {
+        shot.aspect = aspect;
+        shot.far = far;
+        shot.updateProjectionMatrix();
+      }
+      engine.viewCamera = shot;
+    } else if (engine.viewCamera === shot) {
+      engine.viewCamera = null;
+    }
   }
 
   _applySettings(values = this.settings.values) {
@@ -363,6 +475,7 @@ export class App {
    *  isn't redrawn (that would drop it mid-drag); everything else is. */
   _onSettingsChanged(values, keys) {
     this._applySettings(values);
+    this._syncMenuShot();
     const sliderOnly = keys.length === 1 && SCHEMA[keys[0]]?.type === 'number';
     if (this.flow.screen === 'settings' && !sliderOnly) this._render();
   }
@@ -381,7 +494,12 @@ export class App {
       this._captureKey(e.code);
       return;
     }
-    if (e.code === 'Escape') {
+    if (this.flow.screen === 'console' && e.code === CONSOLE_KEY) {
+      // Never typed into the input: ` closes the console, into play if it
+      // was opened from there, else back to Settings.
+      e.preventDefault();
+      if (!this._busy && !e.repeat && !this._closeConsoleIntoPlay()) this.flow.back();
+    } else if (e.code === 'Escape') {
       e.preventDefault();
       if (!this._busy) this.flow.back();
     } else if (this.view.handleKey(e)) {
@@ -391,10 +509,26 @@ export class App {
   };
 
   /** Bubble phase, while playing: Escape when the lock never took (the
-   *  browser handles Esc itself when it did — pointerlockchange covers it). */
+   *  browser handles Esc itself when it did — pointerlockchange covers it),
+   *  and ` for the console. */
   _onKeyDown = (e) => {
-    if (e.code === 'Escape') this._pauseForInput();
+    if (e.code === 'Escape') {
+      this._pauseForInput();
+    } else if (e.code === CONSOLE_KEY && this._mayOpenConsole(e)) {
+      // Kept from the input it is about to focus.
+      e.preventDefault();
+      this._openConsole();
+    }
   };
+
+  /** ` opens the console in play, dev builds only — not while typing into
+   *  a field of the game's own (the level editor's). */
+  _mayOpenConsole(e) {
+    const target = /** @type {HTMLElement} */ (e.target);
+    const typing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+    return this.devTools && this.engine.devTools && this.flow.state === 'playing'
+      && !this._busy && !e.repeat && !typing;
+  }
 
   _onIntent(action, data) {
     if (this._busy) return;
@@ -424,9 +558,21 @@ export class App {
     }
   }
 
-  /** The settings screen's own intents. */
+  /** The settings screen's and the console's own intents. */
   _onExtraIntent(action, data) {
     switch (action) {
+      case 'devConsole':
+        this._consoleDraft = '';
+        return this.flow.openConsole();
+      case 'consoleRun':
+        this._consoleDraft = '';
+        this.devConsole.run(data.line);
+        // A command may have closed it (`editor`).
+        if (this.flow.screen === 'console') this._render();
+        return undefined;
+      case 'consoleHistory':
+        this._consoleDraft = (data.dir === 'prev' ? this.devConsole.historyPrev() : this.devConsole.historyNext()) ?? '';
+        return this._render();
       case 'tab':
         this._settingsTab = data.tab;
         this._settingsMessage = '';
@@ -456,7 +602,7 @@ export class App {
     if (code === 'Escape') {
       this._settingsMessage = '';
     } else {
-      const result = rebind(this.settings.values.keyBinds, action, code, { devTools: this.engine.devTools });
+      const result = rebind(this.settings.values.keyBinds, action, code);
       if (result.ok) {
         this._settingsMessage = result.swappedWith
           ? `Swapped with ${ACTION_LABELS[result.swappedWith]}.`
@@ -510,6 +656,14 @@ export class App {
         return { blocks: this._creditBlocks, mode: 'list' };
       case 'runComplete':
         return { blocks: this._creditBlocks };
+      case 'console': {
+        const devConsole = this.devConsole;
+        return {
+          lines: devConsole.lines,
+          draft: this._consoleDraft,
+          suggest: (text) => devConsole.suggest(text),
+        };
+      }
       default:
         return {};
     }
@@ -547,6 +701,10 @@ export class App {
         rows.push({ type: 'heading', label: group.title });
         for (const r of group.rows) rows.push({ type: 'info', label: r.label, text: r.keys });
       }
+    }
+    if (tab === 'game' && this.devTools) {
+      rows.push({ type: 'heading', label: 'DEVELOPER' });
+      rows.push({ type: 'button', action: 'devConsole', label: 'Developer console' });
     }
     this._flash = new Set();
     return { tabs: TABS, tab, rows, message: this._settingsMessage };

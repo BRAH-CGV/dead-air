@@ -70,10 +70,11 @@ import { GameObject } from '../core/GameObject.js';
 //
 // The moons ride the turn with the stars, so their distance from the Sun
 // never changes: ~125°, across the sky from it, which is why they are drawn
-// as (nearly) full discs. Both stay up all night: Phobos climbs from 30° to
-// ~58° and is still 45° up at 6 AM, off to the right behind the office.
-// Deimos leaves the mid-room window view at about 2 AM. At this rate nothing
-// can stay in an 82° window for six hours; `hourRate` is the knob if the
+// as (nearly) full discs. The shift starts at sunset (6 PM) with both below
+// the horizon: Phobos rises at about 10:30 PM, Deimos at about 11. From
+// midnight Phobos climbs from 30° to ~58° and is still 45° up at 6 AM, off
+// to the right behind the office. Deimos leaves the mid-room window view at
+// about 2 AM. At this rate nothing can stay in an 82° window for hours; `hourRate` is the knob if the
 // team wants a slower sky.
 //
 // Real Phobos laps Mars faster than Mars turns, so it rises in the WEST and

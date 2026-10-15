@@ -144,6 +144,80 @@
         letter-spacing: 0.1em;
       }
 
+      #hud-stamina {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #8898a8;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      #hud-stamina-track {
+        width: 120px;
+        height: 5px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #hud-stamina-fill {
+        width: 100%;
+        height: 100%;
+        background: #6ecf9a;
+        transition: background 0.4s ease;
+      }
+      #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
+      #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
+
+      /* ── Eyelids (FatigueOverlay.js) ──────────────────────
+         The bed animation closes them (BedRest.js), and so does fatigue.
+         The tunnel sits under the HUD so the stamina bar stays readable;
+         the lids close over the HUD and the panels, but under the
+         white-out, the menus and the screen fade. */
+      #fatigue-tunnel {
+        position: fixed;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 80;
+        background: radial-gradient(ellipse at center,
+          transparent 24%, rgba(0,0,0,0.55) 50%, #000 80%);
+      }
+      #fatigue-lids {
+        --lid: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+      /* A nap's way out ("[E] Wake up", Nap.js): over the closed lids,
+         which cover the HUD; under the white-out and the screen fade. */
+      #nap-hint {
+        display: none;
+        position: fixed;
+        left: 50%;
+        bottom: 12%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 101;
+        font: 13px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.08em;
+        color: #8898a8;
+        text-shadow: 0 1px 3px #000;
+      }
+      #fatigue-lids::before,
+      #fatigue-lids::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 52%;
+        background: #000;
+      }
+      #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
+      #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
+
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
         position: fixed;
@@ -465,6 +539,68 @@
       /* Starts one window-height down, ends scrolled off the top. */
       .menu-roll { padding-top: min(52vh, 440px); animation: menu-roll 90s linear 1s both; }
 
+      /* The dev console (dev builds): a light backdrop, so a toggle shows on
+         the paused scene behind it. */
+      #menu[data-screen="console"] { background: rgba(0, 0, 0, 0.18); }
+      #menu[data-screen="console"] #menu-panel {
+        width: min(860px, calc(100vw - 32px));
+        height: min(560px, calc(100vh - 48px));
+        background: rgba(13, 13, 20, 0.82);
+      }
+      .menu-console-log { font-size: 13px; line-height: 1.45; }
+      .menu-console-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+      .menu-console-line.is-input { color: var(--menu-muted); }
+      .menu-console-line.is-error { color: var(--menu-danger); }
+      .menu-console-prompt {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 1px solid var(--menu-line);
+      }
+      .menu-console-prompt:focus-within { border-color: var(--menu-accent); }
+      .menu-console-caret { color: var(--menu-accent); }
+      .menu-console-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        outline: none;
+        background: none;
+        color: var(--menu-bright);
+        font: inherit;
+        caret-color: var(--menu-accent);
+      }
+      .menu-console-input::placeholder { color: var(--menu-muted); opacity: 0.6; }
+      /* The guesses drop down under the input, over the log. */
+      .menu-console-suggest {
+        position: absolute;
+        top: 100%;
+        left: -1px;
+        right: -1px;
+        z-index: 1;
+        max-height: 14em;
+        overflow-y: auto;
+        margin: 0;
+        padding: 4px 0;
+        list-style: none;
+        border: 1px solid var(--menu-line);
+        background: rgba(13, 13, 20, 0.97);
+      }
+      .menu-console-suggest[hidden] { display: none; }
+      .menu-console-option { display: flex; gap: 16px; padding: 3px 12px; cursor: pointer; }
+      .menu-console-option:hover,
+      .menu-console-option[aria-selected="true"] { background: rgba(110, 207, 154, 0.12); }
+      .menu-console-option[aria-selected="true"] .menu-console-usage { color: var(--menu-ok); }
+      .menu-console-option.is-format { cursor: default; background: none; }
+      .menu-console-usage { flex: 0 0 auto; color: var(--menu-bright); white-space: nowrap; }
+      .menu-console-help { flex: 1 1 auto; min-width: 0; color: var(--menu-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      @media (max-width: 640px) {
+        .menu-console-option { flex-direction: column; gap: 0; }
+        .menu-console-help { white-space: normal; }
+      }
+
       @keyframes menu-blink   { 50% { opacity: 0; } }
       @keyframes menu-flicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: 0.82; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
       @keyframes menu-type    { from { width: 0; } }
@@ -607,9 +743,50 @@
       /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
       body.cctv-on :is(#crosshair, #prompt) { visibility: hidden !important; }
 
+      /* ── Journal (JournalPanel.js): the previous operator's notebook ──
+         A page of ruled paper held up close. Below the menus (150), so a
+         pause covers it; the game behind it runs slow (Journal.js). */
+      #journal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 140;
+        background: rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+      }
+      #journal.is-open { display: flex; }
+      .journal-paper {
+        box-sizing: border-box;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 30px 36px 22px 52px;
+        color: #2b2620;
+        font: 17px/30px "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+        /* Off-white paper, faint blue rules every line, a red margin line. */
+        background:
+          linear-gradient(to right, transparent 38px, rgba(190, 70, 60, 0.35) 38px, rgba(190, 70, 60, 0.35) 40px, transparent 40px),
+          repeating-linear-gradient(to bottom, transparent 0 29px, rgba(70, 100, 150, 0.22) 29px 30px),
+          #e8e0c9;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        transform: rotate(-0.6deg);
+      }
+      .journal-title { margin: 0 0 8px; font: inherit; font-size: 22px; font-weight: 700; }
+      .journal-body p { margin: 0 0 30px; }
+      .journal-body p:last-child { margin-bottom: 12px; }
+      .journal-hint {
+        font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #6a6050;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      @media (max-width: 640px) { .journal-paper { padding: 22px 18px 18px 46px; font-size: 15px; } }
+
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #cctv) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint) {
         visibility: hidden !important;
       }
 
@@ -744,6 +921,7 @@
     <div id="crosshair"></div>
 
     <!-- HUD (hidden until gameplay starts) -->
+    <div id="nap-hint"></div>
     <div id="hud">
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>
@@ -751,6 +929,13 @@
       <div id="hud-scan-bar"></div>
       <div id="hud-prompt"></div>
       <div id="hud-suit">EVA suit on</div>
+      <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
+    </div>
+
+    <!-- The eyelids, and a tired player's tunnel vignette (FatigueOverlay.js) -->
+    <div id="fatigue">
+      <div id="fatigue-tunnel"></div>
+      <div id="fatigue-lids"></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->
@@ -785,6 +970,9 @@
       <div id="menu-status" aria-hidden="true"></div>
       <div id="menu-panel"></div>
     </div>
+
+    <!-- The previous operator's journal (JournalPanel.js) -->
+    <div id="journal"></div>
 
     <div id="fade"></div>
 

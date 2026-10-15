@@ -20,6 +20,11 @@ import { Room, SIDES } from './Room.js';
 // `[first, second]` in the order the axis runs — [left, right] along x,
 // [back, front] along z — for a passage that butts against a room at one
 // end and stands free at the other (the airlock).
+//
+// An open end shows the outer face of the room's wall it butts against,
+// which neither the room nor the corridor lines. `openEndDoorways` names the
+// doorway in that wall, per end side ({ back: { width, height } }), and the
+// corridor lines the face round it.
 // ─────────────────────────────────────────────
 
 const AXES = ['x', 'z'];
@@ -41,12 +46,15 @@ export class Corridor extends Room {
    *        ends, or [first, second] along the axis
    * @param {number} [opts.doorWidth=1.2]  Only used by a 'doorway' end
    * @param {number} [opts.doorHeight=2.2]
+   * @param {Object<string, {width:number, height:number, offset?:number}>} [opts.openEndDoorways]
+   *        The doorway in the wall each open end butts against, by end side:
+   *        that face is lined round it. Also settable before build().
    * @param {number[]} [opts.position]    World position of the floor centre
    * @param {import('three').Material} [opts.material]
    */
   constructor(engine, {
     name, length, width = 2, height = 3, wallThick = 0.2, axis = 'x',
-    ends = 'open', doorWidth = 1.2, doorHeight = 2.2, position, material,
+    ends = 'open', doorWidth = 1.2, doorHeight = 2.2, openEndDoorways = {}, position, material,
   }) {
     if (!AXES.includes(axis)) throw new Error(`Corridor ${name}: axis must be 'x' or 'z', got '${axis}'`);
     const endModes = Array.isArray(ends) ? ends : [ends, ends];
@@ -72,6 +80,8 @@ export class Corridor extends Room {
     this.ends          = ends;
     /** Mode per end side, e.g. { back: 'open', front: 'doorway' }. */
     this._endMode      = Object.fromEntries(endSides.map((side, i) => [side, endModes[i]]));
+    /** The doorway in the wall each open end butts against, by end side. */
+    this.openEndDoorways = openEndDoorways;
   }
 
   /** A single ceiling light at the midpoint, with a visible fixture (same
@@ -128,6 +138,24 @@ export class Corridor extends Room {
       : [this.corridorWidth + t, t, this.length];
     this._addStaticBox('Floor',   [0, -t / 2, 0],               size);
     this._addStaticBox('Ceiling', [0, this.height + t / 2, 0],  size);
+    for (const [side, mode] of Object.entries(this._endMode)) {
+      const doorway = mode === 'open' && this.openEndDoorways?.[side];
+      if (doorway) this._lineOpenEnd(side, doorway);
+    }
     this._buildLining([size[0], size[2]]);
+  }
+
+  /** The face an open end butts against, for the lining: from long wall to
+   *  long wall, floor to ceiling, round the doorway in it. Nothing is built —
+   *  the wall is the next room's. */
+  _lineOpenEnd(side, doorway) {
+    const half = this._wallLength(side) / 2;
+    const { lo, hi, top } = this._openingSpan(doorway);
+    const face = SIDES[side].sign * this.length / 2;
+    this._wallPieces.push(
+      { side, a0: -half, a1: lo,   y0: 0,   y1: this.height, face },
+      { side, a0: hi,    a1: half, y0: 0,   y1: this.height, face },
+      { side, a0: lo,    a1: hi,   y0: top, y1: this.height, face },
+    );
   }
 }

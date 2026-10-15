@@ -183,10 +183,15 @@ export function fenceKeepOut(rect, { openSides = [], clearance = 3 } = {}) {
  *        defaults to perimeterRect(). `yardRect()` is the block in front of the base.
  * @param {Array<'N'|'S'|'E'|'W'>} [opts.openSides]  Sides left unfenced — where the
  *        rectangle backs onto the building, which is its own barrier.
+ * @param {number} [opts.sideStart]  Where the W and E runs begin on z, if not
+ *        at the rect's own minZ — BaseScene starts them at the foot of the
+ *        bunker's front slope, where each is anchored into it. The rect
+ *        (and everything that reads it) is unchanged.
  * @returns {GameObject} a group carrying the fence panels
  */
 export function createPerimeterFence(opts = {}) {
   const { lanes = [], assets, world, heightAt = terrainHeightAt, rect = perimeterRect(), openSides = [] } = opts;
+  const sideStart = opts.sideStart ?? rect.minZ;
 
   const fence = new GameObject('PerimeterFence');
   // A group, so the editor neither lists every panel nor measures a bounding
@@ -208,8 +213,8 @@ export function createPerimeterFence(opts = {}) {
   const sides = [
     { name: 'S', fixed: rect.minZ, from: rect.minX, to: rect.maxX, along: 'x', facing: 0 },
     { name: 'N', fixed: rect.maxZ, from: rect.minX, to: rect.maxX, along: 'x', facing: 0 },
-    { name: 'W', fixed: rect.minX, from: rect.minZ, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
-    { name: 'E', fixed: rect.maxX, from: rect.minZ, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
+    { name: 'W', fixed: rect.minX, from: sideStart, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
+    { name: 'E', fixed: rect.maxX, from: sideStart, to: rect.maxZ, along: 'z', facing: -Math.PI / 2 },
   ].filter(side => !openSides.includes(side.name));
 
   // The same open runs answer both what to draw and what to collide with, so

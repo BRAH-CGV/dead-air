@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 
 // ─────────────────────────────────────────────
-// StormOutage  –  every sandstorm takes the power out, once
+// StormOutage  –  a sandstorm may take the power out, once
 // ─────────────────────────────────────────────
-// Each storm (sandstorm.stormId) chokes the generator once, at a random
-// point through it (STORM_OUTAGE.at, a fraction of the way through —
-// sandstorm.stormProgress):
+// Each storm (sandstorm.stormId) rolls STORM_OUTAGE.chance as it comes up.
+// One that hits chokes the generator once, at a random point through it
+// (STORM_OUTAGE.at, a fraction of the way through — sandstorm.stormProgress);
+// one that misses blows through with the lights steady, so a storm is never
+// a sure thing (#107):
 //
 //   steady ──its moment──▶ flickering ──flickerSeconds──▶ cut
 //                             (the lamps gutter and dim —      (cutPower: the
@@ -24,6 +26,9 @@ import { Component } from '../core/Component.js';
 
 /** Tuning. Seconds unless stated. */
 export const STORM_OUTAGE = {
+  /** The share of storms that take the power: about half, so the player
+   *  can't count on either. */
+  chance: 0.5,
   /** Where in the storm the power goes: a random fraction of the way
    *  through, between these — in its strong middle. */
   at: [0.25, 0.75],
@@ -39,6 +44,12 @@ export const STORM_OUTAGE_SOUNDS = {
 };
 
 export class StormOutage extends Component {
+  /** True while the lamps gutter and buzz, before the power goes — loud
+   *  enough to wake a sleeper (Nap). */
+  get flickering() {
+    return this._flickering !== null;
+  }
+
   /**
    * @param {object} opts
    * @param {import('./GameController.js').GameController} opts.controller
@@ -47,13 +58,15 @@ export class StormOutage extends Component {
    * @param {() => void} opts.cutPower
    * @param {Record<string, THREE.Audio>} [opts.sounds]  Built from STORM_OUTAGE_SOUNDS when left out.
    * @param {() => number} [opts.random]
+   * @param {number} [opts.chance]  The share of storms that take the power
+   *        (STORM_OUTAGE.chance).
    */
-  constructor({ controller, sandstorm, grid, cutPower, sounds = null, random = Math.random }) {
+  constructor({ controller, sandstorm, grid, cutPower, sounds = null, random = Math.random, chance = STORM_OUTAGE.chance }) {
     super();
-    Object.assign(this, { controller, sandstorm, grid, cutPower, sounds, random });
+    Object.assign(this, { controller, sandstorm, grid, cutPower, sounds, random, chance });
     this._flickering = null;   // seconds into the flicker, or null
     this._stormId = null;      // the storm the moment below belongs to
-    this._at = null;           // when in it the power goes, or null once it has
+    this._at = null;           // when in it the power goes; null once it has, or if it won't
     this._off = null;
   }
 
@@ -99,11 +112,11 @@ export class StormOutage extends Component {
 
     const progress = this.sandstorm.stormProgress;
     if (progress === null || progress === undefined) return;
-    // A new storm: pick its moment.
+    // A new storm: does it take the power, and when?
     if (this.sandstorm.stormId !== this._stormId) {
       this._stormId = this.sandstorm.stormId;
       const [a, b] = STORM_OUTAGE.at;
-      this._at = a + this.random() * (b - a);
+      this._at = this.random() < this.chance ? a + this.random() * (b - a) : null;
     }
     if (this._at === null || progress < this._at) return;
     // Its moment has come — but a dead grid is waited for.

@@ -3,10 +3,11 @@ import { GameObject } from '../core/GameObject.js';
 import { Component } from '../core/Component.js';
 
 // ─────────────────────────────────────────────
-// DigitalClock  –  a desk clock that shows the NightClock's time in digits
+// DigitalClock  –  a desk clock that shows the NightClock's time in 24-hour digits
 // ─────────────────────────────────────────────
 // The wall clock's desk-top sibling: a small box with a red seven-segment
-// display, driven by whatever NightClock it is handed.
+// display, driven by whatever NightClock it is handed. It reads 24-hour time,
+// 18:00 to 06:00 over a shift; the HUD keeps its 12-hour "6:00 PM".
 //
 //   const clock = room.root.addChild(new DigitalClock());
 //   clock.object3d.position.set(1.15, 0.864, -2.0);   // on a desk top
@@ -40,21 +41,21 @@ export const SEGMENTS = {
 const ORDER = 'abcdefg';
 
 /**
- * The four digits of a 12-hour clock face for a float hour (the NightClock's
- * `currentTime`): tens of hours, hours, tens of minutes, minutes. The tens
- * of hours is null when there is nothing to show there (no leading zero).
+ * The four digits of a 24-hour clock face for a float hour (the NightClock's
+ * `currentTime`, which runs through midnight as 0, so 6 PM is -6): tens of
+ * hours, hours, tens of minutes, minutes, with the leading zero (06:00).
  * Floored to the minute gone, as the HUD's clock is (NightClock.formatTime),
  * so the two never disagree. The whole time is floored, not the minutes on
  * their own, so the display never reads :60; the epsilon keeps float error
  * (0.1 + 0.2) on its exact minute, as the HUD does.
- * @param {number} hour  e.g. 4.5 for 4:30
- * @returns {(number|null)[]}
+ * @param {number} hour  e.g. 4.5 for 04:30, -1.5 for 22:30
+ * @returns {number[]}
  */
 export function clockDigits(hour) {
   const total = Math.floor((((hour % 24) + 24) % 24) * 60 + 1e-6) % (24 * 60);   // minutes since midnight
-  const h12 = Math.floor(total / 60) % 12 || 12;
+  const hours = Math.floor(total / 60);
   const minutes = total % 60;
-  return [h12 >= 10 ? 1 : null, h12 % 10, Math.floor(minutes / 10), minutes % 10];
+  return [Math.floor(hours / 10), hours % 10, Math.floor(minutes / 10), minutes % 10];
 }
 
 // The casing, and the display laid out on its front. Metres.
@@ -104,7 +105,7 @@ export class DigitalClock extends GameObject {
 
     const colors = this.display.geometry.getAttribute('color');
     digits.forEach((digit, d) => {
-      const on = digit === null ? '' : SEGMENTS[digit];
+      const on = SEGMENTS[digit];
       for (let s = 0; s < 7; s++) {
         const [r, g, b] = on.includes(ORDER[s]) ? LIT : UNLIT;
         const first = (d * 7 + s) * 4;

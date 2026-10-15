@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { UFO } from './UfoThreat.js';
+import { NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { WIND_DUST } from '../gameobjects/WindDust.js';
 
 // ─────────────────────────────────────────────
 // Sandstorm  –  dust storms that roll in on some nights
 // ─────────────────────────────────────────────
-// Every night brings one storm, at a random hour (night 1 too — the dust
-// eyes stay away until night 2; see DustEyes). It builds up over `rampSeconds`, blows for a while and dies
-// down again. While it blows:
+// Every night brings one long storm (SANDSTORM.perNight), at a random hour
+// after dark (night 1 too — the dust eyes stay away until night 2; see
+// DustEyes). It builds up over `rampSeconds`, blows for about three hours of
+// clock time and dies down again. While it blows:
 //
 //   sound   none of its own. The wind outside is the Ambience's loop; the
 //           storm tells it how hard it is blowing (Ambience.setStorm), and
@@ -19,6 +21,8 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 //           ._keepFogOutside), so it fills the view through the office
 //           window and out in the yard, never a room.
 //   sky     dimmed toward dust: the stars and moons are lost (MarsSky.setStorm).
+//   light   the moonlight all but blotted out, and the night's ambient fill
+//           dimmed, so the office window no longer lets in a clear night.
 //   dust    streaming grit around the player — outside, and past the office
 //           window (DustStorm, which is cut out of the building so no grain
 //           blows through a room).
@@ -27,18 +31,18 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 // changed the fog showed as the storm flickering or fading through the
 // window at its doorway.
 //
-// The fog is shared with Daylight (colour). The storm never keeps its own
-// copy of "the clear fog": each frame it notices whatever someone else wrote
-// since its last write and lays itself on top of that, so it hands back
-// exactly what the night would have had.
+// The fog and the lights are shared with Daylight (colour, intensity). The
+// storm never keeps its own copy of "the clear night": each frame it notices
+// whatever someone else wrote since its last write and lays itself on top of
+// that, so it hands back exactly what the night would have had.
 //
 // Never with the UFO: on its nights (UFO.nights) there is no storm at
-// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the K key starts one mid-visit.
+// random. Instead one always comes a little while after it has gone, and neither a scheduled storm nor the console's `storm` starts one mid-visit.
 //
 // `held` keeps it blowing at full for as long as it is set — DustEyes sets
 // it through a chase, so the storm can't die down until the player is away.
 //
-// For testing, summon() — the K key — starts one at once, on any night.
+// For testing, summon() — the dev console's `storm` — starts one at once, on any night.
 // Rooms don't know about gameplay, and this doesn't know about rooms: the
 // scene hands it one hook, where the ear is, for the grit.
 // ─────────────────────────────────────────────
@@ -47,12 +51,17 @@ import { WIND_DUST } from '../gameobjects/WindDust.js';
 export const SANDSTORM = {
   /** The first night storms can come on. */
   fromNight: 1,
-  /** When it starts, in night-clock hours after midnight: a random time
-   *  between these… */
-  startHours: [0.5, 4.2],
-  /** …and how long it blows, in clock hours — about an hour and a half.
-   *  Over by 5:54 at the latest. */
-  durationHours: [1.3, 1.7],
+  /** The stretch of night the storms blow in, in night-clock hours from
+   *  midnight (7:30 PM is -4.5): 7:30 PM, after dark, to 5:54 AM. */
+  stormHours: [-4.5, 5.9],
+  /** Storms a night. The stretch is split into this many equal parts, one
+   *  storm somewhere wholly inside each. One (#107): two a night, each
+   *  cutting the power, left no time for the tension to build between them.
+   *  Two still fit, with the longer storms, if it goes back up. */
+  perNight: 1,
+  /** How long each blows, in clock hours — about three: an hour and a half
+   *  was over before it had settled in (#107). */
+  durationHours: [2.5, 3.5],
   /** On a UFO night a storm always follows it, this long after it has gone
    *  (real seconds). */
   afterUfoDelay: [10, 30],
@@ -71,6 +80,13 @@ export const SANDSTORM = {
    *  yellow (0x4b2d19). Tests pin both. */
   dustColor: 0x51280c,
   fogTint: 0.85,
+  /** The share of the moonlight the dust lets through at full strength: the
+   *  moons are gone from the sky (MarsSky.setStorm), so their light nearly
+   *  goes with them. */
+  moonlight: 0.15,
+  /** The share of the night's ambient fill left at full strength. Gentler,
+   *  as it fills the rooms too, and they have lamps of their own. */
+  ambientLight: 0.6,
   /** Wind speed in m/s, for the streaming dust. */
   windSpeed: 9,
 };
@@ -82,26 +98,34 @@ export const WIND_DIRECTION = WIND_DUST.direction;
 // ── Pure helpers ──────────────────────────────────────────
 
 /**
- * Tonight's storm: when it starts and how long it blows, in real seconds
- * from the start of the shift. Every night has one.
+ * Tonight's storms, in order: when each starts and how long it blows, in
+ * real seconds from the start of the shift. SANDSTORM.perNight of them, one
+ * inside each equal part of SANDSTORM.stormHours, so they never overlap.
  * @param {object} opts
  * @param {number} opts.night
  * @param {number} opts.nightDuration  Real seconds in the shift.
- * @param {number} [opts.nightHours=6] Clock hours in it.
+ * @param {number} [opts.nightHours=12] Clock hours in it.
+ * @param {number} [opts.startHour=-6]  The clock hour it starts at.
  * @param {() => number} [opts.random]
- * @returns {{ start: number, duration: number }|null}  null only on a UFO
- *          night (the storm follows the UFO there instead).
+ * @returns {{ start: number, duration: number }[]}  none on a UFO night
+ *          (a storm follows the UFO there instead).
  */
-export function scheduleStorm({ night, nightDuration, nightHours = 6, random = Math.random }) {
-  if (night < SANDSTORM.fromNight) return null;
-  if (UFO.nights.includes(night)) return null;   // it comes after the UFO instead
+export function scheduleStorms({
+  night, nightDuration, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
+}) {
+  if (night < SANDSTORM.fromNight) return [];
+  if (UFO.nights.includes(night)) return [];   // it comes after the UFO instead
   const hour = nightDuration / nightHours;
-  const [s0, s1] = SANDSTORM.startHours;
+  const [h0, h1] = SANDSTORM.stormHours;
   const [d0, d1] = SANDSTORM.durationHours;
-  return {
-    start:    (s0 + random() * (s1 - s0)) * hour,
-    duration: (d0 + random() * (d1 - d0)) * hour,
-  };
+  const part = (h1 - h0) / SANDSTORM.perNight;
+  const storms = [];
+  for (let i = 0; i < SANDSTORM.perNight; i++) {
+    const duration = d0 + random() * (d1 - d0);
+    const start = h0 + i * part + random() * (part - duration);
+    storms.push({ start: (start - startHour) * hour, duration: duration * hour });
+  }
+  return storms;
 }
 
 /**
@@ -123,7 +147,7 @@ export class Sandstorm extends Component {
   level = 0;
   /** While true, a storm that is blowing doesn't die down (a chase). */
   held = false;
-  /** Counts the storms: a new number each time one is scheduled or
+  /** Counts the storms: a new number each time one comes up next or is
    *  summoned, so others can tell one storm from the next. */
   stormId = 0;
 
@@ -149,19 +173,26 @@ export class Sandstorm extends Component {
    *        WindDustMotion: one storm level drives the clouds too.
    * @param {{ setStorm: (k: number) => void }} [opts.ambience]  The scene's
    *        Ambience: the storm's wind is its outside loop, blown harder.
-   * @param {number} [opts.nightDuration=300]  Real seconds in a shift.
-   * @param {number} [opts.nightHours=6]      Clock hours in it.
+   * @param {THREE.Light} [opts.moon]     The moonlight (the morning sun), dimmed
+   *        to `SANDSTORM.moonlight` at full strength.
+   * @param {THREE.Light} [opts.ambient]  The night's ambient fill, dimmed to
+   *        `SANDSTORM.ambientLight`.
+   * @param {number} [opts.nightDuration=600]  Real seconds in a shift.
+   * @param {number} [opts.nightHours=12]     Clock hours in it.
+   * @param {number} [opts.startHour=-6]      The clock hour it starts at.
    * @param {() => number} [opts.random]
    */
   constructor({
     controller, hooks, fog = null, sky = null, dust = null, ufo = null, clouds = null, ambience = null,
-    nightDuration = 300, nightHours = 6, random = Math.random,
+    moon = null, ambient = null,
+    nightDuration = NIGHT_SECONDS, nightHours = SHIFT.endHour - SHIFT.startHour, startHour = SHIFT.startHour, random = Math.random,
   }) {
     super();
-    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, nightDuration, nightHours, random });
+    Object.assign(this, { controller, hooks, fog, sky, dust, ufo, clouds, ambience, moon, ambient, nightDuration, nightHours, startHour, random });
 
     this._elapsed = 0;       // seconds of 'playing' this night
-    this._storm = null;      // { start, duration } in _elapsed, or null
+    this._storm = null;      // { start, duration } in _elapsed, or null: the current or next storm
+    this._queue = [];        // tonight's storms after that one
     this._afterUfo = false;  // a UFO night with a storm to follow it
     this._afterUfoAt = null; // when that storm starts, in _elapsed, once the UFO has gone
 
@@ -171,6 +202,10 @@ export class Sandstorm extends Component {
     this._baseDensity = 0;
     this._wroteDensity = null;
     this._dustColor = new THREE.Color(SANDSTORM.dustColor);
+    // Each light as someone else last left it, and what we last wrote over it.
+    this._lights = [[moon, 'moonlight'], [ambient, 'ambientLight']]
+      .filter(([light]) => light)
+      .map(([light, share]) => ({ light, share, base: light.intensity, wrote: null }));
     this._off = null;
   }
 
@@ -185,27 +220,48 @@ export class Sandstorm extends Component {
     this.ambience?.setStorm?.(0);
   }
 
-  /** A fresh night: calm, with tonight's storm (if any) scheduled. */
+  /** A fresh night: calm, with tonight's storms (if any) scheduled. */
   reset(night) {
     this._elapsed = 0;
     this.level = 0;
     this.held = false;
-    this._storm = scheduleStorm({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, random: this.random });
-    if (this._storm) { this.stormId++; this._pickWind(); }
+    this._queue = scheduleStorms({ night, nightDuration: this.nightDuration, nightHours: this.nightHours, startHour: this.startHour, random: this.random });
+    this._storm = null;
+    this._next();
     this._afterUfo = night >= SANDSTORM.fromNight && UFO.nights.includes(night);
     this._afterUfoAt = null;
   }
 
   /**
-   * Start one now rather than at its random time — the K debug key. Only
+   * Start one now rather than at its random time — the dev console's `storm`. Only
    * during a shift, and not over one already blowing.
    * @returns {boolean} whether a storm started
    */
   summon() {
     if (this.controller.state !== 'playing') return false;
     if (this.level > 0 || this._ufoBusy()) return false;
+    // It stands in for the next storm that hasn't started: the current one
+    // if it is still to come, else the first in the queue.
+    if (this._blownOver()) this._queue.shift();
     this._startNow();
     return true;
+  }
+
+  /** The current storm has been and gone. */
+  _blownOver() {
+    const s = this._storm;
+    return !!s && this._elapsed >= s.start + s.duration;
+  }
+
+  /** Bring up tonight's next storm, if there is one. One delayed past its
+   *  time (a held storm ran long) starts now. */
+  _next() {
+    const s = this._queue.shift();
+    if (!s) return;
+    s.start = Math.max(s.start, this._elapsed);
+    this._storm = s;
+    this.stormId++;
+    this._pickWind();
   }
 
   /** A storm from this moment, of a random length. */
@@ -237,8 +293,9 @@ export class Sandstorm extends Component {
     if (this.controller.state === 'playing') {
       this._elapsed += dt;
       this._followUfo();
+      if (this._blownOver() && !this.held && this._queue.length) this._next();
       const s = this._storm;
-      // Due during a UFO visit (the U key, on another night): it waits.
+      // Due during a UFO visit (the console's `ufo`, on another night): it waits.
       if (s && this._ufoBusy() && this.level === 0 && this._elapsed >= s.start) s.start = this._elapsed;
       // Held: the end is pushed back so it never gets inside the die-down.
       if (s && this.held && this.level > 0) {
@@ -253,6 +310,7 @@ export class Sandstorm extends Component {
 
     const ear = this.hooks.listenerPosition(_ear);
     this._applyFog();
+    this._applyLights();
     this.ambience?.setStorm?.(this.level);
     this.sky?.setStorm?.(this.level);
     this.clouds?.setStorm?.(this.level);
@@ -274,6 +332,16 @@ export class Sandstorm extends Component {
 
     this._wroteDensity = fog.density;
     this._wroteColor.copy(fog.color);
+  }
+
+  /** The moonlight and the ambient fill, dimmed over whatever the night (or
+   *  the dawn) left them at. Calm, that is exactly what they were. */
+  _applyLights() {
+    for (const l of this._lights) {
+      if (l.light.intensity !== l.wrote) l.base = l.light.intensity;
+      l.light.intensity = l.base * (1 + (SANDSTORM[l.share] - 1) * this.level);
+      l.wrote = l.light.intensity;
+    }
   }
 
   /** The storm's wind: along the one wind axis the clouds and grass share. */

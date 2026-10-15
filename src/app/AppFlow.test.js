@@ -141,6 +141,47 @@ describe('AppFlow', () => {
       expect(flow.confirmAction).toBe(null);
     });
 
+    it('the dev console opens over settings, and back returns to settings', () => {
+      flow.ready();
+      flow.openSettings();
+      flow.openConsole();
+      expect(flow.screen).toBe('console');
+      expect(flow.state).toBe('mainMenu');
+      flow.back();
+      expect(flow.screen).toBe('settings');
+    });
+
+    it('the dev console opens straight from play, paused under it; back goes to pause', () => {
+      play();
+      flow.openConsole();
+      expect(flow.state).toBe('paused');
+      expect(flow.screen).toBe('console');
+      flow.back();
+      expect(flow.screen).toBe('pause');
+    });
+
+    it('knows whether the console was opened from play (closing it plays on)', () => {
+      play();
+      flow.openConsole();
+      expect(flow.consoleOverPlay).toBe(true);
+      flow.back();
+      expect(flow.consoleOverPlay).toBe(false);
+      flow.openSettings();
+      flow.openConsole();
+      expect(flow.screen).toBe('console');
+      expect(flow.consoleOverPlay).toBe(false);
+    });
+
+    it.each([
+      ['main', () => { flow.ready(); }],
+      ['pause', () => { play(); flow.pause(); }],
+      ['nightFailed', () => { play(); flow.nightFailed(); }],
+    ])('the dev console does not open from the %s screen', (screen, setup) => {
+      setup();
+      flow.openConsole();
+      expect(flow.screen).toBe(screen);
+    });
+
     it.each([
       ['pause', () => { play(); flow.pause(); }],
       ['main', () => { flow.ready(); }],
