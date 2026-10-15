@@ -30,9 +30,9 @@ import { Component } from '../core/Component.js';
 // ─────────────────────────────────────────────
 
 const PROMPT = {
-  quotaMet: 'Quota met — hold out until 6:00 AM',
-  morning:  'Shift over — get some sleep (bedroom)',
-  deliver:  'Shift over — load the drive box into the buggy outside',
+  quotaMet: 'Hold out until 6:00 AM',
+  morning:  'Get some sleep (bedroom)',
+  deliver:  'Load the drive box into the buggy outside',
   send:     'Drives loaded — send the buggy off',
   delivered: 'Buggy away — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
@@ -57,6 +57,8 @@ export class GameController extends Component {
   terminal = null;
   /** @type {import('../ui/HUD.js').HUD|null} */
   hud = null;
+  /** @type {import('../ui/EventBanner.js').EventBanner|null} */
+  banner = null;
   /** Which night it is — set through bindNights().
    *  @type {import('../systems/NightManager.js').NightManager|null} */
   nights = null;
@@ -126,6 +128,7 @@ export class GameController extends Component {
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
+    this.banner?.clear();
 
     for (const fn of this._nightStartListeners) fn(nightNumber, { retry });
   }
@@ -315,11 +318,15 @@ export class GameController extends Component {
   }
 
   /** The prompt for where the shift stands — the quota met, or not yet —
-   *  set only when that changes. */
+   *  set only when that changes. When the quota is first met, the banner
+   *  announces the event; the HUD shows the standing objective. */
   _updateShiftPrompt() {
     const key = this.quotaDock?.isQuotaMet() ? 'quotaMet' : null;
     if (key === this._shiftPrompt) return;
     this._shiftPrompt = key;
+    if (key) {
+      this.banner?.show('Quota met', { tone: 'info' });
+    }
     this.hud?.setPrompt(key ? PROMPT[key] : '');
   }
 
@@ -378,6 +385,7 @@ export class GameController extends Component {
   }
 
   _morning() {
+    this.banner?.show('6:00 AM — shift over', { tone: 'info' });
     this._shiftPrompt = this._morningKey();
     this._endShift('morning', PROMPT[this._shiftPrompt]);
   }

@@ -132,8 +132,8 @@
       }
       #hud-prompt {
         margin-top: 8px;
-        font-size: 11px;
-        color: #8898a8;
+        font-size: 13px;
+        color: #b8c8d8;
       }
       #hud-suit {
         display: none;
@@ -169,6 +169,35 @@
       }
       #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
       #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
+
+      /* ── Event banner (EventBanner.js) ──────────────────
+         Centred in the upper third, large readable text with a subtle
+         dark backing. Fade in, hold, fade out: the opacity transitions as
+         EventBanner puts .is-shown on and takes it off. */
+      #event-banner {
+        position: fixed;
+        top: 28%;
+        left: 50%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 92;
+        /* Above the fatigue tunnel (80), under the eyelids (100). */
+        max-width: min(720px, 80vw);
+        padding: 12px 28px;
+        background: rgba(8, 10, 18, 0.72);
+        border-radius: 4px;
+        font: 24px/1.3 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.04em;
+        color: #d8e8f0;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+      }
+      #event-banner.is-shown { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
+      #event-banner[data-tone="warning"] { color: #e8a050; }
+      #event-banner[data-tone="danger"]  { color: #e0503c; }
 
       /* ── Eyelids (FatigueOverlay.js) ──────────────────────
          The bed animation closes them (BedRest.js), and so does fatigue.
@@ -987,7 +1016,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint, #tutorial) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint, #event-banner, #tutorial) {
         visibility: hidden !important;
       }
 
@@ -1133,6 +1162,9 @@
       <div id="hud-suit">EVA suit on</div>
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
     </div>
+
+    <!-- Event banner (EventBanner.js) — centred, upper third -->
+    <div id="event-banner"><span id="event-banner-text"></span></div>
 
     <!-- The eyelids, and a tired player's tunnel vignette (FatigueOverlay.js) -->
     <div id="fatigue">
