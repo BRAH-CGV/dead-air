@@ -19,6 +19,9 @@ import { Interactable } from '../components/Interactable.js';
 import { InteractionSystem } from '../components/InteractionSystem.js';
 import { PickupSystem } from '../components/PickupSystem.js';
 import { DriveSlot } from '../components/DriveSlot.js';
+import { SnapSocket } from '../components/SnapSocket.js';
+import { DriveBoxDock } from '../gameplay/DriveBoxDock.js';
+import { BuggyCargo, BUGGY_CARGO } from '../components/BuggyCargo.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice, WINDOW_CORNER_RADIUS } from './rooms/MainOffice.js';
@@ -161,6 +164,16 @@ const DISH_LANE = Math.atan2(-25, 0);
  *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
  *  it and the building. Three quarters puts the roof just above the lintel. */
 const BUGGY_SCALE = 0.75;
+
+/** The buggy's half-length along x, in metres, for when its model isn't
+ *  loaded (tests) and its bounds can't be measured. */
+const BUGGY_HALF_LENGTH = 2.6;
+
+/** Where the night reset leaves the boxes it takes back — the airlock
+ *  dock's first, then the buggy's — on the office floor by the front door.
+ *  Room-local equals world (the office root is at the origin); y is half a
+ *  box's height. */
+const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
 
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
@@ -737,6 +750,14 @@ export class BaseScene extends Scene {
       for (const box of driveBoxes) quotaDock.socket.addCandidate(box);
     }
 
+    // The buggy's cargo bay: in the morning the docked box goes out to it
+    // before bed (#98). The controller keeps the bed shut until it is in.
+    if (this.buggyCargo) {
+      this.buggyCargo.controller = this.gameController;
+      this.gameController.cargo = this.buggyCargo.dock;
+      for (const box of driveBoxes) this.buggyCargo.dock.socket.addCandidate(box);
+    }
+
     // ── Pickup system (generic carry mechanic) ──
     // Attached to the player so it can detect Pickupable objects via
     // InteractionSystem's raycast and apply spring-damper hold forces.
@@ -818,10 +839,10 @@ export class BaseScene extends Scene {
   }
 
   /** Between-nights reset. Machine-slot drives are ejected but keep their
-   *  signals; the docked drive box loses everything — every drive seated
-   *  in it is wiped, even over quota — and the empty box is released and
-   *  parked on the office floor. Drives outside that box keep their
-   *  signals and positions. */
+   *  signals; the docked drive box and the one loaded into the buggy lose
+   *  everything — every drive seated in them is wiped, even over quota —
+   *  and the empty boxes are released and parked on the office floor.
+   *  Drives outside those boxes keep their signals and positions. */
   _resetForNewNight() {
     const driveSlot = this.rooms.MainOffice.driveReader?.getComponent(DriveSlot);
     const serverSlot = this.rooms.ServerRoom?.driveSlot;
@@ -830,22 +851,20 @@ export class BaseScene extends Scene {
     if (driveSlot?.hasDrive) driveSlot._ejectDrive(driveSlot.insertedDrive);
     if (serverSlot?.hasDrive) serverSlot._ejectDrive(serverSlot.insertedDrive);
 
-    // Empty the dock: wipe the docked box's drives and release it.
-    const box = this.rooms.Airlock.quotaDock?.empty();
-    if (!box) return;
-
-    // Park it on the office floor. The office root sits at the origin, so
-    // room-local equals world; centre y is half the box height.
-    const release = new THREE.Vector3(1.1, 0.06, 4.72);
-    box.object3d.position.copy(release);
-    box.object3d.updateMatrixWorld(true);
-    const body = box.rigidBody;
-    if (body) {
-      const world = box.object3d.getWorldPosition(new THREE.Vector3());
-      body.setTranslation({ x: world.x, y: world.y, z: world.z }, true);
-      body.setLinvel?.({ x: 0, y: 0, z: 0 }, true);
-      body.setAngvel?.({ x: 0, y: 0, z: 0 }, true);
-    }
+    // Empty the dock and the buggy: wipe their boxes' drives, release the
+    // boxes and park them on the office floor, each in its own spot.
+    const boxes = [this.rooms.Airlock.quotaDock?.empty(), this.buggyCargo?.dock.empty()].filter(Boolean);
+    boxes.forEach((box, i) => {
+      box.object3d.position.set(...BOX_PARKING[i]);
+      box.object3d.updateMatrixWorld(true);
+      const body = box.rigidBody;
+      if (body) {
+        const world = box.object3d.getWorldPosition(new THREE.Vector3());
+        body.setTranslation({ x: world.x, y: world.y, z: world.z }, true);
+        body.setLinvel?.({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel?.({ x: 0, y: 0, z: 0 }, true);
+      }
+    });
   }
 
   // ──────────────────────────────────────────
@@ -1082,7 +1101,8 @@ export class BaseScene extends Scene {
     // tall as downloaded, which beside a 2.2 m door reads as a machine that
     // could not get through it. BUGGY_SCALE brings the roof to just over the
     // lintel. Position and heading placed by hand in the level editor.
-    this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
+    const buggy = this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
+    this.buggyCargo = this._addBuggyCargo(buggy);
 
     // The generator, in the far corner of the fenced yard, on the side away
     // from the buggy — a walk out into the storm to cut the power, along the
@@ -1835,7 +1855,7 @@ export class BaseScene extends Scene {
   _yardObstacles() {
     const outside = this._sceneRoot.find('Outside');
     const boxes = [];
-    for (const name of ['Buggy', 'Generator']) {
+    for (const name of ['Buggy', 'BuggyCargo', 'Generator']) {
       const go = outside?.find(name);
       if (!go) continue;
       go.object3d.updateMatrixWorld(true);
@@ -2022,6 +2042,70 @@ export class BaseScene extends Scene {
     });
     this._adopt(this._outside, buggy);
     return buggy;
+  }
+
+  /**
+   * The buggy's cargo bay (#98): a crate on the ground at the buggy's end
+   * nearest the hatch, where the night's drive box is set down in the
+   * morning before bed. Placed off the buggy's measured bounds, clear of
+   * its collider by BUGGY_CARGO.gap, beside its middle. A second
+   * DriveBoxDock counts the drives in the box set on it; BuggyCargo refuses
+   * a box mid-shift, so the quota stays with the airlock's dock all night.
+   * _addGameplaySystems hands it the controller.
+   */
+  _addBuggyCargo(buggy) {
+    const [w, h, d] = BUGGY_CARGO.size;
+    const bounds = new THREE.Box3().setFromObject(buggy.object3d);
+    const at = buggy.object3d.position;
+    if (bounds.isEmpty()) {
+      bounds.min.set(at.x - BUGGY_HALF_LENGTH, 0, at.z);
+      bounds.max.set(at.x + BUGGY_HALF_LENGTH, 0, at.z);
+    }
+    const hatch = this.rooms.Airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
+    const toHatch = Math.sign(hatch.x - at.x) || 1;
+    const end = toHatch > 0 ? bounds.max.x : bounds.min.x;
+    const x = end + toHatch * (BUGGY_CARGO.gap + w / 2);
+    const z = (bounds.min.z + bounds.max.z) / 2;
+
+    const go = new GameObject('BuggyCargo');
+    go.object3d.position.set(x, h / 2, z);
+    // The body sits 2 cm inside the lid all round, so the lid is the crate's
+    // outer edge and the whole thing stays within BUGGY_CARGO.size.
+    const crate = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(w - 0.04, h - 0.06, d - 0.04)),
+      this._own(new THREE.MeshStandardMaterial({ color: 0x5b5f58, roughness: 0.55, metalness: 0.5 })),
+    );
+    crate.name = 'BuggyCargo';
+    crate.position.y = -0.03;
+    crate.castShadow = crate.receiveShadow = true;
+    go.object3d.add(crate);
+    // A dark lid band, so it reads as a crate and not a block of the ground.
+    const lid = new THREE.Mesh(
+      this._own(new THREE.BoxGeometry(w, 0.06, d)),
+      this._own(new THREE.MeshStandardMaterial({ color: 0x2f3230, roughness: 0.7, metalness: 0.4 })),
+    );
+    lid.position.y = h / 2 - 0.03;
+    lid.castShadow = lid.receiveShadow = true;
+    go.object3d.add(lid);
+
+    const { world } = this.engine;
+    go.rigidBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, h / 2, z));
+    go.collider = world.createCollider(RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2), go.rigidBody);
+    go.colliders = [go.collider];
+    this.engine._bodyToGO?.set(go.rigidBody.handle, go);
+
+    const cargo = go.addComponent(new BuggyCargo());
+    // A seated box rests on the lid: half the crate and half a box (0.12 m).
+    const socket = go.addComponent(new SnapSocket({
+      snapDistance: 0.35,
+      slots: [{ offset: { y: h / 2 + 0.06 } }],
+      attachedPromptLabel: '[E] Take drive box',
+      sounds: 'item',
+      canAccept: item => cargo.accepts(item),
+    }));
+    cargo.dock = go.addComponent(new DriveBoxDock({ socket }));
+    this._outside.addChild(go);
+    return cargo;
   }
 
   // ──────────────────────────────────────────

@@ -7,7 +7,8 @@ import { keyName } from '../app/keyNames.js';
 // ─────────────────────────────────────────────
 // Bed  –  sleep through the day to the next night
 // ─────────────────────────────────────────────
-// In the morning after a met quota (controller.canSleep): the screen fades
+// In the morning after a met quota, once the drive box is loaded into the
+// buggy (controller.canSleep; until then it says so): the screen fades
 // to black and the GameController moves on to the next night (or ends the
 // run after the last). During the shift it offers a nap instead (Nap.js):
 // the night fast-forwarded until the alarm, 6 AM, or something wakes you.
@@ -61,6 +62,7 @@ const LABEL = {
   sleep: '[E] Sleep',
   shift: "Can't sleep — the shift runs until 6:00 AM",
   uneasy: "Can't sleep now",
+  deliver: 'Load the drive box into the buggy first',
 };
 
 export class Bed extends Interactable {
@@ -118,6 +120,7 @@ export class Bed extends Interactable {
     const c = this.controller;
     if (!c || this.rest?.active) return '';
     if (c.canSleep) return LABEL.sleep;
+    if (c.state === 'morning') return LABEL.deliver;
     if (c.state !== 'playing' || this.nap?.napping) return '';
     if (!this.nap) return LABEL.shift;
     return this.nap.canNap ? this._napLabel() : LABEL.uneasy;

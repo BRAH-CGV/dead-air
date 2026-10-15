@@ -16,16 +16,23 @@ import { Component } from '../core/Component.js';
 // signals and heats up the dust storms — so nothing happens in the morning
 // until the player goes to bed.
 //
+// With a cargo bay wired (the buggy's, a second DriveBoxDock), the morning
+// has one job first: carry the night's drive box out to the buggy and load
+// it. The bed stays shut (canSleep) until the bay holds a box with the
+// night's quota in it (`delivered`).
+//
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
 // External references (set by the scene during wiring):
-//   nightClock, signalManager, satellite, terminal, hud, quotaDock
+//   nightClock, signalManager, satellite, terminal, hud, quotaDock, cargo
 // and the night counter through bindNights(nights).
 // ─────────────────────────────────────────────
 
 const PROMPT = {
   quotaMet: 'Quota met — hold out until 6:00 AM',
   morning:  'Shift over — get some sleep (bedroom)',
+  deliver:  'Shift over — load the drive box into the buggy outside',
+  delivered: 'Drives loaded — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
   finished: 'You made it through every shift.',
 };
@@ -54,6 +61,10 @@ export class GameController extends Component {
   /** The drive box dock — counts saved drives seated in the docked box.
    *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
   quotaDock = null;
+  /** The buggy's cargo bay — where the night's box goes before bed. Null:
+   *  the morning goes straight to bed.
+   *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
+  cargo = null;
 
   /** Which shift prompt is up (a PROMPT key), so it is set once, on change. */
   _shiftPrompt = null;
@@ -90,6 +101,9 @@ export class GameController extends Component {
     // so we sync AFTER it runs.
     if (this.quotaDock && this.signalManager) {
       this.quotaDock.requiredCount = this.signalManager.required;
+    }
+    if (this.cargo) {
+      this.cargo.requiredCount = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
     }
 
     this.hud?.show();
@@ -152,15 +166,24 @@ export class GameController extends Component {
     return () => this._stateListeners.delete(listener);
   }
 
-  /** Whether the bed takes the player: the morning after a met quota. */
+  /** Whether the bed takes the player: the morning after a met quota, once
+   *  the drives are loaded into the buggy. */
   get canSleep() {
-    return this.state === 'morning';
+    return this.state === 'morning' && this.delivered;
+  }
+
+  /** Whether the buggy's cargo bay holds a box with the night's quota in it.
+   *  An empty bay is never a delivery. Always true with no bay wired. */
+  get delivered() {
+    if (!this.cargo) return true;
+    return !!this.cargo.depositedBox && this.cargo.isQuotaMet();
   }
 
   /** Put the shift's prompt back up, after something else wrote over it
    *  (a nap's wake-up line). */
   refreshPrompt() {
     if (this.state === 'playing') this.hud?.setPrompt(this.quotaDock?.isQuotaMet() ? PROMPT.quotaMet : '');
+    else if (this.state === 'morning') this.hud?.setPrompt(PROMPT[this._morningKey()]);
   }
 
   /** Called when a signal is saved by the terminal. Scanning no longer
@@ -227,6 +250,11 @@ export class GameController extends Component {
       return;
     }
 
+    if (this.state === 'morning') {
+      this._updateMorningPrompt();
+      return;
+    }
+
     if (this.state !== 'playing') return;
 
     // Advance the clock
@@ -272,6 +300,21 @@ export class GameController extends Component {
     this.hud?.setPrompt(key ? PROMPT[key] : '');
   }
 
+  /** The morning's prompt key: load the buggy, then bed. */
+  _morningKey() {
+    if (!this.cargo) return 'morning';
+    return this.delivered ? 'delivered' : 'deliver';
+  }
+
+  /** The morning's prompt, set only when it changes (the box loaded, or
+   *  taken back out). */
+  _updateMorningPrompt() {
+    const key = this._morningKey();
+    if (key === this._shiftPrompt) return;
+    this._shiftPrompt = key;
+    this.hud?.setPrompt(PROMPT[key]);
+  }
+
   _updateHUD() {
     if (!this.hud) return;
     this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
@@ -308,7 +351,10 @@ export class GameController extends Component {
     this._setState(state);
   }
 
-  _morning()  { this._endShift('morning',  PROMPT.morning); }
+  _morning() {
+    this._shiftPrompt = this._morningKey();
+    this._endShift('morning', PROMPT[this._shiftPrompt]);
+  }
   _gameOver() { this._endShift('gameOver', PROMPT.failed); }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }

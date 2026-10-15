@@ -1,0 +1,168 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as THREE from 'three';
+
+vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
+
+import { BaseScene } from './BaseScene.js';
+import { GameObject } from '../core/GameObject.js';
+import { makeEngine } from '../test/fakeRapier.js';
+import { BuggyCargo, BUGGY_CARGO } from '../components/BuggyCargo.js';
+import { BED_TRANSITION } from '../gameplay/BedTransition.js';
+
+// A full base build is slow under jsdom — see BaseScene.test.js.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
+// ─────────────────────────────────────────────
+// The morning's job: the night's drive box carried out to the buggy and
+// loaded before bed (#98). The rules are in GameController and BuggyCargo;
+// this pins the wiring into the real base. A file of its own, like
+// BaseScene.stamina.test.js, so the builds don't pile up in one worker.
+// ─────────────────────────────────────────────
+
+/** The buggy as the real spawn draws it: a box its size at BUGGY_SCALE
+ *  (colony-rover.glb is ~3.4 × 3.3 × 6.6 m, its origin at its middle). */
+const BUGGY_SIZE = [2.55, 2.48, 4.95];
+
+function makeSceneEngine() {
+  const engine = makeEngine();
+  engine.scene = new THREE.Scene();
+  engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+  engine.assets = { get: vi.fn(() => null) };
+  const spawn = engine.spawnModel;
+  engine.spawnModel = vi.fn((key, opts) => {
+    const go = spawn(key, opts);
+    if (key === 'model:colony-rover') go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(...BUGGY_SIZE)));
+    return go;
+  });
+  engine.buildPlayer = vi.fn(({ position = [0, 1, 5] } = {}) => {
+    const player = new GameObject('Player');
+    player.object3d.position.set(...position);
+    engine.player = player;
+    engine._rootObjects.push(player);
+    return player;
+  });
+  return engine;
+}
+
+const boxOf = go => { go.object3d.updateMatrixWorld(true); return new THREE.Box3().setFromObject(go.object3d); };
+
+describe('BaseScene — the drives go out to the buggy before bed', () => {
+  let engine, scene, outside, cargo;
+
+  beforeEach(() => {
+    engine = makeSceneEngine();
+    scene = new BaseScene(engine);
+    scene.build();
+    outside = scene._sceneRoot.find('Outside');
+    cargo = scene.buggyCargo;
+  });
+
+  /** Dock a shelf box holding the quota's saved drives and run the clock
+   *  out: it is morning. @returns the docked box */
+  function workTheShift() {
+    const { gameController, rooms } = scene;
+    const dock = rooms.Airlock.quotaDock;
+    const box = rooms.MainOffice.driveBoxes[0];
+    dock.socket.attach(box, 0);
+    const seated = box.receiver.attachedItems.filter(Boolean);
+    for (let i = 0; i < dock.requiredCount; i++) seated[i].setSaved(true);
+    gameController.onSignalSaved();
+    gameController.onUpdate(999);
+    expect(gameController.state).toBe('morning');
+    return box;
+  }
+
+  /** Carry the docked box out of the airlock and set it on the bay. */
+  function loadTheBuggy(box) {
+    scene.rooms.Airlock.quotaDock.socket.detach(box);
+    return cargo.dock.socket.attach(box, 0);
+  }
+
+  it("stands a cargo bay on the ground at the buggy's end nearest the hatch, clear of it, inside the fence", () => {
+    const go = outside.find('BuggyCargo');
+    expect(go).toBeTruthy();
+    expect(go.getComponent(BuggyCargo)).toBe(cargo);
+    expect(go.rigidBody).toBeTruthy();                  // solid: the interaction ray stops on it
+
+    const bay = boxOf(go);
+    const buggy = boxOf(outside.find('Buggy'));
+    expect(bay.min.y).toBeCloseTo(0);
+    expect(bay.max.y).toBeCloseTo(BUGGY_CARGO.size[1]);
+
+    // Off the buggy's end toward the hatch, by its gap, beside its middle.
+    const hatch = scene.rooms.Airlock.hatch.object3d.getWorldPosition(new THREE.Vector3());
+    expect(hatch.x).toBeGreaterThan(buggy.max.x);
+    expect(bay.min.x - buggy.max.x).toBeCloseTo(BUGGY_CARGO.gap);
+    const mid = buggy.getCenter(new THREE.Vector3());
+    expect(bay.getCenter(new THREE.Vector3()).z).toBeCloseTo(mid.z);
+
+    const { minX, maxX, minZ, maxZ } = scene.fence.rect;
+    expect(bay.min.x).toBeGreaterThan(minX);
+    expect(bay.max.x).toBeLessThan(maxX);
+    expect(bay.min.z).toBeGreaterThan(minZ);
+    expect(bay.max.z).toBeLessThan(maxZ);
+  });
+
+  it('is wired to the controller, which asks it for the night\'s quota', () => {
+    expect(cargo.controller).toBe(scene.gameController);
+    expect(scene.gameController.cargo).toBe(cargo.dock);
+    expect(cargo.dock.requiredCount).toBe(scene.rooms.Airlock.quotaDock.requiredCount);
+    // Every shelf box can be set down on it.
+    for (const box of scene.rooms.MainOffice.driveBoxes) expect(cargo.dock.socket.candidates).toContain(box);
+  });
+
+  it('refuses the box during the shift: the quota is counted at the airlock all night', () => {
+    const box = scene.rooms.MainOffice.driveBoxes[0];
+    expect(cargo.dock.socket.attach(box, 0)).toBe(false);
+    expect(cargo.dock.depositedBox).toBeNull();
+  });
+
+  it('keeps the bed shut in the morning until the box is loaded, then sleeps to the next night', () => {
+    const box = workTheShift();
+    const bed = scene.rooms.LivingQuarters.bed;
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toMatch(/buggy/i);
+    bed.onInteract({});
+    expect(scene.bedRest.active).toBe(false);
+    expect(scene.gameController.nightNumber).toBe(1);
+
+    expect(loadTheBuggy(box)).toBe(true);
+    expect(scene.gameController.canSleep).toBe(true);
+    bed.onUpdate(0.016);
+    expect(bed.promptLabel).toBe('[E] Sleep');
+    bed.onInteract({});
+    for (let t = 0; t < BED_TRANSITION.lieDown + 0.1; t += 0.05) scene.bedRest.onUpdate(0.05);
+    expect(scene.gameController.nightNumber).toBe(2);
+  });
+
+  it('the next night empties the bay: the box comes back to the office floor, its drives blank', () => {
+    const box = workTheShift();
+    const drives = box.receiver.attachedItems.filter(Boolean);
+    loadTheBuggy(box);
+    scene.gameController.sleep();
+    expect(scene.gameController.nightNumber).toBe(2);
+
+    expect(cargo.dock.depositedBox).toBeNull();
+    expect(box._snapOwner).toBeNull();
+    const office = scene.rooms.MainOffice.bounds();
+    expect(office.containsPoint(box.object3d.getWorldPosition(new THREE.Vector3()))).toBe(true);
+    for (const drive of drives) expect(drive.saved, drive.name).toBe(false);
+  });
+
+  it('two boxes left out — one docked, one loaded — are parked apart', () => {
+    const [docked, loaded] = scene.rooms.MainOffice.driveBoxes;
+    workTheShift();
+    scene.rooms.Airlock.quotaDock.socket.detach(docked);
+    cargo.dock.socket.attach(docked, 0);
+    scene.rooms.Airlock.quotaDock.socket.attach(loaded, 0);
+    scene.nights.advance();
+    const a = docked.object3d.position, b = loaded.object3d.position;
+    expect(a.distanceTo(b)).toBeGreaterThan(0.3);
+  });
+
+  it('a chasing dust eye goes round the bay', () => {
+    const bay = boxOf(outside.find('BuggyCargo'));
+    const rects = scene._yardObstacles();
+    expect(rects.some(r => Math.abs(r.minX - bay.min.x) < 1e-6 && Math.abs(r.maxZ - bay.max.z) < 1e-6)).toBe(true);
+  });
+});

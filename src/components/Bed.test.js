@@ -40,6 +40,15 @@ describe('Bed', () => {
     expect(label('playing')).not.toMatch(/\[E\]/);
   });
 
+  it('in the morning, before the drives are in the buggy, says so and does nothing', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    expect(label('morning')).toMatch(/buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+    bed.onInteract();
+    expect(fade.play).not.toHaveBeenCalled();
+    expect(controller.sleep).not.toHaveBeenCalled();
+  });
+
   it('offers nothing after a failed night or the last shift', () => {
     expect(label('gameOver')).toBe('');
     expect(label('finished')).toBe('');
