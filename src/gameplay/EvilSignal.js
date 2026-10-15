@@ -29,8 +29,8 @@ import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 // open; everything else is decided here.
 // ─────────────────────────────────────────────
 
-/** Game-over prompt when the corrupted drive is not wiped in time. */
-const CAUGHT_PROMPT = 'You were silenced. [E] to retry';
+/** Game-over message when the corrupted drive is not wiped in time. */
+const CAUGHT_MESSAGE = 'You were silenced.';
 
 /** White-out config: instant black, slow fade to blood red, message once
  *  it has settled — same pattern as DustEyes. */
@@ -38,9 +38,12 @@ const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2
 
 /** Tuning. Seconds and radians unless stated. */
 export const EVIL = {
-  /** The nights it appears on — none yet: until the run grows a night for
-   *  it, the dev console's `evil` is the only way in. */
-  nights: [],
+  /** The nights it appears on. Night 3 is the first (and currently only)
+   *  scheduled night; doubleChance controls whether it comes twice. */
+  nights: [3],
+  /** Probability of a second appearance on a scheduled night. 0 = always
+   *  once, 1 = always twice. 0.25 = once guaranteed, 25% chance of two. */
+  doubleChance: 0.25,
   /** Where it fades in (clock hours after midnight), once scheduled. */
   spawnHours: [1, 4],
   /** Spawn band on the radar disc, as a fraction of its radius: the
@@ -67,12 +70,18 @@ export const EVIL = {
    *  console before the shift ends ("You were silenced").
    *  TEMP: 15 s for debugging. Restore before release. */
   silenceSeconds: 15,
-  /** Seconds between random hops of the corrupted drive while the silence
-   *  timer runs. The drive jumps in a random direction every interval. */
-  driveHopSeconds: 1,
+  /** Seconds between random hops of the corrupted drive at the start of
+   *  the silence timer. The interval ramps down to driveHopEnd as doom
+   *  builds, so the drive jumps faster and faster. */
+  driveHopStart: 2,
+  /** Seconds between hops as the silence timer expires. */
+  driveHopEnd: 0.8,
   /** Seconds the cursor and dish are dragged to the evil signal's centre
    *  before the normal engage logic fires. */
   pullInSeconds: 0.8,
+  /** Seconds over which the red-out post-process ramps from 0 to full
+   *  intensity at the end of the silence timer. */
+  redoutWindow: 1,
   /** Angular acceptance — the same 12° an ordinary signal demands. */
   tolerance: 12 * (Math.PI / 180),
   /** Its id in the signal list — out of the 1..signalsPerNight range. */
@@ -155,6 +164,10 @@ export class EvilSignal extends Component {
   /** Seconds until the evil signal respawns after a no-drive lock, or null
    *  when not counting down. @type {number|null} */
   _respawnTimer = null;
+  /** How many more times the signal can appear this night. Set by _reset
+   *  from the night schedule; summon() decrements it; _release() gates
+   *  respawn on it.  @type {number} */
+  _spawnsRemaining = 0;
   /** Seconds left to wipe the corrupted drive before game over, or null
    *  when no corrupted drive is outstanding. @type {number|null} */
   _silenceTimer = null;
@@ -188,6 +201,7 @@ export class EvilSignal extends Component {
   /** Light intensity at the start of the doom-light fade. */
   _doomLightFadeLevel = 0;
 
+
   /**
    * @param {object} [opts]
    * @param {import('./GameController.js').GameController} [opts.controller]
@@ -218,7 +232,7 @@ export class EvilSignal extends Component {
   }
 
   onStart() {
-    this._offNight = this.controller?.onNightStart?.(() => this._reset()) ?? null;
+    this._offNight = this.controller?.onNightStart?.((night) => this._reset(night)) ?? null;
   }
 
   onDestroy() {
@@ -270,6 +284,7 @@ export class EvilSignal extends Component {
     this._target = target;
     this._hover = null;
     this._mustLeave = false;
+    this._spawnsRemaining--;
     return true;
   }
 
@@ -380,13 +395,15 @@ export class EvilSignal extends Component {
         // Sparks: fly out of the corrupted drive, rate scaling with doom.
         this._sparks?.tick(dt, corrupted, doomFraction);
 
-        // Red filter: fades in over the last 0.2 s before the player dies.
+        // Red filter: ramps over the final redoutWindow seconds before
+        // the player dies. The shader drains the world to blood-red
+        // through its luminance-to-red remap as intensity climbs to 1.
         if (this.redOut) {
-          const REDOUT_WINDOW = 0.2;
-          const lastWindow = this._silenceTimer < REDOUT_WINDOW
-            ? 1 - this._silenceTimer / REDOUT_WINDOW   // 0 → 1 over the final 0.2 s
-            : 0;
-          this.redOut.setIntensity(lastWindow);
+          if (this._silenceTimer < EVIL.redoutWindow) {
+            this.redOut.setIntensity(1 - this._silenceTimer / EVIL.redoutWindow);
+          } else {
+            this.redOut.setIntensity(0);
+          }
         }
 
         // The corrupted drive hops in a random direction every interval.
@@ -394,7 +411,9 @@ export class EvilSignal extends Component {
         if (this._driveHopTimer !== null) {
           this._driveHopTimer -= dt;
           if (this._driveHopTimer <= 0) {
-            this._driveHopTimer = EVIL.driveHopSeconds;
+            const hopInterval = EVIL.driveHopStart
+              + (EVIL.driveHopEnd - EVIL.driveHopStart) * Math.min(Math.max(doomFraction, 0), 1);
+            this._driveHopTimer = hopInterval;
             const kickStrength = 1 + doomFraction * 2;  // 1 → 3
             this._kickDrive(corrupted, kickStrength);
             this._sparks?.burst(
@@ -413,11 +432,9 @@ export class EvilSignal extends Component {
           this._silenceTimer = null;
           this._driveHopTimer = null;
           this._caught = true;
-          this.controller?.fail(CAUGHT_PROMPT, {
-            retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000,
-          });
+          this.controller?.fail('', { retryAfter: 4 });
           this.terminal?.exit?.();
-          this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
+          this.whiteOut?.play(CAUGHT_MESSAGE, CAUGHT_SCREEN);
           this.hooks?.setPlayerLocked?.(true);
           return;
         }
@@ -526,7 +543,7 @@ export class EvilSignal extends Component {
     // corrupted drive and wipe it at the ServerRoom console.
     this.terminal?.exit?.();
     this._silenceTimer = EVIL.silenceSeconds;
-    this._driveHopTimer = EVIL.driveHopSeconds;
+    this._driveHopTimer = EVIL.driveHopStart;
     this._driveInfected = true;
     this.deleteWarning?.show();
     // Sparks: fly out of the corrupted drive at an increasing rate. A
@@ -563,7 +580,7 @@ export class EvilSignal extends Component {
     if (this._target && !this._target.resolved) {
       this._target.deleted = true;
     }
-    if (noDrive) {
+    if (noDrive && this._spawnsRemaining > 0) {
       this._respawnTimer = EVIL.respawnDelaySeconds;
     }
   }
@@ -610,9 +627,8 @@ export class EvilSignal extends Component {
   }
 
   /** A new night: the manager rebuilds its signals, so drop the old target
-   *  and any hold. (When it gets a night of its own, the scheduled spawn
-   *  goes here.) */
-  _reset() {
+   *  and any hold. On scheduled nights, summon the first signal. */
+  _reset(night) {
     this._release();
     this._target = null;
     this._hover = null;
@@ -640,5 +656,11 @@ export class EvilSignal extends Component {
       this.hooks?.setPlayerLocked?.(false);
       this.whiteOut?.clear();
     }
+    // Schedule spawns for the new night: on scheduled nights, at least one
+    // appearance with a chance of a second.
+    const n = night ?? this.controller?.nightNumber;
+    const onSchedule = EVIL.nights.includes(n);
+    this._spawnsRemaining = onSchedule ? (this.random() < EVIL.doubleChance ? 2 : 1) : 0;
+    if (this._spawnsRemaining > 0) this.summon();
   }
 }
