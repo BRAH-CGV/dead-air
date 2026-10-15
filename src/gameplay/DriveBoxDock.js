@@ -26,6 +26,10 @@ export class DriveBoxDock extends Component {
   /** Saved drives needed to pass the night. */
   requiredCount = 0;
 
+  /** Minimum signal processing level a drive must have reached to count.
+   *  Night 3 raises this to 2 so only cyan (processed) drives qualify. */
+  minSignalLevel = 1;
+
   /** The SnapSocket that receives drive boxes.
    *  @type {import('../components/SnapSocket.js').SnapSocket|null} */
   socket = null;
@@ -48,12 +52,15 @@ export class DriveBoxDock extends Component {
 
   /** Signal-bearing drives seated in the docked box. Unsaved drives don't
    *  count, and neither does anything outside the box. Corrupted (red)
-   *  drives never count: the evil signal has to be deleted, not stored. */
+   *  drives never count: the evil signal has to be deleted, not stored.
+   *  On nights where minSignalLevel > 1, only drives processed to that
+   *  level or higher qualify. */
   get collectedCount() {
     const box = this.depositedBox;
     if (!box) return 0;
     return box.receiver.attachedItems.filter(
-      drive => drive?.saved && !drive?.corrupted,
+      drive => drive?.saved && !drive?.corrupted
+        && (drive?.signalLevel ?? 1) >= this.minSignalLevel,
     ).length;
   }
 

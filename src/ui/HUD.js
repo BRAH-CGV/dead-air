@@ -45,8 +45,10 @@ export class HUD {
     if (this._clock) this._clock.textContent = timeString;
   }
 
-  setSignals(saved, required) {
-    if (this._signals) this._signals.textContent = `Drives: ${saved} / ${required}`;
+  setSignals(saved, required, { minSignalLevel = 1 } = {}) {
+    if (!this._signals) return;
+    const label = minSignalLevel >= 2 ? 'Cyan drives' : 'Drives';
+    this._signals.textContent = `${label}: ${saved} / ${required}`;
   }
 
   setNight(number) {

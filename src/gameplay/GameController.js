@@ -92,11 +92,17 @@ export class GameController extends Component {
       this.quotaDock.requiredCount = this.signalManager.required;
     }
 
+    // Night 3 only counts drives processed to level 2 (cyan).
+    if (this.quotaDock) {
+      this.quotaDock.minSignalLevel = nightNumber >= 3 ? 2 : 1;
+    }
+
     this.hud?.show();
     this.hud?.setNight(nightNumber);
     this.hud?.setSignals(
       this.quotaDock?.collectedCount ?? 0,
       this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
+      { minSignalLevel: this.quotaDock?.minSignalLevel ?? 1 },
     );
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setScanProgress(-1);
@@ -281,7 +287,9 @@ export class GameController extends Component {
     // for the denominator.
     const collected = this.quotaDock?.collectedCount ?? 0;
     const required  = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
-    this.hud.setSignals(collected, required);
+    this.hud.setSignals(collected, required, {
+      minSignalLevel: this.quotaDock?.minSignalLevel ?? 1,
+    });
 
     // Scan bar — driven by satellite state (works even when terminal is closed)
     if (this.satellite?.isScanning && this.satellite?.scanTarget) {
