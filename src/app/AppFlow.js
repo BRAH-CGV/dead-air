@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────
 
 /** @typedef {'loading'|'mainMenu'|'playing'|'paused'|'ended'} AppState */
-/** @typedef {'main'|'pause'|'settings'|'credits'|'nightSelect'|'confirm'|'console'|'nightFailed'|'runComplete'} Screen */
+/** @typedef {'main'|'pause'|'settings'|'credits'|'nightSelect'|'intro'|'confirm'|'console'|'nightFailed'|'runComplete'} Screen */
 
 export class AppFlow {
   /** @type {AppState} */
@@ -69,7 +69,7 @@ export class AppFlow {
    *  @returns {{ needsRebuild: boolean }} whether the scene must be rebuilt first */
   newGame() {
     const needsRebuild = this._dirty;
-    const fromMenu = this.screen === 'main' || this.screen === 'nightSelect';
+    const fromMenu = this.screen === 'main' || this.screen === 'nightSelect' || this.screen === 'intro';
     if (this.state !== 'mainMenu' || !fromMenu) return { needsRebuild };
     this._play();
     return { needsRebuild };
@@ -128,6 +128,13 @@ export class AppFlow {
 
   openCredits() {
     if (this.screen === 'main') this._push('credits');
+  }
+
+  /** The story before the first shift (New game): over the main menu, so
+   *  the game stays paused under it, Back leaves it and its end card's
+   *  newGame() plays. */
+  openIntro() {
+    if (this.screen === 'main') this._push('intro');
   }
 
   /** Pick a night to play (#18): nights reached before are unlocked. */

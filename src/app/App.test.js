@@ -1336,3 +1336,160 @@ describe('App menu music', () => {
     expect(music.dispose).toHaveBeenCalledOnce();
   });
 });
+
+describe('App intro (New game)', () => {
+  let engine, lock, intro, app, storage;
+
+  /** What App drives on IntroPlayer. */
+  function makeIntro() {
+    const fake = {
+      playing: false, atEnd: false, onBegin: null,
+      play: vi.fn(() => { fake.playing = true; fake.atEnd = false; }),
+      stop: vi.fn(() => { fake.playing = false; }),
+      advance: vi.fn(() => { if (!fake.atEnd) fake.atEnd = true; else fake.onBegin?.(); }),
+      setHint: vi.fn(),
+      dispose: vi.fn(),
+    };
+    return fake;
+  }
+
+  beforeEach(async () => {
+    engine = makeEngine();
+    lock = makeLock();
+    intro = makeIntro();
+    storage = memoryStorage();
+    app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+    await app.start();
+  });
+
+  afterEach(() => app.dispose());
+
+  /** The end card's click. */
+  async function begin() {
+    intro.atEnd = true;
+    intro.advance();
+    await flush();
+  }
+
+  it('New game plays the intro over the main menu: still paused, no lock asked for yet', async () => {
+    await click('newGame');
+    expect(app.flow.state).toBe('mainMenu');
+    expect(app.flow.screen).toBe('intro');
+    expect(intro.play).toHaveBeenCalledOnce();
+    expect(document.getElementById('menu').classList.contains('is-open')).toBe(false);
+    expect(engine.paused).toBe(true);
+    expect(lock.request).not.toHaveBeenCalled();
+  });
+
+  it('its end card begins the shift: the lock asked for inside the click, then playing', async () => {
+    await click('newGame');
+    await begin();
+    expect(lock.request).toHaveBeenCalledOnce();
+    expect(app.flow.state).toBe('playing');
+    expect(engine.paused).toBe(false);
+    expect(intro.stop).toHaveBeenCalled();
+    expect(intro.playing).toBe(false);
+  });
+
+  it('a refused lock keeps the end card up, and says why', async () => {
+    await click('newGame');
+    lock.grant = false;
+    await begin();
+    expect(app.flow.screen).toBe('intro');
+    expect(intro.playing).toBe(true);
+    expect(intro.setHint).toHaveBeenCalledWith(expect.stringMatching(/click again/i));
+  });
+
+  it('Esc goes back to the main menu and stops it', async () => {
+    await click('newGame');
+    key('Escape');
+    expect(app.flow.screen).toBe('main');
+    expect(intro.stop).toHaveBeenCalled();
+    expect(document.getElementById('menu').classList.contains('is-open')).toBe(true);
+  });
+
+  it('Space and Enter advance it; no key reaches the game behind it', async () => {
+    await click('newGame');
+    const space = key('Space');
+    expect(intro.advance).toHaveBeenCalledTimes(1);
+    expect(space.defaultPrevented).toBe(true);
+    key('Enter');
+    expect(intro.advance).toHaveBeenCalledTimes(2);
+    key('KeyW');
+    expect(intro.advance).toHaveBeenCalledTimes(2);
+  });
+
+  it('a held key doesn\'t run through it', async () => {
+    await click('newGame');
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', repeat: true, bubbles: true, cancelable: true }));
+    expect(intro.advance).not.toHaveBeenCalled();
+  });
+
+  describe('the Tutorial plays it too', () => {
+    /** An app over a scene with a night 0 (where the Tutorial button shows). */
+    async function withTutorial() {
+      app.dispose();
+      engine = makeEngine();
+      engine.activeScene.nights.minNight = 0;
+      app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+      await app.start();
+    }
+
+    it('over the main menu, still paused, no lock asked for yet', async () => {
+      await withTutorial();
+      await click('tutorial');
+      expect(app.flow.screen).toBe('intro');
+      expect(intro.play).toHaveBeenCalledOnce();
+      expect(engine.paused).toBe(true);
+      expect(lock.request).not.toHaveBeenCalled();
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    it('its end card begins night 0, and Continue is left as it was', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2, highest: 2 }));
+      await withTutorial();
+      await click('tutorial');
+      await begin();
+      expect(lock.request).toHaveBeenCalledOnce();
+      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(app.flow.state).toBe('playing');
+      expect(engine.paused).toBe(false);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2, highest: 2 });
+    });
+
+    it('a refused lock keeps the end card up, and says why', async () => {
+      await withTutorial();
+      await click('tutorial');
+      lock.grant = false;
+      await begin();
+      expect(app.flow.screen).toBe('intro');
+      expect(intro.setHint).toHaveBeenCalledWith(expect.stringMatching(/click again/i));
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    it('backed out of with Esc, New game\'s intro then begins night 1, not night 0', async () => {
+      await withTutorial();
+      await click('tutorial');
+      key('Escape');
+      await click('newGame');
+      await begin();
+      expect(app.flow.state).toBe('playing');
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+  });
+
+  it('Continue skips it', async () => {
+    storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2 }));
+    app.dispose();
+    app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+    await app.start();
+    await click('continue');
+    expect(intro.play).not.toHaveBeenCalled();
+    expect(app.flow.state).toBe('playing');
+  });
+
+  it('lets go of it when disposed', () => {
+    app.dispose();
+    expect(intro.dispose).toHaveBeenCalledOnce();
+  });
+});
