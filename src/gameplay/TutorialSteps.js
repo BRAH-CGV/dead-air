@@ -42,7 +42,7 @@ export const TUTORIAL_STEPS = Object.freeze([
   // The signal game.
   { id: 'deskBox', title: 'PUT A DRIVE BOX ON THE DESK',
     target: c => (c.holdingBox ? 'desk' : 'box'),
-    text: '[E] picks up a drive box from the shelf. Carry it to the computer desk and [E] to drop it there.',
+    text: '[E] picks up a drive box from the shelf. Carry it to the empty right end of the desk, beside the reader, and [E] to drop it there.',
     done: c => c.boxOnDesk || c.driveIn },
   { id: 'drive', title: 'PUT A DRIVE IN THE READER', target: 'reader',
     text: 'Take a drive out of the box and put it in the reader beside the computer.',

@@ -2307,11 +2307,13 @@ export class BaseScene extends Scene {
         keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
       }),
       camera:        this.engine.camera ?? null,
+      // The breaker panel has the mouse (_usePanel): it covers the words.
+      covered:       () => !!this.engine.uiHasMouse,
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
         computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
         box:       { object: nearestBox, lift: 0.1 },
-        desk:      { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 0.9 },
+        desk:      { object: office.boxSpot ?? null, lift: 0.1 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },

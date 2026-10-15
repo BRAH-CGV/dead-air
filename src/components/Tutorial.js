@@ -64,6 +64,8 @@ export class Tutorial extends Component {
    * @param {object} [opts.overlay]      TutorialOverlay
    * @param {THREE.Camera} [opts.camera] The player's camera, for the arrow
    * @param {() => { width: number, height: number }} [opts.screen]
+   * @param {() => boolean} [opts.covered]  A panel covers the view (the
+   *        generator's breakers): the words and arrow hide, the steps run on
    * @param {Object<string, { object: THREE.Object3D|(() => THREE.Object3D|null), lift?: number }>} [opts.targets]
    *        What each step's arrow points at, by name; `lift` raises the
    *        point (metres) off the object's origin.
@@ -73,7 +75,7 @@ export class Tutorial extends Component {
     driveManager = null, drives = [], driveBoxes = [], quotaDock = null, grid = null,
     suit = null, nap = null, bed = null, bedRest = null, flashlight = null, onDesk = null,
     sandstorm = null, stormOutage = null,
-    overlay = null, camera = null, screen = null, targets = {},
+    overlay = null, camera = null, screen = null, covered = null, targets = {},
   }) {
     super();
     Object.assign(this, {
@@ -82,6 +84,7 @@ export class Tutorial extends Component {
       sandstorm, stormOutage, overlay, camera, targets,
     });
     this.screen = screen ?? (() => this._windowSize());
+    this.covered = covered ?? (() => false);
     this.active = false;
     this.runner = new TutorialRunner({ onEnter: step => this._enter(step) });
     this._signal = null;
@@ -168,8 +171,9 @@ export class Tutorial extends Component {
     }
     const ctx = this.readContext();
     this.runner.update(dt, ctx);
-    // In the bunk the lids are down: nothing to read.
-    if (this.bedRest?.active) {
+    // In the bunk the lids are down, and a panel (the breakers) has the
+    // view: nothing to read.
+    if (this.bedRest?.active || this.covered()) {
       this.overlay?.hide();
       return;
     }

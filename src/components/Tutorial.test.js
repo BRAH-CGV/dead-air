@@ -36,7 +36,7 @@ function fakeClock() {
 
 const signal = (id) => new SignalTarget({ id, yaw: 0, pitch: -0.5 });
 
-function rig({ night = 0 } = {}) {
+function rig({ night = 0, covered } = {}) {
   const camera = new THREE.PerspectiveCamera(70, 2, 0.1, 100);
   camera.position.set(0, 0, 0);       // looking down −z
   camera.updateMatrixWorld();
@@ -70,6 +70,7 @@ function rig({ night = 0 } = {}) {
     overlay:       { show: vi.fn(), hide: vi.fn(), setArrow: vi.fn() },
     camera,
     screen:        () => ({ width: 1000, height: 500 }),
+    covered,
     targets: {
       reader:    { object: ahead },
       computer:  { object: ahead },
@@ -263,6 +264,29 @@ describe('Tutorial', () => {
     expect(s.tutorial.runner.step.id).toBe('wait');
     expect(s.overlay.hide).toHaveBeenCalled();
     expect(s.overlay.show).not.toHaveBeenCalled();
+  });
+
+  it("hides while a panel covers the view (the generator's breakers), and keeps following the player", () => {
+    let covered = false;
+    s = rig({ covered: () => covered });
+    s.grid.on = false;                        // the storm took it
+    s.suit.worn = true;
+    s.tutorial.onUpdate(0.01);
+    s.tutorial.runner.goTo('generator');
+    s.tutorial.onUpdate(0.01);
+    covered = true;
+    s.overlay.hide.mockClear();
+    s.overlay.show.mockClear();
+    s.overlay.setArrow.mockClear();
+    s.grid.on = true;                         // the last switch flicked up
+    s.tutorial.onUpdate(0.01);
+    expect(s.overlay.hide).toHaveBeenCalled();
+    expect(s.overlay.show).not.toHaveBeenCalled();
+    expect(s.overlay.setArrow).not.toHaveBeenCalled();
+    expect(s.tutorial.runner.step.id).toBe('inside');
+    covered = false;
+    s.tutorial.onUpdate(0.01);
+    expect(s.overlay.show).toHaveBeenCalled();
   });
 
   it('shows in the morning too, for the sleep at the end', () => {

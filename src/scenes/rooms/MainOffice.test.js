@@ -677,6 +677,22 @@ describe('MainOffice', () => {
     }
   });
 
+  it("marks the bare middle of the right wing's top, where the tutorial asks for the drive box", () => {
+    const spot = room.boxSpot;
+    expect(spot).toBeInstanceOf(THREE.Object3D);
+    expect(spot.parent).toBe(room.root.object3d);
+    const { position: p } = spot;
+    expect(p.y).toBeCloseTo(0.864);                        // on the top
+    // A drive box (0.32 × 0.28 m: half its diagonal is 0.21 m) wholly on it…
+    expect(onRightWing(p, 0.21)).toBe(true);
+    expect(room.isOnDesk(room.root.object3d.localToWorld(p.clone().setY(0.93)))).toBe(true);
+    // …and clear of the globe's base (r 0.124) and the clock.
+    for (const name of ['Globe', 'DeskClock']) {
+      const o = room.root.find(name).object3d.position;
+      expect(Math.hypot(o.x - p.x, o.z - p.z), name).toBeGreaterThan(0.21 + 0.143);
+    }
+  });
+
   it('DriveSlot component is configured with a snap offset for the reader surface', () => {
     const reader = room.driveReader;
     const slot = reader.getComponent(DriveSlot);

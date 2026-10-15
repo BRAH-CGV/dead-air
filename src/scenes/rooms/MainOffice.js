@@ -173,6 +173,11 @@ export class MainOffice extends Room {
 
   _deskPoint = new THREE.Vector3();
 
+  /** The bare middle of the right wing's top, where the tutorial asks for
+   *  a drive box (the camera monitor has the left wing, the globe the
+   *  right's back corner). Marked by buildProps(). @type {THREE.Object3D|null} */
+  boxSpot = null;
+
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
 
@@ -298,6 +303,7 @@ export class MainOffice extends Room {
     this._buildCameraMonitor();
     this._buildDeskClock();
     this._buildGlobe();
+    this._markBoxSpot();
 
     // Left wall, back to front: the grow beds, the ration dispenser and a
     // bin for the wrappers, all short of the doorway.
@@ -568,6 +574,16 @@ export class MainOffice extends Room {
     this._spawnProp('model:mars-stand', { name: 'GlobeStand', ...place, physics: 'none' });
     const globe = this._spawnProp('model:mars-globe', { name: 'Globe', ...place });
     globe.addComponent(new GlobeSpin());
+  }
+
+  /** An empty node at the middle of the right wing's top, for the
+   *  tutorial's arrow: nothing is drawn there. */
+  _markBoxSpot() {
+    const [cx, cz] = deskWingOutline(1, DESK).centre;
+    this.boxSpot = new THREE.Object3D();
+    this.boxSpot.name = 'BoxSpot';
+    this.boxSpot.position.set(cx, DESK.top, cz);
+    this.root.object3d.add(this.boxSpot);
   }
 
   /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),

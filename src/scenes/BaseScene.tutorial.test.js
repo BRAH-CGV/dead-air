@@ -7,6 +7,7 @@ import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { Flashlight } from '../components/Flashlight.js';
+import { Interactable } from '../components/Interactable.js';
 import { Tutorial, TUTORIAL } from '../components/Tutorial.js';
 import { TUTORIAL_QUOTA } from '../gameplay/SignalManager.js';
 
@@ -83,6 +84,29 @@ describe('BaseScene tutorial (night 0)', () => {
       const object = typeof target.object === 'function' ? target.object() : target.object;
       expect(object, name).toBeInstanceOf(THREE.Object3D);
     }
+  });
+
+  it('points the drive box at the bare right wing of the desk, not the computer', () => {
+    const office = scene.rooms.MainOffice;
+    const { desk } = scene.tutorial.targets;
+    expect(desk.object).toBe(office.boxSpot);
+    const at = desk.object.getWorldPosition(new THREE.Vector3());
+    const computer = office.root.find('ComputerDesk').object3d.getWorldPosition(new THREE.Vector3());
+    expect(at.x - computer.x).toBeGreaterThan(0.8);          // past the desk's right side
+    at.y += desk.lift ?? 0;
+    expect(office.isOnDesk(at)).toBe(true);
+  });
+
+  it("hides while the generator's breaker panel has the mouse, and comes back once it closes", () => {
+    scene.nights.setNight(0);
+    frames(0.1);
+    expect(scene.tutorial.covered()).toBe(false);
+    scene.power.setOn(false);
+    scene._sceneRoot.find('Outside').find('Generator').getComponent(Interactable).onInteract({});
+    expect(scene.breakerPanel.isOpen).toBe(true);
+    expect(scene.tutorial.covered()).toBe(true);
+    scene.breakerPanel.close();
+    expect(scene.tutorial.covered()).toBe(false);
   });
 
   it('reads the drives in the office\'s boxes', () => {
