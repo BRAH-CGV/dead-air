@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TutorialOverlay, placeArrow, ARROW } from './TutorialOverlay.js';
+import { TutorialOverlay, placeArrow, ARROW, tutorialKeys } from './TutorialOverlay.js';
+import { setInteractKey } from './promptKeys.js';
 
 const W = 1000, H = 600;
 const place = (x, y, behind = false) => placeArrow({ x, y, behind }, W, H, {});
@@ -75,10 +76,26 @@ describe('TutorialOverlay', () => {
 
   it('shows the big words and the line under them', () => {
     overlay.show({ title: 'USE THE COMPUTER', text: '[E] at the monitor.', compact: false });
-    expect(root.style.display).toBe('');
+    expect(root.style.display).not.toBe('none');
     expect(root.querySelector('.tutorial-title').textContent).toBe('USE THE COMPUTER');
     expect(root.querySelector('.tutorial-text').textContent).toBe('[E] at the monitor.');
     expect(root.classList.contains('compact')).toBe(false);
+  });
+
+  // The page's stylesheet hides #tutorial (index.html): show() has to win
+  // over it, not just clear its own inline style.
+  it("shows over the page's own rule that hides it", () => {
+    document.head.innerHTML = '<style>#tutorial { display: none; }</style>';
+    document.body.innerHTML = '<div id="tutorial"></div>';
+    const el = document.getElementById('tutorial');
+    overlay = new TutorialOverlay(el);
+    expect(getComputedStyle(el).display).toBe('none');
+    overlay.show({ title: 'X', text: 'y', compact: false });
+    expect(getComputedStyle(el).display).not.toBe('none');
+    overlay.hide();
+    expect(getComputedStyle(el).display).toBe('none');
+    document.head.innerHTML = '';
+    document.body.innerHTML = '';
   });
 
   it('names the bound interact key', () => {
@@ -106,5 +123,31 @@ describe('TutorialOverlay', () => {
     overlay.show({ title: 'X', text: 'y', compact: false });
     overlay.hide();
     expect(root.style.display).toBe('none');
+  });
+});
+
+describe('tutorialKeys', () => {
+  const binds = { flashlight: 'KeyF', rotateHeld: 'KeyR' };
+
+  it('names the keys the flashlight and the rotate key are bound to', () => {
+    expect(tutorialKeys('[F] turns it on. [R] changes the alarm.', binds))
+      .toBe('[F] turns it on. [R] changes the alarm.');
+    expect(tutorialKeys('[F] turns it on. [R] changes the alarm.', { flashlight: 'KeyL', rotateHeld: 'KeyT' }))
+      .toBe('[L] turns it on. [T] changes the alarm.');
+  });
+
+  it('keeps keys swapped by a rebind apart', () => {
+    setInteractKey('F');
+    try {
+      expect(tutorialKeys('[E] uses it. [F] lights it.', { flashlight: 'KeyE', rotateHeld: 'KeyR' }))
+        .toBe('[F] uses it. [E] lights it.');
+    } finally {
+      setInteractKey('E');
+    }
+  });
+
+  it('leaves text without those keys alone', () => {
+    expect(tutorialKeys('Press Enter.', binds)).toBe('Press Enter.');
+    expect(tutorialKeys('', binds)).toBe('');
   });
 });

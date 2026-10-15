@@ -197,16 +197,49 @@ describe('App', () => {
       expect(engine.loadScene).not.toHaveBeenCalled();
     });
 
-    // Night 0 is the tutorial. Select night 1 is the way past it.
-    it('opens on the tutorial, night 0, where the scene has one', async () => {
+    // Night 0 is the tutorial, which has a button of its own.
+    it('starts on night 1, even where the scene has a night 0', async () => {
       engine.activeScene.nights.minNight = 0;
       await startGame();
-      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('tutorial', () => {
+    let a2 = null;
+    afterEach(() => { a2?.dispose(); a2 = null; });
+
+    /** An app over a scene with a night 0, on the main menu. */
+    async function withTutorial() {
+      const e2 = makeEngine();
+      e2.activeScene.nights.minNight = 0;
+      a2 = new App(e2, { pointerLock: makeLock(), view: makeDom(), fade: makeFade(), storage, dev: false });
+      await a2.start();
+      return { e2, a2 };
+    }
+
+    it('the main menu offers it only where the scene has a night 0', async () => {
+      expect(document.querySelector('[data-action="tutorial"]')).toBeNull();
+      await withTutorial();
+      expect(document.querySelector('[data-action="tutorial"]')).not.toBeNull();
     });
 
-    it('leaves a scene without a night 0 on its first night', async () => {
-      await startGame();
-      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    it('plays night 0 on the fresh scene, inside the click', async () => {
+      const { e2 } = await withTutorial();
+      await click('tutorial');
+      expect(e2.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(e2.loadScene).not.toHaveBeenCalled();
+      expect(a2.flow.state).toBe('playing');
+      expect(e2.paused).toBe(false);
+    });
+
+    it('keeps a saved Continue: night 0 is never saved', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2, highest: 2 }));
+      const { e2 } = await withTutorial();
+      await click('tutorial');
+      e2.activeScene.gameController.nightNumber = 0;
+      e2.activeScene.gameController.fire('playing');
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2, highest: 2 });
     });
   });
 

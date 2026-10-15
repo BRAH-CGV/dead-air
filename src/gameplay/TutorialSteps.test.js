@@ -7,6 +7,7 @@ import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT } from './TutorialSteps.j
 
 /** Nothing done yet: the drive out, the computer off, the power on. */
 const fresh = (over = {}) => ({
+  holdingBox: false, boxOnDesk: false, flashlightOn: false,
   driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
   saved: false, boxed: false, quotaMet: false, powerOn: true, suitOn: false,
   napping: false, morning: false, ...over,
@@ -17,7 +18,7 @@ const ids = () => TUTORIAL_STEPS.map(s => s.id);
 /** A runner moved on to the step `id`, its intro cards played out. */
 function at(id, ctx = fresh()) {
   const runner = new TutorialRunner();
-  const intro = TUTORIAL_STEPS.filter(s => s.seconds && ids().indexOf(s.id) < ids().indexOf('drive'));
+  const intro = TUTORIAL_STEPS.filter(s => s.seconds && ids().indexOf(s.id) < ids().indexOf('deskBox'));
   for (const card of intro) runner.update(card.seconds + 0.01, ctx);
   while (runner.step.id !== id) runner.update(0.01, { ...ctx, ...doneFor(runner.step) });
   return runner;
@@ -26,6 +27,7 @@ function at(id, ctx = fresh()) {
 /** What makes the step `step` done, for walking past it. */
 function doneFor(step) {
   return {
+    deskBox: { boxOnDesk: true }, flashlight: { flashlightOn: true },
     drive: { driveIn: true }, computer: { terminalOpen: true }, aim: { onSignal: true },
     scan: { scanned: true }, save: { saved: true }, box: { boxed: true }, dock: { quotaMet: true },
     storm: { powerOn: false }, suit: { suitOn: true }, generator: { powerOn: true },
@@ -34,7 +36,8 @@ function doneFor(step) {
 
 describe('TUTORIAL_STEPS', () => {
   it('teaches the signal game, then the storm, then the nap and the sleep, in that order', () => {
-    const order = ['drive', 'computer', 'aim', 'scan', 'save', 'box', 'dock', 'storm', 'suit', 'generator', 'inside', 'nap', 'wait', 'sleep'];
+    const order = ['deskBox', 'drive', 'computer', 'aim', 'scan', 'save', 'box', 'dock',
+      'storm', 'flashlight', 'suit', 'generator', 'inside', 'nap', 'wait', 'sleep'];
     const positions = order.map(id => ids().indexOf(id));
     expect(positions.every(p => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -67,6 +70,22 @@ describe('TutorialRunner', () => {
     expect(runner.step.id).toBe(first.id);
     runner.update(0.2, fresh());
     expect(runner.step.id).toBe(TUTORIAL_STEPS[1].id);
+  });
+
+  it('first a drive box on the desk: the arrow is on the box, then on the desk while it is carried', () => {
+    const runner = at('deskBox');
+    expect(runner.view(fresh()).target).toBe('box');
+    expect(runner.view(fresh({ holdingBox: true })).target).toBe('desk');
+    runner.update(0.01, fresh({ holdingBox: true }));
+    expect(runner.step.id).toBe('deskBox');
+    runner.update(0.01, fresh({ boxOnDesk: true }));
+    expect(runner.step.id).toBe('drive');
+  });
+
+  it('a drive carried straight to the reader passes the box step too', () => {
+    const runner = at('deskBox');
+    runner.update(0.01, fresh({ driveIn: true }));
+    expect(runner.step.id).toBe('computer');
   });
 
   it('waits on a step until its test passes', () => {
@@ -109,6 +128,8 @@ describe('TutorialRunner', () => {
     runner.update(0.01, fresh());
     expect(runner.step.id).toBe('storm');
     runner.update(0.01, fresh({ powerOn: false }));
+    expect(runner.step.id).toBe('flashlight');
+    runner.update(0.01, fresh({ powerOn: false, flashlightOn: true }));
     expect(runner.step.id).toBe('suit');
     runner.update(0.01, fresh({ powerOn: false, suitOn: true }));
     expect(runner.step.id).toBe('generator');
@@ -116,6 +137,23 @@ describe('TutorialRunner', () => {
     expect(runner.step.id).toBe('inside');
     runner.update(0.01, fresh());
     expect(runner.step.id).toBe('nap');
+  });
+
+  it('the dark asks for the flashlight, unless it is already on', () => {
+    const runner = at('storm', fresh({ flashlightOn: true }));
+    runner.update(0.01, fresh({ powerOn: false, flashlightOn: true }));
+    expect(runner.step.id).toBe('suit');
+    const step = TUTORIAL_STEPS.find(t => t.id === 'flashlight');
+    expect(step.text).toContain('[F]');
+  });
+
+  it('the nap is until 6 AM, and if woken early the player is sent back to bed', () => {
+    const nap = TUTORIAL_STEPS.find(t => t.id === 'nap');
+    expect(nap.text).toMatch(/6 AM/);
+    expect(nap.target).toBe('bed');
+    const wait = TUTORIAL_STEPS.find(t => t.id === 'wait');
+    expect(wait.text).toMatch(/6 AM/);
+    expect(wait.target).toBe('bed');
   });
 
   it('a nap, or the morning, moves on; then it waits at the bed for the next night', () => {

@@ -2,22 +2,25 @@
 // TutorialSteps  –  night 0's lessons, one at a time (pure)
 // ─────────────────────────────────────────────
 // Night 0 is the tutorial. It tells the story in a few timed cards, then
-// walks the player through one of everything: a signal saved and docked
-// (a quota of one), a storm that takes the power and the generator brought
-// back, a nap, and the sleep that starts night 1.
+// walks the player through one of everything: a drive box brought to the
+// desk, a drive from it into the reader, a signal found, scanned and saved,
+// the drive boxed and the box docked (a quota of one); a storm that takes
+// the power, the flashlight, the generator brought back; a nap until 6 AM,
+// and the sleep that starts night 1.
 //
 // A step is either timed (`seconds`) or waits on a test of what the player
 // has done (`done(ctx)`). `ctx` is a plain object of booleans the Tutorial
 // component reads off the scene each frame:
 //
-//   driveIn, terminalOpen, onSignal, scanning, scanned, saved, boxed,
-//   quotaMet, powerOn, suitOn, napping, morning
+//   holdingBox, boxOnDesk, driveIn, terminalOpen, onSignal, scanning,
+//   scanned, saved, boxed, quotaMet, powerOn, flashlightOn, suitOn,
+//   napping, morning
 //
 // The runner skips past a step that is already done, so a player who runs
 // ahead is never told to do what they already did. `target` names what the
-// arrow points at (the Tutorial component knows where each one is); a step
-// marked `desk` is done at the computer, so away from it the view points
-// back to the computer instead.
+// arrow points at (the Tutorial component knows where each one is), or is
+// a function of ctx that names it; a step marked `desk` is done at the
+// computer, so away from it the view points back to the computer instead.
 // ─────────────────────────────────────────────
 
 /** Shown in place of a `desk` step while the computer isn't up. */
@@ -37,8 +40,12 @@ export const TUTORIAL_STEPS = Object.freeze([
     text: 'Save the signals you pick up, and keep the array running for your neighbours.' },
 
   // The signal game.
+  { id: 'deskBox', title: 'PUT A DRIVE BOX ON THE DESK',
+    target: c => (c.holdingBox ? 'desk' : 'box'),
+    text: '[E] picks up a drive box from the shelf. Carry it to the computer desk and [E] to drop it there.',
+    done: c => c.boxOnDesk || c.driveIn },
   { id: 'drive', title: 'PUT A DRIVE IN THE READER', target: 'reader',
-    text: 'Take a drive from a box on the desk and put it in the reader beside the computer.',
+    text: 'Take a drive out of the box and put it in the reader beside the computer.',
     done: c => c.driveIn },
   { id: 'computer', title: 'USE THE COMPUTER', target: 'computer',
     text: '[E] at the monitor on the desk.',
@@ -52,8 +59,8 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'save', title: 'SAVE IT TO THE DRIVE',
     text: 'Q saves the signal to the drive and leaves the computer.',
     done: c => c.saved && !c.terminalOpen },
-  { id: 'box', title: 'BOX THE DRIVE', target: 'box',
-    text: 'Take the drive out of the reader and put it in a drive box.',
+  { id: 'box', title: 'PUT THE DRIVE BACK IN THE BOX', target: 'box',
+    text: 'Take the drive out of the reader and put it back in the drive box.',
     done: c => c.boxed },
   { id: 'dock', title: 'TAKE THE BOX TO THE AIRLOCK', target: 'dock',
     text: 'Set it in the dock by the suit locker. The drives in it are the night\'s quota.',
@@ -65,6 +72,9 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'storm', title: 'A STORM IS COMING',
     text: 'Dust storms can choke the generator. Watch the lights.',
     done: c => !c.powerOn },
+  { id: 'flashlight', title: 'TURN ON YOUR FLASHLIGHT',
+    text: 'The power is out. [F] turns your flashlight on and off.',
+    done: c => c.flashlightOn || c.powerOn },
   { id: 'suit', title: 'PUT ON THE SUIT', target: 'locker',
     text: 'The power is out. Suit up in the airlock to go outside.',
     done: c => c.suitOn || c.powerOn },
@@ -76,11 +86,11 @@ export const TUTORIAL_STEPS = Object.freeze([
     done: c => !c.suitOn },
 
   // Naps and sleep.
-  { id: 'nap', title: 'TAKE A NAP', target: 'bed',
-    text: 'At the bunk in the living quarters, pick an alarm and lie down.',
+  { id: 'nap', title: 'NAP UNTIL 6 AM', target: 'bed',
+    text: 'At the bunk in the living quarters, [E] naps until 6 AM. [R] changes the alarm.',
     done: c => c.napping || c.morning },
-  { id: 'wait', title: 'SEE THE NIGHT OUT',
-    text: 'Sleep or stay up until 6 AM.',
+  { id: 'wait', title: 'SEE THE NIGHT OUT', target: 'bed',
+    text: 'Nap again at the bunk until 6 AM.',
     done: c => c.morning },
   // Sleeping starts night 1, which ends the tutorial (Tutorial).
   { id: 'sleep', title: 'GO TO BED', target: 'bed',
@@ -147,7 +157,8 @@ export class TutorialRunner {
     const shown = away ? COMPUTER_HINT : step;
     view.title = shown?.title ?? '';
     view.text = shown?.text ?? '';
-    view.target = (!ctx.terminalOpen && shown?.target) || null;
+    const target = typeof shown?.target === 'function' ? shown.target(ctx) : shown?.target;
+    view.target = (!ctx.terminalOpen && target) || null;
     view.compact = !!ctx.terminalOpen;
     return view;
   }

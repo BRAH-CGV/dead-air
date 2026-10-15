@@ -82,7 +82,7 @@ import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
-import { TutorialOverlay } from '../ui/TutorialOverlay.js';
+import { TutorialOverlay, tutorialKeys } from '../ui/TutorialOverlay.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
@@ -1872,13 +1872,18 @@ export class BaseScene extends Scene {
       bedRest:       this.bedRest ?? null,
       sandstorm:     this.sandstorm ?? null,
       stormOutage:   this.stormOutage ?? null,
-      fade:          this.screenFade ?? null,
-      overlay:       new TutorialOverlay(),
+      bed,
+      flashlight:    this.engine.player?.getComponent(Flashlight) ?? null,
+      onDesk:        (p) => office.isOnDesk(p),
+      overlay:       new TutorialOverlay(undefined, {
+        keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
+      }),
       camera:        this.engine.camera ?? null,
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
         computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
         box:       { object: nearestBox, lift: 0.1 },
+        desk:      { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 0.9 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },

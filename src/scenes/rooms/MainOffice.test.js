@@ -663,6 +663,20 @@ describe('MainOffice', () => {
     }
   });
 
+  it("knows a point on the desk top or a wing from one on the floor or the shelf (the tutorial's box on the desk)", () => {
+    const at = (x, y, z) => room.root.object3d.localToWorld(new THREE.Vector3(x, y, z));
+    expect(room.isOnDesk(at(0, 0.93, -2.6))).toBe(true);       // the desk top
+    expect(room.isOnDesk(at(0.3, 0.81, -2.3))).toBe(true);     // the keyboard tray
+    expect(room.isOnDesk(at(1.4, 0.93, -2.15))).toBe(true);    // the right wing
+    expect(room.isOnDesk(at(-1.4, 0.93, -2.15))).toBe(true);   // the left wing
+    expect(room.isOnDesk(at(0, 0.06, -2.6))).toBe(false);      // under it, on the floor
+    expect(room.isOnDesk(at(0, 0.93, -1.2))).toBe(false);      // in front of it
+    expect(room.isOnDesk(at(5.68, 0.71, -2.17))).toBe(false);  // the shelf
+    for (const box of room.driveBoxes) {
+      expect(room.isOnDesk(box.object3d.getWorldPosition(new THREE.Vector3())), box.name).toBe(false);
+    }
+  });
+
   it('DriveSlot component is configured with a snap offset for the reader surface', () => {
     const reader = room.driveReader;
     const slot = reader.getComponent(DriveSlot);

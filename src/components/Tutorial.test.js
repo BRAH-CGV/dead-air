@@ -4,6 +4,7 @@ import { Tutorial, TUTORIAL } from './Tutorial.js';
 import { TUTORIAL_STEPS } from '../gameplay/TutorialSteps.js';
 import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Stamina } from '../gameplay/Stamina.js';
+import { NAP } from '../gameplay/Nap.js';
 
 // ─────────────────────────────────────────────
 // Tutorial — night 0's steps on the live scene
@@ -59,10 +60,13 @@ function rig({ night = 0 } = {}) {
     grid:          { on: true },
     suit:          { worn: false },
     nap:           { napping: false },
+    bed:           { napLength: NAP.lengths.indexOf(1) },
     bedRest:       { active: false },
+    flashlight:    { on: false },
+    // The desk: anything over x −1…1, z −3…−2, from 0.6 m up.
+    onDesk:        (p) => Math.abs(p.x) < 1 && p.z > -3 && p.z < -2 && p.y > 0.6,
     sandstorm:     { summon: vi.fn(() => true) },
     stormOutage:   { force: vi.fn() },
-    fade:          { play: vi.fn(onDark => { onDark?.(); return true; }) },
     overlay:       { show: vi.fn(), hide: vi.fn(), setArrow: vi.fn() },
     camera,
     screen:        () => ({ width: 1000, height: 500 }),
@@ -70,6 +74,7 @@ function rig({ night = 0 } = {}) {
       reader:    { object: ahead },
       computer:  { object: ahead },
       box:       { object: ahead },
+      desk:      { object: ahead },
       dock:      { object: behind },
       locker:    { object: behind },
       generator: { object: behind },
@@ -146,15 +151,37 @@ describe('Tutorial', () => {
 
   it('follows what the player does', () => {
     pastIntro(s);
-    expect(s.tutorial.runner.step.id).toBe('drive');
+    expect(s.tutorial.runner.step.id).toBe('deskBox');
     s.driveManager.driveInserted = true;
     s.tutorial.onUpdate(0.01);
     expect(s.tutorial.runner.step.id).toBe('computer');
   });
 
+  it('a drive box set down on the desk is on the desk; carried, it is not', () => {
+    const box = { object3d: new THREE.Object3D(), pickupable: { held: false }, receiver: { attachments: [] } };
+    box.object3d.position.set(5.7, 0.3, -2);         // on the shelf
+    box.object3d.updateMatrixWorld();
+    s.driveBoxes.push(box);
+    expect(s.tutorial.readContext().boxOnDesk).toBe(false);
+    expect(s.tutorial.readContext().holdingBox).toBe(false);
+    box.object3d.position.set(0.2, 0.93, -2.5);       // on the desk
+    box.object3d.updateMatrixWorld();
+    box.pickupable.held = true;
+    expect(s.tutorial.readContext().boxOnDesk).toBe(false);
+    expect(s.tutorial.readContext().holdingBox).toBe(true);
+    box.pickupable.held = false;
+    expect(s.tutorial.readContext().boxOnDesk).toBe(true);
+  });
+
+  it('reads the flashlight', () => {
+    expect(s.tutorial.readContext().flashlightOn).toBe(false);
+    s.flashlight.on = true;
+    expect(s.tutorial.readContext().flashlightOn).toBe(true);
+  });
+
   it('a drive with the signal, seated in a box, is boxed', () => {
     const drive = { saved: true, corrupted: false };
-    s.driveBoxes.push({ receiver: { attachments: [null, { item: drive }] } });
+    s.driveBoxes.push({ object3d: new THREE.Object3D(), receiver: { attachments: [null, { item: drive }] } });
     pastIntro(s);
     const ctx = s.tutorial.readContext();
     expect(ctx.boxed).toBe(true);
@@ -176,26 +203,28 @@ describe('Tutorial', () => {
     expect(s.stormOutage.force).toHaveBeenCalledWith(TUTORIAL.outageAt);
   });
 
-  it('the nap step brings the night on to near dawn, under a fade', () => {
+  it("the nap step sets the bunk's alarm to 6 AM, and leaves the night to run", () => {
     s.tutorial.onUpdate(0.01);
+    s.clock.resume();                      // as it is once the quota is met
+    s.clock.setTime(-3);
     s.tutorial.runner.goTo('inside');
     s.tutorial.onUpdate(0.01);             // the suit is off: on to the nap
     expect(s.tutorial.runner.step.id).toBe('nap');
-    expect(s.fade.play).toHaveBeenCalled();
-    expect(s.clock.currentTime).toBe(TUTORIAL.napHour);
+    expect(NAP.lengths[s.bed.napLength]).toBe(null);
+    expect(s.clock.currentTime).toBe(-3);
     expect(s.clock.paused).toBe(false);
   });
 
-  it('a retry skips the story and starts at the drive', () => {
+  it('a retry skips the story and starts at the drive box', () => {
     s.tutorial.onUpdate(0.01);
     s.controller.startNight(0, { retry: true });
     s.tutorial.onUpdate(0.01);
-    expect(s.tutorial.runner.step.id).toBe('drive');
+    expect(s.tutorial.runner.step.id).toBe('deskBox');
     expect(s.clock.paused).toBe(true);
   });
 
   it('points the arrow at the step\'s target, on screen or round the edge', () => {
-    pastIntro(s);                           // 'drive': the reader, ahead
+    pastIntro(s);                           // 'deskBox': a box, ahead
     s.overlay.setArrow.mockClear();
     s.tutorial.onUpdate(0.01);
     const ahead = s.overlay.setArrow.mock.calls.at(-1)[0];
@@ -221,7 +250,7 @@ describe('Tutorial', () => {
     expect(s.overlay.hide).toHaveBeenCalled();
     s.controller.state = 'playing';
     s.tutorial.onUpdate(0.01);
-    expect(s.tutorial.runner.step.id).toBe('drive');
+    expect(s.tutorial.runner.step.id).toBe('deskBox');
   });
 
   it('hides while the player is in the bunk, under the lids', () => {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { TutorialRunner } from '../gameplay/TutorialSteps.js';
+import { NAP } from '../gameplay/Nap.js';
 import { placeArrow } from '../ui/TutorialOverlay.js';
 
 // ─────────────────────────────────────────────
@@ -19,7 +20,8 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 //   - Stamina is held full, so the Sleep Demon never comes.
 //   - No storm, dust eyes or UFO of their own (they stay off on night 0);
 //     the storm step summons one whose outage is forced (StormOutage.force).
-//   - The nap step brings the clock on to near dawn, under a fade.
+//   - The nap step sets the bunk's alarm to 6 AM, so one nap sees the
+//     night out.
 //
 // Subscribes in onStart and reads the controller's night there, like
 // Sandstorm: New game sets night 0 before the scene's first frame.
@@ -29,15 +31,13 @@ export const TUTORIAL = Object.freeze({
   night: 0,
   /** 7 PM: dark, and before any signal of the shift's own (APPEAR_START). */
   startHour: -5,
-  /** 4:30 AM: where the nap step brings the night, so a nap reaches dawn. */
-  napHour: 4.5,
   /** How far through the tutorial's storm its outage comes. */
   outageAt: 0.1,
   /** The one signal: off the dish's park (45°, −55°) by more than a
    *  signal's reach, so the cursor has to be moved onto it. */
   signal: Object.freeze({ yaw: Math.PI / 4 + 0.6, pitch: -0.6 }),
   /** Where a retry of night 0 starts, past the story. */
-  retryStep: 'drive',
+  retryStep: 'deskBox',
 });
 
 export class Tutorial extends Component {
@@ -55,10 +55,12 @@ export class Tutorial extends Component {
    * @param {object} [opts.grid]         PowerGrid
    * @param {object} [opts.suit]         EVASuit
    * @param {object} [opts.nap]
+   * @param {object} [opts.bed]          The bunk's Bed: its napLength is set to 6 AM
    * @param {object} [opts.bedRest]
+   * @param {object} [opts.flashlight]   The player's Flashlight: on
+   * @param {(p: THREE.Vector3) => boolean} [opts.onDesk]  A world point is on the computer desk
    * @param {object} [opts.sandstorm]
    * @param {object} [opts.stormOutage]
-   * @param {object} [opts.fade]         ScreenFade
    * @param {object} [opts.overlay]      TutorialOverlay
    * @param {THREE.Camera} [opts.camera] The player's camera, for the arrow
    * @param {() => { width: number, height: number }} [opts.screen]
@@ -69,14 +71,15 @@ export class Tutorial extends Component {
   constructor({
     controller, clock, stamina = null, signalManager = null, terminal = null,
     driveManager = null, drives = [], driveBoxes = [], quotaDock = null, grid = null,
-    suit = null, nap = null, bedRest = null, sandstorm = null, stormOutage = null,
-    fade = null, overlay = null, camera = null, screen = null, targets = {},
+    suit = null, nap = null, bed = null, bedRest = null, flashlight = null, onDesk = null,
+    sandstorm = null, stormOutage = null,
+    overlay = null, camera = null, screen = null, targets = {},
   }) {
     super();
     Object.assign(this, {
       controller, clock, stamina, signalManager, terminal, driveManager, drives,
-      driveBoxes, quotaDock, grid, suit, nap, bedRest, sandstorm, stormOutage,
-      fade, overlay, camera, targets,
+      driveBoxes, quotaDock, grid, suit, nap, bed, bedRest, flashlight, onDesk,
+      sandstorm, stormOutage, overlay, camera, targets,
     });
     this.screen = screen ?? (() => this._windowSize());
     this.active = false;
@@ -84,9 +87,10 @@ export class Tutorial extends Component {
     this._signal = null;
     this._off = null;
     this._ctx = {
+      holdingBox: false, boxOnDesk: false,
       driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
-      saved: false, boxed: false, quotaMet: false, powerOn: true, suitOn: false,
-      napping: false, morning: false,
+      saved: false, boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
+      suitOn: false, napping: false, morning: false,
     };
     this._v = new THREE.Vector3();
     this._ndc = { x: 0, y: 0, behind: false };
@@ -148,14 +152,9 @@ export class Tutorial extends Component {
         this.sandstorm?.summon?.();
         this.stormOutage?.force?.(TUTORIAL.outageAt);
         break;
-      case 'nap': {
-        const onDark = () => {
-          this.clock.setTime(TUTORIAL.napHour);
-          this.clock.resume();
-        };
-        if (!this.fade?.play(onDark)) onDark();
+      case 'nap':
+        if (this.bed) this.bed.napLength = NAP.lengths.indexOf(null);
         break;
-      }
     }
   }
 
@@ -184,6 +183,7 @@ export class Tutorial extends Component {
     const c = this._ctx;
     const t = this.terminal;
     const sig = this._signal;
+    this._readBoxes(c);
     c.driveIn = !!this.driveManager?.driveInserted;
     c.terminalOpen = !!t && t.state !== 'idle';
     c.onSignal = !!sig && t?._hoveredSignal === sig;
@@ -193,10 +193,22 @@ export class Tutorial extends Component {
     c.quotaMet = !!this.quotaDock?.isQuotaMet();
     c.boxed = c.quotaMet || this._boxed();
     c.powerOn = !!this.grid?.on;
+    c.flashlightOn = !!this.flashlight?.on;
     c.suitOn = !!this.suit?.worn;
     c.napping = !!(this.nap?.napping || this.bedRest?.active);
     c.morning = this.controller.state === 'morning';
     return c;
+  }
+
+  /** Is a drive box in the player's hands, and is one set down on the desk. */
+  _readBoxes(c) {
+    c.holdingBox = false;
+    c.boxOnDesk = false;
+    for (let i = 0; i < this.driveBoxes.length; i++) {
+      const box = this.driveBoxes[i];
+      if (box.pickupable?.held) c.holdingBox = true;
+      else if (this.onDesk?.(box.object3d.getWorldPosition(this._v))) c.boxOnDesk = true;
+    }
   }
 
   /** A drive in the list holds a good signal. */

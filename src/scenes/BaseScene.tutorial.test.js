@@ -103,7 +103,28 @@ describe('BaseScene tutorial (night 0)', () => {
     frames(60, 0.25);
     expect(scene.sandstorm.level).toBeGreaterThan(0);
     expect(scene.power.on).toBe(false);
-    expect(scene.tutorial.runner.step.id).toBe('suit');
+    expect(scene.tutorial.runner.step.id).toBe('flashlight');
+  });
+
+  it('a drive box set down on the office desk is on the desk', () => {
+    scene.nights.setNight(0);
+    frames(0.1);
+    const [box] = scene.rooms.MainOffice.driveBoxes;
+    expect(scene.tutorial.readContext().boxOnDesk).toBe(false);
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk').object3d;
+    const top = desk.localToWorld(new THREE.Vector3(0.3, 0.95, 0));
+    box.object3d.parent.worldToLocal(top);
+    box.object3d.position.copy(top);
+    box.object3d.updateMatrixWorld(true);
+    expect(scene.tutorial.readContext().boxOnDesk).toBe(true);
+  });
+
+  it("reads the player's flashlight", () => {
+    scene.nights.setNight(0);
+    frames(0.1);
+    expect(scene.tutorial.readContext().flashlightOn).toBe(false);
+    engine.player.getComponent(Flashlight).toggle();
+    expect(scene.tutorial.readContext().flashlightOn).toBe(true);
   });
 
   it('no storm of its own on night 0, however long it is played', () => {

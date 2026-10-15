@@ -138,6 +138,20 @@ const DESK = { x: 0, z: -2.55, halfW: 0.8, topHalfW: 0.752, front: -2.15, back: 
  *  turns to face. */
 const SEAT = [0, -1.45];
 
+/** How high over the floor something on the desk or its wings is: above
+ *  the kneehole's 0.72 m and well short of the ceiling. */
+const ON_DESK_Y = [0.6, 1.6];
+
+/** [x, z] inside the polygon `pts` (even–odd rule). */
+function insidePolygon(x, z, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i], [xj, zj] = pts[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** The security-camera monitor on the left wing (camera-monitor.glb):
  *  width, height, depth. */
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
@@ -148,6 +162,8 @@ export class MainOffice extends Room {
 
   /** Stood on the desk's right wing by buildProps(). @type {DigitalClock|null} */
   deskClock = null;
+
+  _deskPoint = new THREE.Vector3();
 
   /** Perched by buildProps(). @type {SignalAlertLight|null} */
   signalLight = null;
@@ -188,6 +204,18 @@ export class MainOffice extends Room {
         { side: 'left',  width: 1.2, height: 2.2,  offset: 3.5 },
       ],
     });
+  }
+
+  /** A world point is over the computer desk or one of its wings, at the
+   *  height of something set down on them (the tutorial's drive box). */
+  isOnDesk(worldPoint) {
+    this.root.object3d.updateMatrixWorld();
+    const p = this.root.object3d.worldToLocal(this._deskPoint.copy(worldPoint));
+    if (p.y < ON_DESK_Y[0] || p.y > ON_DESK_Y[1]) return false;
+    const x = p.x - DESK.x;
+    if (Math.abs(x) <= DESK.halfW && p.z >= DESK.back && p.z <= DESK.front) return true;
+    return insidePolygon(x, p.z, deskWingOutline(1, DESK).top)
+        || insidePolygon(x, p.z, deskWingOutline(-1, DESK).top);
   }
 
   buildDoors() {

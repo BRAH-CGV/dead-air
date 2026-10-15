@@ -186,8 +186,8 @@ export class MenuView {
 
   // ── Screens ───────────────────────────────
 
-  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string }} m */
-  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '' }) {
+  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string, tutorial?: boolean }} m */
+  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '', tutorial = false }) {
     this._hint = h('div', { class: 'menu-hint', role: 'status' }, hint);
     return [
       h('h1', { class: 'menu-title' }, COPY.title, h('span', { class: 'menu-cursor', 'aria-hidden': 'true' })),
@@ -196,6 +196,7 @@ export class MenuView {
       h('nav', { class: 'menu-list' },
         option('newGame', 'New game'),
         continueNight ? option('continue', `Continue — Night ${continueNight}`) : null,
+        tutorial ? option('tutorial', 'Tutorial') : null,
         option('nightSelect', 'Select night'),
         option('settings', 'Settings'),
         option('credits', 'Credits'),

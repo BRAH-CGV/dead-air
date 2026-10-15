@@ -9,11 +9,30 @@
 // (`compact`), out of the radar's way.
 //
 // The markup is built here, inside #tutorial; the styles live in
-// index.html. Like the other overlays, this is the one place game code
-// touches the element.
+// index.html, which hides it (display: none) until show() says otherwise.
+// Like the other overlays, this is the one place game code touches the
+// element.
 // ─────────────────────────────────────────────
 
 import { withKeys } from './promptKeys.js';
+import { keyName } from '../app/keyNames.js';
+
+/**
+ * A step's text with the keys it names as they are bound: [E] through
+ * promptKeys, and [F] (the flashlight) and [R] (the rotate key, which sets
+ * the nap alarm) off `keyBinds`. One pass, so keys swapped by a rebind
+ * (interact on F, the flashlight on E) don't swap back.
+ * @param {string} text
+ * @param {{ flashlight?: string, rotateHeld?: string }} keyBinds
+ */
+export function tutorialKeys(text, keyBinds) {
+  if (!text) return text;
+  return text.replace(/\[([EFR])\]/g, (key, letter) => {
+    if (letter === 'E') return withKeys(key);
+    const code = letter === 'F' ? keyBinds.flashlight : keyBinds.rotateHeld;
+    return `[${keyName(code) || letter}]`;
+  });
+}
 
 /** In pixels: how high over an on-screen target the arrow stands, and how
  *  far in from the edge an off-screen one is pinned. */
@@ -85,7 +104,7 @@ export class TutorialOverlay {
   /** @param {{ title: string, text: string, compact: boolean }} view */
   show(view) {
     if (!this.root) return;
-    this.root.style.display = '';
+    this.root.style.display = 'block';
     if (view.title !== this._title) {
       this._title = view.title;
       this.titleEl.textContent = view.title;
