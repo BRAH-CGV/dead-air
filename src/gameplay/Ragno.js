@@ -339,8 +339,11 @@ export class Ragno extends Component {
     const exposed = logic.visible && !logic.indoors && zone === 'outside'
       && eye.distanceTo(_body) <= EXPOSED && !this._blockedOutside(eye, _body);
 
+    // On the monitor: the camera on screen has him in frame.
+    const onScreen = !!air && logic.visible && this._cameraSees(air.camera, _body);
+
     return {
-      flashHit, flashFrom, flashlightHit, glance, spook, exposed,
+      flashHit, flashFrom, flashlightHit, glance, spook, exposed, onScreen,
       powerOn: !!this.power?.on,
       player: { pos: eye, zone },
       nearestCamera: this._nearestCamera(logic.pos),

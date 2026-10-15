@@ -76,7 +76,7 @@ function sense(over = {}) {
   return {
     flashHit: false, flashFrom: null, flashlightHit: false, powerOn: true, glance: false, spook: false,
     player: { pos: new THREE.Vector3(0, 1.24, -1.3), zone: 'MainOffice' },
-    nearestCamera: CAMERA, clearToPlayer: false, canWalk: () => true, exposed: false,
+    nearestCamera: CAMERA, clearToPlayer: false, canWalk: () => true, exposed: false, onScreen: false,
     ...over,
   };
 }
@@ -203,6 +203,30 @@ describe('RagnoLogic — outside', () => {
     expect(logic.pos.distanceTo(CAMERA)).toBeGreaterThan(at.distanceTo(CAMERA) + 5);
   });
 
+  it('flashed outside, he keeps running while the camera on screen still has him: never seen to vanish', () => {
+    const logic = makeLogic();
+    logic.spawn({ side: -1, approach: 'window', mood: 'normal' });
+    run(logic, { seconds: 3 });
+    const at = logic.pos.clone();
+    run(logic, { seconds: 1 / 30, s: () => sense({ flashHit: true, flashFrom: CAMERA }) });
+    // The camera has him for the first 6 s of his run.
+    let t = 0;
+    const seen = run(logic, {
+      seconds: 30,
+      s: () => sense({ onScreen: t < 6 }),
+      until: l => l.state === 'off',
+      onFrame: () => { t += 1 / 30; },
+    });
+    expect(seen).toContain('gone');
+    expect(t).toBeGreaterThan(6);
+    expect(logic.pos.distanceTo(at)).toBeGreaterThan(RAGNO.retreatDistance);
+  });
+
+  it('runs well off to the side when flashed: further than before, and aside', () => {
+    expect(RAGNO.retreatDistance).toBeGreaterThanOrEqual(20);
+    expect(RAGNO.retreatAside).toBeGreaterThan(0.6);
+  });
+
   it('caught looking through the window: scurries to the side of the building, out of the view, then carries on', () => {
     const logic = makeLogic();
     logic.spawn({ side: -1, approach: 'window', mood: 'normal' });
@@ -287,6 +311,14 @@ describe('RagnoLogic — outside', () => {
     expect(normal).toBeGreaterThan(120);
     expect(normal).toBeLessThan(300);
     expect(aggressive).toBeLessThan(normal);
+  });
+
+  it('a creep walks the creep route (inside the trees) when the side has one', () => {
+    const creepRoute = LAYOUT.sides[-1].approach.window.map(q => ({ ...q, x: q.x - 3 }));
+    const layout = { ...LAYOUT, sides: { ...LAYOUT.sides, [-1]: { ...LAYOUT.sides[-1], creep: { window: creepRoute, yard: creepRoute } } } };
+    const logic = new RagnoLogic({ layout, rand: seeded(7) });
+    logic.spawn({ side: -1, approach: 'window', mood: 'calm', kind: 'creep', partway: true });
+    expect(logic.pos.x).toBeCloseTo(creepRoute[0].x);
   });
 
   it('a creep partway in lingers out there, well short of the vent, then goes back the way he came', () => {

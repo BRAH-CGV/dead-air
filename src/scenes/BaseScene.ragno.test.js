@@ -226,14 +226,23 @@ describe('BaseScene — Ragno', () => {
 
     for (const sign of [-1, 1]) {
       const name = sign < 0 ? 'left' : 'right';
-      it(`window side, ${name}: one far glimpse through the window, then out of its view, with places to hide`, () => {
+      it(`window side, ${name}: at most a far glimpse through the window as he sets off, then out of its view, with places to hide`, () => {
         const route = layout.sides[sign].approach.window;
-        expect(route[0].edge).toBe(true);
-        expect(inWindowView(route[0], eye, layout.window)).toBe(true);
         for (const p of route.slice(1)) expect(inWindowView(p, eye, layout.window)).toBe(false);
         for (const p of route.filter(q => q.hide)) {
           expect(inWindowView(p, eye, layout.window)).toBe(false);
           expect(scene._isOutside(new THREE.Vector3(p.x, 1, p.z))).toBe(true);
+        }
+      });
+
+      it(`${name}: never walks backwards: from where he spawns every step brings him nearer the vent`, () => {
+        for (const routes of [layout.sides[sign].approach, layout.sides[sign].creep]) {
+          for (const approach of ['window', 'yard']) {
+            const route = routes[approach];
+            const foot = route[route.length - 1];
+            const d = route.map(p => Math.hypot(p.x - foot.x, p.z - foot.z));
+            for (let i = 1; i < d.length; i++) expect(d[i], `${approach} at ${i}`).toBeLessThanOrEqual(d[i - 1] + 1e-6);
+          }
         }
       });
 

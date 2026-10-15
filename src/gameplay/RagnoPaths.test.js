@@ -164,6 +164,53 @@ describe('approach routes', () => {
   });
 });
 
+describe('the trees', () => {
+  // A belt of trees from 26 m out all round (a ring of trunks every 2 m).
+  const TREES = [];
+  for (let r = 26; r <= 40; r += 2) {
+    for (let a = 0; a < Math.PI * 2; a += 2 / r) TREES.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, reach: 2.35 });
+  }
+  const nearest = p => Math.min(...TREES.map(t => Math.hypot(t.x - p.x, t.z - p.z)));
+  const WITH = { ...LAYOUT, trees: TREES };
+
+  for (const sign of [-1, 1]) {
+    for (const approach of ['window', 'yard']) {
+      it(`${approach}, ${sign < 0 ? 'left' : 'right'}: his way in keeps to the treeline or beyond, until the straight run`, () => {
+        const route = approachRoute(approach, SIDE(sign), WITH);
+        // Not the glimpse he starts with, nor the straight run in.
+        for (const p of route.slice(1, -2)) expect(nearest(p)).toBeLessThanOrEqual(RAGNO_PATHS.treeline + 1e-6);
+        // The straight run in is still straight.
+        const before = route[route.length - 2];
+        expect(before.z).toBeCloseTo(SIDE(sign).vent.z, 6);
+      });
+
+      it(`${approach}, ${sign < 0 ? 'left' : 'right'}: a creep keeps inside the trees`, () => {
+        const route = approachRoute(approach, SIDE(sign), WITH, { inside: true });
+        for (const p of route.slice(1, -2)) expect(nearest(p)).toBeLessThanOrEqual(RAGNO_PATHS.inTrees + 1e-6);
+      });
+    }
+  }
+
+  for (const inside of [false, true]) {
+    it(`never walks backwards${inside ? ' (a creep)' : ''}: from where he spawns, every step brings him nearer the vent`, () => {
+      for (const sign of [-1, 1]) {
+        for (const approach of ['window', 'yard']) {
+          const route = approachRoute(approach, SIDE(sign), WITH, { inside });
+          const foot = route[route.length - 1];
+          const d = route.map(p => Math.hypot(p.x - foot.x, p.z - foot.z));
+          for (let i = 1; i < d.length; i++) expect(d[i], `${approach} ${sign} at ${i}`).toBeLessThanOrEqual(d[i - 1] + 1e-6);
+        }
+      }
+    });
+  }
+
+  it('without trees, the routes are as they were', () => {
+    const a = approachRoute('window', SIDE(-1), LAYOUT);
+    const b = approachRoute('window', SIDE(-1), { ...LAYOUT, trees: [] });
+    expect(b).toEqual(a);
+  });
+});
+
 describe('NavGraph', () => {
   // quarters ─ corridor ─ office ─ corridor ─ server, and a dead end off the office.
   const graph = new NavGraph([

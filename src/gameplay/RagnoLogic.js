@@ -77,8 +77,14 @@ export const RAGNO = {
   climbFleeSpeed: 3,
   /** m/s walking across a room to his watch, and prowling. */
   walkSpeed: 1.4,
-  /** Metres he runs away from the camera that flashed him, outside. */
-  retreatDistance: 14,
+  /** Metres he runs away from the camera that flashed him, outside, and
+   *  how far aside of straight away (radians), so he leaves its frame. He
+   *  runs on, `retreatMore` m at a time, while the camera on screen still
+   *  has him — up to `retreatTimes` more — so he is never seen to vanish. */
+  retreatDistance: 22,
+  retreatAside: 0.8,
+  retreatMore: 6,
+  retreatTimes: 6,
   /** Seconds he rears back from a flash. */
   flinchSeconds: 0.45,
   /** Seconds of screech before the chase. */
@@ -217,7 +223,9 @@ export class RagnoLogic {
     /** A creep: he comes to look, not to come in, and makes way for an attack. */
     this.creep = kind === 'creep';
     this._partway = partway;
-    this._route = this.sideSpec.approach[approach];
+    // A creep keeps to his own way in, inside the trees, where the side has one.
+    const routes = this.creep && this.sideSpec.creep ? this.sideSpec.creep : this.sideSpec.approach;
+    this._route = routes[approach];
     if (partway) {
       // Only so far along, then he lingers there.
       const k = Math.round((this._route.length - 1) * between(this.rand, this.t.creepStop));
@@ -260,6 +268,7 @@ export class RagnoLogic {
    * @param {boolean} s.powerOn       The generator is running.
    * @param {boolean} s.glance        The player is looking at him through the window.
    * @param {boolean} s.spook         The player, outside, sees him close.
+   * @param {boolean} [s.onScreen]    The camera on the monitor has him in frame.
    * @param {boolean} [s.exposed]     The player is outside, and nothing (the
    *        building) stands between them: in their sight through the fence.
    * @param {{ pos: THREE.Vector3, zone: string }} s.player  Where the player is:
@@ -292,7 +301,7 @@ export class RagnoLogic {
       case 'chase': this._chase(dt, s); break;
       case 'prowl': this._prowl(dt, s); break;
       case 'flinch': this._flinching(); break;
-      case 'retreat': this._retreat(dt); break;
+      case 'retreat': this._retreat(dt, s); break;
       case 'flee': this._flee(dt); break;
       default: break;
     }
@@ -458,8 +467,19 @@ export class RagnoLogic {
     this.events.push('emerge');
   }
 
-  _retreat(dt) {
-    if (this._follow(dt, this.t.fleeSpeed).done) this._gone();
+  _retreat(dt, s) {
+    if (!this._follow(dt, this.t.fleeSpeed).done) return;
+    // Still on screen: on, the same way, until he is out of its frame.
+    if (s.onScreen && this._extended < this.t.retreatTimes) {
+      const n = this._path.length;
+      const a = this._path[n - 2], b = this._path[n - 1];
+      _dir.set(b.x - a.x, 0, b.z - a.z).normalize();
+      const more = this.t.retreatMore;
+      this._path.push(point(b.x + _dir.x * more, b.y, b.z + _dir.z * more));
+      this._extended++;
+      return;
+    }
+    this._gone();
   }
 
   // ── Inside ──────────────────────────────
@@ -605,7 +625,8 @@ export class RagnoLogic {
     const from = fromPoint ?? _b.set(0, 0, 0);
     _dir.set(last.x - from.x, 0, last.z - from.z);
     if (_dir.lengthSq() < 1e-6) _dir.set(this.side, 0, 0);
-    _dir.normalize().applyAxisAngle(_up.set(0, 1, 0), (this.rand() < 0.5 ? -1 : 1) * 0.35);
+    _dir.normalize().applyAxisAngle(_up.set(0, 1, 0), (this.rand() < 0.5 ? -1 : 1) * this.t.retreatAside);
+    this._extended = 0;
     const d = this.t.retreatDistance;
     start.push(point(last.x + _dir.x * d, last.y, last.z + _dir.z * d));
     this._enter('retreat');

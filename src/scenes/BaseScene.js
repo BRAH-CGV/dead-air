@@ -2068,7 +2068,9 @@ export class BaseScene extends Scene {
     const [ox, oy, oz] = office.position;
     const eye = { x: ox + DESK_EYE[0], y: oy + DESK_EYE[1], z: oz + DESK_EYE[2] };
     const win = this._officeWindow();
-    const paths = { window: win, eye, slope, fence: this.fence.rect, ground: (x, z) => terrainHeightAt(x, z) };
+    // He comes in at the treeline or beyond, and creeps inside the trees.
+    const trees = this._sceneRoot.find('Outside')?.find('MarsVegetation')?.trees ?? [];
+    const paths = { window: win, eye, slope, fence: this.fence.rect, ground: (x, z) => terrainHeightAt(x, z), trees };
 
     // Inside: the rooms as a graph of standing spots. Door nodes sit in the
     // doorways, where he goes thin.
@@ -2122,6 +2124,10 @@ export class BaseScene extends Scene {
       sides[sign] = {
         ...side,
         approach: { window: approachRoute('window', side, paths), yard: approachRoute('yard', side, paths) },
+        creep: {
+          window: approachRoute('window', side, paths, { inside: true }),
+          yard: approachRoute('yard', side, paths, { inside: true }),
+        },
         climb: climbRoute(side, paths),
         // Out of the grille, head first down the wall, onto the floor.
         descent: [

@@ -44,6 +44,13 @@ export const RAGNO_PATHS = {
   yardFrom: 6,
   /** Metres out from the toe the climb starts on the ground. */
   climbFoot: 0.9,
+  /** The trees (layout.trees): on his way in he keeps to the treeline or
+   *  beyond — every point of the curve pushed out from the building until a
+   *  trunk is within `treeline` m — and a creep keeps inside them, within
+   *  `inTrees` m of one, half hidden. No further than `pushMax` m out. */
+  treeline: 3.5,
+  inTrees: 1.6,
+  pushMax: 25,
 };
 
 const toRad = d => (d * Math.PI) / 180;
@@ -137,7 +144,7 @@ function bowedOut(a, b, sign, n, bulge) {
  * @param {{ sign: number, endX: number, back: number, front: number, vent: {z:number, y:number} }} side
  * @param {{ eye, window, slope, fence, ground: (x: number, z: number) => number }} layout
  */
-export function approachRoute(approach, side, layout) {
+export function approachRoute(approach, side, layout, { inside = false } = {}) {
   const P = RAGNO_PATHS;
   const { sign, endX, vent } = side;
   const foot = climbRoute(side, layout)[0];
@@ -155,13 +162,50 @@ export function approachRoute(approach, side, layout) {
   }
   const bulge = P.bulge[approach];
   const curve = bowedOut(start, straight, sign * Math.sign(bulge), P.arcPoints, Math.abs(bulge));
+  // Out to the trees, all but the straight run's start.
+  if (layout.trees?.length) {
+    const within = inside ? P.inTrees : P.treeline;
+    for (let i = 0; i < curve.length - 1; i++) curve[i] = toTrees(curve[i], layout.trees, within, P.pushMax);
+  }
   // Somewhere to scurry to, beside the building and out of the window's
   // sight: the curve's last stretch, the straight run's start, the foot.
-  return [
+  const points = [
     onGround(layout, start.x, start.z, start.edge ? { edge: true } : {}),
     ...curve.map((p, i) => onGround(layout, p.x, p.z, i >= curve.length / 3 ? { hide: true } : {})),
     onGround(layout, foot.x, foot.z, { hide: true }),
   ];
+  return onlyForward(points);
+}
+
+/**
+ * Never a step back: pushed out to the trees, a curve's first points can lie
+ * further from the vent than where it starts. He spawns at the furthest of
+ * them instead, and a point that would take him further away than the last
+ * is left out. The straight run (its start and the foot) is always kept.
+ */
+function onlyForward(points) {
+  const foot = points[points.length - 1];
+  const run = points[points.length - 2];
+  const far = p => Math.hypot(p.x - foot.x, p.z - foot.z);
+  const curve = points.slice(0, -2).filter(p => far(p) >= far(run));
+  let first = 0;
+  for (let i = 1; i < curve.length; i++) if (far(curve[i]) > far(curve[first])) first = i;
+  const out = [];
+  for (const p of curve.slice(first)) if (!out.length || far(p) <= far(out[out.length - 1])) out.push(p);
+  return [...out, run, foot];
+}
+
+/** `p` pushed straight out from the middle of the base until a trunk is
+ *  within `within` m: at the trees. As it was if none is that near by
+ *  `max` m out. */
+function toTrees(p, trees, within, max) {
+  const len = Math.hypot(p.x, p.z) || 1;
+  const ox = p.x / len, oz = p.z / len;
+  for (let d = 0; d <= max; d += 0.5) {
+    const x = p.x + ox * d, z = p.z + oz * d;
+    for (const t of trees) if (Math.hypot(t.x - x, t.z - z) <= within) return { x, z };
+  }
+  return p;
 }
 
 /** Rooms and corridors as a graph of standing spots. Nodes are
