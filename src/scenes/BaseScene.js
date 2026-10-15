@@ -82,6 +82,7 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { Pickupable } from '../components/Pickupable.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -1901,15 +1902,22 @@ export class BaseScene extends Scene {
     const { engine } = this;
     const zones = new OcclusionZones({ renderer: engine.renderer, scene: engine.scene, camera: engine.camera });
 
-    const isShell = o => o.userData.isDoor
-      || /^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name);
     const interiorParts = [
       this.rooms.MainOffice, this.rooms.ServerRoom, this.rooms.LivingQuarters,
       ...Object.values(this.corridors),
     ];
+    // What the player can pick up goes where they go — out through the
+    // airlock to the dock, or into the yard — and stays a child of the room
+    // it was built in. A zone hiding it would hide it in their hands.
+    const carried = new Set();
+    for (const part of interiorParts) {
+      for (const go of part.root.descendants()) if (go.getComponent?.(Pickupable)) carried.add(go.object3d);
+    }
+    const isFixed = o => o.userData.isDoor || carried.has(o)
+      || /^(Floor|Ceiling|(Back|Front|Left|Right)Wall)/.test(o.name);
     for (const part of interiorParts) {
       for (const door of part.doors) door.object3d.userData.isDoor = true;
-      zones.add('interior', collectHideable(part.root.object3d, isShell));
+      zones.add('interior', collectHideable(part.root.object3d, isFixed));
     }
 
     // Each outdoor thing (each instance, for the instanced scenery) is asked
