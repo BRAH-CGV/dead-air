@@ -276,6 +276,26 @@ describe('Ragno', () => {
     expect(ragno._walkable(new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 0, 0))).toBe(true);
   });
 
+  it('walks straight only where all of him fits: a wall beside his line, not on it, stops him', () => {
+    // A wall along z = 0.4, beside the line from (0,0,0) to (4,0,0): the
+    // middle ray clears it, a ray down his flank does not.
+    hooks.rayHit = (from, dir, max) => {
+      if (from.z >= 0.3 && Math.abs(dir.z) < 1e-6) return 1;
+      return Infinity;
+    };
+    expect(ragno._walkable(new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 0, 0))).toBe(false);
+    hooks.rayHit = () => Infinity;
+    expect(ragno._walkable(new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 0, 0))).toBe(true);
+  });
+
+  it('reaching a standing spot needs only his middle clear; charging the player needs all of him', () => {
+    // Something beside the line, not on it.
+    hooks.rayHit = (from, dir, max) => (from.z >= 0.3 && Math.abs(dir.z) < 1e-6 ? 1 : Infinity);
+    const a = new THREE.Vector3(0, 0, 0), b = new THREE.Vector3(4, 0, 0);
+    expect(ragno._canWalk(a, b)).toBe(true);
+    expect(ragno._walkable(a, b)).toBe(false);
+  });
+
   it('outside, a rare shriek is one of the attacks pitched down, or a loud burst of the call', () => {
     const shriek = () => ({ isPlaying: false, context: { state: 'running' }, play: vi.fn(), stop: vi.fn(),
       setVolume: vi.fn(), setDetune: vi.fn(), setRefDistance: vi.fn(), setRolloffFactor: vi.fn() });

@@ -106,8 +106,11 @@ const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _wa = new THREE.Vector3();
 const _wb = new THREE.Vector3();
-/** Heights a walk is checked at (his legs, his body), and the slack. */
+/** Heights a walk is checked at (his legs, his body), the offsets across
+ *  it (his middle and his flanks: about his thin width), and the slack. */
 const WALK_HEIGHTS = [0.35, 0.9];
+const WALK_FLANKS = [0, -0.4, 0.4];
+const WALK_MIDDLE = [0];
 const WALK_SLACK = 0.1;
 
 export class Ragno extends Component {
@@ -338,21 +341,29 @@ export class Ragno extends Component {
    *  wall or prop? Two rays, low and at his body's height, with almost no
    *  slack: a ray that stops at a wall a step short of the player, as one
    *  standing half in the airlock's door does, is a wall in the way. */
-  _walkable(from, to) {
+  _walkable(from, to, { flanks = true } = {}) {
     const rayHit = this.hooks.rayHit;
     if (!rayHit) return true;
+    // Across the line: his flanks, either side of the middle.
+    const dx = to.x - from.x, dz = to.z - from.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-3) return true;
+    const ax = -dz / len, az = dx / len;
     for (const h of WALK_HEIGHTS) {
-      _wa.set(from.x, h, from.z);
-      _wb.set(to.x, h, to.z);
-      const d = _wa.distanceTo(_wb);
-      if (d < 1e-3) continue;
-      _w.copy(_wb).sub(_wa).divideScalar(d);
-      if (rayHit(_wa, _w, d) < d - WALK_SLACK) return false;
+      for (const side of flanks ? WALK_FLANKS : WALK_MIDDLE) {
+        _wa.set(from.x + ax * side, h, from.z + az * side);
+        _wb.set(to.x + ax * side, h, to.z + az * side);
+        _w.copy(_wb).sub(_wa).divideScalar(len);
+        if (rayHit(_wa, _w, len) < len - WALK_SLACK) return false;
+      }
     }
     return true;
   }
 
-  _canWalk = (from, to) => this._walkable(from, to);
+  /** For finding his way between standing spots, which are laid out along
+   *  open floor: only his middle need be clear. A flank grazing a rack's
+   *  corner would make a spot look unreachable from partway to it. */
+  _canWalk = (from, to) => this._walkable(from, to, { flanks: false });
 
   /** Can camera `cam` see `point` (within its flash's cone and reach, if `flash`)? */
   _cameraSees(cam, point, flash = false) {

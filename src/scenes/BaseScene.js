@@ -21,7 +21,7 @@ import { PickupSystem } from '../components/PickupSystem.js';
 import { DriveSlot } from '../components/DriveSlot.js';
 import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
-import { MainOffice, WINDOW_CORNER_RADIUS } from './rooms/MainOffice.js';
+import { MainOffice, WINDOW_CORNER_RADIUS, deskStation } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
 import { LivingQuarters } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
@@ -257,6 +257,12 @@ const RAGNO_VENTS = {
  *  can't be seen from the corridor. And the player's eye at the desk
  *  (office-local), for the window's view. */
 const RAGNO_WATCH = { LivingQuarters: [-0.6, -0.6], ServerRoom: [0.4, -1.0] };
+/** A standing spot on the way to his watch, where the room needs one
+ *  (room-local x, z): the server room's aisle mouth, so the way down the
+ *  aisle never cuts across a rack's corner. */
+const RAGNO_VIA = { ServerRoom: [0.3, 1.9] };
+/** Metres his standing spots round the office desk keep off it. */
+const RAGNO_DESK_GAP = 0.8;
 const DESK_EYE = [0, 1.24, -1.4];
 
 
@@ -2069,6 +2075,20 @@ export class BaseScene extends Scene {
     const o = office.bounds();
     const nodes = [{ id: 'oC', x: ox, z: oz + 0.8 }];
     const edges = [];
+    // Round the desk, so a player hiding behind it is reached the long way,
+    // not dithered at from the front: its front corners, its back corners
+    // and behind its middle, `RAGNO_DESK_GAP` m off it.
+    const desk = deskStation();
+    const g = RAGNO_DESK_GAP;
+    const behind = (desk.minZ + o.min.z + office.wallThick) / 2;   // between the desk and the window wall
+    nodes.push(
+      { id: 'oFL', x: ox + desk.minX - g, z: oz + desk.maxZ + g },
+      { id: 'oFR', x: ox + desk.maxX + g, z: oz + desk.maxZ + g },
+      { id: 'oBL', x: ox + desk.minX - g, z: behind },
+      { id: 'oBR', x: ox + desk.maxX + g, z: behind },
+      { id: 'oB', x: ox, z: behind },
+    );
+    edges.push(['oC', 'oFL'], ['oC', 'oFR'], ['oFL', 'oBL'], ['oFR', 'oBR'], ['oBL', 'oB'], ['oBR', 'oB']);
     const sides = {};
     const slopes = {};
     for (const [tag, sign, roomName, corridorName] of [['q', -1, 'LivingQuarters', 'OfficeToQuarters'], ['s', 1, 'ServerRoom', 'OfficeToServer']]) {
@@ -2089,8 +2109,14 @@ export class BaseScene extends Scene {
         { id: `${tag}O`, x: officeDoorX, z: doorZ, door: true },
         { id: `${tag}N`, x: officeDoorX - sign * 1.2, z: doorZ },
       );
-      edges.push([`${tag}L`, `${tag}W`], [`${tag}L`, `${tag}I`], [`${tag}W`, `${tag}I`], [`${tag}I`, `${tag}D`],
-        [`${tag}D`, `${tag}C`], [`${tag}C`, `${tag}O`], [`${tag}O`, `${tag}N`], [`${tag}N`, 'oC']);
+      edges.push([`${tag}I`, `${tag}D`], [`${tag}D`, `${tag}C`], [`${tag}C`, `${tag}O`], [`${tag}O`, `${tag}N`], [`${tag}N`, 'oC']);
+      const via = RAGNO_VIA[roomName];
+      if (via) {
+        nodes.push({ id: `${tag}A`, x: room.position[0] + via[0], z: room.position[2] + via[1] });
+        edges.push([`${tag}L`, `${tag}A`], [`${tag}A`, `${tag}W`], [`${tag}A`, `${tag}I`]);
+      } else {
+        edges.push([`${tag}L`, `${tag}W`], [`${tag}L`, `${tag}I`], [`${tag}W`, `${tag}I`]);
+      }
 
       const side = { sign, endX: vent.endX, back: b.min.z, front: b.max.z, vent: { z: vent.z, y: vent.climbTop } };
       sides[sign] = {
@@ -2116,8 +2142,18 @@ export class BaseScene extends Scene {
     }
 
     const frontDoor = office.openings.find(op => op.side === 'front');
+    // Each corridor's floor between its walls' inner faces: he is thin all
+    // along one, and kept off its walls (RagnoLogic._keepOffWalls).
+    const corridors = Object.values(this.corridors).map((c) => {
+      const b = c.bounds();
+      const t = c.wallThick ?? office.wallThick;
+      return c.axis === 'x'
+        ? { minX: b.min.x, maxX: b.max.x, minZ: b.min.z + t, maxZ: b.max.z - t, axis: 'x' }
+        : { minX: b.min.x + t, maxX: b.max.x - t, minZ: b.min.z, maxZ: b.max.z, axis: 'z' };
+    });
     return {
       sides,
+      corridors,
       graph: new NavGraph(nodes, edges),
       airlockDoor: { x: ox + frontDoor.offset, z: o.max.z },
       window: win,

@@ -18,7 +18,11 @@ const graph = new NavGraph([
   { id: 'qc', x: -8.1, z: 3.5 }, { id: 'oL', x: -5.3, z: 3.5, door: true }, { id: 'oC', x: 0, z: 1 },
   { id: 'oF', x: 2, z: 3.8 }, { id: 'oR', x: 5.3, z: 3.5, door: true }, { id: 'sc', x: 8.1, z: 3.5 },
   { id: 'sD', x: 10.9, z: 3.5, door: true }, { id: 'sS', x: 14.4, z: 3.5 }, { id: 'sL', x: 15.6, z: 3.7 },
-], [['qL', 'qS'], ['qS', 'qD'], ['qD', 'qc'], ['qc', 'oL'], ['oL', 'oC'], ['oC', 'oF'], ['oC', 'oR'],
+  // Round the office desk (x −2…2, z −2.95…−1.55): its front corners, its
+  // back corners and behind it.
+  { id: 'oFL', x: -2.8, z: -1.2 }, { id: 'oFR', x: 2.8, z: -1.2 },
+  { id: 'oBL', x: -2.8, z: -3.9 }, { id: 'oBR', x: 2.8, z: -3.9 }, { id: 'oB', x: 0, z: -4 },
+], [['oC', 'oFL'], ['oC', 'oFR'], ['oFL', 'oBL'], ['oFR', 'oBR'], ['oBL', 'oB'], ['oBR', 'oB'],['qL', 'qS'], ['qS', 'qD'], ['qD', 'qc'], ['qc', 'oL'], ['oL', 'oC'], ['oC', 'oF'], ['oC', 'oR'],
   ['oR', 'sc'], ['sc', 'sD'], ['sD', 'sS'], ['sS', 'sL']]);
 
 function sideOf(sign) {
@@ -42,10 +46,17 @@ function sideOf(sign) {
   };
 }
 
+/** The corridors' walkable floors, between their walls' inner faces. */
+const CORRIDORS = [
+  { minX: -10.1, maxX: -6.1, minZ: 2.5, maxZ: 4.5, axis: 'x' },
+  { minX: 6.1, maxX: 10.1, minZ: 2.5, maxZ: 4.5, axis: 'x' },
+];
+
 const LAYOUT = {
   sides: { [-1]: sideOf(-1), [1]: sideOf(1) },
   graph,
   airlockDoor: { x: 2, z: 5.1 },
+  corridors: CORRIDORS,
 };
 
 /** A rand that walks a fixed sequence, so runs repeat. */
@@ -146,6 +157,23 @@ describe('RagnoLogic — outside', () => {
     const door = LAYOUT.sides[-1].door;
     const to = new THREE.Vector3(door.x - logic.pos.x, 0, door.z - logic.pos.z).normalize();
     expect(logic.facing.dot(to)).toBeGreaterThan(0.95);
+  });
+
+  it('from the grille to his watch he goes by the room\'s standing spots', () => {
+    const g = new NavGraph([
+      ...graph.nodes,
+      { id: 'sA', x: 13.5, z: 2.9 },
+    ], [['qL', 'qS'], ['qS', 'qD'], ['qD', 'qc'], ['qc', 'oL'], ['oL', 'oC'], ['oC', 'oR'],
+      ['oR', 'sc'], ['sc', 'sD'], ['sD', 'sS'], ['sL', 'sA'], ['sA', 'sS']]);
+    const logic = new RagnoLogic({ layout: { ...LAYOUT, graph: g }, rand: seeded(7) });
+    logic.spawn({ side: 1, approach: 'yard', mood: 'normal' });
+    let passed = false;
+    run(logic, {
+      until: l => l.state === 'watch',
+      onFrame: (l) => { if (l.state === 'emerge' && Math.hypot(l.pos.x - 13.5, l.pos.z - 2.9) < 0.3) passed = true; },
+    });
+    expect(logic.state).toBe('watch');
+    expect(passed).toBe(true);
   });
 
   it('is hidden in the duct between the vent outside and the grille inside', () => {
@@ -346,6 +374,27 @@ describe('RagnoLogic — inside', () => {
     expect(logic.state).toBe('caught');
   });
 
+  it('in a corridor he goes thin all the way along, and keeps off its walls', () => {
+    const logic = chasing();
+    const c = CORRIDORS[0];
+    // Halfway along the quarters' corridor, the player off to one side ahead,
+    // right against its wall: straight at them would hug the wall.
+    logic.pos.set(-9.5, 0, 3.5);
+    let thinnest = 1, nearest = Infinity;
+    run(logic, {
+      seconds: 0.8,
+      s: () => sense({ clearToPlayer: true, player: { pos: new THREE.Vector3(-6.3, 1.24, 2.55), zone: 'OfficeToQuarters' } }),
+      onFrame: (l) => {
+        if (l.pos.x > c.minX && l.pos.x < c.maxX) {
+          thinnest = Math.min(thinnest, l.stance);
+          nearest = Math.min(nearest, l.pos.z - c.minZ, c.maxZ - l.pos.z);
+        }
+      },
+    });
+    expect(thinnest).toBeGreaterThan(0.99);
+    expect(nearest).toBeGreaterThanOrEqual(RAGNO.corridorMargin - 1e-6);
+  });
+
   it('never cuts through a wall: the way starts at a spot he can walk straight to', () => {
     const logic = chasing();
     // In the quarters' corridor, by its wall; the office's door spot is
@@ -366,6 +415,91 @@ describe('RagnoLogic — inside', () => {
     // He went for the corridor's own spot (−8.1, 3.5), away from the office:
     // not the office's door spot at (−5.3, 3.5) through the wall.
     expect(first.x).toBeLessThan(0);
+  });
+
+  it('a player hiding behind the desk: he goes round it and gets them, never dithering in front of it', () => {
+    const logic = chasing();
+    logic.pos.set(0, 0, 0.5);
+    const desk = { minX: -2, maxX: 2, minZ: -2.95, maxZ: -1.55 };
+    // Blocked where the straight line crosses the desk.
+    const crosses = (a, b) => {
+      for (let t = 0; t <= 1; t += 0.02) {
+        const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+        if (x > desk.minX && x < desk.maxX && z > desk.minZ && z < desk.maxZ) return true;
+      }
+      return false;
+    };
+    const hiding = new THREE.Vector3(0.3, 1.0, -3.6);
+    const seen = run(logic, {
+      seconds: 20,
+      s: l => sense({
+        canWalk: (a, b) => !crosses(a, b),
+        clearToPlayer: !crosses(l.pos, hiding),
+        player: { pos: hiding, zone: 'MainOffice' },
+      }),
+      until: l => l.state === 'caught',
+    });
+    expect(seen).toContain('catch');
+  });
+
+  it('heads for the spot nearest the player that has a clear line to them, and never walks through what blocks the others', () => {
+    const logic = chasing();
+    logic.pos.set(0, 0, 0.5);
+    // A cabinet between the spot behind the desk (0, −4) and the player
+    // (crouched at −1.3, −3.4), and the desk itself.
+    const blocks = [
+      { minX: -2, maxX: 2, minZ: -2.95, maxZ: -1.55 },
+      { minX: -0.95, maxX: -0.55, minZ: -4.6, maxZ: -3.0 },
+    ];
+    const crosses = (a, b) => {
+      for (let t = 0; t <= 1; t += 0.02) {
+        const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+        if (blocks.some(k => x > k.minX && x < k.maxX && z > k.minZ && z < k.maxZ)) return true;
+      }
+      return false;
+    };
+    const hiding = new THREE.Vector3(-1.3, 0.6, -3.4);
+    let through = false;
+    const before = logic.pos.clone();
+    const seen = run(logic, {
+      seconds: 20,
+      s: l => sense({
+        canWalk: (a, b) => !crosses(a, b),
+        clearToPlayer: !crosses(l.pos, hiding),
+        player: { pos: hiding, zone: 'MainOffice' },
+      }),
+      until: l => l.state === 'caught',
+      onFrame: (l) => {
+        if (blocks.some(k => l.pos.x > k.minX && l.pos.x < k.maxX && l.pos.z > k.minZ && l.pos.z < k.maxZ)) through = true;
+        before.copy(l.pos);
+      },
+    });
+    expect(through).toBe(false);
+    expect(seen).toContain('catch');
+  });
+
+  it('never stalls between two spots: once heading for one he gets there, then goes on', () => {
+    // A straight run of spots, and the player at the far end. From anywhere
+    // short of B the way on to B grazes something (a rack's corner), but
+    // from A it is clear: the old re-plan sent him back to A each time.
+    const g = new NavGraph([
+      { id: 'A', x: 0, z: 0 }, { id: 'B', x: 4, z: 0 }, { id: 'C', x: 8, z: 0 },
+    ], [['A', 'B'], ['B', 'C']]);
+    const logic = new RagnoLogic({ layout: { graph: g, sides: {}, airlockDoor: { x: 100, z: 100 } }, rand: seeded(3) });
+    logic.mood = 'normal';
+    logic.state = 'chase';
+    logic.visible = true;
+    logic.indoors = true;
+    logic.pos.set(0.1, 0, 0);
+    const graze = (a, b) => !(b.x === 4 && a.x > 0.5 && a.x < 3.9);
+    let furthest = 0;
+    run(logic, {
+      seconds: 6,
+      s: () => sense({ canWalk: graze, clearToPlayer: false, player: { pos: new THREE.Vector3(8, 1.2, 0), zone: 'MainOffice' } }),
+      until: l => l.state === 'caught',
+      onFrame: (l) => { furthest = Math.max(furthest, l.pos.x); },
+    });
+    expect(furthest).toBeGreaterThan(6.5);
   });
 
   it('catches a player within reach', () => {

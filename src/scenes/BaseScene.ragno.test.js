@@ -287,6 +287,61 @@ describe('BaseScene — Ragno', () => {
     });
   });
 
+  it('there is a way round the office desk, behind it, that never crosses it', () => {
+    const { graph } = layout;
+    const way = graph.route('oC', 'oB');
+    expect(way.map(n => n.id)).toContain('oB');
+    // The desk and its wings on the floor, from the room's own boxes.
+    const desk = new THREE.Box3();
+    for (const name of ['ComputerDesk', 'DeskWingSolid_Left', 'DeskWingSolid_Right']) {
+      const o = scene.rooms.MainOffice.root.object3d.getObjectByName(name);
+      if (o) desk.union(new THREE.Box3().setFromObject(o));
+    }
+    const station = desk.isEmpty() ? null : desk;
+    for (let i = 1; i < way.length; i++) {
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = way[i - 1].x + (way[i].x - way[i - 1].x) * t;
+        const z = way[i - 1].z + (way[i].z - way[i - 1].z) * t;
+        if (station) expect(x > station.min.x && x < station.max.x && z > station.min.z && z < station.max.z).toBe(false);
+        expect(scene._zoneOf(new THREE.Vector3(x, 1, z))).toBe('MainOffice');
+      }
+    }
+    // Behind the desk is between it and the window wall.
+    const b = graph.get('oB');
+    expect(b.z).toBeLessThan(-2.95);
+    expect(b.z).toBeGreaterThan(scene.rooms.MainOffice.bounds().min.z);
+  });
+
+  it('in the server room his way to the watch goes by the aisle\'s mouth, not across a rack', () => {
+    const way = layout.graph.route('sL', 'sW').map(n => n.id);
+    expect(way).toEqual(['sL', 'sA', 'sW']);
+    // The aisle's mouth is in the room, forward of the racks (room-local z > 1.5).
+    const a = layout.graph.get('sA');
+    expect(scene._zoneOf(new THREE.Vector3(a.x, 1, a.z))).toBe('ServerRoom');
+    expect(a.z - scene.rooms.ServerRoom.position[2]).toBeGreaterThan(1.5);
+  });
+
+  it('the corridors he goes thin in are their floors, between the walls', () => {
+    expect(layout.corridors).toHaveLength(2);
+    for (const c of layout.corridors) {
+      const mid = new THREE.Vector3((c.minX + c.maxX) / 2, 1, (c.minZ + c.maxZ) / 2);
+      expect(scene._zoneOf(mid)).toMatch(/^OfficeTo/);
+      // Narrower than the shell by a wall each side.
+      expect(c.maxZ - c.minZ).toBeLessThan(2.4);
+      expect(c.maxZ - c.minZ).toBeGreaterThan(1.5);
+    }
+  });
+
+  it('each vent hood outside has a grate across its mouth', () => {
+    for (const name of ['VentHood_LivingQuarters', 'VentHood_ServerRoom']) {
+      const hood = scene.bunker.object3d.getObjectByName(name);
+      expect(hood, name).toBeDefined();
+      const grate = hood.getObjectByName('VentGrate');
+      expect(grate).toBeDefined();
+      expect(grate.children.length).toBeGreaterThan(4);
+    }
+  });
+
   it('zoneOf names rooms, corridors, the airlock and outside', () => {
     expect(scene._zoneOf(new THREE.Vector3(0, 1, 0))).toBe('MainOffice');
     expect(scene._zoneOf(new THREE.Vector3(-8, 1, 3.5))).toBe('OfficeToQuarters');

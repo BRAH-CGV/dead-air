@@ -53,6 +53,27 @@ export function createVentHood({ width = 0.8, height = 0.55, depth = 0.45, name 
   box(width - t, height - t, 0.02, 0, 0, depth * 0.25, dark);
   // A lip round the face.
   box(width + 0.08, 0.04, 0.04, 0, height / 2 + 0.02, depth, steel);
+  // A grate across the mouth: upright bars and two cross rails, just in
+  // from the face.
+  const grate = new THREE.Group();
+  grate.name = 'VentGrate';
+  go.object3d.add(grate);
+  const bar = new THREE.CylinderGeometry(0.012, 0.012, height - t, 6);
+  const rail = new THREE.BoxGeometry(width - t, 0.025, 0.02);
+  resources.push(bar, rail);
+  const bars = 7, z = depth - 0.03;
+  for (let i = 1; i < bars; i++) {
+    const mesh = new THREE.Mesh(bar, steel);
+    mesh.position.set(-width / 2 + (width * i) / bars, 0, z);
+    mesh.receiveShadow = true;
+    grate.add(mesh);
+  }
+  for (const y of [-height / 4, height / 4]) {
+    const mesh = new THREE.Mesh(rail, steel);
+    mesh.position.set(0, y, z + 0.005);
+    mesh.receiveShadow = true;
+    grate.add(mesh);
+  }
   go.resources = resources;
   return go;
 }

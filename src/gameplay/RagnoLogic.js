@@ -47,16 +47,16 @@ export const RAGNO = {
     /** Night 1: slow, few darts, long stares — meant to be half-seen. */
     calm: {
       stare: [5, 9], dartSpeed: 1.3, dartDistance: [0.8, 2.0], dartPause: [1, 2], burst: [1, 3],
-      linger: [3, 5], chaseSpeed: 0, watch: [60, 60],
+      linger: [3, 5], chaseSpeed: 0, watch: [30, 30],
     },
     normal: {
       stare: [5, 10], dartSpeed: 6, dartDistance: [0.5, 1.6], dartPause: [1.2, 3], burst: [2, 4],
-      linger: [0, 0], chaseSpeed: 4.2, watch: [45, 75],
+      linger: [0, 0], chaseSpeed: 4.2, watch: [22, 38],
     },
     /** Night 3: shorter pauses, more darts, out of the room sooner, quicker. */
     aggressive: {
       stare: [2.5, 5], dartSpeed: 7, dartDistance: [0.5, 1.6], dartPause: [0.6, 1.6], burst: [2, 5],
-      linger: [0, 0], chaseSpeed: 4.5, watch: [25, 40],
+      linger: [0, 0], chaseSpeed: 4.5, watch: [12, 20],
     },
   },
 
@@ -97,6 +97,9 @@ export const RAGNO = {
   /** Metres from a doorway node he is fully thin, and back to wide. */
   doorNear: 1.0,
   doorFar: 2.4,
+  /** In a corridor (2 m wide) he is thin all along it, and kept this many
+   *  metres off its walls: half his thin width, and a little. */
+  corridorMargin: 0.55,
 };
 
 /** How he behaves on a night. */
@@ -256,7 +259,7 @@ export class RagnoLogic {
       case 'flee': this._flee(dt); break;
       default: break;
     }
-    this.stance = this.indoors ? this._doorStance() : 0;
+    this.stance = !this.indoors ? 0 : this._corridorAt(this.pos) ? 1 : this._doorStance();
   }
 
   // ── Outside ─────────────────────────────
@@ -405,8 +408,12 @@ export class RagnoLogic {
   _duct() {
     if (this._timer > 0) return;
     const spec = this.sideSpec;
-    const stare = this.layout.graph.get(spec.stare);
-    this._setPath([...spec.descent, point(stare.x, 0, stare.z)], 1);
+    // Down the wall, then by the room's standing spots to his watch: never
+    // straight across, through whatever stands in the room.
+    const graph = this.layout.graph;
+    const way = graph.route(spec.landing, spec.stare).slice(1);
+    const toWatch = way.length ? way : [graph.get(spec.stare)];
+    this._setPath([...spec.descent, ...toWatch.map(n => point(n.x, 0, n.z))], 1);
     this._place(spec.descent[0]);
     this.visible = true;
     this.indoors = true;
@@ -573,6 +580,7 @@ export class RagnoLogic {
   // ── Moving ──────────────────────────────
 
   _enter(state) {
+    if (state !== this.state) this._way = null;
     this.state = state;
     this.mode = state === 'approach' ? this.mode : null;
   }
@@ -634,6 +642,7 @@ export class RagnoLogic {
     const step = Math.min(speed * dt, d);
     this.pos.addScaledVector(_a, step / d);
     this.pos.y = 0;
+    this._keepOffWalls();
     this.up.set(0, 1, 0);
     this.velocity.copy(_a).multiplyScalar(step / d / dt);
     this.facing.copy(_a).normalize();
@@ -645,7 +654,11 @@ export class RagnoLogic {
     const graph = this.layout.graph;
     if (this._replanIn <= 0 || !this._way?.length) {
       this._replanIn = this.t.replan;
-      this._way = graph.route(this._reachable(this.pos).id, graph.nearest(goal).id);
+      // On from the spot he is already heading for: starting again from
+      // whichever spot is nearest could turn him back and forth for ever.
+      const heading = this._way?.[0];
+      const from = heading && flat(this.pos, heading) >= 0.4 ? heading : this._reachable(this.pos);
+      this._way = graph.route(from.id, graph.nearest(goal).id);
     }
     // Past the nodes already reached (or that the next one is nearer than).
     while (this._way.length > 1) {
@@ -683,6 +696,24 @@ export class RagnoLogic {
     if (!target) return;
     _a.set(target.x - this.pos.x, 0, target.z - this.pos.z);
     if (_a.lengthSq() > 1e-8) this.facing.copy(_a.normalize());
+  }
+
+  /** The corridor (its walkable floor) he is in, if any. */
+  _corridorAt(p) {
+    for (const c of this.layout.corridors ?? []) {
+      if (p.x >= c.minX && p.x <= c.maxX && p.z >= c.minZ && p.z <= c.maxZ) return c;
+    }
+    return null;
+  }
+
+  /** In a corridor, held off its walls: straight at a player standing
+   *  against one would drag his legs through it. */
+  _keepOffWalls() {
+    const c = this._corridorAt(this.pos);
+    if (!c) return;
+    const m = this.t.corridorMargin;
+    if (c.axis === 'x') this.pos.z = Math.min(Math.max(this.pos.z, c.minZ + m), c.maxZ - m);
+    else this.pos.x = Math.min(Math.max(this.pos.x, c.minX + m), c.maxX - m);
   }
 
   _doorStance() {
