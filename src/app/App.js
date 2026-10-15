@@ -20,6 +20,9 @@
 //   • While a menu is open, a capture-phase keydown listener eats every
 //     keydown (never keyup) so the game's keys and the review panel's S / D
 //     can't fire behind it.
+//   • New game plays the intro first (src/ui/intro/), a screen over the
+//     main menu; its end card's click is the gesture that takes the lock.
+//     A page without #intro goes straight in.
 //   • The developer console (dev builds) is a menu screen too: ` opens it
 //     from play, paused under it, and ` again plays on — the keydown is the
 //     gesture the lock needs. Its commands are src/app/devConsole/. In every
@@ -38,6 +41,7 @@ import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { MenuMusic } from './MenuMusic.js';
+import { IntroPlayer } from '../ui/intro/IntroPlayer.js';
 import { TAGLINE, TEAM, SHOW_ROLES, COPY } from '../ui/menu/text.js';
 import { ASSETS } from '../assets/manifest.js';
 import { buildCreditBlocks, creditWarnings } from '../ui/menu/credits.js';
@@ -47,6 +51,8 @@ import { version as PACKAGE_VERSION } from '../../package.json';
 /** body[data-app] per flow state — index.html hides the gameplay overlays
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
+/** The keys that skip the intro, or begin from its end card. */
+const INTRO_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
 
 /** Opens and closes the developer console. Reserved: it can't be rebound. */
 const CONSOLE_KEY = 'Backquote';
@@ -75,6 +81,8 @@ export class App {
    * @param {Window} [deps.win]
    * @param {{ load: () => void, setPlaying: (on: boolean) => void, dispose: () => void }} [deps.music]
    *        The main menu's music.
+   * @param {IntroPlayer|null} [deps.intro]  The story New game plays first;
+   *        null (a page with no #intro) goes straight into the shift.
    */
   constructor(engine, {
     pointerLock = new PointerLock(engine.renderer?.domElement),
@@ -88,9 +96,12 @@ export class App {
     doc = document,
     win = window,
     music = new MenuMusic({ engine }),
+    intro = IntroPlayer.fromDocument(doc),
   } = {}) {
     this.engine = engine;
     this.music = music;
+    this.intro = intro;
+    if (intro) intro.onBegin = () => { if (!this._busy) this._beginShift(); };
     this.flow = new AppFlow();
     this.pointerLock = pointerLock;
     this.view = view;
@@ -147,6 +158,10 @@ export class App {
     }
 
     this._offs.push(flow.onChange(() => this._render()));
+    // Back from the intro, or into the shift from its end card: put it away.
+    this._offs.push(flow.onChange(() => {
+      if (flow.screen !== 'intro' && this.intro?.playing) this.intro.stop();
+    }));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
     // Music under the main menu (and the screens opened from it), faded out
@@ -183,6 +198,7 @@ export class App {
     this._offController?.();
     this._offController = null;
     this.music.dispose();
+    this.intro?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -222,7 +238,21 @@ export class App {
     this.flow.markClean();
   }
 
+  /** New game: the intro first, whose end card begins the shift
+   *  (`intro.onBegin`). The menu music plays on under it. */
   async _newGame() {
+    if (this.intro && this.flow.screen === 'main') {
+      this._wakeAudio();
+      this.flow.openIntro();
+      this.intro.play();
+      return;
+    }
+    await this._beginShift();
+  }
+
+  /** Into the first night, from New game or the intro's end card — either
+   *  way inside the click or key, which the lock needs. */
+  async _beginShift() {
     this._wakeAudio();
     const lock = this.pointerLock.request();   // inside the click, or it's refused
     await this._run(async () => {
@@ -231,6 +261,8 @@ export class App {
         this._saveNight(null);   // a new run: Continue returns from night 2
         this.flow.newGame();
         this.engine.setPaused(false);
+      } else if (this.flow.screen === 'intro') {
+        this.intro?.setHint(COPY.lockRefused);
       } else {
         this._setHint(COPY.lockRefused);
       }
@@ -465,10 +497,14 @@ export class App {
       // was opened from there, else back to Settings.
       e.preventDefault();
       if (!this._busy && !e.repeat && !this._closeConsoleIntoPlay()) this.flow.back();
+    } else if (this.flow.screen === 'intro' && INTRO_KEYS.has(e.code)) {
+      // Skip the story, or begin from the end card (a key is a gesture too).
+      e.preventDefault();
+      if (!this._busy && !e.repeat) this.intro?.advance();
     } else if (e.code === 'Escape') {
       e.preventDefault();
       if (!this._busy) this.flow.back();
-    } else if (this.view.handleKey(e)) {
+    } else if (this.flow.screen !== 'intro' && this.view.handleKey(e)) {
       e.preventDefault();
     }
     e.stopImmediatePropagation();
@@ -593,7 +629,8 @@ export class App {
     else delete body.dataset.app;
 
     if (view.screen !== flow.screen) this._hint = '';
-    if (!flow.isMenuOpen) {
+    // The intro draws itself (IntroPlayer), over the menu's place.
+    if (!flow.isMenuOpen || flow.screen === 'intro') {
       view.hide();
       return;
     }
