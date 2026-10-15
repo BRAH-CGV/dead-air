@@ -692,7 +692,7 @@ describe('duckFor: dead air', () => {
   it('a mild duck where it shows', () => {
     expect(duckFor(SHOWN_AT, SHOWN_AT, FOCUS)).toBeCloseTo(T.duckEdge);
     expect(T.duckEdge).toBeLessThan(1);
-    expect(T.duckEdge).toBeGreaterThanOrEqual(0.5);
+    expect(T.duckEdge).toBeGreaterThanOrEqual(0.85);
   });
 
   it('no deeper with the view turned further away from it', () => {
@@ -708,11 +708,11 @@ describe('duckFor: dead air', () => {
     expect(near).toBeLessThan(half);
   });
 
-  it('is deepest at the look: near-silence, not a hard mute', () => {
+  it('is deepest at the look: a small dip, never a hush', () => {
     expect(duckFor(FOCUS, SHOWN_AT, FOCUS)).toBeCloseTo(T.duckFloor);
     expect(duckFor(0, SHOWN_AT, FOCUS)).toBeCloseTo(T.duckFloor);   // stared at, below holdBelow
-    expect(T.duckFloor).toBeGreaterThan(0);
-    expect(T.duckFloor).toBeLessThan(0.15);
+    expect(T.duckFloor).toBeGreaterThanOrEqual(0.6);
+    expect(T.duckFloor).toBeLessThan(T.duckEdge);
   });
 
   it('out of view, or nowhere: no duck', () => {

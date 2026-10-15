@@ -33,10 +33,22 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // starts (a new one, a retry, the console's `night`) sends it away. It holds while the
 // debug fly camera has frozen the player.
 //
-// It is silent but for its footsteps (FOOTSTEP), and those only while it
-// moves: creeping in unseen, or walking in below walkBelow. Showing up is
-// silent — it fades in. Everything else about it is stillness: no
-// breathing, no growl.
+// Every sound it makes comes from where it stands (PositionalAudio on the
+// figure, HRTF-panned), so the ear finds it before the eye does — the
+// tired mind hearing things just over its shoulder:
+//   whispers  many voices, too quiet to make out (WHISPER): a short stretch
+//             of the clip, never all of it, the moment it shows, then now
+//             and then while it isn't looked at; louder the nearer it has
+//             come. Cut off the moment the look falls on it. Once it has
+//             solidified for the last time (faded in below holdBelow, where
+//             a look no longer sends it away) they never stop and no look
+//             cuts them: stretch after stretch from random places, two
+//             voices crossfading, so the clip's loop never shows.
+//   knocks    now and then (KNOCK), only while nobody is looking at it:
+//             turned away from, behind something, or behind the terminal.
+//   scraping  quiet (SCRAPE), only while it moves: creeping in unseen, or
+//             walking in below walkBelow.
+// No breathing, no growl.
 //
 // The figure is a hidden, body-less GameObject the scene builds and owns,
 // under a group at the world origin, so its position is a world position.
@@ -57,13 +69,13 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // the way, the floor clear, in view. A step that fails, it holds. It follows
 // a player who backs away — but only half as fast as they retreat, so they
 // gain ground: it follows, it doesn't stick. While it walks the player is
-// slowed down and the dread lifted on the breathing and the heartbeat
-// (FatigueEffects.setDread): the last stretch of the shift is heavy-legged.
+// slowed down and the dread lifted on the heartbeat (FatigueEffects.setDread):
+// the last stretch of the shift is heavy-legged, under its endless whisper.
 // Its shadow is redrawn once a centimetre, not on each of the frames between.
 //
 // Out of sight — turned away from, or something in between — it sneaks (the
 // rules' sneak): it takes up the player's own retreat and more (sneakSpeed),
-// at any stamina, and the footsteps quicken with it. Only a look that
+// at any stamina, and the scraping quickens with it. Only a look that
 // banishes it, the hold coming back, or a night start gives the ground back.
 //
 // The torch betrays it: while it shows, the flashlight stutters whenever its
@@ -75,8 +87,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // is watching, are lit by a torch that gives it away anyway.
 //
 // Dead air: while it stands in view, the ambience is ducked by how near the
-// view has come round to it (duckFor), down to near-silence at the look. Its
-// footsteps are not part of the ambience, so it walks over the silence.
+// view has come round to it (duckFor), a small dip at the look. Its
+// voices are not part of the ambience, so they carry over the silence.
 // Hidden, out of view, outside the shift or on a new night, it lets go.
 //
 // While the player is in bed (the sleeper, BedRest: getting in, asleep,
@@ -104,19 +116,48 @@ export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
 /** The name it ducks the ambience under (Ambience.setDuck). */
 export const SLEEP_DEMON_DUCK = 'sleep-demon';
 
-/** Manifest key behind each sound. The footsteps are a placeholder for the
- *  sound owner to replace (see the manifest): the key stays, the file swaps. */
-export const SLEEP_DEMON_SOUNDS = { footstep: 'sfx:footsteps' };
+/** Manifest key behind each sound. All three are placeholders for the
+ *  sound owner to replace (see the manifest): the key stays, the file swaps.
+ *  Give them mono files: a positional source is panned as one point. */
+export const SLEEP_DEMON_SOUNDS = Object.freeze({
+  whisper: 'sfx:whispering',
+  whisperBed: 'sfx:whispering',             // the endless whisper's second voice
+  knock: 'sfx:demon-knock',
+  scrape: 'sfx:demon-scrape',
+});
 
 /** The placeholder figure, metres: person-sized, so right beside the player
  *  its eyes are still in view. */
 export const SLEEP_DEMON_FIGURE = Object.freeze({ height: 1.8, radius: 0.26 });
 
-/** The footsteps: its volume right beside the player, the share of that
- *  when it first shows, the distance it is that loud at, and the seconds
- *  between steps while it walks in, seen … creeps in, unseen: slow, careful
- *  steps. Standing still it makes no sound. */
-const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
+/** The whispers: their volume right beside the player, the share of that
+ *  when it first shows, and the distance they are that loud at (inverse
+ *  falloff beyond, softened by rolloff). Subtle: a snippet of the clip at
+ *  a time, from anywhere in it — seconds long, `snippetFar` when it first
+ *  shows and longer as the player tires, to `snippetNear` at empty —
+ *  faded in and out over
+ *  `fade`: one as it shows, then `gap` seconds of silence before each. The look cuts one
+ *  off over `cut` seconds — quick, but not a click. */
+export const WHISPER = Object.freeze({
+  volume: 0.04, far: 0.6, refDistance: 2, rolloff: 0.7,
+  snippetFar: [1.2, 3], snippetNear: [3, 6], gap: [4, 10], fade: 0.35, cut: 0.04,
+  /** The last stretch's endless whisper: each stretch `segment` seconds of the
+   *  clip from anywhere in it, pitched ± `detune` cents, the next one in on
+   *  the other voice `fade` seconds before it ends — a crossfade, so there
+   *  is never a seam, and never the same run of the clip twice. */
+  bed: Object.freeze({ segment: [3, 5], detune: 60, fade: 1.2 }),
+});
+
+/** The knocks: the volume beside the player, the share when it first shows,
+ *  the distance that loud at, the seconds between knocks while it stands
+ *  unseen, and how far each is pitched off the recording, ± cents. */
+export const KNOCK = Object.freeze({ volume: 0.5, far: 0.45, refDistance: 1.5, every: [6, 14], detune: 150 });
+
+/** The scraping as it moves: its volume right beside the player, the share
+ *  of that when it first shows, the distance it is that loud at, and the
+ *  seconds between scrapes while it walks in, seen … creeps in, unseen.
+ *  Standing still it makes no sound. */
+const SCRAPE = { volume: 0.35, far: 0.35, refDistance: 1.2, walk: [1.1, 1.8], sneak: [0.9, 1.6] };
 
 /** Watching a sleeper (the half-open eyes of a nap): the share of naps it
  *  watches (rolled once per nap, as the player lies down), how there it is,
@@ -125,8 +166,8 @@ const FOOTSTEP = { volume: 0.6, far: 0.35, refDistance: 1.5, walk: [1.1, 1.8], s
 export const NAP_WATCH = Object.freeze({ chance: 0.1, presence: 0.85, creep: 0.3, floor: 1.6 });
 
 /** The walk-down's grip: the share of the player's speed it leaves them
- *  while it walks in on them. The breathing and the heartbeat floor come
- *  with it (FatigueEffects.setDread). */
+ *  while it walks in on them. The heartbeat floor comes with it
+ *  (FatigueEffects.setDread). */
 export const SLEEP_DEMON_DREAD = Object.freeze({ slow: 0.6 });
 
 /** What blocks sight: walls, props, the floor, shelves and what is on them.
@@ -166,6 +207,8 @@ const _frustum = new THREE.Frustum();
 const _sphere = new THREE.Sphere();
 
 const lerp = (a, b, t) => a + (b - a) * t;
+/** A point `t` (0 … 1) of the way across a [lo, hi] range. */
+const between = ([lo, hi], t) => lo + (hi - lo) * t;
 
 /** Half the width of the camera's view, radians. */
 function halfWidth(camera) {
@@ -270,6 +313,19 @@ export class SleepDemon extends Component {
       onDone: () => this._died(),
     });
     this._stepIn = 0;
+    /** Seconds of silence left before the next whisper, of the whisper
+     *  playing now, and whether it showed last frame (a new showing
+     *  whispers at once). */
+    this._whisperIn = 0;
+    this._whisperFor = 0;
+    this._whisperShown = false;
+    /** The last stretch's endless whisper: running, seconds to its next
+     *  stretch, and which voice took the last one. */
+    this._bedOn = false;
+    this._bedNext = 0;
+    this._bedVoice = 0;
+    /** Seconds to the next knock while it stands unseen; 0 while it doesn't. */
+    this._knockIn = 0;
     /** The last cadence's mode (0 standing, 1 sneaking, 2 walking in), so a
      *  change of pace re-times the next step. */
     this._stepMode = 0;
@@ -331,7 +387,7 @@ export class SleepDemon extends Component {
     this.logic.start();
     this._hide();
     this._smile(false);
-    this._hushStep();
+    this._hush();
     this._release();
     this._hasEye = false;
     this._duck(1);
@@ -345,7 +401,7 @@ export class SleepDemon extends Component {
       // Its rules start over too: hidden, it must not go on thinking it stands.
       if (this.logic.around) this.logic.start();
       this._hide();
-      this._hushStep();
+      this._hush();
       this.flashlight?.setInterference(false, 'sleep-demon');
       this._release();
       this._hasEye = false;
@@ -381,9 +437,11 @@ export class SleepDemon extends Component {
     this._smile(logic.smiling);
     if (this.figure.object3d.visible) this._facePlayer();
     this.flashlight?.setInterference(this._inBeam(), 'sleep-demon');
-    this._footsteps(dt);
-    // Walking in on them: heavy-legged, with the dread on the breath and
-    // the heart. Anything else, let go.
+    this._scrapes(dt);
+    this._whispers(dt);
+    this._knocks(dt);
+    // Walking in on them: heavy-legged, with the dread on the heart.
+    // Anything else, let go.
     if (this.player) this.player.speedScale = logic.walking ? SLEEP_DEMON_DREAD.slow : 1;
     this.fatigue?.setDread(logic.walking ? 1 : 0);
     this._deadAir();
@@ -678,27 +736,27 @@ export class SleepDemon extends Component {
     return d;
   }
 
-  /** One footstep, now: the nearer it stands, the louder, and what the next
+  /** One scrape, now: the nearer it stands, the louder, and what the next
    *  one is timed from. Not part of the ambience, so dead air doesn't take
    *  it with it. */
   _playStep() {
     this._stepIn = this._stepEvery();
-    const sound = this.sounds?.footstep;
+    const sound = this.sounds?.scrape;
     if (!sound) return;
-    sound.setVolume(FOOTSTEP.volume * lerp(FOOTSTEP.far, 1, this.logic.closeness));
+    sound.setVolume(SCRAPE.volume * lerp(SCRAPE.far, 1, this.logic.closeness));
     if (sound.isPlaying) sound.stop();
     sound.play();
   }
 
   /** How long to the next step: walking in, seen, or creeping, unseen. */
   _stepEvery() {
-    const [lo, hi] = this.logic.walking ? FOOTSTEP.walk : FOOTSTEP.sneak;
+    const [lo, hi] = this.logic.walking ? SCRAPE.walk : SCRAPE.sneak;
     return lo + (hi - lo) * this.rand();
   }
 
-  /** Steps only while it moves: the first as it sets off, then at the
+  /** Scrapes only while it moves: the first as it sets off, then at the
    *  cadence. Standing still, fading in or gone: nothing. */
-  _footsteps(dt) {
+  _scrapes(dt) {
     const logic = this.logic;
     const mode = !logic.shown ? 0 : logic.walking ? 2 : logic.sneaking ? 1 : 0;
     if (!mode) {
@@ -714,13 +772,177 @@ export class SleepDemon extends Component {
     this._playStep();
   }
 
-  /** Cut a step still sounding: a night start, the shift ending, the death. */
-  _hushStep() {
-    const sound = this.sounds?.footstep;
-    if (sound?.isPlaying) sound.stop();
+  /** A whisper the moment it shows, then now and then while the look
+   *  isn't on it: a snippet, a gap, another. The look on it, or it gone,
+   *  cuts the whisper off at once, and the next waits a full gap after the
+   *  look leaves — or until it shows somewhere new. */
+  _whispers(dt) {
+    const sound = this.sounds?.whisper;
+    if (!sound) return;
+    const logic = this.logic;
+    const showing = logic.shown && this.figure.object3d.visible;
+    if (showing && !this._whisperShown) this._whisperIn = 0;
+    this._whisperShown = showing;
+    // Below holdBelow a look no longer sends it away, so the showing that
+    // has faded all the way in is its last: from then on, endless.
+    const final = showing && this.stamina.value < this.tuning.holdBelow;
+    if (final && (this._bedOn || this._fadeDir === 0)) {
+      this._whisperBed(dt);
+      return;
+    }
+    if (this._bedOn) this._endBed();
+    const angle = showing ? this.lookAngle() : Infinity;
+    if (!showing || (angle !== null && angle <= logic.focus)) {
+      this._cutWhisper();
+      return;
+    }
+    if (this._whisperFor > 0) {
+      if ((this._whisperFor -= dt) > 0) return;
+      this._whisperFor = 0;
+      if (sound.isPlaying) sound.stop();    // its envelope has already run out
+      return;
+    }
+    if ((this._whisperIn -= dt) > 0) return;
+    const length = sound.buffer?.duration ?? 0;
+    if (!length) return;
+    const c = logic.closeness;
+    const [farLo, farHi] = WHISPER.snippetFar, [nearLo, nearHi] = WHISPER.snippetNear;
+    const len = Math.min(between([lerp(farLo, nearLo, c), lerp(farHi, nearHi, c)], this.rand()), length);
+    sound.offset = this.rand() * (length - len);
+    sound.duration = len;
+    if (sound.isPlaying) sound.stop();
+    sound.setDetune?.(0);
+    this._whisperEnvelope(sound, this._whisperLevel(), len, WHISPER.fade);
+    sound.play();
+    this._whisperFor = len;
+    this._whisperIn = between(WHISPER.gap, this.rand());
   }
 
-  /** Let the player go: full speed, no dread on the breath and the heart.
+  /** How loud a whisper is: louder the nearer it has come. */
+  _whisperLevel() {
+    return WHISPER.volume * lerp(WHISPER.far, 1, this.logic.closeness);
+  }
+
+  /** A frame of the last stretch's endless whisper: when the last stretch is
+   *  `fade` from its end, the next comes in on the other voice. */
+  _whisperBed(dt) {
+    if (!this._bedOn) {
+      this._bedOn = true;
+      this._bedNext = 0;
+      this._whisperFor = 0;
+      // Whichever voice a snippet left sounding fades out under the first.
+      this._bedVoice = this.sounds.whisper?.isPlaying ? 0 : 1;
+    }
+    if ((this._bedNext -= dt) > 0) return;
+    const voices = [this.sounds.whisper, this.sounds.whisperBed ?? this.sounds.whisper];
+    this._bedVoice = 1 - this._bedVoice;
+    const sound = voices[this._bedVoice];
+    const length = sound.buffer?.duration ?? 0;
+    if (!length) return;
+    const { segment, detune, fade } = WHISPER.bed;
+    const len = Math.min(between(segment, this.rand()), length);
+    const cents = (this.rand() * 2 - 1) * detune;
+    const real = len / 2 ** (cents / 1200);  // detuned, it plays faster or slower
+    sound.offset = this.rand() * (length - len);
+    sound.duration = len;
+    if (sound.isPlaying) sound.stop();
+    sound.setDetune?.(cents);
+    this._whisperEnvelope(sound, this._whisperLevel(), real, fade);
+    sound.play();
+    this._bedNext = real - fade;
+  }
+
+  /** Fed back above holdBelow: both voices fade out, and a gap before the
+   *  next snippet. */
+  _endBed() {
+    this._bedOn = false;
+    this._whisperFor = 0;
+    this._whisperIn = between(WHISPER.gap, this.rand());
+    for (const sound of this._whisperVoices()) this._fadeOut(sound, WHISPER.fade);
+  }
+
+  _whisperVoices() {
+    return [this.sounds?.whisper, this.sounds?.whisperBed].filter(Boolean);
+  }
+
+  /** Up to `level` over `fade`, down to nothing as the `len` seconds end:
+   *  gain ramps on the audio clock, since a fade is a few frames. setVolume
+   *  first, for a sound without a gain node to schedule on. */
+  _whisperEnvelope(sound, level, len, fadeFor) {
+    sound.setVolume(level);
+    const gain = sound.gain?.gain;
+    const now = sound.context?.currentTime;
+    if (!gain || now === undefined) return;
+    const fade = Math.min(fadeFor, len / 2);
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(0, now);
+    gain.linearRampToValueAtTime(level, now + fade);
+    gain.setValueAtTime(level, now + len - fade);
+    gain.linearRampToValueAtTime(0, now + len);
+  }
+
+  /** The whispers off now (over WHISPER.cut), and a full gap before the next. */
+  _cutWhisper() {
+    this._whisperFor = 0;
+    this._whisperIn = WHISPER.gap[1];
+    this._bedOn = false;
+    for (const sound of this._whisperVoices()) this._fadeOut(sound, WHISPER.cut);
+  }
+
+  /** A sound playing faded to nothing over `seconds` on the audio clock,
+   *  and stopped there. Without a gain node to ramp, stopped at once. */
+  _fadeOut(sound, seconds) {
+    if (!sound?.isPlaying) return;
+    const gain = sound.gain?.gain;
+    const now = sound.context?.currentTime;
+    if (!gain || now === undefined) return sound.stop();
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + seconds);
+    sound.stop(seconds);
+  }
+
+  /** A knock now and then, while it shows and nobody is looking at it: the
+   *  first a full wait after it goes unseen, each pitched its own way. */
+  _knocks(dt) {
+    const unseen = this.logic.shown && !Number.isFinite(this.lookAngle());
+    if (!unseen) {
+      this._knockIn = 0;
+      return;
+    }
+    if (this._knockIn <= 0) {
+      this._knockIn = this._knockEvery();
+      return;
+    }
+    if ((this._knockIn -= dt) > 0) return;
+    this._knockIn = this._knockEvery();
+    const sound = this.sounds?.knock;
+    if (!sound) return;
+    sound.setVolume(KNOCK.volume * lerp(KNOCK.far, 1, this.logic.closeness));
+    sound.setDetune?.((this.rand() * 2 - 1) * KNOCK.detune);
+    if (sound.isPlaying) sound.stop();
+    sound.play();
+  }
+
+  /** How long to the next knock. */
+  _knockEvery() {
+    return between(KNOCK.every, this.rand());
+  }
+
+  /** Cut every voice still sounding: a night start, the shift ending, the
+   *  death, out of bed. */
+  _hush() {
+    this._knockIn = 0;
+    this._whisperIn = 0;
+    this._whisperFor = 0;
+    this._whisperShown = false;
+    this._bedOn = false;
+    for (const sound of Object.values(this.sounds ?? {})) {
+      if (sound?.isPlaying) sound.stop();
+    }
+  }
+
+  /** Let the player go: full speed, no dread on the heart.
    *  Called whenever the walk-down isn't running, and it never hurts. */
   _release() {
     if (this.player) this.player.speedScale = 1;
@@ -742,23 +964,29 @@ export class SleepDemon extends Component {
     this.ambience?.setDuck(level, SLEEP_DEMON_DUCK);
   }
 
-  /** The footsteps as a PositionalAudio on the figure, from the preloaded
-   *  buffer — one-shots, not a loop. Without a listener or the buffer:
-   *  silence. Its cone is left all round (the Web Audio default): standing
-   *  behind the player, after the terminal, it must still be heard. */
+  /** Its voices as PositionalAudio on the figure, from the preloaded
+   *  buffers, all one-shots (a whisper is a stretch of its clip). three
+   *  pans them HRTF, so they are placed front and back, not just left and
+   *  right. Each cone is left all round (the Web Audio default): standing
+   *  behind the player, after the terminal, it must still be heard. Without
+   *  a listener or a buffer, that one is silent. */
   _buildSounds() {
     const engine = this.gameObject?.scene?.userData?.engine;
     const sounds = {};
     if (!engine?.audioListener || !engine.assets) return sounds;
-    const key = SLEEP_DEMON_SOUNDS.footstep;
-    if (engine.assets.has && !engine.assets.has(key)) return sounds;
-    const buffer = engine.assets.get(key);
-    if (!buffer) return sounds;
-    const audio = new THREE.PositionalAudio(engine.audioListener);
-    audio.setBuffer(buffer);
-    audio.setRefDistance(FOOTSTEP.refDistance);
-    this.figure.object3d.add(audio);
-    sounds.footstep = audio;
+    const voices = { whisper: WHISPER, whisperBed: WHISPER, knock: KNOCK, scrape: SCRAPE };
+    for (const [name, { refDistance, rolloff }] of Object.entries(voices)) {
+      const key = SLEEP_DEMON_SOUNDS[name];
+      if (engine.assets.has && !engine.assets.has(key)) continue;
+      const buffer = engine.assets.get(key);
+      if (!buffer) continue;
+      const audio = new THREE.PositionalAudio(engine.audioListener);
+      audio.setBuffer(buffer);
+      audio.setRefDistance(refDistance);
+      if (rolloff) audio.setRolloffFactor(rolloff);
+      this.figure.object3d.add(audio);
+      sounds[name] = audio;
+    }
     return sounds;
   }
 
@@ -774,7 +1002,7 @@ export class SleepDemon extends Component {
       this.logic.start();
       this._hide();
       this._smile(false);
-      this._hushStep();
+      this._hush();
       this._release();
       this.flashlight?.setInterference(false, 'sleep-demon');
       this._hasEye = false;
@@ -783,7 +1011,7 @@ export class SleepDemon extends Component {
     const o = this.figure.object3d;
     if (!this._napWatched || !this.sleeper.peeking) {
       if (o.visible) this._hide();
-      this._hushStep();
+      this._hush();
       this._stepIn = 0;
       return;
     }
@@ -839,7 +1067,7 @@ export class SleepDemon extends Component {
   _outOfBed() {
     this._napping = false;
     this._hide();
-    this._hushStep();
+    this._hush();
     this._stepIn = 0;
     this.logic.start();
   }
@@ -930,7 +1158,7 @@ export class SleepDemon extends Component {
   /** Every beat has run, behind the black: the failed night, as before. */
   _died() {
     this._hide();
-    this._hushStep();
+    this._hush();
     this.controller.fail(SLEEP_DEMON_KILL);
   }
 

@@ -635,6 +635,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | The tired player's yawns (`FatigueEffects`) |
 | **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
 
+### Creepy whispering
+
+Many whispering voices, mixed by us from Freesound recordings by JoelMcDaniel: "Creepy, Whispering Latin Paragraph 1" (https://freesound.org/people/JoelMcDaniel/sounds/851765/), "Creepy, Whispering Latin Paragraph 3" (https://freesound.org/people/JoelMcDaniel/sounds/851767/) and "Creepy, Whispering Latin Paragraph 4" (https://freesound.org/people/JoelMcDaniel/sounds/851768/), used under Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/) — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/whispering.mp3` |
+| **Manifest key** | `sfx:whispering` |
+| **Used for** | The Sleep Demon's whispers, a snippet at a time (`SleepDemon`) |
+| **Modifications** | Overlaid into one 10 s clip, downmixed to mono, raised about 27 dB |
+
 ### Pressure release
 
 One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Air Compressor Releasing Pressure" by j_soundeffects (https://freesound.org/people/j_soundeffects/sounds/847748/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "Air (or steam) pressure release" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/457294/), Creative Commons 0 — free to use, attribution not required, credited here anyway.
