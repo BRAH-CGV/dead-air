@@ -300,42 +300,100 @@ function bunker(ctx, w, h, horizon, { lit = true } = {}) {
   ctx.fill();
 }
 
+/**
+ * The colony rover parked outside the base (`model:colony-rover`), side on
+ * and facing right: orange over white, a grey chassis, kit on the roof, a
+ * raked windscreen at the nose and six orange-hubbed wheels (three show).
+ * Traced from the model's side view, in its pixels: 760 across nose to tail,
+ * ground at y 380. `wheels` are axle centres along it.
+ */
+export const ROVER = Object.freeze({
+  orange: '#d9761c',
+  white: '#d8d6d0',
+  chassis: '#55565c',
+  roof: '#3c3d42',
+  glass: '#8a9098',
+  tyre: '#1f1f22',
+  wheels: Object.freeze([165, 355, 690]),
+  wheelRadius: 75,
+});
+
+const ROVER_ORANGE = [[35, 105], [60, 80], [130, 68], [520, 64], [565, 76], [778, 100], [762, 116], [728, 130], [35, 124]];
+const ROVER_WHITE = [[110, 118], [762, 116], [705, 212], [110, 212]];
+const ROVER_TAIL = [[35, 130], [115, 130], [115, 198], [35, 198]];
+const ROVER_CHASSIS = [[100, 205], [705, 205], [705, 250], [100, 250]];
+const ROVER_ROOF = [[130, 68], [150, 34], [505, 38], [512, 64]];
+const ROVER_SCREEN = [[585, 84], [752, 103], [714, 146], [645, 128]];
+const ROVER_DOOR = [[482, 136], [570, 136], [570, 282], [482, 282]];
+
+function roverShape(ctx, points, x, y, k, bob) {
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const px = x + (points[i][0] - 400) * k, py = y - (380 - points[i][1]) * k + bob;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
 function buggy(ctx, x, y, size, time) {
-  const bob = Math.sin(time * 9) * size * 0.03;
-  // Headlight.
-  const beam = ctx.createLinearGradient(x + size * 0.5, 0, x + size * 2.4, 0);
+  const k = (size * 1.7) / 760;              // model pixels → screen
+  const bob = Math.sin(time * 9) * size * 0.02;
+  const X = (px) => x + (px - 400) * k;
+  const Y = (py) => y - (380 - py) * k + bob;
+  // Headlights: the beam from the nose, then the three lamps.
+  const beam = ctx.createLinearGradient(X(760), 0, X(760) + size * 2.2, 0);
   beam.addColorStop(0, 'rgba(255, 240, 200, 0.35)');
   beam.addColorStop(1, 'rgba(255, 240, 200, 0)');
   ctx.fillStyle = beam;
   ctx.beginPath();
-  ctx.moveTo(x + size * 0.5, y - size * 0.35 + bob);
-  ctx.lineTo(x + size * 2.4, y - size * 0.6);
-  ctx.lineTo(x + size * 2.4, y + size * 0.05);
+  ctx.moveTo(X(745), Y(158));
+  ctx.lineTo(X(760) + size * 2.2, Y(158) - size * 0.3);
+  ctx.lineTo(X(760) + size * 2.2, y + size * 0.05);
   ctx.closePath();
   ctx.fill();
-  // Body and roll cage.
-  ctx.fillStyle = '#b8b0a0';
-  ctx.fillRect(x - size * 0.55, y - size * 0.42 + bob, size * 1.1, size * 0.22);
-  ctx.strokeStyle = '#d8d8d8';
-  ctx.lineWidth = Math.max(1, size * 0.04);
-  ctx.beginPath();
-  ctx.moveTo(x - size * 0.35, y - size * 0.42 + bob);
-  ctx.lineTo(x - size * 0.2, y - size * 0.8 + bob);
-  ctx.lineTo(x + size * 0.2, y - size * 0.8 + bob);
-  ctx.lineTo(x + size * 0.3, y - size * 0.42 + bob);
-  ctx.stroke();
-  // Wheels, turning.
-  for (const wx of [-0.38, 0.38]) {
-    ctx.fillStyle = '#1c1c1c';
+  // Body: chassis, white flanks, orange shell, roof kit, windscreen.
+  ctx.fillStyle = ROVER.chassis;
+  roverShape(ctx, ROVER_CHASSIS, x, y, k, bob); ctx.fill();
+  ctx.fillStyle = ROVER.white;
+  roverShape(ctx, ROVER_WHITE, x, y, k, bob); ctx.fill();
+  roverShape(ctx, ROVER_TAIL, x, y, k, bob); ctx.fill();
+  roverShape(ctx, ROVER_DOOR, x, y, k, bob); ctx.fill();
+  ctx.fillStyle = ROVER.orange;
+  roverShape(ctx, ROVER_ORANGE, x, y, k, bob); ctx.fill();
+  ctx.fillStyle = ROVER.roof;
+  roverShape(ctx, ROVER_ROOF, x, y, k, bob); ctx.fill();
+  ctx.fillStyle = ROVER.glass;
+  roverShape(ctx, ROVER_SCREEN, x, y, k, bob); ctx.fill();
+  ctx.strokeStyle = ROVER.chassis;
+  ctx.lineWidth = Math.max(1, size * 0.015);
+  roverShape(ctx, ROVER_DOOR, x, y, k, bob); ctx.stroke();
+  // The red marker lamp on the flank, and the headlamps.
+  ctx.fillStyle = '#c41a12';
+  ctx.fillRect(X(290), Y(76), 55 * k, 38 * k);
+  ctx.fillStyle = COLOURS.amber;
+  for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    ctx.arc(x + wx * size, y - size * 0.15, size * 0.17, 0, TAU);
+    ctx.arc(X(738 - i * 14), Y(158 - i * 5), Math.max(1, 6 * k), 0, TAU);
     ctx.fill();
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 1;
-    const a = time * 12;
+  }
+  // Wheels, turning: dark tyre, orange hub, the hub's bar going round.
+  const r = ROVER.wheelRadius * k;
+  const a = time * 12;
+  for (const wx of ROVER.wheels) {
+    const cx = X(wx), cy = y - r;
+    ctx.fillStyle = ROVER.tyre;
     ctx.beginPath();
-    ctx.moveTo(x + wx * size, y - size * 0.15);
-    ctx.lineTo(x + wx * size + Math.cos(a) * size * 0.15, y - size * 0.15 + Math.sin(a) * size * 0.15);
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = ROVER.orange;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = ROVER.chassis;
+    ctx.lineWidth = Math.max(1, r * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(cx - Math.cos(a) * r * 0.4, cy - Math.sin(a) * r * 0.4);
+    ctx.lineTo(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.4);
     ctx.stroke();
   }
   // Dust behind.
@@ -343,7 +401,7 @@ function buggy(ctx, x, y, size, time) {
     const age = (time * 1.5 + i / 5) % 1;
     ctx.fillStyle = `rgba(150, 90, 60, ${0.35 * (1 - age)})`;
     ctx.beginPath();
-    ctx.arc(x - size * (0.6 + age * 1.2), y - size * (0.1 + age * 0.3), size * (0.08 + age * 0.25), 0, TAU);
+    ctx.arc(X(60) - size * age * 1.2, y - size * (0.1 + age * 0.3), size * (0.08 + age * 0.25), 0, TAU);
     ctx.fill();
   }
 }

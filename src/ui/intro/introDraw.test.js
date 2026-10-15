@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { drawIntro, makeStars, signalState, voyagePath, landingZoom, buggyX, beatDip, BEAT_DIP } from './introDraw.js';
+import { drawIntro, makeStars, signalState, voyagePath, landingZoom, buggyX, beatDip, BEAT_DIP, ROVER } from './introDraw.js';
 import { INTRO_BEATS, beatAt } from './IntroTimeline.js';
 
 // ─────────────────────────────────────────────
@@ -107,6 +107,18 @@ describe('buggyX', () => {
     expect(buggyX(0, 1000)).toBeLessThan(buggyX(1, 1000));
     expect(buggyX(0, 1000)).toBeLessThan(0);
     expect(buggyX(1, 1000)).toBeLessThan(1000);
+  });
+});
+
+describe('the buggy', () => {
+  it('is the rover parked outside the base: orange and white, six wheels', () => {
+    // Side on, six wheels show as three, spaced like the model's axles.
+    expect(ROVER.wheels).toHaveLength(3);
+    const ctx = recordingContext();
+    const drive = INTRO_BEATS.find((b) => b.id === 'drive');
+    drawIntro(ctx, 1280, 720, { id: 'drive', beat: drive, progress: 0.6, local: 5 }, scene);
+    const fills = ctx.calls.filter((c) => c.name === 'fillStyle').map((c) => c.args[0]);
+    for (const colour of [ROVER.orange, ROVER.white, ROVER.chassis]) expect(fills).toContain(colour);
   });
 });
 
