@@ -237,6 +237,17 @@ export class SnapSocket extends Component {
     return null;
   }
 
+  /** Put every seated item back on its slot now, and anything seated in
+   *  those (a drive in a box in the buggy's boot), for a host that has just
+   *  been moved: waiting for the next onUpdate leaves them a frame behind. */
+  syncAttached() {
+    if (!this.gameObject) return;
+    this._updateAttachedTransforms();
+    for (const attachment of this.attachments) {
+      attachment?.item.getComponent?.(SnapSocket)?.syncAttached();
+    }
+  }
+
   _updateAttachedTransforms() {
     for (let i = 0; i < this.attachments.length; i++) {
       const item = this.attachments[i]?.item;
