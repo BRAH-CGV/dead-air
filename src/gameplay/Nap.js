@@ -19,8 +19,8 @@ import { Component } from '../core/Component.js';
 // alarm whose test turns true that wasn't true when you lay down (the
 // lamps buzzing before a storm outage, the UFO's roar). Silent things — a
 // blob on the office radar, eyes at the office window — don't. Then time
-// runs normally again, you get up out of bed, and the HUD says what woke you
-// for NAP.messageSeconds before the shift's own prompt comes back.
+// runs normally again, you get up out of bed, and the banner says what woke
+// you for a few seconds before the shift's own prompt comes back.
 //
 // How you get up follows what woke you: calmly for the alarm, the E key or
 // the shift ending (6 AM); startled for the alarms (the lamps' buzz, the
@@ -75,15 +75,22 @@ export class Nap extends Component {
    *           getUp(style: 'calm'|'startled'): boolean, cancel(): void }|null} [opts.rest]
    *        The bed animation (BedRest).
    * @param {{ setPrompt: (text: string) => void }} [opts.hud]
+   * @param {{ show(text: string, opts?: object): void, clear(): void, timer: { onDone: (() => void)|null } }|null} [opts.banner]
    * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean }} [opts.hooks]
-   * @param {{ test: () => boolean, message: string }[]} [opts.alarms]
+   * @param {{ test: () => boolean, message: string, tone?: string }[]} [opts.alarms]
    * @param {{ show(text: string): void, hide(): void }|null} [opts.hint]  Over the lids: "[E] Wake up".
    */
-  constructor({ controller, engine, rest = null, hud = null, hooks = {}, alarms = [], hint = null }) {
+  constructor({ controller, engine, rest = null, hud = null, banner = null, hooks = {}, alarms = [], hint = null }) {
     super();
-    Object.assign(this, { controller, engine, rest, hud, hooks, alarms, hint });
+    Object.assign(this, { controller, engine, rest, hud, banner, hooks, alarms, hint });
     this._armed = alarms.map(() => false);   // which alarms can still go off
-    this._messageLeft = 0;                    // real seconds the wake-up line has left
+    // When the banner finishes, put the shift's own prompt back — but only
+    // if the shift is still running (a failed night owns its own prompt).
+    if (banner) {
+      banner.timer.onDone = () => {
+        if (this.controller.state === 'playing') this.controller.refreshPrompt?.();
+      };
+    }
   }
 
   /** During the shift, awake and out of bed, with nothing already on its way. */
@@ -123,15 +130,14 @@ export class Nap extends Component {
 
   /** Wake up: real time, and out of bed — `style` 'calm' (the alarm, E,
    *  6 AM) or 'startled' (something loud). */
-  wake(message = null, style = 'calm') {
+  wake(message = null, style = 'calm', tone = 'info') {
     if (!this.napping) return;
     this._stop();
     this.wokeBy = message;
     if (this.rest) this.rest.getUp(style);
     else this.hooks.setPlayerLocked?.(false);
     if (message) {
-      this.hud?.setPrompt(message);
-      this._messageLeft = NAP.messageSeconds;
+      this.banner?.show(message, { tone });
     }
   }
 
@@ -153,16 +159,9 @@ export class Nap extends Component {
         return this.wake();
       }
       for (let i = 0; i < this.alarms.length; i++) {
-        if (this._armed[i] && this.alarms[i].test()) return this.wake(this.alarms[i].message, 'startled');
+        if (this._armed[i] && this.alarms[i].test()) return this.wake(this.alarms[i].message, 'startled', this.alarms[i].tone ?? 'warning');
       }
       return;
-    }
-    if (this._messageLeft > 0) {
-      this._messageLeft -= dt;
-      if (this._messageLeft <= 0 && this.controller.state === 'playing') {
-        this.hud?.setPrompt('');
-        this.controller.refreshPrompt?.();
-      }
     }
   }
 
