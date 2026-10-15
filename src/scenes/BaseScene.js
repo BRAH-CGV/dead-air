@@ -2413,6 +2413,8 @@ export class BaseScene extends Scene {
       suit:          this.suit ?? null,
       nap:           this.nap ?? null,
       bedRest:       this.bedRest ?? null,
+      cargoDock:     this.buggyCargo?.dock ?? null,
+      sendOff:       this.buggySendOff ?? null,
       sandstorm:     this.sandstorm ?? null,
       stormOutage:   this.stormOutage ?? null,
       bed,
@@ -2433,6 +2435,7 @@ export class BaseScene extends Scene {
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },
+        buggy:     { object: this.buggyBoot?.object3d ?? null, lift: 0.6 },
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);

@@ -6,7 +6,7 @@
 // desk, a drive from it into the reader, a signal found, scanned and saved,
 // the drive boxed and the box docked (a quota of one); a storm that takes
 // the power, the flashlight, the generator brought back; a nap until 6 AM,
-// and the sleep that starts night 1.
+// the box sent off in the buggy, and the sleep that starts night 1.
 //
 // A step is either timed (`seconds`) or waits on a test of what the player
 // has done (`done(ctx)`). `ctx` is a plain object of booleans the Tutorial
@@ -14,7 +14,7 @@
 //
 //   holdingBox, boxOnDesk, driveIn, terminalOpen, onSignal, scanning,
 //   scanned, saved, boxed, quotaMet, powerOn, flashlightOn, suitOn,
-//   napping, morning
+//   napping, morning, boxInBuggy, dispatched
 //
 // The runner skips past a step that is already done, so a player who runs
 // ahead is never told to do what they already did. `target` names what the
@@ -92,9 +92,14 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'wait', title: 'SEE THE NIGHT OUT', target: 'bed',
     text: 'Nap again at the bunk until 6 AM.',
     done: c => c.morning },
+  // The night's box goes off in the buggy before the bunk will take you.
+  { id: 'buggy', title: 'SEND THE BUGGY OFF',
+    target: c => (c.holdingBox || c.boxInBuggy ? 'buggy' : 'dock'),
+    text: 'Suit up and take the drive box from the airlock dock out to the buggy. Put it in the boot, then [E] on the buggy.',
+    done: c => c.dispatched },
   // Sleeping starts night 1, which ends the tutorial (Tutorial).
   { id: 'sleep', title: 'GO TO BED', target: 'bed',
-    text: 'Morning. Sleep at the bunk to start night 1.',
+    text: 'The buggy is off. Sleep at the bunk to start night 1.',
     done: () => false },
 ]);
 

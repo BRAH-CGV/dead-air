@@ -62,6 +62,8 @@ function rig({ night = 0, covered } = {}) {
     nap:           { napping: false },
     bed:           { napLength: NAP.lengths.indexOf(1) },
     bedRest:       { active: false },
+    cargoDock:     { depositedBox: null },
+    sendOff:       { active: false },
     flashlight:    { on: false },
     // The desk: anything over x −1…1, z −3…−2, from 0.6 m up.
     onDesk:        (p) => Math.abs(p.x) < 1 && p.z > -3 && p.z < -2 && p.y > 0.6,
@@ -80,6 +82,7 @@ function rig({ night = 0, covered } = {}) {
       locker:    { object: behind },
       generator: { object: behind },
       bed:       { object: behind },
+      buggy:     { object: behind },
     },
   };
   s.tutorial = new Tutorial(s);
@@ -289,11 +292,36 @@ describe('Tutorial', () => {
     expect(s.overlay.show).toHaveBeenCalled();
   });
 
-  it('shows in the morning too, for the sleep at the end', () => {
+  it('shows in the morning too, for the buggy and the sleep at the end', () => {
     s.tutorial.onUpdate(0.01);
     s.tutorial.runner.goTo('wait');
     s.controller.state = 'morning';
     s.overlay.show.mockClear();
+    s.tutorial.onUpdate(0.01);
+    expect(s.tutorial.runner.step.id).toBe('buggy');
+    expect(s.overlay.show).toHaveBeenCalled();
+  });
+
+  it("reads the buggy: a box in its boot, and the controller's send-off", () => {
+    s.controller.state = 'morning';
+    expect(s.tutorial.readContext()).toMatchObject({ boxInBuggy: false, dispatched: false });
+    s.cargoDock.depositedBox = {};
+    s.controller.dispatched = true;
+    expect(s.tutorial.readContext()).toMatchObject({ boxInBuggy: true, dispatched: true });
+  });
+
+  it('hides through the send-off cutscene, and moves on to the sleep once the buggy has gone', () => {
+    s.tutorial.onUpdate(0.01);
+    s.tutorial.runner.goTo('buggy');
+    s.controller.state = 'morning';
+    s.sendOff.active = true;
+    s.overlay.hide.mockClear();
+    s.overlay.show.mockClear();
+    s.tutorial.onUpdate(0.01);
+    expect(s.overlay.hide).toHaveBeenCalled();
+    expect(s.overlay.show).not.toHaveBeenCalled();
+    s.sendOff.active = false;
+    s.controller.dispatched = true;
     s.tutorial.onUpdate(0.01);
     expect(s.tutorial.runner.step.id).toBe('sleep');
     expect(s.overlay.show).toHaveBeenCalled();

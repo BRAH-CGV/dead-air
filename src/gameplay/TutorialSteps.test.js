@@ -10,7 +10,7 @@ const fresh = (over = {}) => ({
   holdingBox: false, boxOnDesk: false, flashlightOn: false,
   driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
   saved: false, boxed: false, quotaMet: false, powerOn: true, suitOn: false,
-  napping: false, morning: false, ...over,
+  napping: false, morning: false, boxInBuggy: false, dispatched: false, ...over,
 });
 
 const ids = () => TUTORIAL_STEPS.map(s => s.id);
@@ -37,7 +37,7 @@ function doneFor(step) {
 describe('TUTORIAL_STEPS', () => {
   it('teaches the signal game, then the storm, then the nap and the sleep, in that order', () => {
     const order = ['deskBox', 'drive', 'computer', 'aim', 'scan', 'save', 'box', 'dock',
-      'storm', 'flashlight', 'suit', 'generator', 'inside', 'nap', 'wait', 'sleep'];
+      'storm', 'flashlight', 'suit', 'generator', 'inside', 'nap', 'wait', 'buggy', 'sleep'];
     const positions = order.map(id => ids().indexOf(id));
     expect(positions.every(p => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -156,15 +156,29 @@ describe('TutorialRunner', () => {
     expect(wait.target).toBe('bed');
   });
 
-  it('a nap, or the morning, moves on; then it waits at the bed for the next night', () => {
+  it('a nap, or the morning, moves on; the buggy goes off, then it waits at the bed for the next night', () => {
     const runner = at('nap');
     runner.update(0.01, fresh({ napping: true }));
     expect(runner.step.id).toBe('wait');
     runner.update(0.01, fresh({ morning: true }));
+    expect(runner.step.id).toBe('buggy');
+    runner.update(60, fresh({ morning: true, boxInBuggy: true }));
+    expect(runner.step.id).toBe('buggy');           // loaded, not yet sent off
+    runner.update(0.01, fresh({ morning: true, boxInBuggy: true, dispatched: true }));
     expect(runner.step.id).toBe('sleep');
-    runner.update(60, fresh({ morning: true }));
+    runner.update(60, fresh({ morning: true, dispatched: true }));
     expect(runner.step.id).toBe('sleep');
     expect(runner.finished).toBe(false);
+  });
+
+  it('the buggy step points at the dock, then at the buggy once the box is in hand or in its boot', () => {
+    const runner = at('buggy', fresh({ morning: true }));
+    expect(runner.view(fresh({ morning: true })).target).toBe('dock');
+    expect(runner.view(fresh({ morning: true, holdingBox: true })).target).toBe('buggy');
+    expect(runner.view(fresh({ morning: true, boxInBuggy: true })).target).toBe('buggy');
+    const step = TUTORIAL_STEPS.find(t => t.id === 'buggy');
+    expect(step.text).toMatch(/suit/i);
+    expect(step.text).toContain('[E]');
   });
 
   it('goTo(id) jumps to a step, and enters it', () => {

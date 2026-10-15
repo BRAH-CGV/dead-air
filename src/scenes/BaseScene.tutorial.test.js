@@ -86,6 +86,12 @@ describe('BaseScene tutorial (night 0)', () => {
     }
   });
 
+  it("reads the buggy's boot and the send-off, and points at the boot", () => {
+    expect(scene.tutorial.cargoDock).toBe(scene.buggyCargo.dock);
+    expect(scene.tutorial.sendOff).toBe(scene.buggySendOff ?? null);
+    expect(scene.tutorial.targets.buggy.object).toBe(scene.buggyBoot.object3d);
+  });
+
   it('points the drive box at the bare right wing of the desk, not the computer', () => {
     const office = scene.rooms.MainOffice;
     const { desk } = scene.tutorial.targets;

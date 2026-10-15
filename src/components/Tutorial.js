@@ -22,6 +22,8 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 //     the storm step summons one whose outage is forced (StormOutage.force).
 //   - The nap step sets the bunk's alarm to 6 AM, so one nap sees the
 //     night out.
+//   - In the morning the box goes in the buggy's boot and the buggy is
+//     sent off (the bunk waits for it); the words hide through the cutscene.
 //
 // Subscribes in onStart and reads the controller's night there, like
 // Sandstorm: New game sets night 0 before the scene's first frame.
@@ -57,6 +59,8 @@ export class Tutorial extends Component {
    * @param {object} [opts.nap]
    * @param {object} [opts.bed]          The bunk's Bed: its napLength is set to 6 AM
    * @param {object} [opts.bedRest]
+   * @param {object} [opts.cargoDock]    The buggy boot's DriveBoxDock: depositedBox
+   * @param {object} [opts.sendOff]      BuggySendOff: active through the cutscene
    * @param {object} [opts.flashlight]   The player's Flashlight: on
    * @param {(p: THREE.Vector3) => boolean} [opts.onDesk]  A world point is on the computer desk
    * @param {object} [opts.sandstorm]
@@ -73,14 +77,15 @@ export class Tutorial extends Component {
   constructor({
     controller, clock, stamina = null, signalManager = null, terminal = null,
     driveManager = null, drives = [], driveBoxes = [], quotaDock = null, grid = null,
-    suit = null, nap = null, bed = null, bedRest = null, flashlight = null, onDesk = null,
+    suit = null, nap = null, bed = null, bedRest = null, cargoDock = null, sendOff = null,
+    flashlight = null, onDesk = null,
     sandstorm = null, stormOutage = null,
     overlay = null, camera = null, screen = null, covered = null, targets = {},
   }) {
     super();
     Object.assign(this, {
       controller, clock, stamina, signalManager, terminal, driveManager, drives,
-      driveBoxes, quotaDock, grid, suit, nap, bed, bedRest, flashlight, onDesk,
+      driveBoxes, quotaDock, grid, suit, nap, bed, bedRest, cargoDock, sendOff, flashlight, onDesk,
       sandstorm, stormOutage, overlay, camera, targets,
     });
     this.screen = screen ?? (() => this._windowSize());
@@ -93,7 +98,7 @@ export class Tutorial extends Component {
       holdingBox: false, boxOnDesk: false,
       driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
       saved: false, boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
-      suitOn: false, napping: false, morning: false,
+      suitOn: false, napping: false, morning: false, boxInBuggy: false, dispatched: false,
     };
     this._v = new THREE.Vector3();
     this._ndc = { x: 0, y: 0, behind: false };
@@ -171,9 +176,9 @@ export class Tutorial extends Component {
     }
     const ctx = this.readContext();
     this.runner.update(dt, ctx);
-    // In the bunk the lids are down, and a panel (the breakers) has the
-    // view: nothing to read.
-    if (this.bedRest?.active || this.covered()) {
+    // In the bunk the view is dark, a panel (the breakers) has it, or the
+    // send-off's cutscene does: nothing to read.
+    if (this.bedRest?.active || this.sendOff?.active || this.covered()) {
       this.overlay?.hide();
       return;
     }
@@ -201,6 +206,8 @@ export class Tutorial extends Component {
     c.suitOn = !!this.suit?.worn;
     c.napping = !!(this.nap?.napping || this.bedRest?.active);
     c.morning = this.controller.state === 'morning';
+    c.boxInBuggy = !!this.cargoDock?.depositedBox;
+    c.dispatched = !!this.controller.dispatched;
     return c;
   }
 
