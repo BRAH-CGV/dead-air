@@ -84,6 +84,7 @@ export class ProcessingScreen {
     this._gainSlider   = root?.querySelector('#viz-gain')              ?? null;
     this._contrastSlider = root?.querySelector('#viz-contrast')        ?? null;
     this._volumeSlider = root?.querySelector('#viz-volume')            ?? null;
+    this._vizContainer = root?.querySelector('#processing-viz')        ?? null;
     this._scanline     = root?.querySelector('#processing-scanline')   ?? null;
     this._progressContainer = root?.querySelector('#processing-progress')      ?? null;
     this._progressFill      = root?.querySelector('#processing-progress-fill') ?? null;
@@ -94,6 +95,8 @@ export class ProcessingScreen {
     this._installVizListeners();
     this._installVolumeListener();
     this._installTuningListeners();
+    // Start with viz sliders disabled until a signal is loaded.
+    this._vizContainer?.classList.add('disabled');
   }
 
   /** Wire the engine so open/close can lock input and hide the crosshair.
@@ -114,6 +117,9 @@ export class ProcessingScreen {
     this.root.style.display = 'flex';
     this._lockInput(true);
     this._installKeyHandler();
+    // Show the tuning game as disabled until processing starts.
+    this._tuningContainer?.classList.add('disabled');
+    this._updateVizDisabled();
     this._startProgressTracking(drive);
   }
 
@@ -142,6 +148,7 @@ export class ProcessingScreen {
     this._updateSpectrogram(drive);
     this._renderMediaButtons(drive);
     this._renderActions(this._actions);
+    this._updateVizDisabled();
     this._startProgressTracking(drive);
   }
 
@@ -154,6 +161,18 @@ export class ProcessingScreen {
     if (this._audioContext) {
       this._audioContext.close().catch(() => {});
       this._audioContext = null;
+    }
+  }
+
+  /** Disable the viz sliders when there is no signal or when processing. */
+  _updateVizDisabled() {
+    const drive = this._drive;
+    const hasSignal = !!(drive?.saved && drive?.signalName);
+    const processing = drive?.isProcessing ?? false;
+    if (!hasSignal || processing) {
+      this._vizContainer?.classList.add('disabled');
+    } else {
+      this._vizContainer?.classList.remove('disabled');
     }
   }
 
@@ -417,8 +436,10 @@ export class ProcessingScreen {
    *  while the crosshair overlaps the target zone. */
   _startProgressTracking(drive) {
     this._stopProgressTracking();
+    this._updateVizDisabled();
     if (!drive?.isProcessing) {
-      this._hideProgress();
+      this._showProgress();
+      this._tuningContainer?.classList.add('disabled');
       return;
     }
     this._showProgress();
@@ -457,7 +478,6 @@ export class ProcessingScreen {
       this._progressRaf = null;
     }
     this._stopTuningGame();
-    this._hideProgress();
   }
 
   /** Called when the drive's processing finishes. Applies the upgrade,
@@ -519,7 +539,7 @@ export class ProcessingScreen {
 
   // ── Tuning minigame ────────────────────────────────────────
 
-  /** Create the tuning game, show the UI, and reset the game state. */
+  /** Create the tuning game, enable the UI, and reset the game state. */
   _startTuningGame(drive) {
     this._stopTuningGame();
     this._tuningGame = new TuningGame();
@@ -528,14 +548,14 @@ export class ProcessingScreen {
     this._lastTuningTime = 0;
     // Reset the slider to centre.
     if (this._tuningSlider) this._tuningSlider.value = '0.5';
-    if (this._tuningContainer) this._tuningContainer.style.display = 'flex';
+    this._tuningContainer?.classList.remove('disabled');
   }
 
-  /** Stop the tuning game and hide the UI. */
+  /** Stop the tuning game and gray out the UI. */
   _stopTuningGame() {
     this._tuningGame = null;
     this._isDragging = false;
-    if (this._tuningContainer) this._tuningContainer.style.display = 'none';
+    this._tuningContainer?.classList.add('disabled');
   }
 
   /** Advance the tuning game by dt seconds and feed overlap to the drive. */

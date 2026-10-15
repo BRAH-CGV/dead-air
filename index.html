@@ -298,11 +298,17 @@
         position: relative;
       }
       #tuning-game {
-        display: none;
+        display: flex;
         flex-direction: column;
         align-items: center;
         gap: 6px;
         width: 484px;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+      }
+      #tuning-game.disabled {
+        opacity: 0.3;
+        pointer-events: none;
       }
       #tuning-canvas {
         width: 480px;
@@ -338,6 +344,12 @@
         justify-content: center;
         align-items: center;
         margin: 6px 0;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+      }
+      #processing-viz.disabled {
+        opacity: 0.3;
+        pointer-events: none;
       }
       .viz-slider {
         display: flex;
