@@ -216,3 +216,14 @@ describe('IntroPlayer', () => {
     expect(IntroPlayer.fromDocument(document)).toBe(null);
   });
 });
+
+describe("index.html's #intro", () => {
+  // The intro is watched, not pointed at: a click anywhere skips or begins,
+  // so the mouse pointer only sits on the picture.
+  it('hides the mouse pointer over it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const html = readFileSync(`${process.cwd()}/index.html`, 'utf8');   // vitest runs from the root
+    const rule = html.match(/#intro\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/cursor:\s*none/);
+  });
+});
