@@ -86,7 +86,7 @@ import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
-import { BuggySendOff } from '../gameplay/BuggySendOff.js';
+import { BuggySendOff } from '../components/BuggySendOff.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 // ─────────────────────────────────────────────
@@ -161,12 +161,7 @@ const DUST_EYE_POOL = 10;
 
 /** Bearing of the lane kept open between the back window and the dish, which
  *  stands at (0, -25). The masts skip this one. */
-const DISH_LANE = { bearing: Math.atan2(-25, 0), halfWidth: 4.4, wander: 0 };
-
-/** The lane the buggy leaves by: 60.5° out from the base, through the belt.
- *  The same wander MarsVegetation cuts for it, so the route follows the
- *  ground the belt left clear. */
-const BUGGY_EXIT_LANE = { bearing: THREE.MathUtils.degToRad(60.5), halfWidth: 4.4, wander: 1.3 };
+const DISH_LANE = Math.atan2(-25, 0);
 
 /** The colony rover is 3.4 x 3.3 x 6.6 m as downloaded. The base's exterior
  *  door is 1 m wide and 2.2 m tall, and at native size the buggy dwarfs both
@@ -1025,9 +1020,7 @@ export class BaseScene extends Scene {
       assets: engine.assets,
       // The belt closes the horizon all round, so the way out to the dish has
       // to be one of the lanes through it, not just a clearing at its feet.
-      // The buggy's exit lane is the other: the 60.5° road through the belt
-      // the buggy drives away on every morning (#98).
-      lanes: [DISH_LANE, BUGGY_EXIT_LANE],
+      lanes: [DISH_LANE],
       // A tree on the fence line grows through the chain-link. Dropped, not
       // moved, so the rest of the belt stands where it always has.
       treesClearOf: fenceKeepOut(fenceRect, { openSides: ['S'], clearance: TREE_FENCE_CLEARANCE }),
@@ -1036,15 +1029,16 @@ export class BaseScene extends Scene {
     // what is left to look at in the distance — and standing one at the end of
     // each clearing is what makes the clearings read as roads to somewhere
     // rather than as gaps. The dish road is left out: the dish is what you are
-    // meant to see down that one. The buggy's exit lane gets one too.
+    // meant to see down that one.
     const roads = belt.lanes
       .map(lane => lane.bearing)
-      .filter(bearing => bearing !== DISH_LANE.bearing);
+      .filter(bearing => bearing !== DISH_LANE);
     const towers = createCommTowers({ alignTo: roads });
 
-    // The sliding gate in the fence's back (north) run, where the buggy exit
-    // lane crosses it. exitGate picks the crossing nearest x = 12 (the lane
-    // ahead of the buggy's nose, not the one behind that needs a U-turn).
+    // The sliding gate in the fence's back (north) run, where one of the
+    // belt's own lanes crosses it (the 60.5° one, as the belt is seeded).
+    // exitGate picks the crossing nearest x = 12: the lane ahead of the
+    // buggy's nose, not the one behind that needs a U-turn.
     // Null if no lane crosses within the run: the cargo then dispatches
     // directly, with no cutscene.
     const gate = exitGate(belt.lanes, fenceRect, { near: 12 });
@@ -1651,19 +1645,16 @@ export class BaseScene extends Scene {
       interaction: engine.player?.getComponent(InteractionSystem) ?? null,
       setPlayerLocked: locked => this._setPlayerLocked(locked),
       isFrozen: () => !!engine.debugCamera?.active,
-      moonLight: this.moonLight,
       curve,
       length,
       gateAt,
     }));
 
-    // Wire the cargo's sendOff.
     if (this.buggyCargo) this.buggyCargo.sendOff = this.buggySendOff;
 
-    // Shadows: watch the buggy.
+    // It drives under the moon, so its shadow is redrawn as it goes.
     engine.shadows?.watch(buggy.object3d, [this.moonLight]);
 
-    // Night start: restore the buggy.
     this._offBuggyNight = this.gameController.onNightStart(() => {
       this.buggySendOff.resetForNight();
     });
@@ -2162,7 +2153,9 @@ export class BaseScene extends Scene {
     const localZ = localBounds.min.z - (gap + depth / 2) / s;
     const localY = (top - height / 2 - buggy.object3d.position.y) / s;
     boot.object3d.position.set(0, localY, localZ);
-    buggy.object3d.add(boot.object3d);
+    // addChild, not object3d.add: the boot's components (the socket, the
+    // dock, the cargo's labels) only tick as part of the GameObject tree.
+    buggy.addChild(boot);
 
     // Visuals: dark steel.
     const steelMat = this._own(new THREE.MeshStandardMaterial({ color: 0x2a2d2a, roughness: 0.7, metalness: 0.5 }));
@@ -2228,29 +2221,17 @@ export class BaseScene extends Scene {
         .setTranslation(bootWorldPos.x, bootWorldPos.y, bootWorldPos.z)
         .setRotation({ x: bootWorldQuat.x, y: bootWorldQuat.y, z: bootWorldQuat.z, w: bootWorldQuat.w }),
     );
-    // Cuboid colliders for floor and 4 walls, open top.
-    const bootColliders = [];
-    // Floor (in boot-local metres, transformed to world).
-    const floorLocalY = -height / 2 + wall / 2;
-    const floorWorld = new THREE.Vector3(0, floorLocalY, 0).applyMatrix4(boot.object3d.matrixWorld);
-    bootColliders.push(world.createCollider(
-      RAPIER.ColliderDesc.cuboid(across / 2, wall / 2, depth / 2)
-        .setTranslation(floorWorld.x, floorWorld.y, floorWorld.z),
+    // Cuboid colliders for the floor and the four walls, open top. A
+    // collider's offset is relative to its body, which already stands at the
+    // boot's world pose, and the boot's world scale is 1: so these are the
+    // meshes' own boot-local metres, unrotated.
+    const bootColliders = [
+      { size: [across, wall, depth], pos: [0, floor.position.y, 0] },
+      ...walls,
+    ].map(({ size: [sx, sy, sz], pos: [px, py, pz] }) => world.createCollider(
+      RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2).setTranslation(px, py, pz),
       boot.rigidBody,
     ));
-    // Walls.
-    for (const w of walls) {
-      const wLocal = new THREE.Vector3(...w.pos);
-      const wWorld = wLocal.applyMatrix4(boot.object3d.matrixWorld);
-      const [wx, wy, wz] = w.size;
-      // Approximate: use the boot's world quaternion for the collider rotation.
-      bootColliders.push(world.createCollider(
-        RAPIER.ColliderDesc.cuboid(wx / 2, wy / 2, wz / 2)
-          .setTranslation(wWorld.x, wWorld.y, wWorld.z)
-          .setRotation({ x: bootWorldQuat.x, y: bootWorldQuat.y, z: bootWorldQuat.z, w: bootWorldQuat.w }),
-        boot.rigidBody,
-      ));
-    }
     boot.collider = bootColliders[0];
     boot.colliders = bootColliders;
     engine._bodyToGO?.set(boot.rigidBody.handle, boot);

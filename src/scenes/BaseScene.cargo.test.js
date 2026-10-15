@@ -28,6 +28,9 @@ function makeSceneEngine() {
   engine.scene = new THREE.Scene();
   engine.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
   engine.assets = { get: vi.fn(() => null) };
+  engine.isAction ??= () => false;
+  engine.consumeAction ??= () => {};
+  engine.camera ??= new THREE.PerspectiveCamera();
   const spawn = engine.spawnModel;
   engine.spawnModel = vi.fn((key, opts) => {
     const go = spawn(key, opts);
@@ -97,6 +100,57 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     expect(bootBox.max.x).toBeLessThan(maxX);
     expect(bootBox.min.z).toBeGreaterThan(minZ);
     expect(bootBox.max.z).toBeLessThan(maxZ);
+  });
+
+  it("is part of the buggy's GameObject tree, its colliders on its floor and walls", () => {
+    const boot = scene.buggyBoot;
+    expect(outside.find('Buggy').children).toContain(boot);   // so its components tick
+    const box = boxOf(boot).expandByScalar(0.01);
+    const t = boot.rigidBody.translation();
+    const q = boot.rigidBody.rotation();
+    const bodyAt = new THREE.Vector3(t.x, t.y, t.z);
+    const bodyQ = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+    expect(boot.colliders).toHaveLength(5);
+    for (const c of boot.colliders) {
+      const o = c.translation();
+      const at = new THREE.Vector3(o.x, o.y, o.z).applyQuaternion(bodyQ).add(bodyAt);
+      expect(box.containsPoint(at)).toBe(true);
+    }
+  });
+
+  it('sends the buggy off: out through the gate, the box with it, then back for the evening', () => {
+    const box = workTheShift();
+    loadTheBuggy(box);
+    const buggy = outside.find('Buggy');
+    const parked = buggy.object3d.position.clone();
+    const send = scene.buggySendOff;
+    expect(cargo.canSend).toBe(true);
+    cargo.onInteract({});
+    expect(send.active).toBe(true);
+    expect(engine.viewCamera).toBeTruthy();
+
+    // Drive it out (no #fade under jsdom: the dark comes at once).
+    let passedGate = false;
+    engine.realDt = 1 / 30;
+    for (let i = 0; i < 30 * 60 && send.active; i++) {
+      send.onUpdate(1 / 30);
+      const p = buggy.object3d.position;
+      if (p.z > scene.fence.rect.maxZ) {
+        passedGate ||= Math.abs(p.x - scene.exitGate.at) < 1;
+      }
+    }
+    expect(passedGate).toBe(true);
+    expect(send.logic.phase).toBe('gone');
+    expect(scene.gameController.dispatched).toBe(true);
+    expect(scene.gameController.canSleep).toBe(true);
+    expect(engine.viewCamera).toBeNull();
+    expect(buggy.object3d.position.y).toBe(-50);
+    expect(box.object3d.getWorldPosition(new THREE.Vector3()).y).toBeLessThan(-40);
+
+    scene.nights.advance();
+    expect(buggy.object3d.position.distanceTo(parked)).toBeLessThan(1e-6);
+    expect(send.logic.phase).toBe('idle');
+    expect(scene.fence.gate.open).toBe(0);
   });
 
   it('the fence has a gate on the north side', () => {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
-import { BuggyDeparture, BUGGY_DEPARTURE, eagleView } from './BuggyDeparture.js';
+import { BuggyDeparture, eagleView } from '../gameplay/BuggyDeparture.js';
+import { BUGGY_CARGO } from './BuggyCargo.js';
 
 // ─────────────────────────────────────────────
 // BuggySendOff  –  the cutscene that sends the buggy off each morning
@@ -13,30 +14,43 @@ import { BuggyDeparture, BUGGY_DEPARTURE, eagleView } from './BuggyDeparture.js'
 //      above the buggy.
 //   3. The buggy drives itself out through the sliding gate in the fence
 //      and down a lane through the belt.
-//   4. The screen fades, and the player is back on their feet with
-//      "Buggy away — get some sleep".
+//   4. The screen fades, and the player is back on their feet.
 //
 // The buggy is back every evening (resetForNight).
 //
 // Built after _addBedRest, on the GameplaySystems GO. The scene hands it
 // the buggy, the boot, the lid pivot, the socket, the gate, the controller,
-// the fade, the player, the interaction system, and the moonlight.
+// the fade, the player and the interaction system. The rules (the route, the
+// timeline, the camera) are pure, in BuggyDeparture.
 //
 // Exposes: active, driving, logic, curve — for a sound owner to follow.
 // ─────────────────────────────────────────────
 
 const _pos = new THREE.Vector3();
 const _tangent = new THREE.Vector3();
-const _eyePos = new THREE.Vector3();
-const _eyeTarget = new THREE.Vector3();
+const _forward = new THREE.Vector3();
+const _eagle = { position: new THREE.Vector3(), target: new THREE.Vector3() };
+const _eagleQ = new THREE.Quaternion();
 const _lookMat = new THREE.Matrix4();
 const _up = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
 const _axisQ = new THREE.Quaternion();
 const _xAxis = new THREE.Vector3(1, 0, 0);
 
-/** Wheel radius at scale 0.75 (the real buggy's wheels). */
-const WHEEL_RADIUS = 0.54;
+export const BUGGY_SEND_OFF = {
+  /** Wheel radius at BUGGY_SCALE (0.75), metres: how far a turn rolls it. */
+  wheelRadius: 0.54,
+  /** How fast the eagle view swings round to the way the buggy is heading,
+   *  per second, so a bend in the road is a turn, not a cut. */
+  headingRate: 3,
+  /** How fast the idle lid swings open in the morning and shut otherwise,
+   *  per second. */
+  lidRate: 3,
+};
+
+/** Share of the way to a target to move this frame, for an exponential ease
+ *  at `rate` per second — the same at any frame rate. */
+const ease = (rate, dt) => 1 - Math.exp(-rate * dt);
 
 export class BuggySendOff extends Component {
   /** @type {boolean} Whether the cutscene is playing (closing or driving). */
@@ -52,7 +66,7 @@ export class BuggySendOff extends Component {
    * @param {object} opts
    * @param {object} opts.engine
    * @param {object} opts.buggy  The Buggy GameObject.
-   * @param {object} opts.boot  The BuggyBoot GameObject.
+   * @param {object} opts.boot  The BuggyBoot GameObject, a child of the buggy.
    * @param {THREE.Object3D} opts.lidPivot  The lid's pivot group.
    * @param {object} opts.socket  The boot's SnapSocket.
    * @param {object} opts.gate  The fence's FenceGate.
@@ -61,158 +75,123 @@ export class BuggySendOff extends Component {
    * @param {object} opts.player  The FirstPersonController.
    * @param {object} opts.interaction  The InteractionSystem.
    * @param {(locked: boolean) => void} opts.setPlayerLocked
-   * @param {() => boolean} opts.isFrozen
-   * @param {object} opts.moonLight  The scene's moonlight.
+   * @param {() => boolean} opts.isFrozen  The debug fly camera is on.
    * @param {THREE.CatmullRomCurve3|null} opts.curve  The route curve.
    * @param {number} opts.length  Route length in metres.
    * @param {number} opts.gateAt  Gate position along the route in metres.
    */
   constructor({
     engine, buggy, boot, lidPivot, socket, gate, controller, fade, player, interaction,
-    setPlayerLocked, isFrozen, moonLight, curve, length, gateAt,
+    setPlayerLocked, isFrozen = () => false, curve, length, gateAt,
   }) {
     super();
-    this.engine = engine;
-    this.buggy = buggy;
-    this.boot = boot;
-    this.lidPivot = lidPivot;
-    this.socket = socket;
-    this.gate = gate;
-    this.controller = controller;
-    this.fade = fade;
-    this.player = player;
-    this.interaction = interaction;
-    this.setPlayerLocked = setPlayerLocked;
-    this.isFrozen = isFrozen;
-    this.moonLight = moonLight;
-    this.curve = curve;
-    this.length = length;
-    this.gateAt = gateAt;
+    Object.assign(this, {
+      engine, buggy, boot, lidPivot, socket, gate, controller, fade, player, interaction,
+      setPlayerLocked, isFrozen, curve, length, gateAt,
+    });
 
     this.logic = new BuggyDeparture({ length, gateAt });
 
-    // Snapshot of the buggy's initial pose for reset.
+    // Where it parks, for the evening.
     this._buggyPos = buggy.object3d.position.clone();
     this._buggyQuat = buggy.object3d.quaternion.clone();
 
-    // The buggy's own camera for the eagle view.
+    // A camera of its own for the eagle view, handed to engine.viewCamera.
     this._viewCam = new THREE.PerspectiveCamera();
     this._viewCam.name = 'BuggySendOffCamera';
 
-    // Wheels (may be absent in tests).
-    this._wheels = [
-      buggy.object3d.getObjectByName('Rover_wheel_1'),
-      buggy.object3d.getObjectByName('Rover_wheel_2'),
-      buggy.object3d.getObjectByName('Rover_wheel_3'),
-    ].filter(Boolean);
+    // Wheels (absent in tests), rolled from where they were built.
+    this._wheels = ['Rover_wheel_1', 'Rover_wheel_2', 'Rover_wheel_3']
+      .map(name => buggy.object3d.getObjectByName(name))
+      .filter(Boolean);
     this._wheelInitialQ = this._wheels.map(w => w.quaternion.clone());
 
-    // Eye pose snapshot for the camera lerp.
+    // The player's eye when it started, for the rise out of it.
     this._eyeSnapPos = new THREE.Vector3();
     this._eyeSnapQuat = new THREE.Quaternion();
     this._heading = 0;
 
-    this._fadePending = false;
+    this._fading = false;
     this._viewCamActive = false;
   }
 
   /** Start the cutscene. */
   start() {
     this.engine.consumeAction('interact');
-    // Lock the player.
     this.setPlayerLocked(true);
-    this.player.enabled = false;
-    this.interaction.enabled = false;
-    this.interaction.resetPrompt();
-    this.engine.crosshair?.hide();
+    if (this.player) this.player.enabled = false;
+    if (this.interaction) this.interaction.enabled = false;
+    this.interaction?.resetPrompt?.();
+    this.engine.crosshair?.hide?.();
 
-    // Snapshot the camera's world pose.
     this.engine.camera.updateMatrixWorld(true);
     this.engine.camera.getWorldPosition(this._eyeSnapPos);
     this.engine.camera.getWorldQuaternion(this._eyeSnapQuat);
 
-    // Set up the view camera.
     this._viewCam.position.copy(this._eyeSnapPos);
     this._viewCam.quaternion.copy(this._eyeSnapQuat);
     this.engine.viewCamera = this._viewCam;
     this._viewCamActive = true;
 
     this._heading = this.buggy.object3d.rotation.y;
+    this._fading = false;
     this.logic.start();
   }
 
   onUpdate(dt) {
+    // Real time, so a nap's speed-up never hurries it; the fly camera holds it.
     const realDt = this.engine.realDt ?? dt;
     if (this.isFrozen()) return;
     if (!this.logic.active) {
-      // Idle: ease the lid toward open in the morning, shut otherwise.
-      this._easeLidIdle();
+      this._easeLidIdle(realDt);
       return;
     }
 
     this.logic.update(realDt);
-
-    if (this.curve) {
-      this._moveBuggyAlongCurve();
-    }
-
-    // Gate.
+    if (this.curve) this._moveBuggyAlongCurve(realDt);
     this.gate?.setOpen(this.logic.gateOpen);
-
-    // Lid.
     this._setLid(this.logic.lid);
-
-    // Camera.
     if (this._viewCamActive) this._updateCamera();
 
-    // Skip.
-    if (this.engine.isAction('interact')) {
-      if (this.logic.skip()) this.engine.consumeAction('interact');
-    }
+    if (this.engine.isAction('interact') && this.logic.skip()) this.engine.consumeAction('interact');
 
-    // Fade.
-    if (this.logic.wantsFade && !this.fade.playing && !this._fadePending) {
-      const ok = this.fade.play(() => this._onDark());
-      if (!ok) this._fadePending = true;
-    }
-    if (this._fadePending && !this.fade.playing) {
-      this._fadePending = false;
-      if (this.logic.wantsFade) this.fade.play(() => this._onDark());
+    // One fade. A fade already running (play() refuses) is tried again next
+    // frame. Set first: without a #fade element play() calls back at once.
+    if (this.logic.wantsFade && !this._fading) {
+      this._fading = true;
+      if (!this.fade) this._onDark();
+      else if (!this.fade.play(() => this._onDark())) this._fading = false;
     }
   }
 
-  _moveBuggyAlongCurve() {
-    const t = this.logic.distance / this.length;
-    this.curve.getPointAt(Math.min(t, 1), _pos);
-    this.curve.getTangentAt(Math.min(t, 1), _tangent);
+  _moveBuggyAlongCurve(dt) {
+    const t = Math.min(this.logic.distance / this.length, 1);
+    this.curve.getPointAt(t, _pos);
+    this.curve.getTangentAt(t, _tangent);
     const yaw = Math.atan2(_tangent.x, _tangent.z);
 
     this.buggy.object3d.position.copy(_pos);
     this.buggy.object3d.rotation.y = yaw;
     this.buggy.object3d.updateMatrixWorld(true);
 
-    // Update rigid bodies.
     this._syncBody(this.buggy);
     this._syncBody(this.boot);
     this.socket?.syncAttached();
 
-    // Wheels.
-    const dist = this.logic.distance;
-    const spin = dist / WHEEL_RADIUS;
+    const spin = this.logic.distance / BUGGY_SEND_OFF.wheelRadius;
+    _axisQ.setFromAxisAngle(_xAxis, spin);
     for (let i = 0; i < this._wheels.length; i++) {
-      const w = this._wheels[i];
-      _axisQ.setFromAxisAngle(_xAxis, spin);
-      w.quaternion.copy(this._wheelInitialQ[i]).multiply(_axisQ);
+      this._wheels[i].quaternion.copy(this._wheelInitialQ[i]).multiply(_axisQ);
     }
 
-    // Damp the camera heading toward the tangent.
-    const targetHeading = yaw;
-    let d = (targetHeading - this._heading) % (Math.PI * 2);
+    // The camera's heading follows the road's, the short way round.
+    let d = (yaw - this._heading) % (Math.PI * 2);
     if (d > Math.PI) d -= Math.PI * 2;
     if (d < -Math.PI) d += Math.PI * 2;
-    this._heading += d * 0.05;
+    this._heading += d * ease(BUGGY_SEND_OFF.headingRate, dt);
   }
 
+  /** A fixed body written to its GameObject's world pose. */
   _syncBody(go) {
     if (!go?.rigidBody) return;
     go.object3d.updateMatrixWorld(true);
@@ -223,6 +202,7 @@ export class BuggySendOff extends Component {
   }
 
   _updateCamera() {
+    // Resizes only touch engine.camera, so the lens is copied each frame.
     const cam = this.engine.camera;
     this._viewCam.fov = cam.fov;
     this._viewCam.aspect = cam.aspect;
@@ -230,92 +210,83 @@ export class BuggySendOff extends Component {
     this._viewCam.far = cam.far;
     this._viewCam.updateProjectionMatrix();
 
-    // Eagle view.
-    const forward = new THREE.Vector3(Math.sin(this._heading), 0, Math.cos(this._heading));
-    eagleView(this.buggy.object3d.position, forward, { position: _eyePos, target: _eyeTarget });
+    _forward.set(Math.sin(this._heading), 0, Math.cos(this._heading));
+    eagleView(this.buggy.object3d.position, _forward, _eagle);
+    _lookMat.lookAt(_eagle.position, _eagle.target, _up);
+    _eagleQ.setFromRotationMatrix(_lookMat);
 
-    // Lerp from the eye snap.
+    // Out of the player's eyes and up: place and turn together.
     const v = this.logic.view;
-    this._viewCam.position.lerpVectors(this._eyeSnapPos, _eyePos, v);
-    _lookMat.lookAt(this._viewCam.position, _eyeTarget, _up);
-    this._viewCam.quaternion.setFromRotationMatrix(_lookMat);
+    this._viewCam.position.lerpVectors(this._eyeSnapPos, _eagle.position, v);
+    this._viewCam.quaternion.slerpQuaternions(this._eyeSnapQuat, _eagleQ, v);
     this._viewCam.updateMatrixWorld(true);
   }
 
   _setLid(t) {
-    if (!this.lidPivot) return;
-    const open = BUGGY_CARGO_lidOpen();
-    this.lidPivot.rotation.x = open * t;
+    if (this.lidPivot) this.lidPivot.rotation.x = BUGGY_CARGO.lidOpen * t;
   }
 
-  _easeLidIdle() {
+  /** Not playing: open in the morning, waiting for the box; shut otherwise. */
+  _easeLidIdle(dt) {
     if (!this.lidPivot) return;
-    const open = BUGGY_CARGO_lidOpen();
-    const target = this.controller?.state === 'morning' ? open : 0;
-    const current = this.lidPivot.rotation.x;
-    this.lidPivot.rotation.x = current + (target - current) * 0.05;
+    const open = this.controller?.state === 'morning' && this.logic.phase === 'idle';
+    const target = open ? BUGGY_CARGO.lidOpen : 0;
+    const x = this.lidPivot.rotation.x;
+    this.lidPivot.rotation.x = x + (target - x) * ease(BUGGY_SEND_OFF.lidRate, dt);
   }
 
-  _onDark() {
-    this.engine.viewCamera = null;
+  /** The player's view and controls back, as BedRest hands them back. */
+  _handBack() {
+    if (this.engine.viewCamera === this._viewCam) this.engine.viewCamera = null;
     this._viewCamActive = false;
-    // Hand the player back.
+    // The fly camera owns the player while it is out: it hands them back.
+    if (!this.isFrozen()) {
+      if (this.player) this.player.enabled = true;
+      if (this.interaction) this.interaction.enabled = true;
+    }
+    this.interaction?.resetPrompt?.();
+    this.engine.crosshair?.show?.();
     this.setPlayerLocked(false);
-    this.player.enabled = true;
-    this.interaction.enabled = true;
-    this.engine.crosshair?.show();
-    // Move the buggy and boot off-screen.
+  }
+
+  /** The screen is dark: the buggy has gone. */
+  _onDark() {
+    this._fading = false;
+    this._handBack();
+    // Out of sight until the evening: moved under the ground, never hidden
+    // (the zone sort owns `visible`). The boot rides on it, so it goes too.
     this.buggy.object3d.position.y = -50;
-    this.boot?.object3d?.position.set(0, -50, 0);
+    this.buggy.object3d.updateMatrixWorld(true);
     this._syncBody(this.buggy);
     this._syncBody(this.boot);
+    this.socket?.syncAttached();
     this.engine.shadows?.invalidate();
-    // Shut the gate.
     this.gate?.setOpen(0);
-    // Dispatch and finish.
     this.controller.dispatch();
     this.logic.finish();
   }
 
-  /** Reset for the next night: restore the buggy, shut the lid and gate. */
+  /** Every night start: the buggy back where it parks, lid and gate shut. */
   resetForNight() {
-    // Restore the buggy's pose.
+    const wasActive = this._viewCamActive;
     this.buggy.object3d.position.copy(this._buggyPos);
     this.buggy.object3d.quaternion.copy(this._buggyQuat);
     this.buggy.object3d.updateMatrixWorld(true);
     this._syncBody(this.buggy);
     this._syncBody(this.boot);
-    // Reset wheels.
+    this.socket?.syncAttached();
     for (let i = 0; i < this._wheels.length; i++) {
       this._wheels[i].quaternion.copy(this._wheelInitialQ[i]);
     }
-    // Shut lid and gate.
     this._setLid(0);
     this.gate?.setOpen(0);
-    // Reset logic.
-    const wasActive = this.logic.active;
+    this.engine.shadows?.invalidate();
     this.logic.reset();
-    // Drop the view camera if mid-cutscene.
-    if (wasActive && this._viewCamActive) {
-      this.engine.viewCamera = null;
-      this._viewCamActive = false;
-      this.setPlayerLocked(false);
-      this.player.enabled = true;
-      this.interaction.enabled = true;
-      this.engine.crosshair?.show();
-    }
-    this._fadePending = false;
+    this._fading = false;
+    if (wasActive) this._handBack();
   }
 
   onDestroy() {
-    if (this._viewCamActive && this.engine.viewCamera === this._viewCam) {
-      this.engine.viewCamera = null;
-    }
+    if (this.engine.viewCamera === this._viewCam) this.engine.viewCamera = null;
   }
-}
-
-/** Read the lid open angle from BUGGY_CARGO without a circular import. */
-function BUGGY_CARGO_lidOpen() {
-  // Imported lazily to avoid a cycle at module load.
-  return 80 * Math.PI / 180;
 }

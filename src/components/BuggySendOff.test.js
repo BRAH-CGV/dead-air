@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { BuggySendOff } from './BuggySendOff.js';
-import { BuggyDeparture, BUGGY_DEPARTURE } from './BuggyDeparture.js';
+import { BuggyDeparture, BUGGY_DEPARTURE } from '../gameplay/BuggyDeparture.js';
 
 // ─────────────────────────────────────────────
 // BuggySendOff — the cutscene that sends the buggy off (#98)
@@ -55,7 +55,6 @@ describe('BuggySendOff — construction', () => {
       ...stubs,
       setPlayerLocked() {},
       isFrozen: () => false,
-      moonLight: null,
       curve: null,
       length: 50,
       gateAt: 20,
@@ -75,7 +74,6 @@ describe('BuggySendOff — start', () => {
       ...stubs,
       setPlayerLocked: (v) => { locked = v; },
       isFrozen: () => false,
-      moonLight: null,
       curve: null,
       length: 50,
       gateAt: 20,
@@ -95,7 +93,6 @@ describe('BuggySendOff — night reset', () => {
       ...stubs,
       setPlayerLocked() {},
       isFrozen: () => false,
-      moonLight: null,
       curve: null,
       length: 50,
       gateAt: 20,
@@ -107,5 +104,84 @@ describe('BuggySendOff — night reset', () => {
     expect(off.logic.phase).toBe('idle');
     expect(gateOpen).toBe(0);
     expect(stubs.engine.viewCamera).toBeNull();
+  });
+});
+
+describe('BuggySendOff — the tidy-up', () => {
+  const make = (over = {}) => {
+    const stubs = makeStubs();
+    const off = new BuggySendOff({
+      ...stubs,
+      setPlayerLocked() {},
+      isFrozen: () => false,
+      curve: null,
+      length: 50,
+      gateAt: 20,
+      ...over,
+    });
+    return { stubs, off };
+  };
+
+  it('the view turns out of the eyes: it starts looking where the player looked', () => {
+    const { stubs, off } = make();
+    stubs.engine.camera.position.set(-5, 1.6, 8);
+    stubs.engine.camera.rotation.set(0, 1.2, 0);
+    off.start();
+    stubs.engine.realDt = 1 / 120;
+    off.onUpdate(1 / 120);
+    const view = stubs.engine.viewCamera;
+    expect(view.quaternion.angleTo(stubs.engine.camera.quaternion)).toBeLessThan(0.01);
+    expect(view.position.distanceTo(stubs.engine.camera.position)).toBeLessThan(0.05);
+  });
+
+  it('a fade already running is tried again next frame, and the buggy goes once', () => {
+    let calls = 0;
+    let busy = true;
+    const fade = { play(onDark) { calls++; if (busy) return false; onDark(); return true; } };
+    let dispatched = 0;
+    const { stubs, off } = make({ fade, controller: { state: 'morning', dispatch() { dispatched++; } } });
+    off.start();
+    stubs.engine.realDt = 1;
+    off.logic.skipped = true;
+    off.onUpdate(1);
+    expect(calls).toBe(1);
+    expect(dispatched).toBe(0);
+    busy = false;
+    off.onUpdate(1);
+    off.onUpdate(1);
+    expect(calls).toBe(2);
+    expect(dispatched).toBe(1);
+    expect(off.logic.phase).toBe('gone');
+  });
+
+  it('once dark, the buggy is under the ground and the boot still rides on it', () => {
+    const { stubs, off } = make();
+    stubs.boot.object3d.position.set(0, 0.3, -2);
+    off.start();
+    off._onDark();
+    expect(stubs.buggy.object3d.position.y).toBe(-50);
+    expect(stubs.boot.object3d.position.toArray()).toEqual([0, 0.3, -2]);
+    off.resetForNight();
+    expect(stubs.buggy.object3d.position.y).toBeCloseTo(1.237);
+  });
+
+  it('with the fly camera out, the player is left to it', () => {
+    const player = { enabled: true };
+    const { off } = make({ player, isFrozen: () => true });
+    off.start();
+    off._onDark();
+    expect(player.enabled).toBe(false);
+  });
+
+  it('the idle lid opens in the morning at the same pace at any frame rate', () => {
+    const lidAt = (fps) => {
+      const { stubs, off } = make();
+      stubs.lidPivot.rotation.x = 0;
+      stubs.engine.realDt = 1 / fps;
+      for (let i = 0; i < fps / 2; i++) off.onUpdate(1 / fps);
+      return stubs.lidPivot.rotation.x;
+    };
+    expect(lidAt(30)).toBeGreaterThan(0);
+    expect(lidAt(30)).toBeCloseTo(lidAt(144), 6);
   });
 });
