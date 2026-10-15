@@ -122,15 +122,19 @@ describe('BedRest', () => {
       expect(asleep).toHaveBeenCalledOnce();
     });
 
-    it('the lids close slowly over it, written after the fatigue effects (late update), and shut', () => {
+    it('the darkness fades in over the lie-down, written after the fatigue effects (late update), and stays full while asleep', () => {
       const { rest, overlay } = rig;
       rest.lieDown(() => {});
       run(rig, T.lieDown * 0.7);
+      // During the lie-down the transition writes lids (not yet asleep).
       expect(lastLid(overlay)).toBeGreaterThan(0);
       expect(lastLid(overlay)).toBeLessThan(1);
-      run(rig, T.lieDown * 0.3 + 0.05);                   // just asleep: before the first peek
-      expect(lastLid(overlay)).toBe(1);
-      expect(overlay.set.mock.calls.at(-1)[0]).toBe(0);   // no tunnel in bed
+      run(rig, T.lieDown * 0.3 + 0.05);                   // just asleep
+      // Asleep: darkness is the third parameter, lids are 0.
+      const lastCall = overlay.set.mock.calls.at(-1);
+      expect(lastCall[2]).toBe(1);                          // full darkness
+      expect(lastCall[1]).toBe(0);                          // no lids in bed
+      expect(lastCall[0]).toBe(0);                          // no tunnel in bed
     });
 
     it('not twice', () => {
@@ -323,7 +327,7 @@ describe('BedRest', () => {
     });
   });
 
-  it('passes the peeks through, for the demon to show itself in', () => {
+  it('passes the stretches through, for the demon to show itself in', () => {
     const { rest } = rig;
     expect(rest.peeking).toBe(false);
     rest.lieDown(() => {});
@@ -334,7 +338,22 @@ describe('BedRest', () => {
       peeked = rest.peeking;
     }
     expect(peeked).toBe(true);
-    expect(lastLid(rig.overlay)).toBeLessThan(1);
+    // In bed the darkness is the third parameter, not the lids.
+    const lastCall = rig.overlay.set.mock.calls.at(-1);
+    expect(lastCall[2]).toBeGreaterThan(0);               // darkness on
     expect(rest.watchSpots().length).toBeGreaterThan(0);
+  });
+
+  it('exposes the darkness (0 … 1) for a sound to follow', () => {
+    const { rest } = rig;
+    expect(rest.darkness).toBe(0);
+    rest.lieDown(() => {});
+    run(rig, T.lieDown + 0.05);
+    expect(rest.darkness).toBe(1);
+    rest.getUp('calm');
+    run(rig, 0.01);
+    expect(rest.darkness).toBeLessThan(1);
+    run(rig, 2);
+    expect(rest.darkness).toBe(0);
   });
 });
