@@ -234,8 +234,22 @@ describe('ServerRoom', () => {
 
     // Simulate a saved, level-1 drive inserted in the slot.
     let level = 1;
-    const fakeDrive = { saved: true, corrupted: false, signalLevel: 1, canUpgradeLevel: true,
-      setSignalLevel(l) { level = l; this.signalLevel = l; } };
+    let processingEnd = null;
+    const fakeDrive = {
+      saved: true, corrupted: false, signalLevel: 1,
+      get canUpgradeLevel() { return this.saved && !this.corrupted && this.signalLevel < 2 && !this.isProcessing; },
+      get isProcessing() { return processingEnd != null && Date.now() < processingEnd; },
+      get processingRemainingMs() { return processingEnd == null ? 0 : Math.max(0, processingEnd - Date.now()); },
+      get processingProgress() { return this.isProcessing ? 0 : (processingEnd != null ? 1 : 0); },
+      startProcessing() { processingEnd = Date.now() + 30_000; },
+      tickProcessing() {
+        if (processingEnd == null || Date.now() < processingEnd) return false;
+        processingEnd = null;
+        this.setSignalLevel(this.signalLevel + 1);
+        return true;
+      },
+      setSignalLevel(l) { level = l; this.signalLevel = l; },
+    };
     slot._insertedDrive = fakeDrive;
 
     // The prompt shows the process option.
@@ -250,10 +264,15 @@ describe('ServerRoom', () => {
     expect(opened[0].actions[0].id).toBe('upgrade');
     expect(opened[0].actions[0].enabled).toBe(true);
 
-    // The upgrade action's onClick upgrades the drive and refreshes.
+    // The upgrade action's onClick starts processing (not an instant upgrade).
     opened[0].actions[0].onClick();
-    expect(level).toBe(2);
+    expect(fakeDrive.isProcessing).toBe(true);
     expect(fakeScreen.refreshActions).toHaveBeenCalled();
+
+    // After processing finishes, tickProcessing applies the upgrade.
+    processingEnd = Date.now() - 1; // simulate time passing
+    fakeDrive.tickProcessing();
+    expect(level).toBe(2);
   });
 
   it('the console opens the processing screen even with no drive inserted', () => {

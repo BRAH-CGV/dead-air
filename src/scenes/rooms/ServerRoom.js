@@ -200,14 +200,18 @@ export class ServerRoom extends Room {
         const screen = self._processingScreen;
         if (!screen) return;
         const drive = self._driveSlot?.insertedDrive ?? null;
+
+        // Complete any finished processing run before building actions.
+        drive?.tickProcessing();
+
         const actions = [
           {
             id: 'upgrade',
             label: 'Upgrade Signal',
-            enabled: drive?.canUpgradeLevel ?? false,
+            get enabled() { return drive?.canUpgradeLevel ?? false; },
             onClick: () => {
               if (drive?.canUpgradeLevel) {
-                drive.setSignalLevel(drive.signalLevel + 1);
+                drive.startProcessing();
               }
               screen.refreshActions(self._driveSlot?.insertedDrive ?? null);
             },

@@ -65,8 +65,8 @@ export function compute(audioBuffer, { fftSize = 1024, hopSize = 512 } = {}) {
 
   const fft = new FFT(fftSize);
   const window = hannWindow(fftSize);
-  const frame = new Float32Array(fftSize);           // plain real input
-  const spectrum = fft.createComplexArray();         // complex output (2 * fftSize)
+  const frame = fft.createComplexArray();           // complex input (real samples at even indices)
+  const spectrum = fft.createComplexArray();        // complex output (2 * fftSize)
   const bins = fftSize / 2;
   const frames = Math.max(0, Math.floor((length - fftSize) / hopSize) + 1);
 
@@ -76,12 +76,13 @@ export function compute(audioBuffer, { fftSize = 1024, hopSize = 512 } = {}) {
 
   for (let t = 0; t < frames; t++) {
     const offset = t * hopSize;
-    // Windowed real samples.
+    // Pack windowed real samples into complex format (real at even, 0 at odd).
     for (let i = 0; i < fftSize; i++) {
-      frame[i] = (samples[offset + i] ?? 0) * window[i];
+      frame[i * 2] = (samples[offset + i] ?? 0) * window[i];
+      frame[i * 2 + 1] = 0;
     }
-    // Real FFT: plain real input → complex output.
-    fft.realTransform(spectrum, frame);
+    // Full complex FFT — well-documented, standard bin ordering.
+    fft.transform(spectrum, frame);
     // Magnitude of each bin (only the first half = positive frequencies).
     for (let f = 0; f < bins; f++) {
       const re = spectrum[2 * f];

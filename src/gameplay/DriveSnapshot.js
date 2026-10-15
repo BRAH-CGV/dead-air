@@ -56,6 +56,7 @@ export class DriveSnapshot {
         corrupted: drive.corrupted,
         signalName: drive.signalName,
         signalLevel: drive.signalLevel,
+        processingEndTime: drive.processingEndTime,
         owner: drive._snapOwner ?? null,
         slotIndex: drive._snapSlotIndex ?? null,
         position,
@@ -115,6 +116,10 @@ export class DriveSnapshot {
       // clearing). Only matters for saved drives — the colour follows level.
       if (state.saved && state.signalLevel > 1) {
         item.setSignalLevel?.(state.signalLevel);
+      }
+      // Restore any in-flight processing timer.
+      if (state.saved) {
+        item.processingEndTime = state.processingEndTime ?? null;
       }
     }
 

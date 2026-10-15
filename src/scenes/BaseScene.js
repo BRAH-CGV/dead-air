@@ -762,6 +762,9 @@ export class BaseScene extends Scene {
       const origOnRemoved = processingSlot.onDriveRemoved;
       processingSlot.onDriveRemoved = (drive) => {
         origOnRemoved?.(drive);
+        // Removing a drive from the processing console cancels any in-flight
+        // signal upgrade — the player must start over with a fresh insertion.
+        drive.processingEndTime = null;
         addDriveToRoom(drive);
       };
     }

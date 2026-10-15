@@ -47,6 +47,9 @@ const SAVED_EMISSIVE_INTENSITY = 1.5;
 /** Emissive colour when the anomalous (evil) signal is stored — red. */
 const CORRUPTED_EMISSIVE = 0xcc2222;
 
+/** Seconds a signal takes to process at the console. */
+export const PROCESSING_DURATION = 30;
+
 /** Doom glow: the red drive pulses brighter as the silence timer runs
  *  down. The curve is exponential (pow 6) so the glow stays subdued for
  *  most of the countdown, then spikes dramatically in the final seconds.
@@ -90,6 +93,48 @@ class DoomGlowFade extends Component {
   onUpdate(dt) { this._drive._tickDoomFade(dt); }
 }
 
+/** Per-frame ticker for signal processing. Checks whether the wall-clock
+ *  deadline has passed and applies the upgrade automatically — so the
+ *  player doesn't have to revisit the console. Also pauses the timer
+ *  when the game is paused by shifting the deadline forward. */
+class SignalProcessing extends Component {
+  _drive;
+  /** Unsubscribe handle for engine.onPauseChange. */
+  _unsubPause = null;
+  /** Wall-clock timestamp when the game was paused, or null. */
+  _pauseStart = null;
+
+  constructor(drive) {
+    super();
+    this._drive = drive;
+  }
+
+  onStart() {
+    const engine = this.gameObject?.scene?.userData?.engine;
+    if (!engine?.onPauseChange) return;
+    this._unsubPause = engine.onPauseChange((paused) => {
+      if (paused) {
+        // Game paused: remember when, so we can shift the deadline on resume.
+        this._pauseStart = Date.now();
+      } else if (this._pauseStart != null) {
+        // Game resumed: push the deadline forward by the pause duration.
+        const pauseDuration = Date.now() - this._pauseStart;
+        if (this._drive.processingEndTime != null) {
+          this._drive.processingEndTime += pauseDuration;
+        }
+        this._pauseStart = null;
+      }
+    });
+  }
+
+  onUpdate() { this._drive.tickProcessing(); }
+
+  onDestroy() {
+    this._unsubPause?.();
+    this._unsubPause = null;
+  }
+}
+
 export class Drive extends GameObject {
   /** @type {THREE.Mesh} */
   _mesh;
@@ -116,6 +161,11 @@ export class Drive extends GameObject {
    *  (DriveBoxDock). Deleted the same way as a green one: wipe it at the
    *  ServerRoom console (setSaved(false)). */
   corrupted = false;
+
+  /** Wall-clock timestamp (ms, Date.now()) when the current processing
+   *  finishes, or null when no processing is running. The upgrade completes
+   *  automatically once this time passes — even if the terminal is closed. */
+  processingEndTime = null;
 
   /** Set when makeKinematic() is called before _init builds a body — a
    *  socket receiver attaching the drive during scene build. _init honours
@@ -151,6 +201,9 @@ export class Drive extends GameObject {
     this.addComponent(new ImpactSound(IMPACT_SOUNDS.drive));
     // Ticks the doom-glow fade-out; also pure data, same reasoning.
     this.addComponent(new DoomGlowFade(this));
+    // Ticks signal processing so the upgrade completes without the player
+    // having to revisit the console.
+    this.addComponent(new SignalProcessing(this));
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -331,7 +384,10 @@ export class Drive extends GameObject {
     this.saved = saved;
     this.corrupted = saved && corrupted;
     this.signalName = saved ? signalName : null;
-    if (!saved) this.signalLevel = 1;
+    if (!saved) {
+      this.signalLevel = 1;
+      this.processingEndTime = null;
+    }
     if (this.saved) {
       const color = this.corrupted
         ? CORRUPTED_EMISSIVE
@@ -355,9 +411,47 @@ export class Drive extends GameObject {
   }
 
   /** Whether the drive can be upgraded to the next processing level. True
-   *  when the drive holds a non-corrupted signal below the max level (2). */
+   *  when the drive holds a non-corrupted signal below the max level (2)
+   *  and no processing run is in progress. */
   get canUpgradeLevel() {
-    return this.saved && !this.corrupted && this.signalLevel < 2;
+    return this.saved && !this.corrupted && this.signalLevel < 2
+      && !this.isProcessing;
+  }
+
+  /** True while a processing run is counting down. */
+  get isProcessing() {
+    return this.processingEndTime != null && Date.now() < this.processingEndTime;
+  }
+
+  /** Milliseconds remaining in the current processing run, or 0. */
+  get processingRemainingMs() {
+    if (this.processingEndTime == null) return 0;
+    return Math.max(0, this.processingEndTime - Date.now());
+  }
+
+  /** Fraction of the current processing run completed (0..1). */
+  get processingProgress() {
+    if (this.processingEndTime == null) return 0;
+    const remaining = this.processingRemainingMs;
+    if (remaining <= 0) return 1;
+    return 1 - remaining / (PROCESSING_DURATION * 1000);
+  }
+
+  /** Begin a processing run. The upgrade completes automatically once
+   *  PROCESSING_DURATION seconds have elapsed. */
+  startProcessing() {
+    this.processingEndTime = Date.now() + PROCESSING_DURATION * 1000;
+  }
+
+  /** Check whether the current processing run has finished and, if so,
+   *  apply the upgrade. Returns true if an upgrade was applied. */
+  tickProcessing() {
+    if (this.processingEndTime == null) return false;
+    if (Date.now() < this.processingEndTime) return false;
+    // Time's up — apply the upgrade.
+    this.processingEndTime = null;
+    this.setSignalLevel(this.signalLevel + 1);
+    return true;
   }
 
   /** Reset to the default unmarked colour (drive ejected). */

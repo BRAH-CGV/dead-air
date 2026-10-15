@@ -47,6 +47,9 @@ export class ProcessingScreen {
   /** requestAnimationFrame handle for the scanline. */
   _scanlineRaf = null;
 
+  /** requestAnimationFrame handle for the processing progress bar. */
+  _progressRaf = null;
+
   constructor(root = typeof document !== 'undefined' ? document.getElementById('processing-screen') : null) {
     this.root = root;
     this._spectrogram = root?.querySelector('#processing-spectrogram') ?? null;
@@ -59,6 +62,9 @@ export class ProcessingScreen {
     this._contrastSlider = root?.querySelector('#viz-contrast')        ?? null;
     this._volumeSlider = root?.querySelector('#viz-volume')            ?? null;
     this._scanline     = root?.querySelector('#processing-scanline')   ?? null;
+    this._progressContainer = root?.querySelector('#processing-progress')      ?? null;
+    this._progressFill      = root?.querySelector('#processing-progress-fill') ?? null;
+    this._progressLabel     = root?.querySelector('#processing-progress-label') ?? null;
     this._installVizListeners();
     this._installVolumeListener();
   }
@@ -81,6 +87,7 @@ export class ProcessingScreen {
     this.root.style.display = 'flex';
     this._lockInput(true);
     this._installKeyHandler();
+    this._startProgressTracking(drive);
   }
 
   /** Close the screen and restore input. */
@@ -88,6 +95,7 @@ export class ProcessingScreen {
     if (!this.root) return;
     this.root.style.display = 'none';
     this._stopScanline();
+    this._stopProgressTracking();
     this._clearSpectrogram();
     this._clearMediaButtons();
     this._clearActions();
@@ -105,6 +113,7 @@ export class ProcessingScreen {
     this._updateSpectrogram(drive);
     this._renderMediaButtons(drive);
     this._renderActions(this._actions);
+    this._startProgressTracking(drive);
   }
 
   /** Stop listening for keys and drop references. The DOM element lives
@@ -369,5 +378,55 @@ export class ProcessingScreen {
       removeEventListener('keydown', this._keyHandler);
       this._keyHandler = null;
     }
+  }
+
+  // ── Processing progress ────────────────────────────────────
+
+  /** Start tracking a drive's processing progress. Shows the progress bar
+   *  if the drive is currently processing; hides it otherwise. */
+  _startProgressTracking(drive) {
+    this._stopProgressTracking();
+    if (!drive?.isProcessing) {
+      this._hideProgress();
+      return;
+    }
+    this._showProgress();
+    const tick = () => {
+      if (!drive.isProcessing) {
+        // Processing finished — complete the upgrade and refresh.
+        drive.tickProcessing();
+        this._hideProgress();
+        this._renderActions(this._actions);
+        this._updateSpectrogram(drive);
+        this._renderMediaButtons(drive);
+        return;
+      }
+      this._updateProgress(drive);
+      this._progressRaf = requestAnimationFrame(tick);
+    };
+    this._progressRaf = requestAnimationFrame(tick);
+  }
+
+  _stopProgressTracking() {
+    if (this._progressRaf) {
+      cancelAnimationFrame(this._progressRaf);
+      this._progressRaf = null;
+    }
+    this._hideProgress();
+  }
+
+  _showProgress() {
+    if (this._progressContainer) this._progressContainer.style.display = 'flex';
+  }
+
+  _hideProgress() {
+    if (this._progressContainer) this._progressContainer.style.display = 'none';
+  }
+
+  _updateProgress(drive) {
+    const pct = (drive.processingProgress * 100).toFixed(0);
+    if (this._progressFill) this._progressFill.style.width = `${pct}%`;
+    const secs = Math.ceil(drive.processingRemainingMs / 1000);
+    if (this._progressLabel) this._progressLabel.textContent = `Processing… ${secs}s`;
   }
 }
