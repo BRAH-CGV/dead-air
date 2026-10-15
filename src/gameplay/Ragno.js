@@ -169,6 +169,10 @@ export class Ragno extends Component {
   }
 
   onStart() {
+    // His sounds made now, as the scene starts: cutting the 58 s call into
+    // its bursts and making the duct's loop is work no frame should wait on
+    // (the first sound used to be the kill's, on its lunge).
+    this._audio();
     this._off = this.controller.onNightStart?.((night) => this.reset(night)) ?? null;
     this._offState = this.controller.onStateChange?.((state) => {
       if (state !== 'playing') this._end();
