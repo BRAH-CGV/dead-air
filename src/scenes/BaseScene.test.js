@@ -196,9 +196,18 @@ describe('BaseScene', () => {
     }
   });
 
-  it('spawns the player inside the main office', () => {
+  it('wakes the player in the bedroom, beside the bunk (#79)', () => {
     expect(engine.buildPlayer).toHaveBeenCalledTimes(1);
-    expect(scene.rooms.MainOffice.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(scene.rooms.LivingQuarters.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(engine.buildPlayer).toHaveBeenCalledWith(expect.objectContaining({
+      position: scene.rooms.LivingQuarters.spawn.position,
+    }));
+  });
+
+  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
+    const { journal } = scene.rooms.LivingQuarters;
+    expect(journal.controller).toBe(scene.gameController);
+    expect(journal.panel).toBeTruthy();
   });
 
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
@@ -628,16 +637,24 @@ describe('BaseScene gameplay loop', () => {
     for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
   }
 
-  it('one bed animation, shared: the bunk and the nap both know it', () => {
+  it('one bed animation, shared: the bunk, the nap, the demon and the fatigue effects all know it', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const rest = gameplay.getComponent(BedRest);
     expect(rest).toBe(scene.bedRest);
     expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
     expect(scene.nap.rest).toBe(rest);
+    expect(scene.sleepDemon.sleeper).toBe(rest);
+    // It watches on the real clock, and sees past the bunk the pillow is in.
+    expect(scene.sleepDemon.realDt()).toBe(engine.realDt);
+    expect(typeof scene.sleepDemon.napRayHit).toBe('function');
     expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
     // The nap's "[E] Wake up" line, over the lids (#nap-hint).
     expect(typeof scene.nap.hint?.show).toBe('function');
     expect(typeof scene.nap.hint?.hide).toBe('function');
+    expect(scene.fatigueEffects.isResting()).toBe(false);
+    rest.lieDown();
+    expect(scene.fatigueEffects.isResting()).toBe(true);
+    rest.cancel();
   });
 
   it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {

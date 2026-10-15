@@ -203,6 +203,11 @@ describe('Bed', () => {
       expect(p1.pitch).toBeCloseTo(p0.pitch);
       const out = there.getOutSpot();
       expect(out.yaw - here.getOutSpot().yaw).toBeCloseTo(Math.PI / 2);
+      const w0 = here.watchSpots(), w1 = there.watchSpots();
+      expect(w1.length).toBe(w0.length);
+      expect(w1.length).toBeGreaterThan(0);
+      expect(w1[0].distanceTo(w0[0].clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2)
+        .add(new THREE.Vector3(3, 0, -2)))).toBeLessThan(1e-6);
     });
   });
 
