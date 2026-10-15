@@ -176,6 +176,16 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
     },
     {
+      name: 'dreamcrater', usage: 'dreamcrater', help: 'Drop into the crater dream (sandstorm + dust eyes); survive a minute to wake',
+      run: () => {
+        const DreamCrater = engine.sceneRegistry?.get('DreamCraterScene');
+        if (!DreamCrater) throw new CommandError('No crater dream scene registered');
+        const night = engine.activeScene?.nights?.currentNight ?? 1;
+        engine.loadScene(DreamCrater, { sceneOptions: { night } });
+        return `Entering the crater dream (night ${night})`;
+      },
+    },
+    {
       name: 'night', usage: 'night [n]', help: 'Jump to a night, or on to the next (wraps to 1)',
       run: ([arg]) => {
         const nights = system('nights', 'nights');

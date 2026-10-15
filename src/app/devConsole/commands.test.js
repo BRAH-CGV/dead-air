@@ -560,4 +560,25 @@ describe('createCommands', () => {
       expect(run('dream').ok).toBe(false);
     });
   });
+
+  describe('dreamcrater', () => {
+    class DreamCrater {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamCraterScene', DreamCrater]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('drops into the crater dream with the current night', () => {
+      scene.nights.setNight(2);
+      const { ok, out } = run('dreamcrater');
+      expect(ok).toBe(true);
+      expect(engine.loadScene).toHaveBeenCalledWith(DreamCrater, { sceneOptions: { night: 2 } });
+      expect(out.join(' ')).toMatch(/crater dream/i);
+    });
+
+    it('says so when there is no crater dream scene', () => {
+      engine.sceneRegistry = new Map();
+      expect(run('dreamcrater').ok).toBe(false);
+    });
+  });
 });
