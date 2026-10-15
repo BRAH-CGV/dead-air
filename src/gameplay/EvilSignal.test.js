@@ -488,7 +488,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     evil.hover(sig);                        // saves red, starts silence timer
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopStart);
 
     controller.startNight(2);
     expect(evil._silenceTimer).toBeNull();
@@ -525,18 +525,19 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
 
     evil.hover(sig);                        // saves red, starts silence + hop timers
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopStart);
 
     // Tick just under 1 s — no kick yet.
-    evil.onUpdate(EVIL.driveHopSeconds - 0.05);
+    evil.onUpdate(EVIL.driveHopStart - 0.05);
     expect(setLinvel).not.toHaveBeenCalled();
 
     // Tick past the hop interval — the drive gets kicked.
     evil.onUpdate(0.1);
     expect(setLinvel).toHaveBeenCalledTimes(1);
     expect(applyAngularImpulse).toHaveBeenCalledTimes(1);
-    // The timer resets for the next hop.
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    // The timer resets for the next hop — shortened by the doom ramp.
+    expect(evil._driveHopTimer).toBeLessThan(EVIL.driveHopStart);
+    expect(evil._driveHopTimer).toBeGreaterThanOrEqual(EVIL.driveHopEnd);
   });
 
   it('wiping the drive stops the hopping', () => {
@@ -556,7 +557,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     expect(evil._driveHopTimer).toBeNull();
 
     // Even after a full second more, no kick — the timer is gone.
-    evil.onUpdate(EVIL.driveHopSeconds + 0.1);
+    evil.onUpdate(EVIL.driveHopStart + 0.1);
     expect(setLinvel).not.toHaveBeenCalled();
   });
 
@@ -788,7 +789,7 @@ describe('EvilSignal sparks — sound', () => {
     rig.evil.hover(evilSig(rig.signalManager));
     rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
     rig.voice.play.mockClear();
-    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    rig.evil.onUpdate(EVIL.driveHopStart + 0.01);
   }
 
   it('sparks with one of three clips, from the drive, on each hop', () => {
@@ -810,7 +811,7 @@ describe('EvilSignal sparks — sound', () => {
     const first = rig.voice.play.mock.calls[0][2];
     rig.voice.play.mockClear();
     rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
-    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    rig.evil.onUpdate(EVIL.driveHopStart + 0.01);
     const lateCalls = rig.voice.play.mock.calls;
     expect(lateCalls.at(-1)[2]).toBeGreaterThan(first);
     expect(lateCalls.at(-1)[2]).toBeLessThanOrEqual(1);
@@ -822,7 +823,7 @@ describe('EvilSignal sparks — sound', () => {
     hopOnce(rig);
     drive.setEjected();
     rig.voice.play.mockClear();
-    rig.evil.onUpdate(EVIL.driveHopSeconds * 3);
+    rig.evil.onUpdate(EVIL.driveHopStart * 3);
     expect(rig.voice.play).not.toHaveBeenCalled();
     rig.evil.onDestroy();
     expect(rig.voice.dispose).toHaveBeenCalled();
@@ -878,7 +879,7 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
     // Tick past the hop interval so the drive jumps.
-    evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    evil.onUpdate(EVIL.driveHopStart + 0.01);
     expect(sparks.burst).toHaveBeenCalled();
   });
 

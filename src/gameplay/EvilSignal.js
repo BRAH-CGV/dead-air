@@ -67,9 +67,12 @@ export const EVIL = {
    *  console before the shift ends ("You were silenced").
    *  TEMP: 15 s for debugging. Restore before release. */
   silenceSeconds: 15,
-  /** Seconds between random hops of the corrupted drive while the silence
-   *  timer runs. The drive jumps in a random direction every interval. */
-  driveHopSeconds: 1,
+  /** Seconds between random hops of the corrupted drive at the start of
+   *  the silence timer. The interval ramps down to driveHopEnd as doom
+   *  builds, so the drive jumps faster and faster. */
+  driveHopStart: 2,
+  /** Seconds between hops as the silence timer expires. */
+  driveHopEnd: 0.8,
   /** Seconds the cursor and dish are dragged to the evil signal's centre
    *  before the normal engage logic fires. */
   pullInSeconds: 0.8,
@@ -394,7 +397,9 @@ export class EvilSignal extends Component {
         if (this._driveHopTimer !== null) {
           this._driveHopTimer -= dt;
           if (this._driveHopTimer <= 0) {
-            this._driveHopTimer = EVIL.driveHopSeconds;
+            const hopInterval = EVIL.driveHopStart
+              + (EVIL.driveHopEnd - EVIL.driveHopStart) * Math.min(Math.max(doomFraction, 0), 1);
+            this._driveHopTimer = hopInterval;
             const kickStrength = 1 + doomFraction * 2;  // 1 → 3
             this._kickDrive(corrupted, kickStrength);
             this._sparks?.burst(
@@ -524,7 +529,7 @@ export class EvilSignal extends Component {
     // corrupted drive and wipe it at the ServerRoom console.
     this.terminal?.exit?.();
     this._silenceTimer = EVIL.silenceSeconds;
-    this._driveHopTimer = EVIL.driveHopSeconds;
+    this._driveHopTimer = EVIL.driveHopStart;
     this._driveInfected = true;
     this.deleteWarning?.show();
     // Sparks: fly out of the corrupted drive at an increasing rate. A
