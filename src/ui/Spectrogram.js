@@ -46,7 +46,7 @@ function hannWindow(n) {
  * @param {object} [opts]
  * @param {number} [opts.fftSize=1024]   FFT bin count (must be power of 2).
  * @param {number} [opts.hopSize=512]    Frame advance in samples (50 % overlap).
- * @returns {{ magnitude: Float32Array[], bins: number, frames: number }}
+ * @returns {{ magnitude: Float32Array[], bins: number, frames: number, sampleRate: number }}
  *   `magnitude[f][t]` is the normalised magnitude (0..1) of frequency bin `f`
  *   at time frame `t`.
  */
@@ -102,7 +102,7 @@ export function compute(audioBuffer, { fftSize = 1024, hopSize = 512 } = {}) {
     }
   }
 
-  return { magnitude, bins, frames };
+  return { magnitude, bins, frames, sampleRate: audioBuffer.sampleRate };
 }
 
 // ── Colour map ───────────────────────────────────────────────
@@ -145,28 +145,34 @@ function colourMap(t) {
  * @param {object} [opts]
  * @param {function} [opts.colormap]  Optional custom colour map
  *   `(t: 0..1) => [r, g, b]`.
+ * @param {number} [opts.maxFreq=16000]   Highest frequency to display (Hz).
+ *   Bins above this are trimmed, and the visible range fills the canvas height.
  * @param {number} [opts.gain=1]      Brightness multiplier (0.5..5).
  * @param {number} [opts.contrast=1]  Power curve exponent (0.2..3).
  *   < 1 brightens (compresses darks), > 1 darkens (expands darks).
  */
-export function render(canvas, result, { colormap = colourMap, gain = 1, contrast = 1 } = {}) {
-  const { magnitude, bins, frames } = result;
+export function render(canvas, result, { colormap = colourMap, gain = 1, contrast = 1, maxFreq = 16000 } = {}) {
+  const { magnitude, bins, frames, sampleRate } = result;
   if (!frames || !bins) return;
 
+  // How many bins fall within the visible frequency range?
+  const nyquist = sampleRate / 2;
+  const visibleBins = Math.min(bins, Math.ceil(bins * (maxFreq / nyquist)));
+
   canvas.width = frames;
-  canvas.height = bins;
+  canvas.height = visibleBins;
   const ctx = canvas.getContext('2d');
-  const imageData = ctx.createImageData(frames, bins);
+  const imageData = ctx.createImageData(frames, visibleBins);
   const data = imageData.data;
 
   for (let t = 0; t < frames; t++) {
-    for (let f = 0; f < bins; f++) {
+    for (let f = 0; f < visibleBins; f++) {
       // Apply gain then contrast, clamped to 0..1.
       let v = magnitude[f][t] * gain;
       v = Math.max(0, Math.min(1, v));
       if (contrast !== 1) v = Math.pow(v, contrast);
       // Flip vertically so low frequencies are at the bottom.
-      const y = bins - 1 - f;
+      const y = visibleBins - 1 - f;
       const idx = (y * frames + t) * 4;
       const [r, g, b] = colormap(v);
       data[idx] = r;
