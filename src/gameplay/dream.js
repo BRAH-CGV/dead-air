@@ -28,6 +28,14 @@
  *           last few metres were a half-minute crawl that read as stuck.
  */
 
+/** Which dream follows which night, by registered scene name. Sleeping
+ *  after a night with no entry (or one whose scene isn't registered) falls
+ *  back to the walk. Swap the order here. */
+export const DREAM_AFTER_NIGHT = Object.freeze({
+  1: 'DreamScene',        // the walk that pulls you back (Sibonelo)
+  2: 'DreamCraterScene',  // the crater and the dust eyes (Hayden)
+});
+
 /** How far into the slow ring counts as deep: past this, ringSeconds runs. */
 export const RING_UNEASE = 0.75;
 
