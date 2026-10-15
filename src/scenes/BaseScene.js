@@ -82,6 +82,7 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { BedRest } from '../components/BedRest.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { EventBanner } from '../ui/EventBanner.js';
 
 // ─────────────────────────────────────────────
 // BaseScene  –  the whole base as one continuous scene
@@ -213,6 +214,21 @@ const SECURITY_CAMERAS = {
    *  down] — wide enough across that the end-wall cameras read as outside. */
   mapMargin: [6, 1.5],
 };
+
+// ── BannerTicker ──────────────────────────────────────────
+// A small component on GameplaySystems that ticks the event banner's
+// timer with engine.realDt, so a nap's 15× timeScale doesn't rush it
+// and a pause holds it.
+class BannerTicker extends Component {
+  constructor(banner, engine) {
+    super();
+    this._banner = banner;
+    this._engine = engine;
+  }
+  onUpdate(_dt) {
+    this._banner?.timer.update(this._engine?.realDt ?? 0);
+  }
+}
 
 
 export class BaseScene extends Scene {
@@ -350,6 +366,7 @@ export class BaseScene extends Scene {
     // outside the scene graph — nothing tears them down for us, so a scene
     // swap would leave last night's numbers floating over the next level.
     this.hud?.hide();
+    this.banner?.clear();
     // dispose(), not just hide(): both hang listeners on page elements and
     // the window that outlive the scene.
     this.radarOverlay?.dispose();
@@ -614,6 +631,7 @@ export class BaseScene extends Scene {
     // UI wrappers over the markup in index.html. With no DOM (tests) each
     // falls back to a null root and every call is a no-op.
     this.hud          = new HUD();
+    this.banner       = new EventBanner();
     this.radarOverlay = new RadarOverlay();
     this.reviewPanel  = new SignalReviewPanel();
 
@@ -651,7 +669,13 @@ export class BaseScene extends Scene {
     this.gameController.satellite     = this.satellite;
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
+    this.gameController.banner        = this.banner;
     gameplayGO.addComponent(this.gameController);
+
+    // The banner's timing runs on real time (engine.realDt), ticked by a
+    // small component on GameplaySystems, so a nap's 15× timeScale doesn't
+    // rush it and a pause holds it.
+    gameplayGO.addComponent(new BannerTicker(this.banner, this.engine));
 
     // The terminal notifies the controller when a signal is auto-saved.
     this.terminal.gameController = this.gameController;
@@ -1812,6 +1836,7 @@ export class BaseScene extends Scene {
       engine:     this.engine,
       rest:       this.bedRest ?? null,
       hud:        this.hud,
+      banner:     this.banner,
       // Over the closed lids (#nap-hint): the HUD is under them.
       hint:       new PromptLabel(typeof document !== 'undefined' ? document.getElementById('nap-hint') : null),
       hooks: {
@@ -1819,8 +1844,8 @@ export class BaseScene extends Scene {
         restless:        ufoBusy,
       },
       alarms: [
-        { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.' },
-        { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.' },
+        { test: () => !!this.stormOutage?.flickering, message: 'The lamps\' buzzing woke you — the power is failing.', tone: 'warning' },
+        { test: () => !!this.ufoThreat?.audible,      message: 'A roar overhead woke you.',                              tone: 'warning' },
       ],
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.nap);
