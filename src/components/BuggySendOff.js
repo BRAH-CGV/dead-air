@@ -133,7 +133,11 @@ export class BuggySendOff extends Component {
     this.engine.viewCamera = this._viewCam;
     this._viewCamActive = true;
 
-    this._heading = this.buggy.object3d.rotation.y;
+    // Read off where the nose points, not rotation.y: once the night start
+    // has put the parked quaternion back, three reads a heading past 90°
+    // out as x and z flipped by π and y mirrored.
+    _forward.set(0, 0, 1).applyQuaternion(this.buggy.object3d.quaternion);
+    this._heading = Math.atan2(_forward.x, _forward.z);
     this._fading = false;
     this.logic.start();
   }
@@ -171,7 +175,11 @@ export class BuggySendOff extends Component {
     const yaw = Math.atan2(_tangent.x, _tangent.z);
 
     this.buggy.object3d.position.copy(_pos);
-    this.buggy.object3d.rotation.y = yaw;
+    // A turn about the vertical, the whole rotation: setting rotation.y alone
+    // kept whatever x and z three had read out of the parked quaternion (π
+    // and π past 90°), which mirrored the heading, so after the first night
+    // it spun and drove off backwards.
+    this.buggy.object3d.quaternion.setFromAxisAngle(_up, yaw);
     this.buggy.object3d.updateMatrixWorld(true);
 
     this._syncBody(this.buggy);
