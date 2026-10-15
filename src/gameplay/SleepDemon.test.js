@@ -1088,31 +1088,144 @@ describe('SleepDemon voices: whispers and knocks, from where it stands', () => {
     expect(whisper.isPlaying).toBe(false);
   });
 
-  it('it knocks only while nobody is looking at it, every so often, never twice the same', () => {
-    stamina.value = 0.2941;
-    run(8);
-    expect(figure.object3d.visible).toBe(true);
-    run(KNOCK.every[1] + 1);                // seen, the whole while: never a knock
-    expect(knock.play).not.toHaveBeenCalled();
+  describe('knocks: now and then in place of a whisper', () => {
+    const KNOCKS = 4.01;
+    beforeEach(() => { knock.buffer = { duration: KNOCKS }; });
+    /** A roll that is never silent and always knocks, from a fresh player
+     *  down to 0.12 stamina (where the knock's share has fallen to ~0.4). */
+    const KNOCKY = 0.37;
+    /** Which of KNOCK.clips the knock just played, by where it started. */
+    const clip = () => KNOCK.clips.findIndex(([at]) => Math.abs(at - knock.offset) < 1e-9);
 
-    lookAway();
-    run(KNOCK.every[1] + 0.2);              // unseen: within the longest wait
-    const knocks = knock.play.mock.calls.length;
-    expect(knocks).toBeGreaterThanOrEqual(1);
-    run(KNOCK.every[0] * 0.5);              // never sooner than the shortest wait
-    expect(knock.play.mock.calls.length).toBe(knocks);
-    expect(knock.setDetune).toHaveBeenCalled();     // a knock pitched its own way
-  });
+    it('knocks commoner at first, whispers later; silent showings commoner while fresh', () => {
+      expect(KNOCK.shareFar).toBeGreaterThan(0.5);
+      expect(KNOCK.shareNear).toBeLessThan(0.5);
+      expect(WHISPER.silentFar).toBeGreaterThan(WHISPER.silentNear);
+      expect(WHISPER.silentNear).toBeGreaterThan(0);
+      expect(WHISPER.silentFar).toBeLessThan(KNOCKY);
+    });
 
-  it('a knock still sounding is cut when the shift ends', () => {
-    stamina.value = 0.2941;
-    run(8);
-    lookAway();
-    run(KNOCK.every[1] + 0.2);
-    knock.isPlaying = true;
-    controller.state = 'morning';
-    run(0.1);
-    expect(knock.isPlaying).toBe(false);
+    it('the same roll that knocks for a fresh player whispers for a tired one', () => {
+      demon.rand = () => 0.5;
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      expect(knock.isPlaying).toBe(true);
+      expect(whisper.play).not.toHaveBeenCalled();
+
+      controller.startNight(2);
+      knock.play.mockClear();
+      demon.rand = () => 0.5;
+      stamina.value = 0.06;
+      expect(untilShown()).toBe(true);
+      expect(whisper.isPlaying).toBe(true);
+      expect(knock.play).not.toHaveBeenCalled();
+    });
+
+    it('the same roll that leaves a fresh showing silent sounds once the player is tired', () => {
+      demon.rand = () => (WHISPER.silentFar + WHISPER.silentNear) / 2;
+      stamina.value = 0.4706;               // fresh: silent
+      expect(untilShown()).toBe(true);
+      run(0.2);
+      expect(whisper.play).not.toHaveBeenCalled();
+      expect(knock.play).not.toHaveBeenCalled();
+
+      controller.startNight(2);
+      demon.rand = () => (WHISPER.silentFar + WHISPER.silentNear) / 2;
+      stamina.value = 0.12;                 // tired: it sounds
+      expect(untilShown()).toBe(true);
+      expect(whisper.isPlaying || knock.isPlaying).toBe(true);
+    });
+
+    it('a showing may knock instead of whispering: one of the clips, from where it stands', () => {
+      demon.rand = () => KNOCKY;
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      expect(knock.isPlaying).toBe(true);
+      expect(whisper.play).not.toHaveBeenCalled();
+      expect(clip()).toBeGreaterThanOrEqual(0);
+      const [at, len] = KNOCK.clips[clip()];
+      expect(knock.duration).toBeCloseTo(Math.min(len, KNOCKS - at), 9);
+    });
+
+    it('a later turn may knock too, and never the same clip twice running', () => {
+      demon.rand = () => KNOCKY;
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      const first = clip();
+      for (let t = 0; t < 40 && knock.play.mock.calls.length < 2; t += 0.1) demon.onUpdate(0.1);
+      expect(knock.play).toHaveBeenCalledTimes(2);
+      expect(whisper.play).not.toHaveBeenCalled();
+      expect(clip()).not.toBe(first);
+    });
+
+    it('the single bang lands louder than the other takes', () => {
+      /** The showing's rolls in order — the next gap, not silent, a knock,
+       *  which clip — then 0.5. */
+      const rolls = clipAt => { const q = [0.5, 0.9, 0.1, clipAt]; return () => (q.length ? q.shift() : 0.5); };
+      stamina.value = 0.4706;
+      demon.rand = rolls(0);                // the first take
+      expect(untilShown()).toBe(true);
+      expect(clip()).toBe(0);
+      const take = knock.volume;
+
+      controller.startNight(2);
+      demon.rand = rolls(0.99);             // the last: the single bang
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      expect(clip()).toBe(2);
+      expect(knock.volume).toBeGreaterThan(take * 1.3);
+    });
+
+    it('a showing may make no sound at all, and sound later', () => {
+      demon.rand = () => WHISPER.silentNear / 2;              // silent at any stamina
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      run(0.2);
+      expect(whisper.play).not.toHaveBeenCalled();
+      expect(knock.play).not.toHaveBeenCalled();
+      run(WHISPER.gap[1] + 0.5);            // a later turn is never silent
+      expect(whisper.play.mock.calls.length + knock.play.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('looked at, a knock is cut that very frame, like a whisper', () => {
+      demon.rand = () => KNOCKY;
+      stamina.value = 0.12;
+      expect(untilShown()).toBe(true);
+      expect(knock.isPlaying).toBe(true);
+      const at = figure.object3d.position;
+      look(at.x, at.z);
+      demon.onUpdate(0.1);
+      expect(knock.isPlaying).toBe(false);
+    });
+
+    it('it no longer knocks on its own while it stands unseen', () => {
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);      // rand 0.9: whispers
+      lookAway();
+      run(30);
+      expect(knock.play).not.toHaveBeenCalled();
+    });
+
+    it('never in the endless whisper at the end', () => {
+      demon.rand = () => KNOCKY;
+      stamina.value = 0.03;
+      expect(untilShown()).toBe(true);
+      run(T.fadeIn + 0.2);                  // solid: endless
+      const knocks = knock.play.mock.calls.length;
+      run(20);
+      expect(knock.play.mock.calls.length).toBe(knocks);
+      expect(whisperBed.play).toHaveBeenCalled();
+    });
+
+    it('a knock still sounding is cut when the shift ends', () => {
+      demon.rand = () => KNOCKY;
+      stamina.value = 0.4706;
+      expect(untilShown()).toBe(true);
+      expect(knock.isPlaying).toBe(true);
+      controller.state = 'morning';
+      run(0.1);
+      expect(knock.isPlaying).toBe(false);
+    });
   });
 });
 

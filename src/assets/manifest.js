@@ -648,7 +648,7 @@ const PLACED = {
     url: 'assets/audio/monster-bite.mp3',
   },
   // Stamina and the Sleep Demon, from the first minute of night 1: the
-  // demon's whispers, placed on its figure (SleepDemon); the heartbeat, looped,
+  // demon's whispers and knocks, placed on its figure (SleepDemon); the heartbeat, looped,
   // and the yawn of a tired one (FatigueEffects); a
   // ration dropping from the office dispenser (BaseScene._addStamina).
   //
@@ -674,6 +674,11 @@ const PLACED = {
   'sfx:whispering': {
     type: 'audio',
     url: 'assets/audio/whispering.mp3',
+  },
+  // Three takes in one file, played as stretches of it (KNOCK.clips).
+  'sfx:knocks': {
+    type: 'audio',
+    url: 'assets/audio/knocks.mp3',
   },
 };
 

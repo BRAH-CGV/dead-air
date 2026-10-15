@@ -83,12 +83,12 @@ describe('manifest', () => {
     }
   });
 
-  it("preloads the stamina sounds: the demon's whispers, the heartbeat, the yawn and the ration", () => {
+  it("preloads the stamina sounds: the demon's whispers and knocks, the heartbeat, the yawn and the ration", () => {
     // The Sleep Demon and fatigue run from the first minute of night 1, so
     // their clips are decoded behind the loading screen. They are
     // placeholders, and a replacement may come in any format, so only the
     // folder is pinned (the file is named after its key, above).
-    for (const key of ['sfx:whispering', 'sfx:heartbeat', 'sfx:yawn', 'sfx:ration']) {
+    for (const key of ['sfx:whispering', 'sfx:knocks', 'sfx:heartbeat', 'sfx:yawn', 'sfx:ration']) {
       expect(ASSETS[key], key).toMatchObject({ type: 'audio' });
       expect(ASSETS[key].url, key).toMatch(/^assets\/audio\//);
       expect(PRELOAD, key).toContain(key);
@@ -110,6 +110,12 @@ describe('manifest', () => {
     expect(existsSync(resolve(ROOT, 'public', url))).toBe(true);
     const credits = readFileSync(resolve(ROOT, 'ATTRIBUTIONS.md'), 'utf8');
     expect(credits).toMatch(/my heart beat for Halloween[\s\S]*?`sfx:heartbeat`/);
+  });
+
+  it('the knocks are credited, one source flagged non-commercial', () => {
+    expect(existsSync(resolve(ROOT, 'public', ASSETS['sfx:knocks'].url))).toBe(true);
+    const credits = readFileSync(resolve(ROOT, 'ATTRIBUTIONS.md'), 'utf8');
+    expect(credits).toMatch(/### Knocks — ⚠[\s\S]*?Speedenza[\s\S]*?`sfx:knocks`/);
   });
 
   it('has no validation problems', () => {

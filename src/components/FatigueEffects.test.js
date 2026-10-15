@@ -59,7 +59,7 @@ describe('FatigueEffects', () => {
 
   it('yawns out loud when tired', () => {
     stamina.value = 0.4;
-    run(FATIGUE.firstYawn[0] - 0.1);
+    run(FATIGUE.yawnDelay[0] - 0.1);
     expect(sounds.yawn.play).not.toHaveBeenCalled();
     run(0.2);
     expect(sounds.yawn.play).toHaveBeenCalledTimes(1);
@@ -191,7 +191,7 @@ describe('FatigueEffects', () => {
     stamina.value = 0.4;
     run(1);
     controller.startNight(2);
-    run(FATIGUE.firstYawn[0] - 0.2);
+    run(FATIGUE.yawnDelay[0] - 0.2);
     expect(sounds.yawn.play).not.toHaveBeenCalled();
   });
 
