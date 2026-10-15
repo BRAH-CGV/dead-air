@@ -33,6 +33,7 @@ function fakeScene() {
     evilSignal: { summon: vi.fn(() => true) },
     sandstorm: { summon: vi.fn(() => true) },
     dustEyes: { summon: vi.fn(() => true) },
+    buggySendOff: { active: false, start: vi.fn() },
     ragno: { summon: vi.fn(() => true), dismiss: vi.fn(), logic: { active: false } },
     ambience,
     power,
@@ -360,6 +361,30 @@ describe('createCommands', () => {
       const { ok, out } = run('ufo');
       expect(ok).toBe(false);
       expect(out[0]).toMatch(/^UFO not summoned/);
+    });
+
+    it('buggy draws everything first, unculled, then sends it off', () => {
+      withZones(scene);
+      const order = [];
+      scene.zones.revealAll.mockImplementation((on) => { scene.zones.revealed = on; order.push(`reveal ${on}`); });
+      scene.buggySendOff.start.mockImplementation(() => order.push('start'));
+      expect(run('buggy').out).toEqual(['Zones revealed: everything is drawn (zones hide culls again)', 'Buggy sent off']);
+      expect(order).toEqual(['reveal true', 'start']);
+    });
+
+    it('buggy sends the buggy off now, cutscene and all; not twice at once', () => {
+      expect(run('buggy').out.at(-1)).toBe('Buggy sent off');
+      expect(scene.buggySendOff.start).toHaveBeenCalledOnce();
+      scene.buggySendOff.active = true;
+      const { ok, out } = run('buggy');
+      expect(ok).toBe(false);
+      expect(out[0]).toMatch(/already/i);
+      expect(scene.buggySendOff.start).toHaveBeenCalledOnce();
+    });
+
+    it('buggy says so when the scene has no send-off', () => {
+      delete scene.buggySendOff;
+      expect(run('buggy').out).toEqual(['No buggy send-off in this scene']);
     });
 
     it('storm brings a sandstorm', () => {

@@ -193,6 +193,28 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
     },
     {
+      // Diagnosis: the morning's send-off cutscene on demand, box or not.
+      // It only dispatches in a morning; otherwise the buggy stays gone
+      // (parked under the ground) until the next night start. Everything is
+      // drawn first, unculled, so it can be watched from indoors too.
+      name: 'buggy', usage: 'buggy', help: 'Send the buggy off now, cutscene and all, everything drawn',
+      run: () => {
+        const sendOff = system('buggySendOff', 'buggy send-off');
+        if (sendOff.active) throw new CommandError('The buggy is already driving off');
+        const out = [];
+        const zones = engine.activeScene?.zones;
+        if (zones) {
+          // AirlockPortal sets the reveal every frame; this keeps it on.
+          engine.revealZones = true;
+          zones.revealAll(true);
+          out.push('Zones revealed: everything is drawn (zones hide culls again)');
+        }
+        sendOff.start();
+        out.push('Buggy sent off');
+        return out;
+      },
+    },
+    {
       name: 'storm', usage: 'storm', help: 'Start a sandstorm now, on any night',
       run: () => {
         if (!system('sandstorm', 'sandstorms').summon()) {
