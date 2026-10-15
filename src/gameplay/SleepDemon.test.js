@@ -225,6 +225,33 @@ describe('SleepDemon', () => {
     expect(demon.logic.side).toBe(-side);
   });
 
+  it('right beside the player, behind them, it fades away: no limbs at the edge of the eye', () => {
+    stamina.value = 0.2941;
+    run(4);
+    expect(visible()).toBe(true);
+    const at = figure.object3d.position.clone();
+    stepTo(T.closeFade + 0.2);
+    face(camera.position.x * 2 - at.x, EYE, camera.position.z * 2 - at.z);   // back to it
+    run(0.1);
+    expect(demon.logic.shown).toBe(true);
+    stepTo(T.closeFade - 0.2);
+    run(0.1);
+    expect(demon.logic.shown).toBe(false);
+    run(T.fadeOut);
+    expect(visible()).toBe(false);
+  });
+
+  it('above the stare a wall never leaves a showing within closeFade: no room, so it waits', () => {
+    wall = T.closeFade + T.wallGap - 0.2;  // room for minDistance, not for closeFade
+    stamina.value = 0.15;
+    run(6);
+    expect(visible()).toBe(false);
+    wall = Infinity;
+    run(0.3);
+    expect(visible()).toBe(true);
+    expect(seen().distance).toBeGreaterThan(T.closeFade);
+  });
+
   it('walked up to with some of it off the screen, it stays', () => {
     stamina.value = 0.2941;
     run(4);

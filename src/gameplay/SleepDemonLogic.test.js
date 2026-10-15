@@ -58,6 +58,19 @@ describe('SLEEP_DEMON tuning', () => {
     expect(T.nearCloser).toBeLessThan(0.5);
   });
 
+  it('right beside the player it never stays: within about a metre it fades, whatever the view, until the stare', () => {
+    expect(T.closeFade).toBeGreaterThanOrEqual(0.8);
+    expect(T.closeFade).toBeLessThanOrEqual(1.2);
+    expect(T.closeFade).toBeGreaterThan(T.minDistance);
+    expect(T.closeFade).toBeLessThan(T.nearFade);
+    // Above the stare nothing of its own brings it that near: not its creep,
+    // not where it shows, not the ambush.
+    const at = (far, near) => far + (near - far) * closenessFor(T.holdBelow);
+    expect(creepFloorFor(T.holdBelow)).toBeGreaterThan(T.closeFade);
+    expect(at(T.farthest, T.nearest)).toBeGreaterThan(T.closeFade);
+    expect(at(T.ambushDistanceFar, T.ambushDistanceNear)).toBeGreaterThan(T.closeFade);
+  });
+
   it('some showings land behind the player by the roll; the rest in the periphery', () => {
     expect(T.behindChance).toBeGreaterThan(0);
     expect(T.behindChance).toBeLessThan(1);
@@ -200,7 +213,7 @@ describe('SleepDemonLogic', () => {
     expect(place).toHaveBeenCalledTimes(1);
     expect(place).toHaveBeenCalledWith({
       side: 1, distance: expect.closeTo(5.4, 5), edge: expect.closeTo(0.725, 5),
-      focus: expect.closeTo(focusAngleFor(0.25), 5),
+      focus: expect.closeTo(focusAngleFor(0.25), 5), minDistance: T.closeFade,
     });
   });
 
@@ -372,6 +385,81 @@ describe('SleepDemonLogic', () => {
     walked = 0.3;                           // the player steps up to it
     logic.update(0.1, 0.1176);
     expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('the player within closeFade of it — behind them, beside them, half off the screen — and it fades away, back later at the other side', () => {
+    for (const [view, all] of [[Infinity, false], [CORNER, false]]) {
+      const { logic, place, hide } = make();
+      shown(logic, 0.2941);
+      angle = view;
+      whole = all;
+      walked = standing - (T.closeFade + 0.1);   // not quite
+      logic.update(0.1, 0.2941);
+      expect(hide).not.toHaveBeenCalled();
+      walked = standing - (T.closeFade - 0.1);   // right beside them
+      logic.update(0.1, 0.2941);
+      expect(hide).toHaveBeenCalledTimes(1);
+      expect(logic.shown).toBe(false);
+
+      walked = 0;
+      angle = CORNER;
+      const gone = T.goneFar + (T.goneNear - T.goneFar) * closenessFor(0.2941);
+      run(logic, gone + 0.15, 0.2941);
+      expect(place).toHaveBeenCalledTimes(2);
+      expect(place).toHaveBeenLastCalledWith(expect.objectContaining({ side: -1 }));
+    }
+  });
+
+  it('with the terminal screen up it fades from right beside the player too', () => {
+    const { logic, hide } = make({ rand: () => 0.1 });
+    shown(logic, 0.2941);
+    angle = null;
+    walked = standing - (T.closeFade - 0.1);
+    logic.update(0.1, 0.2941);
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it('below holdBelow it may stand right beside them, seen or not: the stare and the walk-in', () => {
+    const { logic, hide } = make();
+    shown(logic, 0.08);
+    for (const view of [Infinity, CORNER, 0]) {
+      angle = view;
+      walked = standing - (T.closeFade - 0.3);
+      run(logic, 1, 0.08);
+    }
+    expect(hide).not.toHaveBeenCalled();
+    expect(logic.shown).toBe(true);
+  });
+
+  it('fed back above holdBelow with it right beside them, it fades, and never shows that near again', () => {
+    const { logic, place, hide } = make({ place: spot => {
+      if (spot.distance < spot.minDistance) return false;
+      standing = spot.distance;
+      return true;
+    } });
+    shown(logic, 0.08);
+    angle = Infinity;
+    run(logic, 30, 0.08);                    // crept in to its floor, unseen
+    walked = standing - (T.closeFade - 0.3);  // and the player came up to it
+    logic.update(0.1, 0.08);
+    expect(hide).not.toHaveBeenCalled();
+    logic.update(0.1, 0.15);                 // a ration
+    expect(hide).toHaveBeenCalledTimes(1);
+    walked = 0;
+    run(logic, 6, 0.15);
+    expect(logic.shown).toBe(true);
+    const [spot] = place.mock.calls.at(-1);
+    expect(spot.minDistance).toBe(T.closeFade);
+    expect(spot.distance).toBeGreaterThanOrEqual(T.closeFade);
+  });
+
+  it('a showing above holdBelow keeps closeFade off; below it, only minDistance', () => {
+    const above = make();
+    shown(above.logic, 0.15);
+    expect(above.place.mock.calls[0][0].minDistance).toBe(T.closeFade);
+    const below = make();
+    shown(below.logic, 0.08);
+    expect(below.place.mock.calls[0][0].minDistance).toBe(T.minDistance);
   });
 
   it('never teleports: as stamina falls and while it is unseen, it is placed only once', () => {
