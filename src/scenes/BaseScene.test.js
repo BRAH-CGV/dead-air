@@ -204,14 +204,32 @@ describe('BaseScene', () => {
     }));
   });
 
-  it('the bed dreams between nights: the dream at the night just done, waking on the next (#101)', async () => {
+  describe('the bed dreams between nights (#101)', () => {
     class Dream {}
-    engine.sceneRegistry = new Map([['DreamScene', Dream]]);
-    engine.loadScene = vi.fn();
-    const { bed } = scene.rooms.LivingQuarters;
-    expect(bed.dream(2)).toBe(true);
-    await Promise.resolve();
-    expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 2, night: 3 } });
+    class Crater {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamScene', Dream], ['DreamCraterScene', Crater]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('after night 1: the walk that pulls you back, waking on night 2', async () => {
+      expect(scene.rooms.LivingQuarters.bed.dream(1)).toBe(true);
+      await Promise.resolve();
+      expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 1, night: 2 } });
+    });
+
+    it('after night 2: the crater, waking on night 3', async () => {
+      scene.rooms.LivingQuarters.bed.dream(2);
+      await Promise.resolve();
+      expect(engine.loadScene).toHaveBeenCalledWith(Crater, { sceneOptions: { level: 2, night: 3 } });
+    });
+
+    it('a night with no dream of its own, or a dream not registered, falls back to the walk', async () => {
+      engine.sceneRegistry = new Map([['DreamScene', Dream]]);
+      scene.rooms.LivingQuarters.bed.dream(2);
+      await Promise.resolve();
+      expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 2, night: 3 } });
+    });
   });
 
   it('with no dream scene registered, the bed says so and sleeps on as before', () => {

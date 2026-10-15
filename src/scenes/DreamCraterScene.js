@@ -12,6 +12,8 @@ import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
 import { SANDSTORM, WIND_DIRECTION } from '../gameplay/Sandstorm.js';
 import { WhiteOut } from '../ui/WhiteOut.js';
 import { BaseScene } from './BaseScene.js';
+import { wakeInto } from './dreamWake.js';
+import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 
 // ─────────────────────────────────────────────
 // DreamCraterScene  –  the dream in the empty crater
@@ -24,8 +26,9 @@ import { BaseScene } from './BaseScene.js';
 //
 //   engine.loadScene(DreamCraterScene, { sceneOptions: { night: 2 } });
 //
-// Reached from the developer console (`dreamcrater`); hooking it into the
-// between-nights flow comes later.
+// Sleeping after night 2 dreams it (DREAM_AFTER_NIGHT); the developer
+// console's `dreamcrater` drops straight in. Both endings cover the screen
+// and wake through wakeInto, which holds the black until the base is ready.
 // ─────────────────────────────────────────────
 
 /** Tuning. */
@@ -85,14 +88,17 @@ export class DreamCraterScene extends Scene {
     this._spawnPlayer();
     this._addDustEyes();
     this._addSurvival();
+
+    // Eyes open: falling asleep in the bunk shuts the eyelids (BedRest), and
+    // nothing in the dream would ever open them again.
+    new FatigueOverlay().clear();
   }
 
-  /** Survived: fade to black, then back to the base. */
+  /** Survived: to black (held), then back to the base. */
   wake() {
     if (this._state !== 'watching') return;
     this._state = 'waking';
-    const done = () => this._returnToBase(false);
-    if (!this.engine.screenFade?.play?.(done)) done();
+    this._coverThen(() => this._returnToBase(false));
   }
 
   /** Caught: blood screen, then back to the base with the stamina penalty. */
@@ -106,19 +112,24 @@ export class DreamCraterScene extends Scene {
     this._whiteOut ??= new WhiteOut();
     this._whiteOut.play('', CAUGHT_SCREEN);
     const delay = Math.max(CAUGHT_SCREEN.redMs, CAUGHT_SCREEN.messageDelayMs) + 800;
-    this._catchTimer = setTimeout(() => this._returnToBase(true), delay);
+    this._catchTimer = setTimeout(() => this._coverThen(() => this._returnToBase(true)), delay);
   }
 
-  /** Back to the base. Deferred a tick — the dream ends inside a frame. */
+  /** Cover the screen and run `then` once it is black — held there, for
+   *  wakeInto to lift. A fade with no cover plays; with none, at once. */
+  _coverThen(then) {
+    const fade = this.engine.screenFade;
+    if (fade?.cover?.(then)) return;
+    if (!fade?.play?.(then)) then();
+  }
+
+  /** Back to the base, through the shared wake. */
   _returnToBase(died) {
     const { engine } = this;
-    const night = this.night;
-    queueMicrotask(() => {
-      // Flag must be set BEFORE loadScene: build() runs synchronously and
-      // _addStamina reads this flag during construction.
-      if (died) engine._dreamCraterDeath = true;
-      engine.loadScene(DreamCraterScene.returnTo);
-      if (night > 1) engine.activeScene?.nights?.setNight?.(night);
+    return wakeInto(engine, DreamCraterScene.returnTo, {
+      night: this.night,
+      // Before the build: _addStamina reads it while the base builds.
+      beforeLoad: () => { if (died) engine._dreamCraterDeath = true; },
     });
   }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DREAM_LEVELS, dreamLevel, walkScale, unease } from './dream.js';
+import { DREAM_LEVELS, DREAM_AFTER_NIGHT, dreamLevel, walkScale, unease } from './dream.js';
 
 describe('dream rules (#101)', () => {
   it('has three levels, each more unhinged than the last', () => {
@@ -58,5 +58,10 @@ describe('dream rules (#101)', () => {
       expect(L.ringSeconds).toBeLessThanOrEqual(5);
     }
     expect(DREAM_LEVELS[2].ringSeconds).toBeLessThanOrEqual(DREAM_LEVELS[0].ringSeconds);
+  });
+
+  it('says which dream follows which night: the walk after night 1, the crater after night 2', () => {
+    expect(DREAM_AFTER_NIGHT[1]).toBe('DreamScene');
+    expect(DREAM_AFTER_NIGHT[2]).toBe('DreamCraterScene');
   });
 });

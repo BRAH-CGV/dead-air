@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as THREE from 'three';
 
@@ -9,7 +10,9 @@ import { GameObject } from '../core/GameObject.js';
 import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
 import { makeEngine } from '../test/fakeRapier.js';
 
-vi.setConfig({ testTimeout: 30_000 });
+// Builds against the whole base scene module: as slow as BaseScene.test.js
+// under a parallel run, so it gets the same budget.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 function makeDreamEngine() {
   const engine = makeEngine();
@@ -131,5 +134,47 @@ describe('DreamCraterScene', () => {
     scene.dispose();
     expect(engine.scene.fog.density).toBeCloseTo(0.02);
     expect(engine.scene.fog.color.getHex()).toBe(0x1a1a2e);
+  });
+
+  describe('the shared wake (no long black screen)', () => {
+    let fade;
+    beforeEach(() => {
+      fade = {
+        cover: vi.fn((cb) => { cb?.(); return true; }),
+        play: vi.fn(),
+        caption: vi.fn(),
+        uncover: vi.fn(),
+      };
+      engine.screenFade = fade;
+      engine.compileScene = vi.fn(() => Promise.resolve());
+    });
+
+    it('surviving covers the screen (and holds it) instead of a timed fade, captioned with the night', async () => {
+      scene.wake();
+      expect(fade.cover).toHaveBeenCalledOnce();
+      expect(fade.play).not.toHaveBeenCalled();
+      expect(fade.caption).toHaveBeenCalledWith('NIGHT 2');
+      await vi.waitFor(() => expect(fade.uncover).toHaveBeenCalledOnce());
+      expect(engine.loadScene).toHaveBeenCalledWith(BaseScene, { compile: false });
+    });
+
+    it('caught: the red screen, then covered before the base is built, with the stamina penalty', async () => {
+      vi.useFakeTimers();
+      scene._catch();
+      expect(fade.cover).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(3500);
+      expect(fade.cover).toHaveBeenCalledOnce();
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(engine.loadScene).toHaveBeenCalled());
+      expect(engine._dreamCraterDeath).toBe(true);
+    });
+  });
+
+  it('opens the eyes the bunk may have shut', () => {
+    document.body.innerHTML = '<div id="fatigue"><div id="fatigue-tunnel"></div><div id="fatigue-lids"></div></div>';
+    const lids = document.getElementById('fatigue-lids');
+    lids.style.setProperty('--lid', '1');
+    new DreamCraterScene(makeDreamEngine()).build();
+    expect(lids.style.getPropertyValue('--lid')).toBe('0');
   });
 });

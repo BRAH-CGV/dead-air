@@ -10,6 +10,7 @@ import { DreamWalk } from '../components/DreamWalk.js';
 import { Component } from '../core/Component.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { BaseScene } from './BaseScene.js';
+import { wakeInto } from './dreamWake.js';
 
 // ─────────────────────────────────────────────
 // DreamScene  –  the walk that pulls you back (#101)
@@ -38,14 +39,6 @@ const BEACON = { distance: 300, mast: 16, glow: 1.4, halo: 5 };
 /** Its colour, level by level: a warm lamp that turns red. */
 const BEACON_COLORS = [0xffc27a, 0xff8a4a, 0xff2a1a];
 
-/** Once the next scene is built, frames drawn before the black lifts. */
-const SETTLE_FRAMES = 2;
-
-/** Resolves on the next animation frame (a short timer where there is none). */
-const nextFrame = () => new Promise((resolve) => {
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-  else setTimeout(resolve, 16);
-});
 
 /** The beacon's breathing: the halo swells and fades, slowly. */
 class BeaconPulse extends Component {
@@ -101,32 +94,12 @@ export class DreamScene extends Scene {
     new FatigueOverlay().clear();
   }
 
-  /**
-   * Wake: back to the base, on the night the dream came from. DreamWalk has
-   * already put the screen to black and left it there. Building the base
-   * and compiling its shaders takes seconds, so the black stays up — with
-   * the night it is waking into written on it — until the base is built,
-   * compiled and has drawn a frame or two. Before this the fade lifted on a
-   * timer, part-way through, and the screen sat black with no sign of life.
-   * @returns {Promise<void>}
-   */
-  async wake() {
-    const { engine } = this;
-    const night = this.night;
-    const fade = engine.screenFade;
-    fade?.caption?.(`NIGHT ${night}`);
-    // Out of the frame that ended the dream: a scene can't be swapped out
-    // from under the loop that is updating it.
-    await Promise.resolve();
-    engine.loadScene(DreamScene.returnTo, { compile: false });
-    if (night > 1) engine.activeScene?.nights?.setNight?.(night);
-    try {
-      await engine.compileScene?.();
-    } catch (err) {
-      console.warn('[DreamScene] precompile on waking failed:', err);
-    }
-    for (let i = 0; i < SETTLE_FRAMES; i++) await nextFrame();
-    fade?.uncover?.();
+  /** Wake: back to the base, on the night the dream came from. DreamWalk
+   *  has already covered the screen; wakeInto holds the black, captioned
+   *  with the night, until the base is ready to be seen.
+   *  @returns {Promise<void>} */
+  wake() {
+    return wakeInto(this.engine, DreamScene.returnTo, { night: this.night });
   }
 
   dispose() {

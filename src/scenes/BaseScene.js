@@ -41,6 +41,7 @@ import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { HUD, RadarOverlay, SignalReviewPanel } from '../ui/HUD.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
+import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
@@ -1624,15 +1625,17 @@ export class BaseScene extends Scene {
     }
   }
 
-  /** Sleep after night `night` dreams (#101): the dream at that night's
-   *  level, waking into the next night. The scene is found by name — the
+  /** Sleep after night `night` dreams (#101): that night's dream
+   *  (DREAM_AFTER_NIGHT, the walk if it has none), at the night's level,
+   *  waking into the next night. The scene is found by name — the
    *  dream wakes back into this scene, and the two importing each other
    *  would be a cycle. Swapped on the next tick: this runs inside a frame.
    *  @param {number} night  The night just done
    *  @returns {boolean} false when there is no dream scene to go to */
   _dream(night) {
     const { engine } = this;
-    const Dream = engine.sceneRegistry?.get?.('DreamScene');
+    const registry = engine.sceneRegistry;
+    const Dream = registry?.get?.(DREAM_AFTER_NIGHT[night]) ?? registry?.get?.('DreamScene');
     if (!Dream) return false;
     queueMicrotask(() => engine.loadScene(Dream, { sceneOptions: { level: night, night: night + 1 } }));
     return true;
