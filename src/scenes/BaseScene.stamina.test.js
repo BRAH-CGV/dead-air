@@ -13,6 +13,7 @@ import { SLEEP_DEMON_DEATH } from '../gameplay/SleepDemonDeath.js';
 import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { Flashlight } from '../components/Flashlight.js';
+import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -96,36 +97,47 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(ceiling.intensity).toBe(0);
   });
 
-  it("feeds the office's ration dispenser the same stamina, and has it ready again each night", () => {
-    const dispenser = scene.rooms.MainOffice.rationDispenser;
-    expect(dispenser.stamina).toBe(scene.stamina);
+  it("hands the bedroom's coffee machine the same stamina, with a full rack again each night", () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    expect(machine).toBeInstanceOf(CoffeeMachine);
+    expect(machine.stamina).toBe(scene.stamina);
     scene.stamina.value = 0.2;
-    dispenser.onInteract({});
-    expect(scene.stamina.value).toBeCloseTo(0.55);
-    expect(dispenser.refill).toBeGreaterThan(0);
+    machine.onInteract({});
+    machine.onUpdate(COFFEE.brewSeconds + 0.1);
+    machine.onInteract({});
+    expect(scene.stamina.value).toBeCloseTo(0.2 + COFFEE.amount);
+    expect(machine.cups).toBe(COFFEE.cups - 1);
 
     gameplay.getComponent(StaminaDrain).onStart();
     scene.nights.advance();
     expect(scene.stamina.value).toBe(1);
-    expect(dispenser.refill).toBe(0);
+    expect(machine.cups).toBe(COFFEE.cups);
+    expect(machine.state).toBe('ready');
   });
 
-  it('a nap is rest: it tops up the same stamina, and holds the drain while napping', () => {
-    const drain = gameplay.getComponent(StaminaDrain);
-    expect(scene.nap.stamina).toBe(scene.stamina);
-    expect(drain.isResting()).toBe(false);
-    scene.nap.napping = true;
-    expect(drain.isResting()).toBe(true);
-    scene.nap.napping = false;
-  });
-
-  it('a ration makes a sound', () => {
-    const ration = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
-    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? ration : null));
+  it('a coffee makes a sound as it is drunk (the ration placeholder), not as it brews', () => {
+    const sip = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
+    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? sip : null));
     const other = new BaseScene(makeSceneEngine());
     other.build();
-    other.rooms.MainOffice.rationDispenser.onInteract({});
-    expect(ration.play).toHaveBeenCalledTimes(1);
+    const machine = other.rooms.LivingQuarters.coffeeMachine;
+    machine.onInteract({});
+    expect(sip.play).not.toHaveBeenCalled();
+    machine.onUpdate(COFFEE.brewSeconds + 0.1);
+    machine.onInteract({});
+    expect(sip.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains faster with the player outside, and faster again while they stare at the dust eyes', () => {
+    const drain = gameplay.getComponent(StaminaDrain);
+    expect(drain.isOutside()).toBe(false);                 // the camera is in the office
+    engine.camera.position.set(200, 1.24, 200);
+    engine.camera.updateMatrixWorld();
+    expect(drain.isOutside()).toBe(true);
+
+    expect(drain.isStaring()).toBe(false);
+    scene.dustEyes.staredAt = true;
+    expect(drain.isStaring()).toBe(true);
   });
 
   it('the sleep demon is a hidden placeholder under Threats: no body, and in no occlusion zone', () => {

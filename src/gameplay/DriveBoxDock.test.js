@@ -5,12 +5,14 @@ import { DriveBoxDock } from './DriveBoxDock.js';
 // `box.receiver.attachedItems` and calls `socket.detach(box)` — no physics
 // or scene graph needed.
 
-/** A duck-typed seated drive: only `saved`, `corrupted` and `setEjected`
- *  matter. setEjected mirrors the real Drive — it clears both flags. */
-function makeDrive({ saved = false, corrupted = false } = {}) {
+/** A duck-typed seated drive: only `saved`, `corrupted`, `signalLevel`
+ *  and `setEjected` matter. setEjected mirrors the real Drive — it clears
+ *  both flags. */
+function makeDrive({ saved = false, corrupted = false, signalLevel = 1 } = {}) {
   return {
     saved,
     corrupted,
+    signalLevel,
     setEjected() { this.saved = false; this.corrupted = false; },
   };
 }
@@ -124,5 +126,41 @@ describe('DriveBoxDock', () => {
     const dock = new DriveBoxDock({ socket: makeSocket(null) });
 
     expect(dock.empty()).toBeNull();
+  });
+
+  it('minSignalLevel = 2 excludes level-1 drives from the count', () => {
+    const box = makeBox([
+      makeDrive({ saved: true, signalLevel: 1 }),
+      makeDrive({ saved: true, signalLevel: 1 }),
+      makeDrive({ saved: true, signalLevel: 2 }),
+    ]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 1 });
+    dock.minSignalLevel = 2;
+
+    expect(dock.collectedCount).toBe(1);
+    expect(dock.isQuotaMet()).toBe(true);
+  });
+
+  it('minSignalLevel = 1 (default) counts all saved non-corrupted drives', () => {
+    const box = makeBox([
+      makeDrive({ saved: true, signalLevel: 1 }),
+      makeDrive({ saved: true, signalLevel: 2 }),
+      makeDrive({ saved: true }),
+    ]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 3 });
+
+    expect(dock.collectedCount).toBe(3);
+    expect(dock.isQuotaMet()).toBe(true);
+  });
+
+  it('minSignalLevel = 2 still excludes corrupted drives regardless of level', () => {
+    const box = makeBox([
+      makeDrive({ saved: true, corrupted: true, signalLevel: 2 }),
+      makeDrive({ saved: true, signalLevel: 2 }),
+    ]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 1 });
+    dock.minSignalLevel = 2;
+
+    expect(dock.collectedCount).toBe(1);
   });
 });

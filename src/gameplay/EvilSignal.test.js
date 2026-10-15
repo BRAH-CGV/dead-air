@@ -64,6 +64,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   const whiteOut = { play: vi.fn(), clear: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn() };
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
+  const engine = { timeScale: 1, realDt: 0 };
   const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
   const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
@@ -72,8 +73,9 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
+  evil.gameObject = { scene: { userData: { engine }, add: vi.fn() } };
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum, engine };
 }
 
 /** The single red target in the manager's list. */
@@ -162,6 +164,7 @@ describe('EvilSignal hover — the dish hold', () => {
 
   it('disappears after the lock ends — no re-hovering, but respawns later', () => {
     const { evil, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night
     evil.summon();
     const sig = evilSig(signalManager);
 
@@ -373,14 +376,42 @@ describe('EvilSignal nights', () => {
     expect(evilSig(signalManager)).toBe(null);   // startNight rebuilt the sky
   });
 
-  it('has no night of its own yet — the debug key is the way in', () => {
-    expect(EVIL.nights).toEqual([]);
+  it('is scheduled for night 3', () => {
+    expect(EVIL.nights).toEqual([3]);
+  });
+
+  it('summons the signal on night 3 (guaranteed one appearance)', () => {
+    const { evil, controller, signalManager } = makeRig({ random: () => 0.99 });
+    // Night 3 with high random (>= 0.25) → 1 spawn only.
+    controller.startNight(3);
+    expect(evil._spawnsRemaining).toBe(0);   // summon() already decremented
+    expect(evilSig(signalManager)).not.toBeNull();
+  });
+
+  it('allows a second appearance on night 3 when random < doubleChance', () => {
+    const { evil, controller } = makeRig({ random: () => 0.1 });
+    // Night 3 with low random (< 0.25) → 2 spawns.
+    controller.startNight(3);
+    // First summon already ran; _spawnsRemaining was 2, summon decremented to 1.
+    expect(evil._spawnsRemaining).toBe(1);
+  });
+
+  it('does not summon on nights 1 or 2', () => {
+    const { evil, controller, signalManager } = makeRig();
+    controller.startNight(1);
+    expect(evil._spawnsRemaining).toBe(0);
+    expect(evilSig(signalManager)).toBeNull();
+
+    controller.startNight(2);
+    expect(evil._spawnsRemaining).toBe(0);
+    expect(evilSig(signalManager)).toBeNull();
   });
 });
 
 describe('EvilSignal respawn — no drive means it comes back', () => {
   it('respawns at a new position after the delay when no drive was used', () => {
     const { evil, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night with two appearances
     evil.summon();
     const sig1 = evilSig(signalManager);
 
@@ -423,6 +454,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 
   it('a new night cancels the respawn timer', () => {
     const { evil, controller, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night
     evil.summon();
     evil.hover(evilSig(signalManager));
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
@@ -435,7 +467,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 });
 
 describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => {
-  it('game over ("You were silenced") if the corrupted drive is not wiped in 10 s', () => {
+  it('game over ("You were silenced") if the corrupted drive is not wiped in time', () => {
     const drive = makeDrive();
     const { evil, controller, signalManager, terminal, whiteOut, hooks } = makeRig({ drive });
     evil.summon();
@@ -448,12 +480,12 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     // Wait for the silence timer to expire.
     evil.onUpdate(EVIL.silenceSeconds + 0.1);
     expect(controller.fail).toHaveBeenCalledWith(
-      'You were silenced. [E] to retry',
+      '',
       expect.objectContaining({ retryAfter: expect.any(Number) }),
     );
     expect(terminal.exit).toHaveBeenCalled();
     expect(whiteOut.play).toHaveBeenCalledWith(
-      'You were silenced. [E] to retry',
+      'You were silenced.',
       expect.objectContaining({ tone: 'blood' }),
     );
     expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
@@ -488,7 +520,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     evil.hover(sig);                        // saves red, starts silence timer
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopStart);
 
     controller.startNight(2);
     expect(evil._silenceTimer).toBeNull();
@@ -525,18 +557,19 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
 
     evil.hover(sig);                        // saves red, starts silence + hop timers
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    expect(evil._driveHopTimer).toBe(EVIL.driveHopStart);
 
     // Tick just under 1 s — no kick yet.
-    evil.onUpdate(EVIL.driveHopSeconds - 0.05);
+    evil.onUpdate(EVIL.driveHopStart - 0.05);
     expect(setLinvel).not.toHaveBeenCalled();
 
     // Tick past the hop interval — the drive gets kicked.
     evil.onUpdate(0.1);
     expect(setLinvel).toHaveBeenCalledTimes(1);
     expect(applyAngularImpulse).toHaveBeenCalledTimes(1);
-    // The timer resets for the next hop.
-    expect(evil._driveHopTimer).toBe(EVIL.driveHopSeconds);
+    // The timer resets for the next hop — shortened by the doom ramp.
+    expect(evil._driveHopTimer).toBeLessThan(EVIL.driveHopStart);
+    expect(evil._driveHopTimer).toBeGreaterThanOrEqual(EVIL.driveHopEnd);
   });
 
   it('wiping the drive stops the hopping', () => {
@@ -556,7 +589,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     expect(evil._driveHopTimer).toBeNull();
 
     // Even after a full second more, no kick — the timer is gone.
-    evil.onUpdate(EVIL.driveHopSeconds + 0.1);
+    evil.onUpdate(EVIL.driveHopStart + 0.1);
     expect(setLinvel).not.toHaveBeenCalled();
   });
 
@@ -646,8 +679,8 @@ describe('EvilSignal pull-in — cursor drag before engage', () => {
   });
 });
 
-describe('EvilSignal redOut — last-moment red filter', () => {
-  it('redOut intensity is 0 while the silence timer is above 0.5 s', () => {
+describe('EvilSignal redOut — red filter', () => {
+  it('redOut intensity is 0 while the silence timer is above the redout window', () => {
     const drive = makeDrive();
     const { evil, signalManager, redOut } = makeRig({ drive });
     evil.summon();
@@ -657,12 +690,12 @@ describe('EvilSignal redOut — last-moment red filter', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in, starts silence timer
     expect(evil._silenceTimer).toBe(EVIL.silenceSeconds);
 
-    // Tick 1 s — still well above the 0.5 s threshold.
+    // Tick 1 s — still well above the redout window.
     evil.onUpdate(1);
     expect(redOut.setIntensity).toHaveBeenCalledWith(0);
   });
 
-  it('redOut intensity ramps during the last 0.2 s', () => {
+  it('ramps redOut when the timer enters the redout window', () => {
     const drive = makeDrive();
     const { evil, signalManager, redOut } = makeRig({ drive });
     evil.summon();
@@ -671,12 +704,14 @@ describe('EvilSignal redOut — last-moment red filter', () => {
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
-    // Tick past most of the timer so ~0.1 s remains (half of the 0.2 s window).
-    evil.onUpdate(EVIL.silenceSeconds - 0.1);
-    expect(evil._silenceTimer).toBeCloseTo(0.1, 2);
-    // The intensity is 1 - (0.1 / 0.2) = 0.5, allow for float imprecision.
+    // Tick past most of the timer so ~1.0 s remains (at the redout window edge).
+    evil.onUpdate(EVIL.silenceSeconds - 1.0);
+
+    // Tick closer to expiry — intensity ramps with the silence timer.
+    evil.onUpdate(0.5);
     const lastCall = redOut.setIntensity.mock.calls.at(-1)[0];
-    expect(lastCall).toBeCloseTo(0.5, 3);
+    // silenceTimer ≈ 0.5, intensity ≈ 1 - 0.5/redoutWindow
+    expect(lastCall).toBeCloseTo(1 - 0.5 / EVIL.redoutWindow, 1);
   });
 
   it('redOut is cleared on night reset', () => {
@@ -687,6 +722,9 @@ describe('EvilSignal redOut — last-moment red filter', () => {
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
+
+    // Enter the redout window.
+    evil.onUpdate(EVIL.silenceSeconds - 0.5);
 
     controller.startNight(2);
     expect(redOut.clear).toHaveBeenCalled();
@@ -788,7 +826,7 @@ describe('EvilSignal sparks — sound', () => {
     rig.evil.hover(evilSig(rig.signalManager));
     rig.evil.onUpdate(EVIL.pullInSeconds + 0.1);
     rig.voice.play.mockClear();
-    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    rig.evil.onUpdate(EVIL.driveHopStart + 0.01);
   }
 
   it('sparks with one of three clips, from the drive, on each hop', () => {
@@ -810,7 +848,7 @@ describe('EvilSignal sparks — sound', () => {
     const first = rig.voice.play.mock.calls[0][2];
     rig.voice.play.mockClear();
     rig.evil.onUpdate(EVIL.silenceSeconds * 0.8);
-    rig.evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    rig.evil.onUpdate(EVIL.driveHopStart + 0.01);
     const lateCalls = rig.voice.play.mock.calls;
     expect(lateCalls.at(-1)[2]).toBeGreaterThan(first);
     expect(lateCalls.at(-1)[2]).toBeLessThanOrEqual(1);
@@ -822,7 +860,7 @@ describe('EvilSignal sparks — sound', () => {
     hopOnce(rig);
     drive.setEjected();
     rig.voice.play.mockClear();
-    rig.evil.onUpdate(EVIL.driveHopSeconds * 3);
+    rig.evil.onUpdate(EVIL.driveHopStart * 3);
     expect(rig.voice.play).not.toHaveBeenCalled();
     rig.evil.onDestroy();
     expect(rig.voice.dispose).toHaveBeenCalled();
@@ -878,7 +916,7 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in
 
     // Tick past the hop interval so the drive jumps.
-    evil.onUpdate(EVIL.driveHopSeconds + 0.01);
+    evil.onUpdate(EVIL.driveHopStart + 0.01);
     expect(sparks.burst).toHaveBeenCalled();
   });
 

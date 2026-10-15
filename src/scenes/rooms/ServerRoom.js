@@ -24,12 +24,21 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // ─────────────────────────────────────────────
 
 export class ServerRoom extends Room {
-  /** The server console with the "Delete signal" interactable.
+  /** The server console with the "Process signal" interactable.
    *  @type {import('../../core/GameObject.js').GameObject|null} */
   _serverConsole = null;
 
   /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
   _driveSlot = null;
+
+  /** The signal delete console. @type {import('../../core/GameObject.js').GameObject|null} */
+  _deleteConsole = null;
+
+  /** The drive slot on the delete console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
+  _deleteDriveSlot = null;
+
+  /** The processing screen overlay (set by BaseScene). @type {import('../../ui/ProcessingScreen.js').ProcessingScreen|null} */
+  _processingScreen = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -56,6 +65,12 @@ export class ServerRoom extends Room {
 
   /** The drive slot on the console (for external wiring). */
   get driveSlot() { return this._driveSlot; }
+
+  /** The drive slot on the delete console (for external wiring). */
+  get deleteDriveSlot() { return this._deleteDriveSlot; }
+
+  /** Wire the processing screen overlay. Called by BaseScene. */
+  set processingScreen(screen) { this._processingScreen = screen; }
 
   buildLighting() {
     // Blue only, to match the racks' own glow — a red light here read as an
@@ -130,7 +145,7 @@ export class ServerRoom extends Room {
     // Console in the middle of the aisle, backed up to the back wall and
     // facing down it. Its footprint runs 0.24 m behind its origin.
     // The drive slot passively snaps in a drive when it comes close.
-    // The interactable deletes the signal from the inserted drive.
+    // The interactable upgrades the signal level of the inserted drive.
     const console_ = this._spawnProp('model:radar-terminal', {
       name: 'ServerConsole', position: [consoleAt[0], 0, consoleAt[1]], scale: 0.478,
     });
@@ -138,7 +153,7 @@ export class ServerRoom extends Room {
 
     // Drive slot on top of the console. The slot works independently —
     // no DriveManager needed. The console's Interactable checks the slot's
-    // insertedDrive for signals.
+    // insertedDrive for signals to upgrade.
     // The slot is a separate static box (like the MainOffice drive reader),
     // not a child of the scaled console model, so it keeps its own size.
     // It sits on the console's front ledge: 0.16 m left of the console's
@@ -149,7 +164,7 @@ export class ServerRoom extends Room {
       color: 0x1a1a1a,
       roughness: 0.7,
       metalness: 0.4,
-      emissive: 0x003311,
+      emissive: 0x003322,
       emissiveIntensity: 0.3,
     }));
     const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
@@ -168,27 +183,21 @@ export class ServerRoom extends Room {
     slotBox.addComponent(driveSlot);
     this._driveSlot = driveSlot;
 
+    // The processing interactable: opens the processing screen overlay.
+    // The screen shows the signal image from the inserted drive and an
+    // abstract set of controls (upgrade button for now).
     const self = this;
     console_.addComponent(new class extends Interactable {
-      promptLabel = '[E] Delete signal';
+      promptLabel = '[E] Process signal';
       interactRange = 2;
 
-      // Check the console's drive slot for a drive with a signal.
-      _findDriveWithSignal() {
-        const slot = self._driveSlot;
-        if (!slot) return null;
-        const drive = slot.insertedDrive;
-        if (drive?.saved) return drive;
-        return null;
-      }
-
-      // The prompt follows the drive state — shows "No signal to delete"
-      // when there's nothing to clear.
       refreshPrompt() {
-        if (this._findDriveWithSignal()) {
-          this.promptLabel = '[E] Delete signal';
+        const slot = self._driveSlot;
+        const drive = slot?.insertedDrive;
+        if (drive?.canUpgradeLevel) {
+          this.promptLabel = '[E] Process signal';
         } else {
-          this.promptLabel = 'No signal to delete';
+          this.promptLabel = '[E] Processing console';
         }
       }
 
@@ -197,11 +206,28 @@ export class ServerRoom extends Room {
       }
 
       onInteract() {
-        const drive = this._findDriveWithSignal();
-        if (drive) {
-          drive.setSaved(false);
-        }
-        this.refreshPrompt();
+        const screen = self._processingScreen;
+        if (!screen) return;
+        const drive = self._driveSlot?.insertedDrive ?? null;
+
+        // Complete any finished processing run before building actions.
+        drive?.tickProcessing();
+
+        const actions = [
+          {
+            id: 'upgrade',
+            label: 'Upgrade Signal',
+            get enabled() { return drive?.canUpgradeLevel ?? false; },
+            onClick: () => {
+              if (drive?.canUpgradeLevel) {
+                drive.beginProcessing();
+                screen.prepareBlend(drive);
+              }
+              screen.refreshActions(self._driveSlot?.insertedDrive ?? null);
+            },
+          },
+        ];
+        screen.open(drive, actions);
       }
     }());
 
@@ -210,6 +236,9 @@ export class ServerRoom extends Room {
     this.root.addChild(new SightlineZone('SightlineZone', {
       position: [0, 1.5, -0.5], size: [4, 2, 5],
     }));
+
+    // Signal delete console.
+    this._buildDeleteConsole();
   }
 
   /** Glow-in-the-dark trim, a small blinking LED cluster, and a light that
@@ -266,5 +295,79 @@ export class ServerRoom extends Room {
     const glow = new THREE.PointLight(0x3a6bff, 0.9, 9, 1.2);
     glow.position.set(0.02, 1.63, 0.3);
     groupGO.object3d.add(glow);
+  }
+
+  /** Signal delete console. A radar-terminal model with a standalone
+   *  drive slot on its front ledge and an Interactable that deletes the
+   *  signal from the inserted drive. */
+  _buildDeleteConsole() {
+    const consolePos = [2.66, 0, 2.737];
+    const console_ = this._spawnProp('model:radar-terminal', {
+      name: 'DeleteConsole', position: consolePos, rotationY: -Math.PI / 2, scale: 0.478,
+    });
+    this._deleteConsole = console_;
+
+    // Drive slot on the console's front ledge. Standalone static box,
+    // not a child of the scaled model, so it keeps its own size.
+    const slotSize = [0.12, 0.03, 0.15];
+    const slotPos = [1.960, 0.405, 2.577];
+    const slotMat = this._own(new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      roughness: 0.7,
+      metalness: 0.4,
+      emissive: 0x003311,
+      emissiveIntensity: 0.3,
+    }));
+    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, slotMat);
+    slotBox.object3d.rotation.set(0, -Math.PI / 2, 0);
+
+    // Tooltip on hover
+    const slotTooltip = new Interactable();
+    slotTooltip.promptLabel = 'Drive reader';
+    slotBox.addComponent(slotTooltip);
+
+    // DriveSlot component
+    const driveHeight = 0.02;
+    const driveSlot = new DriveSlot({
+      snapDistance: 0.25,
+      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+    });
+    slotBox.addComponent(driveSlot);
+    this._deleteDriveSlot = driveSlot;
+
+    // Delete interactable on the console
+    const self = this;
+    console_.addComponent(new class extends Interactable {
+      promptLabel = '[E] Delete signal';
+      interactRange = 2;
+
+      _findDriveWithSignal() {
+        const slot = self._deleteDriveSlot;
+        if (!slot) return null;
+        const drive = slot.insertedDrive;
+        if (drive?.saved) return drive;
+        return null;
+      }
+
+      refreshPrompt() {
+        if (this._findDriveWithSignal()) {
+          this.promptLabel = '[E] Delete signal';
+        } else {
+          this.promptLabel = 'No signal to delete';
+        }
+      }
+
+      onHover() {
+        this.refreshPrompt();
+      }
+
+      onInteract() {
+        const drive = this._findDriveWithSignal();
+        if (drive) {
+          drive.setSaved(false);
+        }
+        this.refreshPrompt();
+      }
+    }());
   }
 }

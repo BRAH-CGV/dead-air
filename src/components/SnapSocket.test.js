@@ -144,6 +144,28 @@ describe('SnapSocket', () => {
     expect(pos.z).toBeCloseTo(3);
   });
 
+  it('syncAttached() carries a seated item, and what is seated in it, with a moved host at once', () => {
+    const socket = makeSocket({ snapDistance: 0.5, slots: [{ offset: { y: 0.2 } }] });
+    const box = makeItem('DriveBox', [0, 0.2, 0]);
+    // The box's own socket, holding a drive, as DriveBox's receiver does.
+    const inner = new SnapSocket({ playSounds: false, snapDistance: 0.5, slots: [{ offset: { y: 0.1 } }] });
+    inner.gameObject = { object3d: box.object3d, scene: { userData: { engine: null } } };
+    box.components.push(inner);
+    const drive = makeItem('Drive', [0, 0.3, 0]);
+    socket.attach(box);
+    inner.attach(drive);
+
+    socket.gameObject.object3d.position.set(5, 0, -2);
+    socket.syncAttached();
+
+    expect(box.object3d.position.x).toBeCloseTo(5);
+    expect(box.object3d.position.y).toBeCloseTo(0.2);
+    const [pos] = drive.rigidBody.setTranslation.mock.calls.at(-1);
+    expect(pos.x).toBeCloseTo(5);
+    expect(pos.y).toBeCloseTo(0.3);
+    expect(pos.z).toBeCloseTo(-2);
+  });
+
   it('supports independent receivers without stealing', () => {
     const first = makeSocket({ snapDistance: 0.5 });
     const second = makeSocket({ snapDistance: 0.5 });
