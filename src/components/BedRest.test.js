@@ -323,7 +323,7 @@ describe('BedRest', () => {
     });
   });
 
-  it('passes the peeks through', () => {
+  it('passes the peeks through, for the demon to show itself in', () => {
     const { rest } = rig;
     expect(rest.peeking).toBe(false);
     rest.lieDown(() => {});
@@ -335,5 +335,6 @@ describe('BedRest', () => {
     }
     expect(peeked).toBe(true);
     expect(lastLid(rig.overlay)).toBeLessThan(1);
+    expect(rest.watchSpots().length).toBeGreaterThan(0);
   });
 });

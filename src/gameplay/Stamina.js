@@ -16,7 +16,8 @@ export const STAMINA = Object.freeze({
    *  of a midnight-to-6 shift, whatever its length in real seconds. The
    *  Sleep Demon is about from half stamina (SLEEP_DEMON.appearBelow),
    *  2:24 AM with no food, faint at first, and creeps nearer the tireder
-   *  the player gets. */
+   *  the player gets. A nap stops the drain and gives some back
+   *  (NAP.staminaPerHour). */
   emptyAt: 0.8,
   /** How many times as fast it drains outside: the cold, the suit, the
    *  walk. Going out is a cost, not just a risk. */

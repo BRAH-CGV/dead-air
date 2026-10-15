@@ -25,8 +25,10 @@
 export const CCTV = {
   /** Radians a second a held key turns a camera. */
   panRate: 0.9,
-  /** Seconds of static on every switch, however ready the picture is. */
-  minStatic: 0.25,
+  /** Seconds of static on every switch, however ready the picture is. The
+   *  frozen frame covers it (CameraTransition), so it can be short; a camera
+   *  still loading waits as long as it takes regardless. */
+  minStatic: 0.12,
   /** Seconds of static at most, waiting on a zone to load. */
   maxStatic: 2,
 };
