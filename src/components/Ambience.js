@@ -191,6 +191,9 @@ export class Ambience extends Component {
     this._duck = 1;
     this._duckGain = 1;
 
+    /** The next frame cuts straight to the mix (jump()). */
+    this._jump = false;
+
     this._destroyed = false;
   }
 
@@ -223,6 +226,12 @@ export class Ambience extends Component {
    */
   setStorm(level) {
     this._storm = Math.min(Math.max(level, 0), 1);
+  }
+
+  /** The ears were moved (onto a security camera, or back): the next frame
+   *  cuts straight to the rooms heard there instead of easing across. */
+  jump() {
+    this._jump = true;
   }
 
   /** Every source lets go: a new night, a retry. */
@@ -302,7 +311,8 @@ export class Ambience extends Component {
     const calm = this.volumes[outside] ?? 1;
     const stormGain = 1 + (AMBIENCE.storm.gain / calm - 1) * this._storm;
     const targets = this.mix.weightsAt(this.listenerPosition(_ear), this._targets);
-    const k = 1 - Math.exp(-AMBIENCE.blendRate * dt);
+    const k = this._jump ? 1 : 1 - Math.exp(-AMBIENCE.blendRate * dt);
+    this._jump = false;
     for (const track of this.mix.tracks) {
       const target = targets[track];
       let gain = this._gains[track];

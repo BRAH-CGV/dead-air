@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Room } from './Room.js';
-import { Bed } from '../../components/Bed.js';
+import { Bed, BUNK_POSES } from '../../components/Bed.js';
+import { CoffeeMachine } from '../../components/CoffeeMachine.js';
+import { Journal } from '../../components/Journal.js';
+import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -10,18 +13,25 @@ import { Bed } from '../../components/Bed.js';
 //
 // The bunk is the bed: its Bed interactable (`room.bed`) is how the player
 // sleeps through the day. The scene wires the controller and fade into it.
-// Food is in the office — the ration dispenser lives there.
+// The coffee machine on the left wall is `coffeeMachine`, a CoffeeMachine;
+// the scene hands it the stamina a cup restores. It is here, not in the
+// office, so a cup means leaving the desk and the radar for a while.
 //
 // ── Interior layout mock-up ──
 // The room is split in three with the furniture, using the models already
 // in the game as stand-ins until better ones are found:
 //
-//   bedroom   back left: the bunk and a side table, with the lockers on the
-//             back wall beside the table
+//   bedroom   back left: the bunk (a single bed) and a side table with the
+//             bedside clock, the lockers on the back wall beside the table
+//   coffee    the left wall, halfway down: the coffee machine, facing in
 //   storage   back right: two rows of big racks running front to back (one
 //             against the right wall), with an aisle between
 //   office    front: the desk end-on to the front wall with its chair and a
-//             lamp, two small shelves along the wall behind it
+//             lit lamp, the previous operator's notebook (the Journal,
+//             #79), and two small shelves along the wall behind it
+//
+// The player wakes here (`spawn`): beside the bunk, facing the desk, so
+// the journal is the first thing in reach each night.
 //
 // The main paths stay open: in at the door and across the middle of the
 // room, and from there into the bedroom and down the storage aisle.
@@ -36,6 +46,17 @@ import { Bed } from '../../components/Bed.js';
 export class LivingQuarters extends Room {
   /** On the bunk, from buildProps(). @type {Bed|null} */
   bed = null;
+  /** On the desk's notebook, from buildProps(). @type {Journal|null} */
+  journal = null;
+  /** Where the player wakes: world position (capsule centre) and yaw.
+   *  @type {{ position: [number, number, number], yaw: number }|null} */
+  spawn = null;
+
+  /** On the side table beside the bunk, from buildProps(). @type {DigitalClock|null} */
+  bedsideClock = null;
+
+  /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
+  coffeeMachine = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -81,14 +102,27 @@ export class LivingQuarters extends Room {
     const inZ = this.depth / 2 - this.wallThick / 2;   // inner face of back/front
 
     // ── Bedroom ──
-    // Back-left corner, its long side along the left wall.
-    const bunk = this._spawnProp('model:bunk-bed', {
-      name: 'Bunk', position: [-inX + 0.56, 0, -inZ + 1.02],
+    // Back-left corner, its long side along the left wall, 3 cm off both
+    // walls (bed.glb is 0.9 × 2 m), the pillow at the back.
+    const bunk = this._spawnProp('model:bed', {
+      name: 'Bunk', position: [-inX + 0.48, 0, -inZ + 1.03],
     });
     this.bed = bunk.addComponent(new Bed());
 
+    // The side table stands just off the bed's open side, by the pillow.
     const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
-    this._addStaticBox('SideTable', [-1.3, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+    const table = this._addStaticBox('SideTable', [-1.45, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+
+    // A digital clock on the side table, its face (+z) turned to the pillow
+    // so a napper watches the minutes race (#113). The scene hands it the
+    // NightClock.
+    this.bedsideClock = this._own(new DigitalClock('BedsideClock'));
+    const clock = this.bedsideClock.object3d;
+    clock.position.set(table.object3d.position.x, 0.5, table.object3d.position.z);
+    const [px, , pz] = BUNK_POSES.pillow.position;   // the bunk is not turned
+    const { x: bx, z: bz } = bunk.object3d.position;
+    clock.rotation.y = Math.atan2(bx + px - clock.position.x, bz + pz - clock.position.z);
+    this.root.addChild(this.bedsideClock);
 
     // Three lockers in one model, against the back wall past the side
     // table, the doors facing into the room: the bed, the table and the
@@ -98,6 +132,10 @@ export class LivingQuarters extends Room {
     this._spawnProp('model:locker', {
       name: 'Lockers', position: [-0.2 - 0.246, 0, -inZ + 0.225 - 0.018], scale: 0.9,
     });
+
+    // ── Coffee ──
+    // Halfway down the left wall, between the bunk and the desk.
+    this._buildCoffeeMachine([-inX, 0]);
 
     // ── Storage ──
     // Two rows of three big racks (0.92 × 0.6 m) running out from the back
@@ -123,11 +161,48 @@ export class LivingQuarters extends Room {
     this._spawnProp('model:simple-desk', { name: 'Desk', position: [-0.2, 0, 2.6], rotationY: Math.PI });
     this._spawnProp('model:metal-chair', { name: 'DeskChair', position: [-1.45, 0, 2.67], rotationY: 1.3 });
     this._buildDeskLamp([-0.05, 0.79, 2.2]);
+    this._buildNotebook([-0.25, 0.8, 2.75]);
+    this._placeSpawn([-1.3, -2.4], [-0.2, 2.6]);
 
     // Two small shelves along the front wall, behind the desk's end.
     [-1.3, -0.26].forEach((x, i) => {
       this._spawnProp('model:shelf', { name: `OfficeShelf_${i + 1}`, position: [x, 0, inZ - 0.2], rotationY: Math.PI / 2 });
     });
+  }
+
+  /** The coffee: a tall drinks machine, its back to the wall at `[x, z]`
+   *  (the wall's inner face, the middle of the machine), facing +x into the
+   *  room. Built here rather than imported — the downloaded vending machine
+   *  is a broken fragment. The body is the collider the interact ray hits;
+   *  the face details are plain meshes on it. Its status screen shows what
+   *  it is doing (CoffeeMachine colours it); the cup goes in the bay below. */
+  _buildCoffeeMachine([x, z]) {
+    const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
+    const size = [0.7, 1.9, 0.9];
+    const go = this._addStaticBox('CoffeeMachine', [x + size[0] / 2, size[1] / 2, z], size, body);
+
+    // Positions are relative to the body's centre, 0.95 m up.
+    const front = size[0] / 2;
+    const detail = (geometry, material, position) => {
+      const mesh = new THREE.Mesh(this._own(geometry), material);
+      mesh.position.set(...position);
+      go.object3d.add(mesh);
+      return mesh;
+    };
+    const dark  = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 }));
+    const glass = this._own(new THREE.MeshStandardMaterial({
+      color: 0x0a140e, emissive: 0x6dff9c, emissiveIntensity: 0.9, roughness: 0.3,
+    }));
+    const light = this._own(new THREE.MeshStandardMaterial({
+      color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
+    }));
+
+    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
+    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // brew button
+    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // cup bay
+    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
+
+    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
   }
 
   /** A lamp on the desk: base, stem and a glowing shade. A glow, not a
@@ -146,5 +221,34 @@ export class LivingQuarters extends Room {
     const top = new THREE.Mesh(this._own(new THREE.CylinderGeometry(0.07, 0.12, 0.12, 16)), shade);
     top.position.y = 0.36;
     go.object3d.add(base, stem, top);
+
+    // Lit (#79): a small warm pool over the desk to read the journal by.
+    // No shadow, and built with the room, so the one-off shader compile
+    // happens under the loading screen. Under the room, so the power grid
+    // collects it with the other lamps and a cut takes it out too.
+    const light = new THREE.PointLight(0xffb070, 1.6, 3.5, 2);
+    light.castShadow = false;
+    light.position.y = 0.32;
+    go.object3d.add(light);
+  }
+
+  /** The previous operator's notebook, closed, on the desk top: a solid
+   *  box with its own collider (the interaction ray needs one) and its own
+   *  material, which the Journal pulses while tonight's entry is unread. */
+  _buildNotebook(position) {
+    const cover = this._own(new THREE.MeshStandardMaterial({
+      color: 0x5a3b26, roughness: 0.9, emissive: 0xffc070, emissiveIntensity: 0,
+    }));
+    const notebook = this._addStaticBox('Notebook', position, [0.2, 0.02, 0.28], cover);
+    this.journal = notebook.addComponent(new Journal());
+    this.journal.material = cover;
+  }
+
+  /** Where the player wakes: `at` room-local [x, z], turned to face `look`. */
+  _placeSpawn([x, z], [lx, lz]) {
+    const [ox, oy, oz] = this.position;
+    // Forward at yaw is (-sin, -cos) in x/z.
+    const yaw = Math.atan2(-(lx - x), -(lz - z));
+    this.spawn = { position: [x + ox, oy + 1, z + oz], yaw };
   }
 }

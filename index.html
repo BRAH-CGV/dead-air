@@ -218,6 +218,22 @@
       #fatigue-lids::before { top: 0;    transform: translateY(calc((var(--lid) - 1) * 100%)); }
       #fatigue-lids::after  { bottom: 0; transform: translateY(calc((1 - var(--lid)) * 100%)); }
 
+      /* The bed's closed-eyes view (BedRest.js, FatigueOverlay.js): the
+         world darkens and desaturates behind a heavy vignette, the bedside
+         clock's red digits still readable. backdrop-filter is removed when
+         the strength is 0 so it costs nothing outside of bed. */
+      #bed-darkness {
+        --dark: 0;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 99;
+        opacity: 0;
+        background: radial-gradient(ellipse at center,
+          transparent 15%, rgba(0,0,0,0.6) 45%, rgba(0,0,0,0.92) 75%);
+        mix-blend-mode: multiply;
+      }
+
       /* ── Radar overlay ─────────────────────────────────── */
       #radar-overlay {
         position: fixed;
@@ -265,31 +281,201 @@
         letter-spacing: 0.06em;
       }
 
-      /* ── Signal review panel ───────────────────────────── */
-      #signal-review {
+      /* ── Processing screen (ServerRoom console) ────────── */
+      #processing-screen {
         position: fixed;
         inset: 0;
         display: none;
         align-items: center;
         justify-content: center;
         flex-direction: column;
-        gap: 16px;
+        gap: 14px;
         background: rgba(6, 8, 14, 0.92);
         z-index: 96;
         font: 13px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #b8c8d8;
       }
-      #signal-review-image {
-        max-width: 480px;
-        max-height: 360px;
-        border: 2px solid rgba(0, 200, 180, 0.4);
+      #processing-title {
+        color: #00dcc8;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-weight: bold;
+        font-size: 14px;
+      }
+      #processing-preview {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 484px;
+        height: 364px;
+        border: 2px solid rgba(0, 200, 180, 0.15);
         border-radius: 4px;
-        box-shadow: 0 0 20px rgba(0, 200, 180, 0.15);
+        overflow: hidden;
+        position: relative;
       }
-      #signal-review-hint {
-        color: #8898a8;
+      #tuning-game {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        width: 484px;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+      }
+      #tuning-game.disabled {
+        opacity: 0.3;
+        pointer-events: none;
+      }
+      #tuning-canvas {
+        width: 480px;
+        height: 60px;
+        border: 2px solid rgba(0, 200, 180, 0.15);
+        border-radius: 4px;
+        background: rgba(6, 8, 14, 0.6);
+      }
+      #tuning-slider {
+        width: 480px;
+        accent-color: #00c8b4;
+        cursor: pointer;
+      }
+      #processing-spectrogram {
+        width: 480px;
+        height: 360px;
+        image-rendering: pixelated;
+      }
+      #processing-scanline {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 2px;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.7);
+        pointer-events: none;
+        display: none;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+      }
+      #processing-viz {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        align-items: center;
+        margin: 6px 0;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+      }
+      #processing-viz.disabled {
+        opacity: 0.3;
+        pointer-events: none;
+      }
+      .viz-slider {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .viz-slider label {
+        color: #556;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        min-width: 48px;
+      }
+      .viz-slider input[type="range"] {
+        width: 80px;
+        accent-color: #00c8b4;
+      }
+      #processing-media {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        min-height: 32px;
+        margin-bottom: 4px;
+      }
+      .media-btn {
+        appearance: none;
+        padding: 4px 14px;
+        border: 1px solid rgba(0, 200, 180, 0.4);
+        border-radius: 2px;
+        background: rgba(0, 200, 180, 0.06);
+        color: #b8c8d8;
+        font: inherit;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .media-btn:hover:not(:disabled) {
+        background: rgba(0, 200, 180, 0.15);
+        border-color: rgba(0, 200, 180, 0.7);
+        color: #d8f0e8;
+      }
+      .media-btn:disabled {
+        opacity: 0.3;
+        cursor: default;
+        border-color: rgba(128, 128, 128, 0.25);
+      }
+      #processing-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        min-height: 36px;
+      }
+      .processing-btn {
+        appearance: none;
+        padding: 6px 18px;
+        border: 1px solid rgba(0, 200, 180, 0.5);
+        border-radius: 2px;
+        background: rgba(0, 200, 180, 0.08);
+        color: #b8c8d8;
+        font: inherit;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .processing-btn:hover:not(:disabled) {
+        background: rgba(0, 200, 180, 0.18);
+        border-color: rgba(0, 200, 180, 0.8);
+        color: #d8f0e8;
+      }
+      .processing-btn:disabled {
+        opacity: 0.35;
+        cursor: default;
+        border-color: rgba(128, 128, 128, 0.3);
+      }
+      #processing-hint {
+        color: #556;
         letter-spacing: 0.06em;
         text-transform: uppercase;
         font-size: 11px;
+      }
+      #processing-progress {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        margin: 6px 0;
+      }
+      #processing-progress-bar {
+        width: 200px;
+        height: 6px;
+        background: rgba(0, 200, 180, 0.1);
+        border: 1px solid rgba(0, 200, 180, 0.25);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      #processing-progress-fill {
+        height: 100%;
+        width: 0%;
+        background: rgba(0, 200, 180, 0.6);
+        transition: width 0.25s linear;
+      }
+      #processing-progress-label {
+        color: #889;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
       }
 
       /* ── Menus (MenuView.js draws into #menu-panel) ─────────
@@ -607,15 +793,18 @@
       @media (prefers-reduced-motion: reduce) {
         #cctv::before, #cctv::after { animation: none; }
       }
-      #cctv-static {
+      /* A switch waiting long on a camera that is loading. The switch
+         itself is drawn on the GPU (CameraSignalPass). */
+      #cctv-connecting {
         position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        image-rendering: pixelated;
-        opacity: 0;
+        top: 42px;
+        right: 22px;
+        letter-spacing: 0.14em;
+        color: #b8c8d8;
+        display: none;
+        animation: cctv-rec 1s steps(1) infinite;
       }
-      #cctv.is-static #cctv-static { opacity: 1; }
+      #cctv.is-connecting #cctv-connecting { display: block; }
       #cctv-label {
         position: absolute;
         top: 18px;
@@ -696,9 +885,50 @@
       /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
       body.cctv-on :is(#crosshair, #prompt) { visibility: hidden !important; }
 
+      /* ── Journal (JournalPanel.js): the previous operator's notebook ──
+         A page of ruled paper held up close. Below the menus (150), so a
+         pause covers it; the game behind it runs slow (Journal.js). */
+      #journal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 140;
+        background: rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+      }
+      #journal.is-open { display: flex; }
+      .journal-paper {
+        box-sizing: border-box;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+        padding: 30px 36px 22px 52px;
+        color: #2b2620;
+        font: 17px/30px "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+        /* Off-white paper, faint blue rules every line, a red margin line. */
+        background:
+          linear-gradient(to right, transparent 38px, rgba(190, 70, 60, 0.35) 38px, rgba(190, 70, 60, 0.35) 40px, transparent 40px),
+          repeating-linear-gradient(to bottom, transparent 0 29px, rgba(70, 100, 150, 0.22) 29px 30px),
+          #e8e0c9;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        transform: rotate(-0.6deg);
+      }
+      .journal-title { margin: 0 0 8px; font: inherit; font-size: 22px; font-weight: 700; }
+      .journal-body p { margin: 0 0 30px; }
+      .journal-body p:last-child { margin-bottom: 12px; }
+      .journal-hint {
+        font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #6a6050;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      @media (max-width: 640px) { .journal-paper { padding: 22px 18px 18px 46px; font-size: 15px; } }
+
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #signal-review, #cctv, #nap-hint) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint) {
         visibility: hidden !important;
       }
 
@@ -848,6 +1078,7 @@
     <div id="fatigue">
       <div id="fatigue-tunnel"></div>
       <div id="fatigue-lids"></div>
+      <div id="bed-darkness"></div>
     </div>
 
     <!-- Radar overlay (shown while using the computer) -->
@@ -860,17 +1091,48 @@
 
     <!-- Security camera monitor (shown while using the camera terminal) -->
     <div id="cctv">
-      <canvas id="cctv-static"></canvas>
+      <div id="cctv-connecting">CONNECTING…</div>
       <div id="cctv-label"></div>
       <div id="cctv-flash">FLASH ON</div>
       <div id="cctv-hint"></div>
       <div id="cctv-map"></div>
     </div>
 
-    <!-- Signal review modal (shown after scanning a signal) -->
-    <div id="signal-review">
-      <img id="signal-review-image" alt="Signal payload" />
-      <div id="signal-review-hint">Signal saved to drive — press Q to continue</div>
+    <!-- Processing screen (ServerRoom console overlay) -->
+    <div id="processing-screen">
+      <div id="processing-title">Signal Processing</div>
+      <div id="processing-preview">
+        <canvas id="processing-spectrogram" width="480" height="360"></canvas>
+        <div id="processing-scanline"></div>
+      </div>
+      <div id="tuning-game">
+        <canvas id="tuning-canvas" width="480" height="60"></canvas>
+        <input type="range" id="tuning-slider" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div id="processing-viz">
+        <div class="viz-slider">
+          <label for="viz-gain">Gain</label>
+          <input type="range" id="viz-gain" min="0.5" max="5" step="0.1" value="1">
+        </div>
+        <div class="viz-slider">
+          <label for="viz-contrast">Contrast</label>
+          <input type="range" id="viz-contrast" min="0.2" max="3" step="0.1" value="1">
+        </div>
+        <div class="viz-slider">
+          <label for="viz-volume">Volume</label>
+          <input type="range" id="viz-volume" min="0" max="1" step="0.05" value="0.7">
+        </div>
+      </div>
+      <audio id="processing-audio" preload="auto"></audio>
+      <div id="processing-media"></div>
+      <div id="processing-controls"></div>
+      <div id="processing-progress">
+        <div id="processing-progress-bar">
+          <div id="processing-progress-fill"></div>
+        </div>
+        <div id="processing-progress-label">Processing… 0%</div>
+      </div>
+      <div id="processing-hint">Q: close</div>
     </div>
 
     <!-- Menus: main, pause, settings, controls, credits, end screens -->
@@ -878,6 +1140,9 @@
       <div id="menu-status" aria-hidden="true"></div>
       <div id="menu-panel"></div>
     </div>
+
+    <!-- The previous operator's journal (JournalPanel.js) -->
+    <div id="journal"></div>
 
     <div id="fade"></div>
 

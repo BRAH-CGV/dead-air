@@ -93,8 +93,21 @@ Either we show a boring "you win!" screen after the third night or we make it en
 		- If the power has been cut:
 			- Nothing special happens. You just need to turn it back on after it passes
 	- After it passes, if you're still alive, then get back to work.
-- Camera entity
-	- I'm not too sure for this one anymore. The original idea was having it only be visible through cameras, but I'm not sure where we would put cameras and why they would be there?
+- Camera entity (Ragno)
+	- A long-haired, spider-legged thing that gets into the base through the air vents of the side rooms. The security cameras are how you deal with it
+	- It shows up outside at either end of the building, from the window side or the yard side, and creeps to the vent on that end
+		- Outside it stops to stare at the nearest camera, then moves in sudden fast darts like a jumping spider (but never jumps)
+		- From the window side it keeps to the very edge of what you can see from the desk. Look straight at it through the window and it rushes to the side of the building, out of view. Seeing it up close outside does the same
+		- Flashing it with a camera makes it flinch, then run out of sight. It's gone for now
+		- At the vent it climbs the wall and goes in. The camera watching the vent turns to static, and you hear it moving in the duct on that side
+	- Inside (the bedroom or the server room) it climbs down the wall and stands staring at the hallway
+		- Flash it with the room's camera and it flinches and scrambles back into the vent
+		- Walk down the hallway toward its room, or leave it long enough, and it comes for you. It squeezes tall and thin through doorways
+		- While it's chasing you, the cameras can't stop it. Run outside (it won't wait at the airlock) and cut the power: with the power off, your flashlight sends it back to the vent. With the power on, the flashlight does nothing
+		- If it catches you, you lose the night
+	- Night 1: it only comes once, at midnight, as far as the vent, and leaves again. Quieter, and easy to miss. It's there to build tension
+	- Night 2: one or two visits after dark
+	- Night 3: two to four visits, shorter pauses, quicker to come out of the room
 - Glowing orb entity
 	- Will pass by the window randomly, with it's glow and a faint hum indicating when it's on its way.
 	- If it sees you then it breaks or melts through the window and kills you, you lose the night

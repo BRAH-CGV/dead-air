@@ -29,9 +29,15 @@ import { Component } from '../core/Component.js';
 // straight back up; the night was never sped up. Without a BedRest the nap
 // freezes the player and runs fast at once (tests, a bare scene).
 //
-// While the eyes are half open (BedRest.peeking) the night runs at real
-// time, so the scene plays at the speed it is seen and an alarm can't cut
-// it short; once they shut it races on again.
+// Sleep is rest: while napping, stamina doesn't drain (StaminaDrain's
+// isResting) and NAP.staminaPerHour comes back for every clock hour slept,
+// frame by frame, so a longer nap restores more and one cut short gives
+// back only what was slept.
+//
+// Asleep, the view is darkened, not shut: the bedside clock races at
+// NAP.timeScale. While the Sleep Demon stands watching (hooks.watched) the
+// night holds to real time, so the scene plays at the speed it is seen and
+// an alarm can't cut it short; the digits slow to a crawl while it is there.
 //
 // The lids black the screen out, HUD and all, so for the whole nap a line
 // over them (`hint`, NAP.wakeHint) says E wakes you.
@@ -39,7 +45,7 @@ import { Component } from '../core/Component.js';
 // `hooks.restless()` refuses a nap outright (the UFO already on its way).
 //
 //   const nap = gameplayGO.addComponent(new Nap({
-//     controller, engine, hud, rest: bedRest,
+//     controller, engine, hud, stamina, rest: bedRest,
 //     hooks: { setPlayerLocked, restless },
 //     alarms: [{ test: () => !grid.on, message: 'The power went out.' }],
 //   }));
@@ -57,6 +63,9 @@ export const NAP = {
   alarmMessage: 'Your alarm went off.',
   /** Shown over the closed lids for the whole nap: the way out. */
   wakeHint: '[E] Wake up',
+  /** Stamina given back per clock hour slept: 30 min 0.125, 1 h 0.25,
+   *  3 h 0.75. */
+  staminaPerHour: 0.25,
 };
 
 export class Nap extends Component {
@@ -75,13 +84,15 @@ export class Nap extends Component {
    *           getUp(style: 'calm'|'startled'): boolean, cancel(): void }|null} [opts.rest]
    *        The bed animation (BedRest).
    * @param {{ setPrompt: (text: string) => void }} [opts.hud]
-   * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean }} [opts.hooks]
+   * @param {{ setPlayerLocked?: (locked: boolean) => void, restless?: () => boolean, watched?: () => boolean }} [opts.hooks]
    * @param {{ test: () => boolean, message: string }[]} [opts.alarms]
    * @param {{ show(text: string): void, hide(): void }|null} [opts.hint]  Over the lids: "[E] Wake up".
+   * @param {{ restore(amount: number): void }|null} [opts.stamina]  Topped up while asleep.
    */
-  constructor({ controller, engine, rest = null, hud = null, hooks = {}, alarms = [], hint = null }) {
+  constructor({ controller, engine, rest = null, hud = null, hooks = {}, alarms = [], stamina = null, hint = null }) {
     super();
-    Object.assign(this, { controller, engine, rest, hud, hooks, alarms, hint });
+    Object.assign(this, { controller, engine, rest, hud, hooks, alarms, stamina, hint });
+    this._sleptTo = null;                     // the clock hour slept up to
     this._armed = alarms.map(() => false);   // which alarms can still go off
     this._messageLeft = 0;                    // real seconds the wake-up line has left
   }
@@ -100,6 +111,7 @@ export class Nap extends Component {
     this.wokeBy = null;
     const now = this.controller.nightClock?.currentTime;
     this.wakeAt = hours != null && now != null ? now + hours : null;
+    this._sleptTo = now ?? null;
     // Only a change wakes you: an alarm already true now is ignored.
     this._armed = this.alarms.map(a => !a.test());
     // The press that lay you down isn't the one that wakes you.
@@ -142,8 +154,10 @@ export class Nap extends Component {
       // handed straight back.
       if (state === 'morning') return this.wake();
       if (state !== 'playing') return this._abandon();
-      // Eyes half open: the night holds to real time while you look.
-      if (this._asleep) this.engine.timeScale = this.rest?.peeking ? 1 : NAP.timeScale;
+      // The demon standing there holds the night to real time; otherwise
+      // it races.
+      if (this._asleep) this.engine.timeScale = this.hooks.watched?.() ? 1 : NAP.timeScale;
+      this._rest();
       if (this.wakeAt !== null && this.controller.nightClock?.currentTime >= this.wakeAt) {
         return this.wake(NAP.alarmMessage);
       }
@@ -164,6 +178,14 @@ export class Nap extends Component {
         this.controller.refreshPrompt?.();
       }
     }
+  }
+
+  /** Give back stamina for the clock time slept since the last frame. */
+  _rest() {
+    const now = this.controller.nightClock?.currentTime;
+    if (now == null || this._sleptTo == null) return;
+    if (now > this._sleptTo) this.stamina?.restore((now - this._sleptTo) * NAP.staminaPerHour);
+    this._sleptTo = now;
   }
 
   /** Real time again, without getting up: the view is handed straight back. */

@@ -71,18 +71,18 @@ by PolyDavid is licensed under Creative Commons Attribution
 | **Used for** | Tall server rack prop |
 | **Modifications** | None recorded |
 
-### Bunk bed
+### Bed
 
-"bunk bed" (https://sketchfab.com/3d-models/bunk-bed-8b2a538ab53a4dc3816c8ca78e43ce5e)
-by Coconut (tomas.anglim.811) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
+"PBR Bed Model" (https://www.cgtrader.com/free-3d-models/furniture/bed/pbr-bed-model)
+from CGTrader (item 1960270), free under the CGTrader Royalty Free License.
 
 | | |
 |---|---|
-| **File** | `public/assets/models/bunk-bed.glb` |
-| **Manifest key** | `model:bunk-bed` |
-| **Used for** | Crew quarters bunk bed |
-| **Modifications** | Base-colour texture edited: red blood marks painted out of the mattress |
+| **File** | `public/assets/models/bed.glb` |
+| **Manifest key** | `model:bed` |
+| **Used for** | Crew quarters bed (replaced the bunk bed, whose ladder hid the bedside clock from the pillow) |
+| **Designer** | Not recorded yet: the CGTrader page wouldn't load here, so add the designer's username from it |
+| **Modifications** | FBX converted to `.glb` in Blender: scaled to 2 m long, turned so the pillow is at −z, origin on the floor; textures cut to 512–1024 px; the Unity metallic/smoothness map turned into a glTF metal/rough map, metalness at 60 % (no environment map to reflect) |
 
 
 ### Locker
@@ -477,6 +477,17 @@ not yet decided as a team.
 | **Used for** | The Sleep Demon's body, drawn as a pitch-black shade (`MonsterFigure`) |
 | **Modifications** | Baked by `scripts/bake-sleep-demon.mjs`: bind pose baked in, rig, textures, eyes, gums, teeth and the head card dropped, decimated from 18,396 to 3,000 triangles, scaled to 1.8 m, eye and mouth markers added. Our own eyes and grin are drawn on it |
 
+### Ragno
+
+"Ragno (Monster)" (https://sketchfab.com/3d-models/ragno-monster-2e1a422e6f0048f98a786ceecac423d7) by Hobu (https://sketchfab.com/Hobu_Coffee) is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+| | |
+|---|---|
+| **File** | `public/assets/models/ragno.glb` |
+| **Manifest key** | `model:ragno` |
+| **Used for** | Ragno, the camera entity (`RagnoFigure`) |
+| **Modifications** | Renamed from `ragno_monster.glb`; scaled ×0.8 in the manifest; at load, the loose shin, spike and tail bones are reattached to the legs and body, the legs are walked by IK, the idle clip plays on everything but the legs, and the head's face, hair and eyes, which the export left at the wrong size and place, are rebuilt where the creator's thumbnail shows them |
+
 ## Sounds
 
 ### Gas mask breathing
@@ -635,6 +646,41 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | The tired player's yawns (`FatigueEffects`) |
 | **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
 
+### Heartbeat
+
+"my heart beat for Halloween+.mp3" by strongheartbeat (https://freesound.org/people/strongheartbeat/sounds/62120/), used under Creative Commons Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/) — sampling and remixing allowed, attribution required.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/heartbeat.mp3` |
+| **Manifest key** | `sfx:heartbeat` |
+| **Used for** | A tired player's heartbeat, looped, louder and faster towards empty (`FatigueEffects`) |
+| **Modifications** | Cut to a five-beat loop, time-stretched 1.3× with the pitch kept (55 → 72 bpm), converted to mono mp3 |
+
+### Knocks — ⚠ one part non-commercial
+
+Three knocking takes, mixed by us from Freesound recordings: "Metal Knocking" by BenjaminNelan (https://freesound.org/people/BenjaminNelan/sounds/410362/), Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/); "KnockMetal1.wav" by ImaginaryDust (https://freesound.org/people/ImaginaryDust/sounds/670021/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/); and "Urgent Impacts - 5" by Speedenza (https://freesound.org/people/Speedenza/sounds/223017/), used under Creative Commons Attribution-NonCommercial (https://creativecommons.org/licenses/by-nc/4.0/).
+
+⚠ Speedenza's licence is non-commercial (the page's badge says 4.0, its description 3.0). Dead Air is a non-commercial university project, which satisfies NC, as for the poster and the Sleep Demon.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/knocks.mp3` |
+| **Manifest key** | `sfx:knocks` |
+| **Used for** | The Sleep Demon's knocks, now and then in place of a whisper (`SleepDemon`) |
+| **Modifications** | Cut and arranged into three takes in one file, downmixed to mono |
+
+### Creepy whispering
+
+Many whispering voices, mixed by us from Freesound recordings by JoelMcDaniel: "Creepy, Whispering Latin Paragraph 1" (https://freesound.org/people/JoelMcDaniel/sounds/851765/), "Creepy, Whispering Latin Paragraph 3" (https://freesound.org/people/JoelMcDaniel/sounds/851767/) and "Creepy, Whispering Latin Paragraph 4" (https://freesound.org/people/JoelMcDaniel/sounds/851768/), used under Creative Commons 0 (https://creativecommons.org/publicdomain/zero/1.0/) — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/whispering.mp3` |
+| **Manifest key** | `sfx:whispering` |
+| **Used for** | The Sleep Demon's whispers, a snippet at a time (`SleepDemon`) |
+| **Modifications** | Overlaid into one 10 s clip, downmixed to mono, raised about 27 dB |
+
 ### Pressure release
 
 One pressure-release hiss, mixed by us from two Freesound recordings: "Garage Air Compressor Releasing Pressure" by j_soundeffects (https://freesound.org/people/j_soundeffects/sounds/847748/), used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/), and "Air (or steam) pressure release" by brunoboselli (https://freesound.org/people/brunoboselli/sounds/457294/), Creative Commons 0 — free to use, attribution not required, credited here anyway.
@@ -701,16 +747,16 @@ One beep, mixed by us from three Freesound recordings, all Creative Commons 0 �
 | **Used for** | The security monitor's static, looped while a feed comes in (`CameraTerminal`) |
 | **Modifications** | Cut to its first 4 s, at MPEG frame boundaries with no re-encode; renamed |
 
-### Spotlight
+### Camera flash switch
 
-"Spotlight" (Pixabay sound 91359), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spotlight-91359.mp3`.
+"MECHSwtch_small_electric_switch_on_off.wav" (https://freesound.org/people/DBS_Sounds/sounds/613657/) by DBS_Sounds on Freesound is used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
-| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.wav` |
+| **File** | `public/assets/audio/camera-spotlight.mp3`, `public/assets/audio/camera-spotlight-off.mp3` |
 | **Manifest key** | `sfx:camera-spotlight`, `sfx:camera-spotlight-off` |
 | **Used for** | A security camera's flash coming on, and going off (`CameraTerminal`) |
-| **Modifications** | Renamed. The off sound is made from it: its first 0.7 s, slowed to 0.8× (lower in pitch) and faded out after 0.25 s, rendered to WAV |
+| **Modifications** | Its two clicks cut apart: the switch going on, and going off |
 
 ### Drive box knocks
 
@@ -744,6 +790,28 @@ Six clips, mixed by us from three Freesound recordings: "Opening Closing Tape De
 | **Manifest key** | `sfx:drive-insert-1`, `sfx:drive-insert-2`, `sfx:drive-insert-3`, `sfx:drive-remove-1`, `sfx:drive-remove-2`, `sfx:drive-remove-3` |
 | **Used for** | A drive going into a reader and coming out of it (`DriveSlot`), one of three picked at random each way |
 | **Modifications** | The recordings cut, layered and mixed down; split into three insert clips and three remove clips |
+
+### Corrupted drive sparks
+
+Three spark clips, cut by us from a mix of two Freesound recordings, both used under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/): "CRT Screen Static Sparks" by SiriusBizdness (https://freesound.org/people/SiriusBizdness/sounds/565193/) and "Sparks.wav" by Juan_Matthys_OW (https://freesound.org/people/Juan_Matthys_OW/sounds/655732/).
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spark-1.mp3`, `spark-2.mp3`, `spark-3.mp3` |
+| **Manifest key** | `sfx:spark-1`, `sfx:spark-2`, `sfx:spark-3` |
+| **Used for** | The corrupted drive sparking on each hop (`EvilSignal`), one picked at random |
+| **Modifications** | The recordings mixed and cut into three short clips |
+
+### Evil signal hum
+
+"mechanical hum.wav" (https://freesound.org/people/patchytherat/sounds/531562/) by patchytherat on Freesound is Creative Commons 0 — free to use, attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/evil-hum.mp3` |
+| **Manifest key** | `sfx:evil-hum` |
+| **Used for** | The faint hum while a corrupted drive's countdown runs (`EvilSignal`) |
+| **Modifications** | Cut to a short clip; crossfaded into a seamless loop at load |
 
 ### Base ambience (room tone loops)
 
@@ -789,6 +857,39 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | The main menu's music (`MenuMusic`) |
 | **Modifications** | Renamed; played at 0.07 of its file level; at load, the tail is crossfaded into the head (`blendLoopSeam`) |
 
+### Giant spider walking
+
+"Giant Spider Walking" (https://pixabay.com/sound-effects/giant-spider-walking-504034/) by Dragon Studio is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `dragon-studio-giant-spider-walking-504034.mp3`; the link is built from that name and still needs checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-walking.mp3` |
+| **Manifest key** | `sfx:spider-walking` |
+| **Used for** | Ragno's legs, indoors (`Ragno`) |
+| **Modifications** | Renamed; looped, its playback rate following his speed |
+
+### Spider call
+
+"Spider Call" (https://pixabay.com/sound-effects/spider-call-71921/), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `freesound_community-spider-call-71921.mp3`; the link is built from that name and still needs checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-call.mp3` |
+| **Manifest key** | `sfx:spider-call` |
+| **Used for** | Ragno outside (`Ragno`): its soft chirps, and its loud bursts pitched down as a rare screech |
+| **Modifications** | Renamed; cut at load into its separate sounds (`findBursts`), played one at a time, low-passed |
+
+### Spider attacks
+
+"Spider Attack 2", "Spider Attack 4" and "Spider Attack 8" (https://pixabay.com/sound-effects/spider-attack-2-482539/, https://pixabay.com/sound-effects/spider-attack-4-482536/, https://pixabay.com/sound-effects/spider-attack-8-482541/) by yodguard are used under the Pixabay Content License — free to use, attribution not required, credited here anyway. Downloaded as `yodguard-spider-attack-2-482539.mp3`, `yodguard-spider-attack-4-482536.mp3` and `yodguard-spider-attack-8-482541.mp3`; the links are built from those names and still need checking.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/spider-attack-2.mp3`, `spider-attack-4.mp3`, `spider-attack-8.mp3` |
+| **Manifest key** | `sfx:spider-attack-2`, `sfx:spider-attack-4`, `sfx:spider-attack-8` |
+| **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
+| **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
+
 
 ## Downloaded but unattributed — TODO
 
@@ -799,7 +900,6 @@ before submission (the credits screen must list all non-original work):
 - `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
 - `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
 - `break-panel.glb` (`model:break-panel`)
-- `ragno_monster.glb` (not in the manifest)
 - `the_boiled_one_horror_game_-_boiled_one.glb` (not in the manifest)
 
 ## Candidate links — upcoming assets

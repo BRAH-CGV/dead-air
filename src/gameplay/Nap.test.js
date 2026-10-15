@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Nap, NAP } from './Nap.js';
+import { Stamina } from './Stamina.js';
 
 // ─────────────────────────────────────────────
 // Nap — sleep through part of the night, fast-forwarded, until something
@@ -42,7 +43,7 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   engine.press = () => { engine.held = true; engine.consumed = false; };
   const hud = { setPrompt: vi.fn() };
   const hint = { show: vi.fn(), hide: vi.fn() };
-  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false) };
+  const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false), watched: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
     controller, engine, hud, hooks, rest, hint,
@@ -249,22 +250,29 @@ describe('Nap', () => {
     });
   });
 
-  describe('the half-open eyes (a peek): the night holds still while you look', () => {
-    it('runs at real time while the eyes are half open, and fast again once they shut', () => {
-      const { nap, engine, rest } = rig;
-      rest.peeking = false;
+  describe('the demon\'s stretches: the night holds to real time while the demon is there', () => {
+    it('runs at real time while the demon stands watching, and fast again once it goes', () => {
+      const { nap, engine, hooks } = rig;
       nap.start();
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(1);
-      rest.peeking = false;
+      hooks.watched.mockReturnValue(false);
       nap.onUpdate(0.016);
       expect(engine.timeScale).toBe(NAP.timeScale);
     });
 
-    it('not before the eyes have shut: getting in stays at real time', () => {
+    it('a nap nobody watches races all the way: the stretches alone hold nothing back', () => {
+      const { nap, engine, rest } = rig;
+      nap.start();
+      rest.peeking = true;
+      nap.onUpdate(0.016);
+      expect(engine.timeScale).toBe(NAP.timeScale);
+    });
+
+    it('not before the darkness has closed: getting in stays at real time', () => {
       const r = makeRig({ instant: false });
       r.rest.peeking = false;
       r.nap.start();
@@ -272,11 +280,11 @@ describe('Nap', () => {
       expect(r.engine.timeScale).toBe(1);
     });
 
-    it('so the alarm cannot cut the scene short: the clock barely moves through it', () => {
-      const { nap, controller, rest } = rig;
+    it('so the alarm cannot cut the scene short: the clock barely moves through a stretch', () => {
+      const { nap, controller, hooks } = rig;
       controller.nightClock.currentTime = 1;
       nap.start(0.5);
-      rest.peeking = true;
+      hooks.watched.mockReturnValue(true);
       nap.onUpdate(0.016);
       expect(nap.napping).toBe(true);
     });
@@ -319,6 +327,61 @@ describe('Nap', () => {
       nap.onUpdate(1);
       expect(nap.napping).toBe(false);
       expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');
+    });
+  });
+
+  describe('stamina', () => {
+    function napRig(startValue) {
+      const r = makeRig();
+      const stamina = new Stamina();
+      stamina.value = startValue;
+      r.nap.stamina = stamina;
+      return { ...r, stamina };
+    }
+    /** Run the clock on `hours`, a frame at a time, while napping. */
+    function sleepFor(r, hours, steps = 20) {
+      for (let i = 0; i < steps; i++) {
+        r.controller.nightClock.currentTime += hours / steps;
+        r.nap.onUpdate(0.5);
+      }
+    }
+
+    it('gives stamina back by the clock hours slept: a longer nap restores more', () => {
+      const short = napRig(0.1);
+      short.nap.start(1);
+      sleepFor(short, 1);
+      const long = napRig(0.1);
+      long.nap.start(3);
+      sleepFor(long, 3);
+      expect(short.stamina.value).toBeCloseTo(0.1 + NAP.staminaPerHour);
+      expect(long.stamina.value).toBeCloseTo(0.1 + 3 * NAP.staminaPerHour);
+      expect(long.stamina.value).toBeGreaterThan(short.stamina.value);
+    });
+
+    it('woken early, only what was slept is given back', () => {
+      const r = napRig(0.2);
+      r.nap.start(3);
+      sleepFor(r, 0.5);
+      r.engine.press();
+      r.nap.onUpdate(0.5);
+      expect(r.nap.napping).toBe(false);
+      const v = r.stamina.value;
+      expect(v).toBeCloseTo(0.2 + 0.5 * NAP.staminaPerHour);
+      r.controller.nightClock.currentTime += 1;
+      r.nap.onUpdate(0.5);
+      expect(r.stamina.value).toBe(v);
+    });
+
+    it('never past full', () => {
+      const r = napRig(0.9);
+      r.nap.start(3);
+      sleepFor(r, 3);
+      expect(r.stamina.value).toBe(1);
+    });
+
+    it('the alarm lengths on offer restore a sensible spread: 1 h is a fair top-up, 3 h most of a bar', () => {
+      expect(NAP.staminaPerHour).toBeGreaterThan(0.1);
+      expect(3 * NAP.staminaPerHour).toBeLessThan(1);
     });
   });
 });

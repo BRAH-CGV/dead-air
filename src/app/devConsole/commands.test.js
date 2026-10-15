@@ -46,6 +46,7 @@ function fakeScene() {
     evilSignal: { summon: vi.fn(() => true) },
     sandstorm: { summon: vi.fn(() => true) },
     dustEyes: { summon: vi.fn(() => true) },
+    ragno: { summon: vi.fn(() => true), dismiss: vi.fn(), logic: { active: false } },
     ambience,
     power,
     generatorSound: {
@@ -212,7 +213,7 @@ describe('createCommands', () => {
 
   it('registers every old debug key as a command', () => {
     for (const name of ['colliders', 'editor', 'fly', 'noclip', 'fullbright', 'perf', 'fps',
-      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'music', 'stamina', 'time', 'power', 'suit', 'zones', 'signals']) {
+      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'ragno', 'music', 'stamina', 'time', 'power', 'suit', 'zones', 'signals']) {
       expect(c.find(name), name).not.toBe(null);
     }
   });
@@ -404,11 +405,42 @@ describe('createCommands', () => {
       expect(out[0]).toMatch(/^Evil signal not summoned/);
     });
 
+    it('ragno brings a night-3 Ragno, from where you say', () => {
+      expect(run('ragno window left').out).toEqual(['Ragno summoned: window side, quarters end (left)']);
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: 'window', side: -1 });
+      run('ragno YARD right');
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: 'yard', side: 1 });
+      run('ragno right');
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: undefined, side: 1 });
+      run('ragno');
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: undefined, side: undefined });
+    });
+
+    it('ragno creep brings a creeper, from where you say', () => {
+      expect(run('ragno creep yard left').out).toEqual(['Ragno creeping: yard side, quarters end (left)']);
+      expect(scene.ragno.summon).toHaveBeenLastCalledWith({ approach: 'yard', side: -1, creep: true });
+    });
+
+    it('ragno off sends him away', () => {
+      expect(run('ragno off').out).toEqual(['Ragno dismissed']);
+      expect(scene.ragno.dismiss).toHaveBeenCalledOnce();
+    });
+
+    it('ragno with a bad word is a usage error; a refused one says why', () => {
+      const { ok, out } = run('ragno ceiling');
+      expect(ok).toBe(false);
+      expect(out.at(-1)).toBe('Usage: ragno [creep] [window|yard] [left|right] | ragno off');
+      scene.ragno.summon.mockReturnValue(false);
+      expect(run('ragno').out[0]).toMatch(/^Ragno not summoned/);
+    });
+
     it('each says when the scene has no such threat', () => {
       delete scene.ufoThreat;
       delete scene.sandstorm;
       delete scene.dustEyes;
       delete scene.evilSignal;
+      delete scene.ragno;
+      expect(run('ragno').out).toEqual(['No Ragno in this scene']);
       expect(run('ufo').out).toEqual(['No UFO in this scene']);
       expect(run('storm').out).toEqual(['No sandstorms in this scene']);
       expect(run('eyes').out).toEqual(['No dust eyes in this scene']);

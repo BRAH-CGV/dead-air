@@ -8,9 +8,11 @@ import { STAMINA } from '../gameplay/Stamina.js';
 // within a frame the demon reads this frame's stamina.
 //
 // Every night that starts (the next one, or a retry) fills the stamina and
-// calls onNightStart — the dispenser's reset. It drains only while playing;
-// the day and a failed night hold it. Shows it on the HUD every frame —
-// HUD.setStamina only writes the DOM when the percent changes.
+// calls onNightStart — the coffee machine's reset. It drains only while
+// playing; the day and a failed night hold it. Outside (isOutside) it
+// drains STAMINA.outsidePace times as fast, and staring at the dust eyes
+// (isStaring) takes STAMINA.stare a second on top. Shows it on the HUD
+// every frame — HUD.setStamina only writes the DOM when the percent changes.
 //
 // A tired player sees the base dim: below 'tired' the lights sink smoothly
 // towards FATIGUE_DIM_MIN, written as the PowerGrid's 'fatigue' factor so it
@@ -36,16 +38,20 @@ export class StaminaDrain extends Component {
    * @param {import('../gameplay/Stamina.js').Stamina} opts.stamina
    * @param {{ state: string, onNightStart?: (fn: Function) => () => void }} opts.controller
    * @param {{ setStamina(value: number, level: string): void }|null} [opts.hud]
-   * @param {(() => void)|null} [opts.onNightStart]  e.g. the dispenser's reset
+   * @param {(() => void)|null} [opts.onNightStart]  e.g. the coffee machine's reset
    * @param {{ setFactor(key: string, value: number): void }|null} [opts.grid]  The PowerGrid.
+   * @param {(() => boolean)|null} [opts.isOutside]  The player is out of the base.
+   * @param {(() => boolean)|null} [opts.isStaring]  The player is staring at a dust eye.
    */
-  constructor({ stamina, controller, hud = null, onNightStart = null, grid = null }) {
+  constructor({ stamina, controller, hud = null, onNightStart = null, grid = null, isOutside = null, isStaring = null }) {
     super();
     this.stamina = stamina;
     this.controller = controller;
     this.hud = hud;
     this.onNightStart = onNightStart;
     this.grid = grid;
+    this.isOutside = isOutside;
+    this.isStaring = isStaring;
     this._off = null;
   }
 
@@ -65,7 +71,11 @@ export class StaminaDrain extends Component {
   }
 
   onUpdate(dt) {
-    if (this.controller.state === 'playing') this.stamina.update(dt);
+    if (this.controller.state === 'playing') {
+      this.stamina.update(dt,
+        this.isOutside?.() ? STAMINA.outsidePace : 1,
+        this.isStaring?.() ? STAMINA.stare : 0);
+    }
     this.hud?.setStamina(this.stamina.value, this.stamina.level);
     this.grid?.setFactor('fatigue', fatigueLight(this.stamina.value));
   }

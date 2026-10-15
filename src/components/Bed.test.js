@@ -40,6 +40,23 @@ describe('Bed', () => {
     expect(label('playing')).not.toMatch(/\[E\]/);
   });
 
+  it('in the morning, before the drives are in the buggy, says so and does nothing', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    expect(label('morning')).toMatch(/buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+    bed.onInteract();
+    expect(fade.play).not.toHaveBeenCalled();
+    expect(controller.sleep).not.toHaveBeenCalled();
+  });
+
+  it('in the morning, with the drives loaded but the buggy still here, says to send it off', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    controller.delivered = true;
+    controller.dispatched = false;
+    expect(label('morning')).toMatch(/send the buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+  });
+
   it('offers nothing after a failed night or the last shift', () => {
     expect(label('gameOver')).toBe('');
     expect(label('finished')).toBe('');
@@ -165,21 +182,22 @@ describe('Bed', () => {
       return b;
     }
 
-    it('the pillow: the eye at lying height on the bunk, looking up and tipped onto its side', () => {
+    it('the pillow: the eye lying on the bunk, on its side facing the bedside clock', () => {
       const pose = onBunk().pillowPose();
       expect(pose.position.toArray()).toEqual(BUNK_POSES.pillow.position);
       expect(pose.position.y).toBeGreaterThan(0.4);           // on the mattress …
       expect(pose.position.y).toBeLessThan(0.9);              // … lying, not sitting
-      expect(pose.pitch).toBeGreaterThan(0.3);                // up toward the ceiling
-      expect(Math.abs(pose.roll)).toBeGreaterThan(0.05);      // onto its side
+      expect(pose.pitch).toBeGreaterThanOrEqual(0);           // level or slight up toward the clock
+      expect(pose.pitch).toBeLessThan(0.4);
+      expect(pose.roll).toBeGreaterThan(0.05);                // onto its side, toward the clock
     });
 
     it('the get-out spot stands clear of the bunk, facing into the room', () => {
       const spot = onBunk().getOutSpot();
       expect(spot.position.y).toBe(0);                         // the feet, on the floor
-      // Outside the bunk's footprint (1.08 × 2 m about its origin) by more
+      // Outside the bunk's footprint (0.9 × 2 m about its origin) by more
       // than the player's radius, so the capsule never lands in its collider.
-      expect(spot.position.x).toBeGreaterThan(0.54 + 0.3);
+      expect(spot.position.x).toBeGreaterThan(0.45 + 0.3);
       // Facing +x, out of the bunk's open side: forward is (−sin yaw, −cos yaw).
       expect(-Math.sin(spot.yaw)).toBeCloseTo(1);
     });
@@ -203,6 +221,11 @@ describe('Bed', () => {
       expect(p1.pitch).toBeCloseTo(p0.pitch);
       const out = there.getOutSpot();
       expect(out.yaw - here.getOutSpot().yaw).toBeCloseTo(Math.PI / 2);
+      const w0 = here.watchSpots(), w1 = there.watchSpots();
+      expect(w1.length).toBe(w0.length);
+      expect(w1.length).toBeGreaterThan(0);
+      expect(w1[0].distanceTo(w0[0].clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2)
+        .add(new THREE.Vector3(3, 0, -2)))).toBeLessThan(1e-6);
     });
   });
 

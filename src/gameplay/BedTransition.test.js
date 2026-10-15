@@ -2,8 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { BedTransition, BED_TRANSITION } from './BedTransition.js';
 
 // ─────────────────────────────────────────────
-// BedTransition — getting into and out of the bunk, and the half-open
-// peeks while asleep, as pure steps on whatever clock it is handed
+// BedTransition — getting into and out of the bunk, and the demon's
+// stretches while asleep, as pure steps on whatever clock it is handed
 // ─────────────────────────────────────────────
 
 const T = BED_TRANSITION;
@@ -46,7 +46,7 @@ describe('BedTransition', () => {
       expect(bed.pose.t).toBeLessThan(0.8);
     });
 
-    it('the lids close slowly, and only once they are shut is it asleep', () => {
+    it('the darkness fades in over the last of the lie-down, and once it is full the nap speeds up', () => {
       const { bed, onAsleep } = make();
       bed.lieDown();
       run(bed, T.lieDown * T.lidsFrom * 0.9);
@@ -59,7 +59,7 @@ describe('BedTransition', () => {
       }
       expect(onAsleep).not.toHaveBeenCalled();
       run(bed, T.lieDown);
-      expect(bed.lid).toBe(1);
+      expect(bed.lid).toBe(1);                     // fully darkened
       expect(bed.phase).toBe('asleep');
       expect(bed.asleep).toBe(true);
       expect(bed.pose).toEqual({ from: 'lie', to: 'lie', t: 1 });
@@ -191,7 +191,7 @@ describe('BedTransition', () => {
     });
   });
 
-  describe('peeks while asleep', () => {
+  describe('the demon\'s stretches while asleep', () => {
     function asleep(rand = () => 0.5) {
       const rig = make({ peeks: true, rand });
       rig.bed.lieDown();
@@ -199,19 +199,19 @@ describe('BedTransition', () => {
       return rig;
     }
 
-    it('every now and again the eyes come half open, hold, and shut again completely', () => {
+    it('the darkness stays full while asleep; the stretch cycle runs underneath for the demon and the time scale', () => {
       const { bed } = asleep();
       expect(bed.peeking).toBe(false);
+      expect(bed.lid).toBe(1);                        // constant darkness
       const first = T.peek.first[0] + (T.peek.first[1] - T.peek.first[0]) * 0.5;
       run(bed, first + T.peek.open + 0.01, 0.01);
-      expect(bed.peeking).toBe(true);
-      expect(bed.lid).toBeCloseTo(T.peek.lid, 2);  // half open, no more
-      expect(bed.lid).toBeGreaterThan(0.3);
+      expect(bed.peeking).toBe(true);                  // demon's stretch is on
+      expect(bed.lid).toBe(1);                         // darkness unchanged
       const hold = T.peek.hold[0] + (T.peek.hold[1] - T.peek.hold[0]) * 0.5;
       run(bed, hold + T.peek.close + 0.02, 0.01);
-      expect(bed.lid).toBe(1);
-      expect(bed.peeking).toBe(false);
-      expect(bed.phase).toBe('asleep');            // still asleep
+      expect(bed.lid).toBe(1);                         // still fully dark
+      expect(bed.peeking).toBe(false);                 // stretch over
+      expect(bed.phase).toBe('asleep');                // still asleep
     });
 
     it('the first comes soon after the eyes shut, so even a short nap (a 30-minute one is ~1.7 s) gets one', () => {
@@ -231,13 +231,13 @@ describe('BedTransition', () => {
       expect(opened).toBeGreaterThanOrEqual(3);
     });
 
-    it('woken mid-peek, the eyes open the rest of the way from where they are', () => {
+    it('woken mid-stretch, the darkness lifts from full (the lid is 1 in bed)', () => {
       const { bed } = asleep(() => 0);
       run(bed, T.peek.first[0] + T.peek.open + 0.01, 0.01);
       expect(bed.peeking).toBe(true);
-      const lid = bed.lid;
+      expect(bed.lid).toBe(1);
       bed.getUp('calm');
-      expect(bed.lid).toBeCloseTo(lid);
+      expect(bed.lid).toBe(1);                     // starts opening from full
       expect(bed.peeking).toBe(false);
     });
 

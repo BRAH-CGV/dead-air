@@ -9,8 +9,8 @@ import { CameraOverlay, CAMERA_SQUARE } from './CameraOverlay.js';
 function markup() {
   document.body.innerHTML = `
     <div id="cctv">
-      <canvas id="cctv-static"></canvas>
       <div id="cctv-label"></div>
+      <div id="cctv-connecting">CONNECTING…</div>
       <div id="cctv-flash"></div>
       <div id="cctv-hint"></div>
       <div id="cctv-map"></div>
@@ -40,11 +40,24 @@ describe('CameraOverlay', () => {
     expect(document.getElementById('cctv-label').textContent).toBe('CAM 3/6 · YARD WEST');
   });
 
-  it('shows static until the picture is live', () => {
-    overlay.setLive(false);
-    expect(root.classList.contains('is-static')).toBe(true);
-    overlay.setLive(true);
-    expect(root.classList.contains('is-static')).toBe(false);
+  it('says CONNECTING only while a switch is waiting long', () => {
+    expect(root.classList.contains('is-connecting')).toBe(false);
+    overlay.setConnecting(true);
+    expect(root.classList.contains('is-connecting')).toBe(true);
+    overlay.setConnecting(false);
+    expect(root.classList.contains('is-connecting')).toBe(false);
+  });
+
+  it('has no static of its own: the switch is drawn on the GPU (CameraSignalPass)', () => {
+    expect(overlay.setLive).toBeUndefined();
+    expect(overlay.tick).toBeUndefined();
+  });
+
+  it('drops CONNECTING when it is hidden', () => {
+    overlay.show();
+    overlay.setConnecting(true);
+    overlay.hide();
+    expect(root.classList.contains('is-connecting')).toBe(false);
   });
 
   it('shows when the flash is lit', () => {
@@ -57,11 +70,6 @@ describe('CameraOverlay', () => {
   it('prints the controls', () => {
     overlay.setHint('A/D: pan');
     expect(document.getElementById('cctv-hint').textContent).toBe('A/D: pan');
-  });
-
-  it('tick() is safe without a 2D context (jsdom has none)', () => {
-    overlay.setLive(false);
-    expect(() => overlay.tick()).not.toThrow();
   });
 
   describe('the map', () => {
@@ -145,7 +153,7 @@ describe('CameraOverlay', () => {
     const bare = new CameraOverlay(null);
     expect(() => {
       bare.show(); bare.setCamera({ index: 0, count: 1, label: 'X' });
-      bare.setLive(false); bare.setFlash(true); bare.setHint(''); bare.setMap({ rooms: [], cameras: [] }); bare.tick(); bare.hide();
+      bare.setConnecting(true); bare.setFlash(true); bare.setHint(''); bare.setMap({ rooms: [], cameras: [] }); bare.hide();
     }).not.toThrow();
   });
 });

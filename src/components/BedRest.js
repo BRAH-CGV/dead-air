@@ -6,17 +6,20 @@ import { PLAYER_BODY } from './PlayerBody.js';
 // ─────────────────────────────────────────────
 // BedRest  –  getting into and out of the bunk, on the camera (Component)
 // ─────────────────────────────────────────────
-// BedTransition holds the steps; this maps them onto the scene. There is
-// no player body to animate, so it is the view: the camera's place, pitch and roll, and the
-// FatigueOverlay's eyelids.
+// BedTransition holds the steps; this maps them onto the scene, the way
+// SleepDemon maps SleepDemonDeath. There is no player body to animate, so
+// it is the view: the camera's place, pitch and roll, and the
+// FatigueOverlay's darkness (the bed's closed eyes, not the black lids).
 //
 //   lieDown(onAsleep)    from where you stand to the bunk's pillow, the
-//                        lids closing; onAsleep once they are shut (a nap
-//                        speeds the night up then, the morning sleep runs)
-//   getUp(style, onUp)   'calm' or 'startled': the eyes open, sit up on the
-//                        edge, stand beside the bunk (Bed.getOutSpot). Only
-//                        then is the capsule teleported there, so the view
-//                        hands back to the controller exactly where it is
+//                        darkness closing; onAsleep once it is fully down
+//                        (a nap speeds the night up then, the morning
+//                        sleep runs)
+//   getUp(style, onUp)   'calm' or 'startled': the darkness lifts, sit up
+//                        on the edge, stand beside the bunk
+//                        (Bed.getOutSpot). Only then is the capsule
+//                        teleported there, so the view hands back to the
+//                        controller exactly where it is
 //   cancel()             handed back at once, where the capsule stands
 //
 // For the whole animation the player is locked (setPlayerLocked) and its
@@ -31,6 +34,11 @@ import { PLAYER_BODY } from './PlayerBody.js';
 // checks engine.paused besides), and so does the fly camera. A failed night
 // or a finished run under it (any state but 'playing' or 'morning'), a
 // retry, or the scene torn down (onDestroy) hand everything back.
+//
+// In bed the closed eyes are a darkened view, not black lids:
+// `darkness` (0 … 1) is the strength, written to the FatigueOverlay's
+// #bed-darkness layer. The real eyelids stay for fatigue blinks, nodding
+// off and the Sleep Demon's death sequence.
 // ─────────────────────────────────────────────
 
 /** Metres above the floor the capsule's feet are put at when you get up,
@@ -63,13 +71,13 @@ export class BedRest extends Component {
    *           teleport(centre: number[], facing: { yaw: number, pitch: number }): void }|null} [opts.player]
    *        The FirstPersonController.
    * @param {{ enabled: boolean }|null} [opts.interaction]  The InteractionSystem.
-   * @param {{ set(tunnel: number, lid: number): void, clear(): void }|null} [opts.overlay]
+   * @param {{ set(tunnel: number, lid: number, darkness: number): void, clear(): void }|null} [opts.overlay]
    * @param {import('./Bed.js').Bed} opts.bed  The bunk's poses.
    * @param {{ state: string, onNightStart?: (fn: Function) => () => void }} opts.controller
    * @param {(locked: boolean) => void} [opts.setPlayerLocked]
    * @param {() => boolean} [opts.isFrozen]  The debug fly camera is on.
    * @param {import('../gameplay/BedTransition.js').BED_TRANSITION} [opts.tuning]
-   * @param {() => number} [opts.rand]  When the peeks come.
+   * @param {() => number} [opts.rand]  When the demon's stretches come.
    */
   constructor({
     engine, camera = null, player = null, interaction = null, overlay = null, bed, controller,
@@ -99,11 +107,19 @@ export class BedRest extends Component {
   /** Getting in, asleep or getting out. */
   get active() { return this.transition.active; }
 
-  /** Lying with the lids down, peeks included. */
+  /** Lying with the darkness down. */
   get asleep() { return this.transition.asleep; }
 
-  /** The eyes half open while asleep (a peek). */
+  /** The demon's stretch is on: the night holds to real time, and the demon shows in the darkened view. */
   get peeking() { return this.transition.peeking; }
+
+  /** The darkening's strength, 0 … 1: for a sound to follow. */
+  get darkness() { return this.transition.lid; }
+
+  /** Where the demon stands to watch a sleeper (the bunk's). */
+  watchSpots() {
+    return this.bed?.watchSpots?.() ?? [];
+  }
 
   onStart() {
     this._off = this.controller.onNightStart?.((_, opts = {}) => {
@@ -161,9 +177,11 @@ export class BedRest extends Component {
   }
 
   // FatigueEffects writes the lids in its update: these are written after.
+  // From lying down to standing up it is the darkness, never the lids, so
+  // the view dims and lifts without a cut to black between.
   onLateUpdate() {
     if (!this.active || this.isFrozen()) return;
-    this.overlay?.set(0, this.transition.lid);
+    this.overlay?.set(0, 0, this.transition.lid);
   }
 
   // ── Private ──

@@ -10,8 +10,7 @@
 //               lids close slowly over the last of it
 //   asleep      lids shut — onAsleep() is called on the way in: only now
 //               does a nap speed the night up, or the morning sleep run.
-//               Every now and again the eyes come half open (a peek), hold,
-//               and shut again completely
+//               The darkened view holds until woken (BedRest.darkness)
 //   opening     the lids open: slowly (calm), or snapped (startled)
 //   sittingUp   from wherever the view is ('here') to sitting on the edge
 //               of the bunk ('sit'): eased (calm), or sharp (startled)
@@ -32,16 +31,17 @@
 export const BED_TRANSITION = Object.freeze({
   /** Seconds from standing to lying on the pillow. */
   lieDown: 2,
-  /** The share of the lie-down run before the lids start to close. */
+  /** The share of the lie-down run before the darkness fades in. */
   lidsFrom: 0.35,
-  /** Seconds of each step out of bed: the eyes opening, sitting up, standing. */
+  /** Seconds of each step out of bed: the darkness lifting, sitting up, standing. */
   calm: Object.freeze({ open: 0.8, sitUp: 0.65, standUp: 0.6 }),
   startled: Object.freeze({ open: 0.07, sitUp: 0.3, standUp: 0.4 }),
-  /** The half-open eyes while asleep, real seconds: the first after
+  /** The demon's stretches while asleep, real seconds: the first after
    *  `first` — soon, since a 30-minute nap is ~1.7 s of real time, and the
-   *  nap holds the night at real time while the eyes are open — then one
-   *  every `every`; each opens over `open` to `lid`
-   *  (0 open … 1 shut), holds for `hold`, and shuts over `close`. */
+   *  nap holds the night at real time while the demon is there — then one
+   *  every `every`; each stretch lasts `hold` and the gap between is the
+   *  rest of the cycle. The darkness is constant; only the demon and the
+   *  time scale follow this. */
   peek: Object.freeze({
     first: [0.6, 1.2], every: [6, 11], open: 1, hold: [2.5, 4], close: 0.6, lid: 0.5,
   }),
@@ -66,26 +66,26 @@ export class BedTransition {
   /**
    * @param {object} [opts]
    * @param {(phase: string) => void} [opts.onPhase]  each phase as it begins, 'idle' at the end
-   * @param {() => void} [opts.onAsleep]  the lids have shut on the way in
+   * @param {() => void} [opts.onAsleep]  the darkness has closed on the way in
    * @param {() => void} [opts.onUp]  standing beside the bunk: all done
-   * @param {() => number} [opts.rand]  when the peeks come
+   * @param {() => number} [opts.rand]  when the demon's stretches come
    * @param {typeof BED_TRANSITION} [opts.tuning]
    */
   constructor({ onPhase = () => {}, onAsleep = () => {}, onUp = () => {}, rand = Math.random, tuning = BED_TRANSITION } = {}) {
     Object.assign(this, { onPhase, onAsleep, onUp, rand, tuning });
-    this._lidFrom = 0;       // the lids as the eyes began to open
+    this._lidFrom = 0;       // the darkness as it began to lift
     this._peek = 'shut';     // 'shut' | 'opening' | 'holding' | 'closing'
-    this._peekIn = 0;        // seconds left in this part of the peek
-    this._peekLength = 0;    // how long this part of the peek runs
+    this._peekIn = 0;        // seconds left in this part of the stretch
+    this._peekLength = 0;    // how long this part of the stretch runs
   }
 
   /** Getting in, asleep or getting out. */
   get active() { return this.phase !== 'idle'; }
 
-  /** Lying with the lids down (peeks included). */
+  /** Lying with the darkness down. */
   get asleep() { return this.phase === 'asleep'; }
 
-  /** The eyes are half open while asleep. */
+  /** The demon's stretch is on while asleep: the night holds to real time. */
   get peeking() { return this.asleep && this._peek !== 'shut'; }
 
   /** @returns {boolean} false unless idle */
@@ -142,12 +142,12 @@ export class BedTransition {
     }
   }
 
-  /** The lids, 0 open … 1 shut. */
+  /** The darkness, 0 clear … 1 fully darkened. */
   get lid() {
     const t = this.tuning;
     switch (this.phase) {
       case 'lyingDown': return smooth(clamp01((this._k() - t.lidsFrom) / (1 - t.lidsFrom)));
-      case 'asleep': return 1 - (1 - t.peek.lid) * this._peekOpen();
+      case 'asleep': return 1;
       case 'opening': {
         const k = this._k();
         return this._lidFrom * (1 - (this.style === 'startled' ? k : smooth(k)));
@@ -197,14 +197,14 @@ export class BedTransition {
     this.onPhase(phase);
   }
 
-  // ── Peeks ──
+  // ── The demon's stretches ──
 
   _schedulePeek(range) {
     this._peek = 'shut';
     this._peekLength = this._peekIn = between(range, this.rand());
   }
 
-  /** A frame of the peek cycle: shut → opening → holding → closing → shut. */
+  /** A frame of the stretch cycle: shut → opening → holding → closing → shut. */
   _tickPeek(dt) {
     const p = this.tuning.peek;
     this._peekIn -= dt;
@@ -221,14 +221,5 @@ export class BedTransition {
   _peekPart(part, seconds) {
     this._peek = part;
     this._peekLength = this._peekIn = seconds;
-  }
-
-  /** How open the eyes are through the peek, 0 shut … 1 as open as a peek goes. */
-  _peekOpen() {
-    const k = this._peekLength > 0 ? clamp01(1 - this._peekIn / this._peekLength) : 1;
-    if (this._peek === 'opening') return smooth(k);
-    if (this._peek === 'holding') return 1;
-    if (this._peek === 'closing') return 1 - smooth(k);
-    return 0;
   }
 }

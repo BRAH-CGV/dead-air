@@ -196,9 +196,18 @@ describe('BaseScene', () => {
     }
   });
 
-  it('spawns the player inside the main office', () => {
+  it('wakes the player in the bedroom, beside the bunk (#79)', () => {
     expect(engine.buildPlayer).toHaveBeenCalledTimes(1);
-    expect(scene.rooms.MainOffice.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(scene.rooms.LivingQuarters.containsPoint(worldPos(engine.player))).toBe(true);
+    expect(engine.buildPlayer).toHaveBeenCalledWith(expect.objectContaining({
+      position: scene.rooms.LivingQuarters.spawn.position,
+    }));
+  });
+
+  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
+    const { journal } = scene.rooms.LivingQuarters;
+    expect(journal.controller).toBe(scene.gameController);
+    expect(journal.panel).toBeTruthy();
   });
 
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
@@ -385,12 +394,12 @@ describe('BaseScene', () => {
     expect(engine.scene.fog.density).toBeLessThan(0.005);
   });
 
-  it('disposes the radar and review overlays on dispose, so restarts do not stack listeners', () => {
+  it('disposes the radar and processing overlays on dispose, so restarts do not stack listeners', () => {
     const radar = vi.spyOn(scene.radarOverlay, 'dispose');
-    const review = vi.spyOn(scene.reviewPanel, 'dispose');
+    const processing = vi.spyOn(scene.processingScreen, 'dispose');
     scene.dispose();
     expect(radar).toHaveBeenCalledOnce();
-    expect(review).toHaveBeenCalledOnce();
+    expect(processing).toHaveBeenCalledOnce();
   });
 
   it('hands the fog back on dispose so it does not follow us into the next scene', () => {
@@ -542,11 +551,10 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController).toBeInstanceOf(GameController);
   });
 
-  it('draws signal payloads from a pool of relative image paths', () => {
-    for (const url of scene.signalManager.payloadPool) {
-      expect(url.startsWith('/')).toBe(false);
-      expect(url).toMatch(/^assets\/signals\/signal-\d+\.png$/);
-    }
+  it('builds a signal registry and wires it to the signal manager', () => {
+    expect(scene.signalRegistry).toBeDefined();
+    expect(scene.signalManager.signalNames).toStrictEqual(scene.signalRegistry.names);
+    expect(scene.signalRegistry.names.length).toBeGreaterThan(0);
   });
 
   it('attaches the terminal to the office computer desk', () => {
@@ -568,7 +576,6 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.signalManager).toBe(scene.signalManager);
     expect(scene.terminal.hud).toBe(scene.hud);
     expect(scene.terminal.radar).toBe(scene.radarOverlay);
-    expect(scene.terminal.reviewPanel).toBe(scene.reviewPanel);
     expect(scene.terminal.driveManager).toBe(scene.driveManager);
     expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
@@ -622,22 +629,39 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
   }
 
+  /** The morning's errand (#98): carry the docked box out to the buggy's
+   *  cargo bay. Only then does the bunk let you sleep. */
+  function loadTheBuggy() {
+    const dock = scene.rooms.Airlock.quotaDock;
+    const box = dock.depositedBox;
+    dock.socket.detach(box);
+    expect(scene.buggyCargo.dock.socket.attach(box, 0)).toBe(true);
+  }
+
   /** Run the bed animation on for `seconds` (the fake engine has no realDt:
    *  BedRest takes the frame's own). */
   function inBed(seconds, dt = 0.05) {
     for (let t = 0; t < seconds - 1e-9; t += dt) scene.bedRest.onUpdate(dt);
   }
 
-  it('one bed animation, shared: the bunk and the nap both know it', () => {
+  it('one bed animation, shared: the bunk, the nap, the demon and the fatigue effects all know it', () => {
     const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
     const rest = gameplay.getComponent(BedRest);
     expect(rest).toBe(scene.bedRest);
     expect(scene.rooms.LivingQuarters.bed.rest).toBe(rest);
     expect(scene.nap.rest).toBe(rest);
+    expect(scene.sleepDemon.sleeper).toBe(rest);
+    // It watches on the real clock, and sees past the bunk the pillow is in.
+    expect(scene.sleepDemon.realDt()).toBe(engine.realDt);
+    expect(typeof scene.sleepDemon.napRayHit).toBe('function');
     expect(rest.bed).toBe(scene.rooms.LivingQuarters.bed);
     // The nap's "[E] Wake up" line, over the lids (#nap-hint).
     expect(typeof scene.nap.hint?.show).toBe('function');
     expect(typeof scene.nap.hint?.hide).toBe('function');
+    expect(scene.fatigueEffects.isResting()).toBe(false);
+    rest.lieDown();
+    expect(scene.fatigueEffects.isResting()).toBe(true);
+    rest.cancel();
   });
 
   it('the bunk naps through the night, fast once the eyes are shut, and a storm outage\'s buzz wakes you with a start', () => {
@@ -705,6 +729,7 @@ describe('BaseScene gameplay loop', () => {
     const setNight = vi.spyOn(scene.hud, 'setNight');
 
     workTheShift();
+    loadTheBuggy();
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
 
@@ -722,7 +747,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.bedRest.active).toBe(false);
   });
 
-  it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
+  it('sleeping to the next night wipes the box loaded into the buggy and parks it on the office floor', () => {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
     const [docked, other] = rooms.MainOffice.driveBoxes;
@@ -737,14 +762,17 @@ describe('BaseScene gameplay loop', () => {
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
+    loadTheBuggy();
 
     scene.rooms.LivingQuarters.bed.onInteract({});
     inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.gameController.nightNumber).toBe(2);
 
-    // The docked box: released, parked resting on the floor, drives blank.
+    // The box: released from the buggy, parked resting on the office
+    // floor, drives blank.
     expect(docked._snapOwner).toBeNull();
     expect(dock.depositedBox).toBeNull();
+    expect(scene.buggyCargo.dock.depositedBox).toBeNull();
     expect(docked.object3d.position.x).toBeCloseTo(1.1);
     expect(docked.object3d.position.y).toBeCloseTo(0.06);
     expect(docked.object3d.position.z).toBeCloseTo(4.72);
@@ -781,6 +809,11 @@ describe('BaseScene gameplay loop', () => {
 
   it('runs the desk clock off the night clock too', () => {
     expect(scene.rooms.MainOffice.deskClock.clock).toBe(scene.nightClock);
+  });
+
+  it('runs the bedside clock off the night clock: the sleeper watches the minutes race', () => {
+    expect(scene.rooms.LivingQuarters.bedsideClock).toBeTruthy();
+    expect(scene.rooms.LivingQuarters.bedsideClock.clock).toBe(scene.nightClock);
   });
 
   it('wires the office signal lamp to the manager and the controller', () => {
@@ -825,6 +858,7 @@ describe('BaseScene gameplay loop', () => {
                     fog: engine.scene.fog.color.getHex() };
 
     workTheShift();
+    loadTheBuggy();
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(1);
     expect(scene.ambientLight.intensity).toBeGreaterThan(night.ambient);
@@ -870,7 +904,7 @@ describe('BaseScene gameplay loop', () => {
   });
 
   it('hides the gameplay UI on dispose, so a scene swap leaves no stale HUD', () => {
-    const hidden = [scene.hud, scene.radarOverlay, scene.reviewPanel]
+    const hidden = [scene.hud, scene.radarOverlay]
       .map(ui => vi.spyOn(ui, 'hide'));
     scene.dispose();
     for (const spy of hidden) expect(spy).toHaveBeenCalled();
@@ -901,9 +935,11 @@ describe('BaseScene occlusion — the airlock decides which side is drawn', () =
   it('the interior zone holds the rooms\' furnishings', () => {
     const interior = zoneContents('interior');
     const office = scene.rooms.MainOffice.root.object3d;
-    for (const prop of ['ComputerDesk', 'VendingMachine', 'WindowFrame_Top']) {
+    for (const prop of ['ComputerDesk', 'GrowBeds', 'WindowFrame_Top']) {
       expect(interior.has(named(office, prop)), prop).toBe(true);
     }
+    const bedroom = scene.rooms.LivingQuarters.root.object3d;
+    expect(interior.has(named(bedroom, 'CoffeeMachine')), 'CoffeeMachine').toBe(true);
   });
 
   it('never the shell or the doors — those are the building as seen from outside', () => {
@@ -921,6 +957,24 @@ describe('BaseScene occlusion — the airlock decides which side is drawn', () =
   it('never a light, in either zone — hiding one recompiles every lit shader', () => {
     for (const name of scene.zones.names()) {
       for (const o of zoneContents(name)) expect(o.isLight, `${name}: ${o.name}`).toBeFalsy();
+    }
+  });
+
+  it("never what the player can carry: a drive or a box goes out through the airlock with them", () => {
+    const office = scene.rooms.MainOffice;
+    const carried = [...office.drives, ...office.driveBoxes];
+    expect(office.drives.length).toBeGreaterThan(0);
+    expect(office.driveBoxes.length).toBeGreaterThan(0);
+    for (const name of scene.zones.names()) {
+      const zone = zoneContents(name);
+      for (const go of carried) expect(zone.has(go.object3d), `${name}: ${go.name}`).toBe(false);
+    }
+  });
+
+  it('a drive box is still drawn with the interior hidden, as it is with the suit on', () => {
+    scene.zones.hide('interior');
+    for (const go of [...scene.rooms.MainOffice.drives, ...scene.rooms.MainOffice.driveBoxes]) {
+      for (let o = go.object3d; o; o = o.parent) expect(o.visible, `${go.name}: ${o.name}`).toBe(true);
     }
   });
 

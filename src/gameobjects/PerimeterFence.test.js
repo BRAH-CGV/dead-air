@@ -347,3 +347,86 @@ describe('fenceKeepOut — the bands either side of each run, for scenery to sta
     expect(e).toEqual({ minX: rect.maxX - 3, maxX: rect.maxX + 3, minZ: rect.minZ - 3, maxZ: rect.maxZ + 3 });
   });
 });
+
+describe('the sliding gate — the buggy\'s way out of a closed yard', () => {
+  const rect = yardRect();
+  const GATE = { side: 'N', at: 9.6, halfWidth: 3 };
+  const leafSpan = (leaf) => {
+    const box = new THREE.Box3().setFromObject(leaf);
+    return box;
+  };
+
+  it('cuts its opening out of the panels on its side', () => {
+    const fence = createPerimeterFence({ rect, openSides: ['S'], assets: mockAssets(), gate: GATE });
+    for (const { position, scale } of panels(fence)) {
+      if (Math.abs(position.z - rect.maxZ) > 0.01) continue;
+      const clearance = Math.abs(position.x - GATE.at) - (PANEL_WIDTH * scale.x) / 2;
+      expect(clearance, `panel at ${position.x.toFixed(2)}`).toBeGreaterThanOrEqual(GATE.halfWidth - 1e-6);
+    }
+  });
+
+  it('is no gap: a collider stands across the opening, so the yard stays closed', () => {
+    const world = new FakeWorld();
+    const fence = createPerimeterFence({ rect, openSides: ['S'], world, gate: GATE });
+    expect(fence.gates).toEqual([]);
+    const total = fence.colliders.reduce((sum, c) => {
+      const h = c.halfExtents();
+      return sum + 2 * Math.max(h.x, h.z);
+    }, 0);
+    expect(total).toBeCloseTo((rect.maxX - rect.minX) + 2 * (rect.maxZ - rect.minZ));
+    const across = fence.colliders.find(c => Math.abs(c.translation().x - GATE.at) < 1e-6);
+    expect(across.halfExtents().x).toBeCloseTo(GATE.halfWidth);
+    expect(across.translation().z).toBeCloseTo(rect.maxZ);
+  });
+
+  it('starts shut, its two leaves covering the opening edge to edge, just outside the wire', () => {
+    const fence = createPerimeterFence({ rect, openSides: ['S'], assets: mockAssets(), gate: GATE });
+    const { gate } = fence;
+    expect(gate.open).toBe(0);
+    expect(gate.leaves).toHaveLength(2);
+    const [left, right] = gate.leaves.map(leafSpan);
+    expect(left.min.x).toBeCloseTo(GATE.at - GATE.halfWidth, 1);
+    expect(right.max.x).toBeCloseTo(GATE.at + GATE.halfWidth, 1);
+    expect(left.max.x).toBeCloseTo(right.min.x, 1);
+    for (const box of [left, right]) {
+      expect(box.min.z).toBeGreaterThan(rect.maxZ);       // on the outside of the line
+      expect(box.min.z - rect.maxZ).toBeLessThan(0.5);
+    }
+  });
+
+  it('setOpen(1) slides each leaf wholly clear of the opening, along the line behind the run beside it', () => {
+    const fence = createPerimeterFence({ rect, openSides: ['S'], assets: mockAssets(), gate: GATE });
+    fence.gate.setOpen(1);
+    const [left, right] = fence.gate.leaves.map(leafSpan);
+    expect(left.max.x).toBeLessThanOrEqual(GATE.at - GATE.halfWidth + 1e-3);
+    expect(right.min.x).toBeGreaterThanOrEqual(GATE.at + GATE.halfWidth - 1e-3);
+    expect(right.max.x).toBeLessThanOrEqual(rect.maxX);   // still behind the fence, not past its corner
+  });
+
+  it('opens part way, and clamps', () => {
+    const fence = createPerimeterFence({ rect, openSides: ['S'], gate: GATE });
+    const shut = fence.gate.leaves[1].position.x;
+    fence.gate.setOpen(0.5);
+    expect(fence.gate.open).toBe(0.5);
+    expect(fence.gate.leaves[1].position.x).toBeCloseTo(shut + GATE.halfWidth / 2);
+    fence.gate.setOpen(3);
+    expect(fence.gate.open).toBe(1);
+    fence.gate.setOpen(-1);
+    expect(fence.gate.leaves[1].position.x).toBeCloseTo(shut);
+  });
+
+  it('builds its leaves from the panel model, and works with none loaded', () => {
+    const drawn = createPerimeterFence({ rect, openSides: ['S'], assets: mockAssets(), gate: GATE });
+    for (const leaf of drawn.gate.leaves) {
+      let meshes = 0;
+      leaf.traverse(o => { if (o.isMesh) meshes++; });
+      expect(meshes).toBeGreaterThan(0);
+    }
+    const bare = createPerimeterFence({ rect, openSides: ['S'], gate: GATE });
+    expect(() => bare.gate.setOpen(1)).not.toThrow();
+  });
+
+  it('without a gate there is none', () => {
+    expect(createPerimeterFence({ rect, openSides: ['S'] }).gate).toBe(null);
+  });
+});

@@ -7,7 +7,9 @@ import { keyName } from '../app/keyNames.js';
 // ─────────────────────────────────────────────
 // Bed  –  sleep through the day to the next night
 // ─────────────────────────────────────────────
-// In the morning after a met quota (controller.canSleep): the screen fades
+// In the morning after a met quota, once the drive box is loaded into the
+// buggy and it has been sent off (controller.canSleep; until then it says
+// which is left): the screen fades
 // to black and the GameController moves on to the next night (or ends the
 // run after the last). During the shift it offers a nap instead (Nap.js):
 // the night fast-forwarded until the alarm, 6 AM, or something wakes you.
@@ -27,7 +29,7 @@ import { keyName } from '../app/keyNames.js';
 //
 // The bunk's poses for that animation are here, in the bunk's own frame
 // (BUNK_POSES), so they follow the bunk wherever the room puts it:
-// pillowPose(), sitPose() and getOutSpot().
+// pillowPose(), sitPose(), getOutSpot() and the demon's watchSpots().
 //
 // promptLabel is a data field refreshed every frame — InteractionSystem
 // re-shows a label that changes while it's being looked at.
@@ -39,16 +41,22 @@ import { keyName } from '../app/keyNames.js';
  * the open side +x), angles in radians. Yaw turns the forward view (−z)
  * about +Y; pitch up is positive.
  *
- *   pillow  the eye lying on the lower bunk, looking up toward its foot and
- *           out into the room, tipped onto its side
+ *   pillow  the eye lying on the bed's pillow, on its side facing the side
+ *           table (where the bedside clock stands), the clock well in view
  *   sit     the eye sitting on its edge, legs out, facing the room
  *   out     the feet standing beside it, clear of its collider by more than
  *           the player's radius, facing the room — where you get up to
+ *   watch   where the Sleep Demon stands to watch a sleeper: across the
+ *           bedroom in front of the pillow, in its view, clear of the lockers
+ *
+ * Fitted to bed.glb (0.9 × 2 m, mattress top 0.45 m, the pillow at
+ * z −0.92 … −0.70); LivingQuarters.test.js reads the file to keep them so.
  */
 export const BUNK_POSES = Object.freeze({
-  pillow: Object.freeze({ position: [-0.05, 0.62, -0.68], yaw: -2.53, pitch: 0.55, roll: -0.22 }),
-  sit: Object.freeze({ position: [0.4, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
-  out: Object.freeze({ position: [1.0, 0, 0.35], yaw: -Math.PI / 2 }),
+  pillow: Object.freeze({ position: [0.03, 0.6, -0.8], yaw: -1.68, pitch: 0.1, roll: 0.22 }),
+  sit: Object.freeze({ position: [0.32, 1.0, 0.15], yaw: -Math.PI / 2, pitch: -0.15, roll: 0 }),
+  out: Object.freeze({ position: [0.85, 0, 0.35], yaw: -Math.PI / 2 }),
+  watch: Object.freeze([[2.02, 0, -0.28], [2.82, 0, 0.27], [2.72, 0, 1.27]]),
 });
 
 const _q = new THREE.Quaternion();
@@ -61,6 +69,8 @@ const LABEL = {
   sleep: '[E] Sleep',
   shift: "Can't sleep — the shift runs until 6:00 AM",
   uneasy: "Can't sleep now",
+  deliver: 'Load the drive box into the buggy first',
+  send: 'Send the buggy off first',
 };
 
 export class Bed extends Interactable {
@@ -118,6 +128,7 @@ export class Bed extends Interactable {
     const c = this.controller;
     if (!c || this.rest?.active) return '';
     if (c.canSleep) return LABEL.sleep;
+    if (c.state === 'morning') return c.delivered ? LABEL.send : LABEL.deliver;
     if (c.state !== 'playing' || this.nap?.napping) return '';
     if (!this.nap) return LABEL.shift;
     return this.nap.canNap ? this._napLabel() : LABEL.uneasy;
@@ -151,6 +162,15 @@ export class Bed extends Interactable {
   getOutSpot() {
     const { position, yaw } = this._view(BUNK_POSES.out);
     return { position, yaw };
+  }
+
+  /** Where the Sleep Demon stands to watch a sleeper: floor points, world. */
+  watchSpots() {
+    const o = this._bunk();
+    return BUNK_POSES.watch.map(p => {
+      const v = new THREE.Vector3(...p);
+      return o ? o.localToWorld(v) : v;
+    });
   }
 
   /** The bunk's object, its world matrix fresh, or null off a bunk. */

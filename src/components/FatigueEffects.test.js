@@ -37,7 +37,7 @@ describe('FatigueEffects', () => {
     controller = fakeController();
     overlay = { set: vi.fn(), clear: vi.fn() };
     grid = { setFactor: vi.fn() };
-    sounds = { heartbeat: fakeSound(), yawn: fakeSound(), breathing: fakeSound() };
+    sounds = { heartbeat: fakeSound(), yawn: fakeSound() };
     frozen = false;
     fx = new FatigueEffects({ stamina, controller, overlay, grid, sounds, isFrozen: () => frozen, rand: () => 0 });
     fx.onStart();
@@ -48,7 +48,7 @@ describe('FatigueEffects', () => {
   }
 
   it('names the clips it plays', () => {
-    expect(FATIGUE_SOUNDS).toEqual({ heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn', breathing: 'sfx:breathing' });
+    expect(FATIGUE_SOUNDS).toEqual({ heartbeat: 'sfx:heartbeat', yawn: 'sfx:yawn' });
   });
 
   it('narrows the view as stamina falls', () => {
@@ -59,7 +59,7 @@ describe('FatigueEffects', () => {
 
   it('yawns out loud when tired', () => {
     stamina.value = 0.4;
-    run(FATIGUE.firstYawn[0] - 0.1);
+    run(FATIGUE.yawnDelay[0] - 0.1);
     expect(sounds.yawn.play).not.toHaveBeenCalled();
     run(0.2);
     expect(sounds.yawn.play).toHaveBeenCalledTimes(1);
@@ -125,44 +125,37 @@ describe('FatigueEffects', () => {
     expect(sounds.heartbeat.isPlaying).toBe(false);
   });
 
-  it("the walk-down's dread: the player's breath in over a heartbeat floor, eased in", () => {
+  it("the walk-down's dread: a heartbeat floor, eased in — no breath (the demon whispers instead)", () => {
     const beat = sounds.heartbeat;
-    const breath = sounds.breathing;
     stamina.value = 0.5;                     // above critical: no heartbeat of its own
     fx.setDread(1);
     fx.onUpdate(FATIGUE_DREAD.ease / 2);     // halfway into the grip
-    expect(breath.isPlaying).toBe(true);
-    expect(breath.volume).toBeCloseTo(FATIGUE_DREAD.breath / 2, 2);
     expect(beat.isPlaying).toBe(true);
     const half = beat.volume;
     expect(half).toBeGreaterThan(0);
 
     fx.onUpdate(FATIGUE_DREAD.ease / 2);     // fully gripped
-    expect(breath.volume).toBeCloseTo(FATIGUE_DREAD.breath, 2);
     expect(beat.volume).toBeGreaterThan(half);
     expect(FATIGUE_DREAD.heart).toBeGreaterThan(0);
+    expect(FATIGUE_DREAD.breath).toBeUndefined();
   });
 
-  it('the dread let go: the breath and the heartbeat stop once it has eased out', () => {
+  it('the dread let go: the heartbeat stops once it has eased out', () => {
     stamina.value = 0.5;
     fx.setDread(1);
     fx.onUpdate(FATIGUE_DREAD.ease);
-    expect(sounds.breathing.isPlaying).toBe(true);
+    expect(sounds.heartbeat.isPlaying).toBe(true);
     fx.setDread(0);
-    fx.onUpdate(FATIGUE_DREAD.ease / 2);
-    expect(sounds.breathing.volume).toBeCloseTo(FATIGUE_DREAD.breath / 2, 2);
-    fx.onUpdate(FATIGUE_DREAD.ease / 2);
-    expect(sounds.breathing.isPlaying).toBe(false);
+    fx.onUpdate(FATIGUE_DREAD.ease);
     expect(sounds.heartbeat.isPlaying).toBe(false);
   });
 
-  it('off shift mid-dread it all settles at once: the breath stopped with the rest', () => {
+  it('off shift mid-dread it all settles at once', () => {
     fx.setDread(1);
     fx.onUpdate(0.1);
-    expect(sounds.breathing.isPlaying).toBe(true);
+    expect(sounds.heartbeat.isPlaying).toBe(true);
     controller.state = 'morning';
     fx.onUpdate(0.016);
-    expect(sounds.breathing.isPlaying).toBe(false);
     expect(sounds.heartbeat.isPlaying).toBe(false);
   });
 
@@ -179,11 +172,26 @@ describe('FatigueEffects', () => {
     expect(sounds.yawn.play).not.toHaveBeenCalled();
   });
 
+  it('in bed (a nap, the bed animation): it all settles — no yawns or blinks through a fast-forwarded night, the heart quiet', () => {
+    let resting = true;
+    const quiet = new FatigueEffects({ stamina, controller, overlay, grid, sounds, isResting: () => resting, rand: () => 0 });
+    quiet.onStart();
+    stamina.value = 0.05;
+    for (let t = 0; t < 60; t += 0.05) quiet.onUpdate(0.05);
+    expect(sounds.yawn.play).not.toHaveBeenCalled();
+    expect(sounds.heartbeat.isPlaying).toBe(false);
+    expect(overlay.set).toHaveBeenLastCalledWith(0, 0);
+    expect(grid.setFactor).toHaveBeenLastCalledWith('dread', 1);
+    resting = false;
+    quiet.onUpdate(0.016);
+    expect(sounds.heartbeat.isPlaying).toBe(true);    // up again, as tired as before
+  });
+
   it('a new night starts the clocks again: no yawn until tiredness sets in anew', () => {
     stamina.value = 0.4;
     run(1);
     controller.startNight(2);
-    run(FATIGUE.firstYawn[0] - 0.2);
+    run(FATIGUE.yawnDelay[0] - 0.2);
     expect(sounds.yawn.play).not.toHaveBeenCalled();
   });
 

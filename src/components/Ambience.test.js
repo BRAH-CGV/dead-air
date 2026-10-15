@@ -143,6 +143,28 @@ describe('Ambience rooms', () => {
   });
 });
 
+describe('Ambience when the ears are moved (a security camera)', () => {
+  it('jump() cuts straight to where the ears now are, instead of easing across', () => {
+    const { ambience, sounds, ear } = build();
+    run(ambience, 3);
+    ear.x = 13;                                  // the server room
+    ambience.jump();
+    ambience.onUpdate(1 / 60);
+    expect(sounds.server.volume).toBeCloseTo(1);
+    expect(sounds.centre.isPlaying).toBe(false);
+  });
+
+  it('only for the one frame: after it, the rooms ease again', () => {
+    const { ambience, sounds, ear } = build();
+    run(ambience, 3);
+    ambience.jump();
+    ambience.onUpdate(1 / 60);
+    ear.x = 13;
+    ambience.onUpdate(1 / 60);
+    expect(sounds.server.volume).toBeLessThan(0.2);
+  });
+});
+
 describe('Ambience in a storm', () => {
   const WIND = 'wind';
   const { storm } = AMBIENCE;

@@ -23,6 +23,8 @@ import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { SignalTarget } from '../../gameplay/SignalTarget.js';
+import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
 
 /**
  * on|off (or a pair of words of its own) → true|false; nothing flips `current`.
@@ -78,6 +80,8 @@ export function parseHour(text, { startHour, endHour }) {
 }
 
 const EYE_KINDS = ['fence', 'window', 'both'];
+const RAGNO_APPROACHES = ['window', 'yard'];
+const RAGNO_SIDES = { left: -1, right: 1 };
 
 /**
  * @param {import('../../core/Engine.js').Engine} engine
@@ -221,6 +225,31 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
     },
     {
+      name: 'ragno', usage: 'ragno [creep] [window|yard] [left|right] | ragno off',
+      help: 'Bring a night-3 Ragno now (or a creep: partway in, linger, back out), by the window side or the yard, at the quarters (left) or server (right) end',
+      run: (args) => {
+        const ragno = system('ragno', 'Ragno');
+        const words = args.map(a => a.toLowerCase());
+        if (words[0] === 'off') {
+          ragno.dismiss();
+          return 'Ragno dismissed';
+        }
+        let approach, side, creep = false;
+        for (const w of words) {
+          if (w === 'creep' && !creep) creep = true;
+          else if (RAGNO_APPROACHES.includes(w) && approach === undefined) approach = w;
+          else if (w in RAGNO_SIDES && side === undefined) side = RAGNO_SIDES[w];
+          else throw new UsageError(`"${w}": window or yard, left or right`);
+        }
+        if (!ragno.summon(creep ? { approach, side, creep: true } : { approach, side })) {
+          throw new CommandError('Ragno not summoned: no shift, the UFO is over the base, or he is already out');
+        }
+        const from = approach ? `${approach} side` : 'either side';
+        const end = side === undefined ? 'either end' : side < 0 ? 'quarters end (left)' : 'server end (right)';
+        return `Ragno ${creep ? 'creeping' : 'summoned'}: ${from}, ${end}`;
+      },
+    },
+    {
       name: 'music', usage: 'music [spooky|ambient|off]', help: 'Swing a music track in under the game, or take it out',
       run: ([arg]) => {
         const ambience = system('ambience', 'ambience');
@@ -233,6 +262,43 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
         }
         ambience.testMusic(name === 'off' ? null : name);
         return `Music: ${name}`;
+      },
+    },
+
+    {
+      name: 'signal', usage: 'signal [name]', help: 'Summon a signal blip on the radar (random if not specified)',
+      run: ([arg]) => {
+        const scene = tool(engine.activeScene, 'No scene');
+        const registry = scene.signalRegistry;
+        const signalManager = scene.signalManager;
+        if (!registry) throw new CommandError('No signal registry in this scene');
+        if (!signalManager) throw new CommandError('No signal manager in this scene');
+
+        const names = registry.names;
+        if (names.length === 0) throw new CommandError('No signals available');
+
+        const signalName = arg ?? names[Math.floor(Math.random() * names.length)];
+        if (!names.includes(signalName)) {
+          throw new UsageError(`No signal "${arg}": available: ${names.join(', ')}`);
+        }
+
+        // Create a signal target and add it to the manager.
+        const id = signalManager.signals.length + 1;
+        const yaw = Math.random() * Math.PI * 2 - Math.PI;
+        const pitch = PITCH_MIN + Math.random() * (PITCH_MAX - PITCH_MIN);
+        const target = new SignalTarget({
+          id,
+          yaw,
+          pitch,
+          name: signalName,
+          appearAt: 0,  // appear immediately
+          fadeSeconds: SIGNAL_FADE_SECONDS,
+          visibleSeconds: VISIBLE_SECONDS,
+        });
+        target.appeared = true;
+        signalManager.signals.push(target);
+
+        return `Signal summoned: ${signalName} (blip #${id})`;
       },
     },
 

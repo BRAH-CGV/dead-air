@@ -54,6 +54,10 @@ export class DriveSnapshot {
         drive,
         saved: drive.saved,
         corrupted: drive.corrupted,
+        signalName: drive.signalName,
+        signalLevel: drive.signalLevel,
+        processingStarted: drive.processingStarted,
+        processingAccumulated: drive.processingAccumulated,
         owner: drive._snapOwner ?? null,
         slotIndex: drive._snapSlotIndex ?? null,
         position,
@@ -107,7 +111,19 @@ export class DriveSnapshot {
   _reinstate(state, released) {
     const { owner, slotIndex, position, quaternion } = state;
     const item = state.box ?? state.drive;
-    if (state.saved !== undefined) item.setSaved?.(state.saved, { corrupted: state.corrupted });
+    if (state.saved !== undefined) {
+      item.setSaved?.(state.saved, { corrupted: state.corrupted, signalName: state.signalName });
+      // Restore the signal level after setSaved (which resets it to 1 when
+      // clearing). Only matters for saved drives — the colour follows level.
+      if (state.saved && state.signalLevel > 1) {
+        item.setSignalLevel?.(state.signalLevel);
+      }
+      // Restore any in-flight processing state.
+      if (state.saved) {
+        item.processingStarted = state.processingStarted ?? false;
+        item.processingAccumulated = state.processingAccumulated ?? 0;
+      }
+    }
 
     // Skipped only when pass 1 left this item alone AND it still sits where
     // the capture left it — a released item must be moved even if its owner

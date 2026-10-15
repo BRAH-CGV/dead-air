@@ -31,7 +31,6 @@ const UNATTRIBUTED_SECTION = 'Downloaded but unattributed';
 export const UNATTRIBUTED_FILES = [
   'public/assets/textures/floor-basecolor.png',
   'public/assets/textures/floor-normal.png',
-  'public/assets/signals/signal-1.png … signal-8.png',
 ];
 
 const URL_RE = /https?:\/\/[^\s)]+/g;
