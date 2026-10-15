@@ -629,6 +629,18 @@ describe('BaseScene gameplay loop', () => {
     expect(gameController.state).toBe('morning');
   }
 
+  /** The morning's errand (#98): carry the docked box out to the buggy's
+   *  cargo bay. Only then does the bunk let you sleep. */
+  /** The morning's chores before bed: the docked box into the buggy's boot,
+   *  and the buggy sent off (dispatch, without the cutscene). */
+  function sendTheBuggyOff() {
+    const dock = scene.rooms.Airlock.quotaDock;
+    const box = dock.depositedBox;
+    dock.socket.detach(box);
+    expect(scene.buggyCargo.dock.socket.attach(box, 0)).toBe(true);
+    expect(scene.gameController.dispatch()).toBe(true);
+  }
+
   /** Run the bed animation on for `seconds` (the fake engine has no realDt:
    *  BedRest takes the frame's own). */
   function inBed(seconds, dt = 0.05) {
@@ -720,6 +732,7 @@ describe('BaseScene gameplay loop', () => {
     const setNight = vi.spyOn(scene.hud, 'setNight');
 
     workTheShift();
+    sendTheBuggyOff();
     bed.onUpdate(0.016);
     expect(bed.promptLabel).toBe('[E] Sleep');
 
@@ -737,7 +750,7 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.bedRest.active).toBe(false);
   });
 
-  it('sleeping to the next night wipes the docked box and parks it on the office floor', () => {
+  it('sleeping to the next night wipes the box sent off in the buggy and parks it on the office floor', () => {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
     const [docked, other] = rooms.MainOffice.driveBoxes;
@@ -752,14 +765,17 @@ describe('BaseScene gameplay loop', () => {
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
+    sendTheBuggyOff();
 
     scene.rooms.LivingQuarters.bed.onInteract({});
     inBed(BED_TRANSITION.lieDown + 0.1);
     expect(scene.gameController.nightNumber).toBe(2);
 
-    // The docked box: released, parked resting on the floor, drives blank.
+    // The box: released from the buggy, parked resting on the office
+    // floor, drives blank.
     expect(docked._snapOwner).toBeNull();
     expect(dock.depositedBox).toBeNull();
+    expect(scene.buggyCargo.dock.depositedBox).toBeNull();
     expect(docked.object3d.position.x).toBeCloseTo(1.1);
     expect(docked.object3d.position.y).toBeCloseTo(0.06);
     expect(docked.object3d.position.z).toBeCloseTo(4.72);
@@ -845,6 +861,7 @@ describe('BaseScene gameplay loop', () => {
                     fog: engine.scene.fog.color.getHex() };
 
     workTheShift();
+    sendTheBuggyOff();
     daylight.onUpdate(0.016);
     expect(uDawn.value).toBe(1);
     expect(scene.ambientLight.intensity).toBeGreaterThan(night.ambient);

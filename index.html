@@ -191,6 +191,65 @@
         pointer-events: none;
         z-index: 100;
       }
+      /* Night 0's big words and arrow (TutorialOverlay.js): over the
+         radar, so the strip it shrinks to at the computer still reads;
+         under the lids, the fades and the menus. */
+      #tutorial {
+        display: none;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 98;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #ffd27a;
+        text-shadow: 0 2px 6px #000, 0 0 2px #000;
+      }
+      #tutorial .tutorial-card {
+        position: absolute;
+        left: 50%;
+        top: 14%;
+        transform: translateX(-50%);
+        width: min(90vw, 900px);
+        text-align: center;
+      }
+      #tutorial .tutorial-title {
+        font-size: clamp(28px, 5vw, 56px);
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+      #tutorial .tutorial-text {
+        margin-top: 0.6em;
+        font-size: clamp(14px, 1.8vw, 20px);
+        letter-spacing: 0.04em;
+        color: #e8dcc0;
+      }
+      #tutorial.compact .tutorial-card { top: 10px; }
+      #tutorial.compact .tutorial-title { font-size: 20px; }
+      #tutorial.compact .tutorial-text { font-size: 13px; margin-top: 0.3em; }
+      /* Centred on the point TutorialOverlay translates it to, then turned. */
+      #tutorial .tutorial-arrow {
+        position: absolute;
+        left: -32px;
+        top: -20px;
+        width: 64px;
+        height: 40px;
+      }
+      #tutorial .tutorial-arrow svg { display: block; overflow: visible; }
+      #tutorial .tutorial-arrow path {
+        fill: #ffd27a;
+        stroke: #000;
+        stroke-width: 2;
+        stroke-linejoin: round;
+      }
+      /* Nudges along the way it points. */
+      #tutorial .tutorial-arrow-bob { animation: tutorial-bob 0.8s ease-in-out infinite alternate; }
+      @keyframes tutorial-bob {
+        from { transform: translateX(-10px); }
+        to   { transform: translateX(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #tutorial .tutorial-arrow-bob { animation: none; }
+      }
       /* A nap's way out ("[E] Wake up", Nap.js): over the closed lids,
          which cover the HUD; under the white-out and the screen fade. */
       #nap-hint {
@@ -883,7 +942,7 @@
       .cctv-cam.is-active { background: #c9d94a; color: #111; border-color: #f2ff8a; }
 
       /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
-      body.cctv-on :is(#crosshair, #prompt) { visibility: hidden !important; }
+      body.cctv-on :is(#crosshair, #prompt, #tutorial) { visibility: hidden !important; }
 
       /* ── Journal (JournalPanel.js): the previous operator's notebook ──
          A page of ruled paper held up close. Below the menus (150), so a
@@ -928,7 +987,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint, #tutorial) {
         visibility: hidden !important;
       }
 
@@ -1121,6 +1180,7 @@
 
     <!-- HUD (hidden until gameplay starts) -->
     <div id="nap-hint"></div>
+    <div id="tutorial" aria-live="polite"></div>
     <div id="hud">
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>

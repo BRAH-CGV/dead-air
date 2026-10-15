@@ -543,3 +543,147 @@ describe('GameController — one twelve-hour shift', () => {
     expect(gc.canSleep).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────
+// The morning: the drive box goes out to the buggy before bed
+// ─────────────────────────────────────────────
+
+describe('GameController — loading the drives into the buggy', () => {
+  let gc, clock, hud, quotaDock, cargo, nights;
+  const box = { isDriveBox: true };
+  /** A dock stub: a box seated or not, and how many good drives it holds. */
+  const dock = (requiredCount) => ({
+    requiredCount,
+    collectedCount: 0,
+    depositedBox: null,
+    isQuotaMet() { return this.collectedCount >= this.requiredCount; },
+  });
+  const load = (count) => { cargo.depositedBox = box; cargo.collectedCount = count; };
+  const toMorning = () => { quotaDock.collectedCount = quotaDock.requiredCount; gc.onUpdate(NIGHT_SECONDS + 1); };
+
+  beforeEach(() => {
+    gc = new GameController();
+    clock = new NightClock();
+    hud = makeHUD();
+    quotaDock = dock(3);
+    cargo = dock(0);
+    Object.assign(gc, { nightClock: clock, hud, quotaDock, cargo, satellite: makeSatellite(), autoStart: false });
+    nights = new NightManager({ maxNight: 3 });
+    gc.bindNights(nights);
+  });
+
+  it("asks for as many drives in the buggy as the night's quota", () => {
+    expect(cargo.requiredCount).toBe(quotaDock.requiredCount);
+    nights.setNight(2);
+    expect(cargo.requiredCount).toBe(quotaDock.requiredCount);
+  });
+
+  it('in the morning, says to load the box into the buggy, and keeps the bed shut until it is', () => {
+    toMorning();
+    expect(gc.state).toBe('morning');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/buggy/i));
+    expect(gc.delivered).toBe(false);
+    expect(gc.canSleep).toBe(false);
+    expect(gc.sleep()).toBe(false);
+    expect(nights.currentNight).toBe(1);
+  });
+
+  it('an empty cargo bay is not a delivery, even when nothing is asked for', () => {
+    toMorning();
+    cargo.requiredCount = 0;
+    expect(gc.delivered).toBe(false);
+  });
+
+  it('a box short of the quota is not enough', () => {
+    toMorning();
+    load(2);
+    gc.onUpdate(0.016);
+    expect(gc.canSleep).toBe(false);
+  });
+
+  it('once the box is in, the prompt says to send the buggy off, and the bed stays shut until it goes', () => {
+    toMorning();
+    load(3);
+    gc.onUpdate(0.016);
+    expect(gc.delivered).toBe(true);
+    expect(gc.dispatched).toBe(false);
+    expect(gc.canSleep).toBe(false);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/send the buggy/i));
+    expect(gc.sleep()).toBe(false);
+  });
+
+  it('once the buggy is sent, the prompt sends the player to bed, and the bed takes them', () => {
+    toMorning();
+    load(3);
+    gc.onUpdate(0.016);
+    expect(gc.dispatch()).toBe(true);
+    expect(gc.dispatched).toBe(true);
+    expect(gc.canSleep).toBe(true);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/sleep/i));
+    expect(gc.sleep()).toBe(true);
+    expect(nights.currentNight).toBe(2);
+  });
+
+  it('dispatch() is refused until the quota is loaded, and only goes once', () => {
+    toMorning();
+    expect(gc.dispatch()).toBe(false);
+    load(2);
+    expect(gc.dispatch()).toBe(false);
+    load(3);
+    expect(gc.dispatch()).toBe(true);
+    expect(gc.dispatch()).toBe(false);
+  });
+
+  it('dispatch() is refused outside the morning', () => {
+    load(3);
+    expect(gc.state).toBe('playing');
+    expect(gc.dispatch()).toBe(false);
+    expect(gc.dispatched).toBe(false);
+  });
+
+  it('every night start brings the buggy back: the next morning it is sent again', () => {
+    toMorning();
+    load(3);
+    gc.dispatch();
+    gc.sleep();
+    expect(gc.dispatched).toBe(false);
+    toMorning();
+    load(3);
+    gc.onUpdate(0.016);
+    expect(gc.canSleep).toBe(false);
+  });
+
+  it('takes the box back out and the bed shuts again', () => {
+    toMorning();
+    load(3);
+    gc.onUpdate(0.016);
+    cargo.depositedBox = null;
+    cargo.collectedCount = 0;
+    gc.onUpdate(0.016);
+    expect(gc.canSleep).toBe(false);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/buggy/i));
+  });
+
+  it('sets the morning prompt once, not every frame', () => {
+    toMorning();
+    hud.setPrompt.mockClear();
+    gc.onUpdate(0.016);
+    gc.onUpdate(0.016);
+    expect(hud.setPrompt).not.toHaveBeenCalled();
+  });
+
+  it("refreshPrompt puts the morning's line back", () => {
+    toMorning();
+    hud.setPrompt('Your alarm went off.');
+    gc.refreshPrompt();
+    expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/buggy/i));
+  });
+
+  it('without a cargo bay the morning is as before: straight to bed', () => {
+    gc.cargo = null;
+    toMorning();
+    expect(gc.delivered).toBe(true);
+    expect(gc.canSleep).toBe(true);
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('Shift over — get some sleep (bedroom)');
+  });
+});

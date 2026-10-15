@@ -16,9 +16,12 @@ export class NightManager {
    * @param {object} [opts]
    * @param {number} [opts.maxNight=3]   Nights in a run
    * @param {number} [opts.startNight=1]
+   * @param {number} [opts.minNight=1]   The first night there is: 0 for a
+   *        run that opens on the tutorial (night 0)
    */
-  constructor({ maxNight = 3, startNight = 1 } = {}) {
+  constructor({ maxNight = 3, startNight = 1, minNight = 1 } = {}) {
     this.maxNight = maxNight;
+    this.minNight = minNight;
     this._listeners = new Set();
 
     this._check(startNight);
@@ -54,8 +57,8 @@ export class NightManager {
   }
 
   _check(night) {
-    if (!Number.isInteger(night) || night < 1 || night > this.maxNight) {
-      throw new Error(`NightManager: no night ${night} (1–${this.maxNight})`);
+    if (!Number.isInteger(night) || night < this.minNight || night > this.maxNight) {
+      throw new Error(`NightManager: no night ${night} (${this.minNight}–${this.maxNight})`);
     }
   }
 }

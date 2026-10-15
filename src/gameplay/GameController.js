@@ -16,16 +16,25 @@ import { Component } from '../core/Component.js';
 // signals and heats up the dust storms — so nothing happens in the morning
 // until the player goes to bed.
 //
+// With a cargo bay wired (the buggy's boot, a second DriveBoxDock), the
+// morning has one job first: carry the night's drive box out to the buggy,
+// load it (`delivered`: the boot holds a box with the night's quota in it)
+// and send the buggy off (`dispatch()`). The bed stays shut (canSleep) until
+// it has gone. Every night start brings it back.
+//
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
 // External references (set by the scene during wiring):
-//   nightClock, signalManager, satellite, terminal, hud, quotaDock
+//   nightClock, signalManager, satellite, terminal, hud, quotaDock, cargo
 // and the night counter through bindNights(nights).
 // ─────────────────────────────────────────────
 
 const PROMPT = {
   quotaMet: 'Quota met — hold out until 6:00 AM',
   morning:  'Shift over — get some sleep (bedroom)',
+  deliver:  'Shift over — load the drive box into the buggy outside',
+  send:     'Drives loaded — send the buggy off',
+  delivered: 'Buggy away — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
   finished: 'You made it through every shift.',
 };
@@ -54,6 +63,12 @@ export class GameController extends Component {
   /** The drive box dock — counts saved drives seated in the docked box.
    *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
   quotaDock = null;
+  /** The buggy's cargo bay — where the night's box goes before bed. Null:
+   *  the morning goes straight to bed.
+   *  @type {import('./DriveBoxDock.js').DriveBoxDock|null} */
+  cargo = null;
+  /** Whether this morning's buggy has been sent off with the drives. */
+  dispatched = false;
 
   /** Which shift prompt is up (a PROMPT key), so it is set once, on change. */
   _shiftPrompt = null;
@@ -80,6 +95,7 @@ export class GameController extends Component {
   startNight(nightNumber, { retry = false } = {}) {
     this.nightNumber = nightNumber;
     this._shiftPrompt = null;
+    this.dispatched = false;
     this._setState('playing');
 
     this.nightClock?.reset();
@@ -90,6 +106,9 @@ export class GameController extends Component {
     // so we sync AFTER it runs.
     if (this.quotaDock && this.signalManager) {
       this.quotaDock.requiredCount = this.signalManager.required;
+    }
+    if (this.cargo) {
+      this.cargo.requiredCount = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
     }
 
     // Night 3 only counts drives processed to level 2 (cyan).
@@ -158,15 +177,36 @@ export class GameController extends Component {
     return () => this._stateListeners.delete(listener);
   }
 
-  /** Whether the bed takes the player: the morning after a met quota. */
+  /** Whether the bed takes the player: the morning after a met quota, once
+   *  the drives are loaded into the buggy and it has gone. */
   get canSleep() {
-    return this.state === 'morning';
+    if (this.state !== 'morning') return false;
+    return this.cargo ? this.dispatched : true;
+  }
+
+  /** Send the loaded buggy off: the morning, with the night's quota in its
+   *  boot, once. The drive-away itself is BuggyDeparture's; this is the
+   *  rule it asks.
+   *  @returns {boolean} false if it can't go (yet, or again) */
+  dispatch() {
+    if (this.state !== 'morning' || !this.cargo || this.dispatched || !this.delivered) return false;
+    this.dispatched = true;
+    this._updateMorningPrompt();
+    return true;
+  }
+
+  /** Whether the buggy's cargo bay holds a box with the night's quota in it.
+   *  An empty bay is never a delivery. Always true with no bay wired. */
+  get delivered() {
+    if (!this.cargo) return true;
+    return !!this.cargo.depositedBox && this.cargo.isQuotaMet();
   }
 
   /** Put the shift's prompt back up, after something else wrote over it
    *  (a nap's wake-up line). */
   refreshPrompt() {
     if (this.state === 'playing') this.hud?.setPrompt(this.quotaDock?.isQuotaMet() ? PROMPT.quotaMet : '');
+    else if (this.state === 'morning') this.hud?.setPrompt(PROMPT[this._morningKey()]);
   }
 
   /** Called when a signal is saved by the terminal. Scanning no longer
@@ -233,6 +273,11 @@ export class GameController extends Component {
       return;
     }
 
+    if (this.state === 'morning') {
+      this._updateMorningPrompt();
+      return;
+    }
+
     if (this.state !== 'playing') return;
 
     // Advance the clock
@@ -278,6 +323,22 @@ export class GameController extends Component {
     this.hud?.setPrompt(key ? PROMPT[key] : '');
   }
 
+  /** The morning's prompt key: load the buggy, send it, then bed. */
+  _morningKey() {
+    if (!this.cargo) return 'morning';
+    if (this.dispatched) return 'delivered';
+    return this.delivered ? 'send' : 'deliver';
+  }
+
+  /** The morning's prompt, set only when it changes (the box loaded, or
+   *  taken back out). */
+  _updateMorningPrompt() {
+    const key = this._morningKey();
+    if (key === this._shiftPrompt) return;
+    this._shiftPrompt = key;
+    this.hud?.setPrompt(PROMPT[key]);
+  }
+
   _updateHUD() {
     if (!this.hud) return;
     this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
@@ -316,7 +377,10 @@ export class GameController extends Component {
     this._setState(state);
   }
 
-  _morning()  { this._endShift('morning',  PROMPT.morning); }
+  _morning() {
+    this._shiftPrompt = this._morningKey();
+    this._endShift('morning', PROMPT[this._shiftPrompt]);
+  }
   _gameOver() { this._endShift('gameOver', PROMPT.failed); }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }
