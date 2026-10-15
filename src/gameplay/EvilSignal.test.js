@@ -164,6 +164,7 @@ describe('EvilSignal hover — the dish hold', () => {
 
   it('disappears after the lock ends — no re-hovering, but respawns later', () => {
     const { evil, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night
     evil.summon();
     const sig = evilSig(signalManager);
 
@@ -375,14 +376,42 @@ describe('EvilSignal nights', () => {
     expect(evilSig(signalManager)).toBe(null);   // startNight rebuilt the sky
   });
 
-  it('has no night of its own yet — the debug key is the way in', () => {
-    expect(EVIL.nights).toEqual([]);
+  it('is scheduled for night 3', () => {
+    expect(EVIL.nights).toEqual([3]);
+  });
+
+  it('summons the signal on night 3 (guaranteed one appearance)', () => {
+    const { evil, controller, signalManager } = makeRig({ random: () => 0.99 });
+    // Night 3 with high random (>= 0.25) → 1 spawn only.
+    controller.startNight(3);
+    expect(evil._spawnsRemaining).toBe(0);   // summon() already decremented
+    expect(evilSig(signalManager)).not.toBeNull();
+  });
+
+  it('allows a second appearance on night 3 when random < doubleChance', () => {
+    const { evil, controller } = makeRig({ random: () => 0.1 });
+    // Night 3 with low random (< 0.25) → 2 spawns.
+    controller.startNight(3);
+    // First summon already ran; _spawnsRemaining was 2, summon decremented to 1.
+    expect(evil._spawnsRemaining).toBe(1);
+  });
+
+  it('does not summon on nights 1 or 2', () => {
+    const { evil, controller, signalManager } = makeRig();
+    controller.startNight(1);
+    expect(evil._spawnsRemaining).toBe(0);
+    expect(evilSig(signalManager)).toBeNull();
+
+    controller.startNight(2);
+    expect(evil._spawnsRemaining).toBe(0);
+    expect(evilSig(signalManager)).toBeNull();
   });
 });
 
 describe('EvilSignal respawn — no drive means it comes back', () => {
   it('respawns at a new position after the delay when no drive was used', () => {
     const { evil, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night with two appearances
     evil.summon();
     const sig1 = evilSig(signalManager);
 
@@ -425,6 +454,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 
   it('a new night cancels the respawn timer', () => {
     const { evil, controller, signalManager } = makeRig();
+    evil._spawnsRemaining = 2;   // simulate a scheduled night
     evil.summon();
     evil.hover(evilSig(signalManager));
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in

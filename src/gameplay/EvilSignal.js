@@ -38,9 +38,12 @@ const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2
 
 /** Tuning. Seconds and radians unless stated. */
 export const EVIL = {
-  /** The nights it appears on — none yet: until the run grows a night for
-   *  it, the dev console's `evil` is the only way in. */
-  nights: [],
+  /** The nights it appears on. Night 3 is the first (and currently only)
+   *  scheduled night; doubleChance controls whether it comes twice. */
+  nights: [3],
+  /** Probability of a second appearance on a scheduled night. 0 = always
+   *  once, 1 = always twice. 0.25 = once guaranteed, 25% chance of two. */
+  doubleChance: 0.25,
   /** Where it fades in (clock hours after midnight), once scheduled. */
   spawnHours: [1, 4],
   /** Spawn band on the radar disc, as a fraction of its radius: the
@@ -162,6 +165,10 @@ export class EvilSignal extends Component {
   /** Seconds until the evil signal respawns after a no-drive lock, or null
    *  when not counting down. @type {number|null} */
   _respawnTimer = null;
+  /** How many more times the signal can appear this night. Set by _reset
+   *  from the night schedule; summon() decrements it; _release() gates
+   *  respawn on it.  @type {number} */
+  _spawnsRemaining = 0;
   /** Seconds left to wipe the corrupted drive before game over, or null
    *  when no corrupted drive is outstanding. @type {number|null} */
   _silenceTimer = null;
@@ -231,7 +238,7 @@ export class EvilSignal extends Component {
   }
 
   onStart() {
-    this._offNight = this.controller?.onNightStart?.(() => this._reset()) ?? null;
+    this._offNight = this.controller?.onNightStart?.((night) => this._reset(night)) ?? null;
   }
 
   onDestroy() {
@@ -283,6 +290,7 @@ export class EvilSignal extends Component {
     this._target = target;
     this._hover = null;
     this._mustLeave = false;
+    this._spawnsRemaining--;
     return true;
   }
 
@@ -590,7 +598,7 @@ export class EvilSignal extends Component {
     if (this._target && !this._target.resolved) {
       this._target.deleted = true;
     }
-    if (noDrive) {
+    if (noDrive && this._spawnsRemaining > 0) {
       this._respawnTimer = EVIL.respawnDelaySeconds;
     }
   }
@@ -637,9 +645,8 @@ export class EvilSignal extends Component {
   }
 
   /** A new night: the manager rebuilds its signals, so drop the old target
-   *  and any hold. (When it gets a night of its own, the scheduled spawn
-   *  goes here.) */
-  _reset() {
+   *  and any hold. On scheduled nights, summon the first signal. */
+  _reset(night) {
     this._release();
     this._target = null;
     this._hover = null;
@@ -674,5 +681,11 @@ export class EvilSignal extends Component {
       this.hooks?.setPlayerLocked?.(false);
       this.whiteOut?.clear();
     }
+    // Schedule spawns for the new night: on scheduled nights, at least one
+    // appearance with a chance of a second.
+    const n = night ?? this.controller?.nightNumber;
+    const onSchedule = EVIL.nights.includes(n);
+    this._spawnsRemaining = onSchedule ? (this.random() < EVIL.doubleChance ? 2 : 1) : 0;
+    if (this._spawnsRemaining > 0) this.summon();
   }
 }
