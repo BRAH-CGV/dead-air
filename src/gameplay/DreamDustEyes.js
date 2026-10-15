@@ -48,8 +48,17 @@ export const DREAM_EYES = {
   leapDistance: 12,
   leapMinGap: 4,
   leapHeight: 0.9,
-  /** Chase speed (m/s) — the player runs at 5. */
+  /** Chase speed (m/s) — the player runs at 5. Accelerates without cap. */
   chaseSpeed: 3.6,
+  /** How much faster it gets each second of chase (m/s²). No top speed. */
+  chaseAccel: 0.4,
+  /** Random chase-jump: height, duration, horizontal reach, cooldown between jumps. */
+  jumpHeight: 1.2,
+  jumpDuration: 0.5,
+  jumpLength: 5,
+  jumpCooldown: 3,
+  /** Chance per second of triggering a random jump while chasing. */
+  jumpChance: 0.4,
   /** Walking bob: frequency (Hz), vertical amplitude (m). */
   bobFrequency: 2,
   bobAmplitude: 0.015,
@@ -93,6 +102,15 @@ class Slot {
     this.leapTo = new THREE.Vector3();
     /** Phase of the walking bob (radians, accumulated over time). */
     this.bobPhase = 0;
+    /** Seconds spent chasing — drives acceleration. */
+    this.chaseTime = 0;
+    /** Countdown until the eye can jump again. */
+    this.jumpCooldown = 0;
+    /** Jump progress: -1 = not jumping, 0…jumpDuration = in arc. */
+    this.jumpT = -1;
+    this.jumpFrom = new THREE.Vector3();
+    this.jumpTo = new THREE.Vector3();
+    this.jumpPeak = 0;
   }
   get position() { return this.go.object3d.position; }
   get mode() { return this.go.mode; }
@@ -103,6 +121,7 @@ const _view = new THREE.Vector3();
 const _to = new THREE.Vector3();
 const _way = new THREE.Vector3();
 const _silhouette = new THREE.Color();
+const _jumpDir = new THREE.Vector3();
 
 export class DreamDustEyes extends Component {
   /**
@@ -259,25 +278,66 @@ export class DreamDustEyes extends Component {
     const ease = 1 - (1 - u) * (1 - u);
     slot.position.lerpVectors(slot.leapFrom, slot.leapTo, ease);
     slot.position.y += Math.sin(Math.PI * u) * DREAM_EYES.leapHeight;
-    if (u >= 1) { slot.phase = 'chasing'; slot.t = 0; slot.bobPhase = 0; }
+    if (u >= 1) {
+      slot.phase = 'chasing'; slot.t = 0;
+      slot.bobPhase = 0; slot.chaseTime = 0; slot.jumpCooldown = 0; slot.jumpT = -1;
+    }
   }
 
-  /** Straight at the player with a walking bob. Never calms down once aggro'd. */
+  /** Accelerating chase with random jumps. Never calms down once aggro'd. */
   _chase(slot, dt, eye) {
+    slot.chaseTime += dt;
+    slot.jumpCooldown = Math.max(0, slot.jumpCooldown - dt);
+
     if (slot.position.distanceTo(eye) <= DREAM_EYES.catchDistance) {
       this._catch(slot);
       return;
     }
-    _way.copy(eye).sub(slot.position);
-    const d = _way.length();
-    const step = Math.min(DREAM_EYES.chaseSpeed * dt, d);
-    if (d > 1e-6) {
-      // Stride toward the player.
-      slot.position.addScaledVector(_way, step / d);
+
+    // ── Jump sub-state ──
+    if (slot.jumpT >= 0) {
+      this._tickJump(slot, dt);
+    } else {
+      // Accelerated stride toward the player — no speed cap.
+      const speed = DREAM_EYES.chaseSpeed + DREAM_EYES.chaseAccel * slot.chaseTime;
+      _way.copy(eye).sub(slot.position);
+      const d = _way.length();
+      const step = Math.min(speed * dt, d);
+      if (d > 1e-6) slot.position.addScaledVector(_way, step / d);
+
+      // Maybe start a random jump.
+      if (slot.jumpCooldown <= 0 && this.random() < DREAM_EYES.jumpChance * dt) {
+        this._startJump(slot, eye);
+      }
     }
+
     // Walking bob: time-based so the cadence stays steady regardless of speed.
     slot.bobPhase += dt * DREAM_EYES.bobFrequency * Math.PI * 2;
     slot.position.y += Math.sin(slot.bobPhase) * DREAM_EYES.bobAmplitude;
+  }
+
+  /** Begin a random jump toward the player. */
+  _startJump(slot, eye) {
+    slot.jumpT = 0;
+    slot.jumpFrom.copy(slot.position);
+    _jumpDir.copy(eye).sub(slot.position);
+    const d = _jumpDir.length();
+    const travel = Math.min(DREAM_EYES.jumpLength, d > 0 ? d * 0.4 : 0);
+    slot.jumpTo.copy(slot.position);
+    if (d > 1e-6) slot.jumpTo.addScaledVector(_jumpDir, travel / d);
+    slot.jumpPeak = DREAM_EYES.jumpHeight * (0.7 + this.random() * 0.6);
+  }
+
+  /** Advance the jump arc; when done, set the cooldown. */
+  _tickJump(slot, dt) {
+    slot.jumpT += dt;
+    const u = Math.min(slot.jumpT / DREAM_EYES.jumpDuration, 1);
+    slot.position.lerpVectors(slot.jumpFrom, slot.jumpTo, u);
+    slot.position.y += Math.sin(Math.PI * u) * slot.jumpPeak;
+    if (u >= 1) {
+      slot.jumpT = -1;
+      slot.jumpCooldown = DREAM_EYES.jumpCooldown;
+    }
   }
 
   _catch(slot) {

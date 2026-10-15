@@ -197,6 +197,71 @@ describe('attack', () => {
     // And bobPhase should have accumulated.
     expect(target.bobPhase).toBeGreaterThan(0);
   });
+
+  it('chase speed accelerates over time with no cap', () => {
+    const rig = makeRig({ count: 12, player: [0, 1.6, 0] });
+    run(rig.system, DREAM_EYES.fadeSeconds + 0.1);
+    const target = rig.system.slots.find(s => s.phase === 'passive');
+    if (!target) return;
+    // Place it far enough away that it won't catch during the test.
+    target.anchor.set(40, 2, 0);
+    target.position.set(40, 2, 0);
+    target.phase = 'chasing';
+    target.go.setMode('aggressive');
+    target.chaseTime = 0;
+    // Measure distance covered in the first half-second.
+    const x0 = target.position.x;
+    run(rig.system, 0.5);
+    const distEarly = Math.abs(target.position.x - x0);
+    // Now chaseTime is ~0.5s. Measure distance in the next half-second.
+    const x1 = target.position.x;
+    run(rig.system, 0.5);
+    const distLate = Math.abs(target.position.x - x1);
+    // Later distance should be greater because of acceleration.
+    expect(distLate).toBeGreaterThan(distEarly);
+    // And chaseTime should have accumulated.
+    expect(target.chaseTime).toBeGreaterThan(0.9);
+  });
+
+  it('random jumps fire during the chase and complete their arc', () => {
+    // Force random() to always trigger a jump (returns 0, which is < jumpChance * dt).
+    let jumpCount = 0;
+    const rig = makeRig({
+      count: 12, player: [0, 1.6, 0],
+      random: () => { jumpCount++; return 0; },
+    });
+    run(rig.system, DREAM_EYES.fadeSeconds + 0.1);
+    const target = rig.system.slots.find(s => s.phase === 'passive');
+    if (!target) return;
+    target.anchor.set(30, 2, 0);
+    target.position.set(30, 2, 0);
+    target.phase = 'chasing';
+    target.go.setMode('aggressive');
+    target.chaseTime = 0;
+    target.jumpCooldown = 0;
+    // Tick enough frames for at least one jump to trigger and complete.
+    run(rig.system, DREAM_EYES.jumpDuration + 0.5);
+    // The jump should have triggered (jumpCooldown was set after completion).
+    expect(target.jumpCooldown).toBeGreaterThan(0);
+  });
+
+  it('jump cooldown prevents immediate re-jump', () => {
+    const rig = makeRig({ count: 12, player: [0, 1.6, 0] });
+    run(rig.system, DREAM_EYES.fadeSeconds + 0.1);
+    const target = rig.system.slots.find(s => s.phase === 'passive');
+    if (!target) return;
+    target.anchor.set(30, 2, 0);
+    target.position.set(30, 2, 0);
+    target.phase = 'chasing';
+    target.go.setMode('aggressive');
+    // Set cooldown high — no jump should start.
+    target.jumpCooldown = 100;
+    target.jumpT = -1;
+    const y0 = target.position.y;
+    run(rig.system, 0.5);
+    // jumpT should still be -1 (no jump started) because cooldown hasn't expired.
+    expect(target.jumpT).toBe(-1);
+  });
 });
 
 describe('visuals', () => {
