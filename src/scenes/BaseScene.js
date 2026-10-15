@@ -868,6 +868,7 @@ export class BaseScene extends Scene {
     if (bed) {
       bed.controller = this.gameController;
       bed.fade       = this.screenFade;
+      bed.dream      = (night) => this._dream(night);
     }
 
     this.hud.setSuit(this.suit.worn);
@@ -1621,6 +1622,20 @@ export class BaseScene extends Scene {
       this.engine.crosshair?.show();
       try { canvas?.requestPointerLock?.()?.catch?.(() => {}); } catch (_) { /* no gesture: the next click locks */ }
     }
+  }
+
+  /** Sleep after night `night` dreams (#101): the dream at that night's
+   *  level, waking into the next night. The scene is found by name — the
+   *  dream wakes back into this scene, and the two importing each other
+   *  would be a cycle. Swapped on the next tick: this runs inside a frame.
+   *  @param {number} night  The night just done
+   *  @returns {boolean} false when there is no dream scene to go to */
+  _dream(night) {
+    const { engine } = this;
+    const Dream = engine.sceneRegistry?.get?.('DreamScene');
+    if (!Dream) return false;
+    queueMicrotask(() => engine.loadScene(Dream, { sceneOptions: { level: night, night: night + 1 } }));
+    return true;
   }
 
   /** Back to where the night starts: beside the bunk, facing the desk. */
