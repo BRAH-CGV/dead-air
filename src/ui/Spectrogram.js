@@ -56,9 +56,11 @@ function hannWindow(n) {
  * @param {object} [opts]
  * @param {number} [opts.fftSize=1024]   FFT bin count (must be power of 2).
  * @param {number} [opts.hopSize=512]    Frame advance in samples (50 % overlap).
- * @returns {Promise<{ magnitude: Float32Array[], bins: number, frames: number, sampleRate: number }>}
+ * @returns {Promise<{ magnitude: Float32Array[], bins: number, effectiveBins: number, frames: number, sampleRate: number }>}
  *   `magnitude[f][t]` is the normalised magnitude (0..1) of frequency bin `f`
- *   at time frame `t`.
+ *   at time frame `t`.  `effectiveBins` is the highest bin with meaningful
+ *   energy (auto-detected per signal); use it for display height so each
+ *   signal fills the canvas with its actual content.
  */
 export async function compute(audioBuffer, { fftSize = 1024, hopSize = 512 } = {}) {
   // Mix all channels to mono.
@@ -120,7 +122,11 @@ export async function compute(audioBuffer, { fftSize = 1024, hopSize = 512 } = {
     }
   }
 
-  return { magnitude, bins, frames, sampleRate: audioBuffer.sampleRate };
+  // Auto-detect the highest meaningful frequency bin so the display
+  // scales each signal to its own content range.
+  const effectiveBins = _detectEffectiveBins(magnitude, bins, frames, audioBuffer.sampleRate, fftSize);
+
+  return { magnitude, bins, effectiveBins, frames, sampleRate: audioBuffer.sampleRate };
 }
 
 // ── Colour map ───────────────────────────────────────────────
@@ -156,6 +162,42 @@ const _COLOUR_STOPS = [
 /** Pre-built 256-entry colour LUT (flat Uint8Array: r,g,b × 256).
  *  Eliminates per-pixel function calls and array allocations during render. */
 const _COLOUR_LUT = new Uint8Array(256 * 3);
+
+/**
+ * Detect the highest frequency bin with meaningful energy.
+ * Scans from the top down; a bin is "meaningful" when its time-averaged
+ * magnitude exceeds `_EFF_THRESHOLD` times the global mean magnitude.
+ * Never goes below `_EFF_MIN_HZ` Hz so the low end is always visible.
+ * Falls back to `bins` when nothing exceeds the threshold (e.g. white noise).
+ */
+const _EFF_THRESHOLD = 8;
+const _EFF_MIN_HZ = 12000;
+function _detectEffectiveBins(magnitude, bins, frames, sampleRate, fftSize) {
+  if (!frames) return bins;
+  // Minimum bins to cover at least 12 kHz.
+  const binWidth = sampleRate / fftSize;
+  const minBins = Math.min(bins, Math.ceil(_EFF_MIN_HZ / binWidth));
+  let totalSum = 0;
+  const binMeans = new Float64Array(bins);
+  for (let f = 0; f < bins; f++) {
+    const row = magnitude[f];
+    let sum = 0;
+    for (let t = 0; t < frames; t++) sum += row[t];
+    binMeans[f] = sum / frames;
+    totalSum += binMeans[f];
+  }
+  const meanMag = totalSum / bins;
+  const threshold = meanMag * _EFF_THRESHOLD;
+  // Scan from the top down for the highest bin above the threshold.
+  for (let f = bins - 1; f >= 0; f--) {
+    if (binMeans[f] > threshold) {
+      // Add a small margin (2 bins) so content never touches the top row.
+      return Math.max(minBins, Math.min(bins, f + 3));
+    }
+  }
+  return minBins;
+}
+
 (function _buildLUT() {
   for (let i = 0; i < 256; i++) {
     const t = i / 255;
@@ -176,14 +218,16 @@ const _COLOUR_LUT = new Uint8Array(256 * 3);
  * Render a magnitude matrix to an ImageData using the fast LUT path.
  * Used by ProcessingScreen to pre-render spectrograms once for the blend.
  *
- * @param {{ magnitude: Float32Array[], frames: number, bins: number }} result
+ * @param {{ magnitude: Float32Array[], frames: number, bins: number, effectiveBins?: number }} result
  * @param {number} gain
  * @param {number} contrast
+ * @param {number} [overrideBins]  Force a specific display height (used by the
+ *   blend to give both spectrograms the same vertical scale).
  * @returns {ImageData}
  */
-export function renderToImageData(result, gain, contrast) {
-  const { magnitude, frames, bins } = result;
-  const visibleBins = bins;
+export function renderToImageData(result, gain, contrast, overrideBins) {
+  const { magnitude, frames } = result;
+  const visibleBins = overrideBins ?? result.effectiveBins ?? result.bins;
   // Use an OffscreenCanvas if available, otherwise fall back to a temporary one.
   const cvs = typeof OffscreenCanvas !== 'undefined'
     ? new OffscreenCanvas(frames, visibleBins)
@@ -302,7 +346,8 @@ export function blendFromImageData(canvas, oldData, newData, progress, revealOrd
  *   < 1 brightens (compresses darks), > 1 darkens (expands darks).
  */
 export function render(canvas, result, { colormap, gain = 1, contrast = 1 } = {}) {
-  const { magnitude, bins, frames } = result;
+  const { magnitude, frames } = result;
+  const bins = result.effectiveBins ?? result.bins;
   if (!frames || !bins) return;
 
   const visibleBins = bins;
@@ -377,12 +422,12 @@ export function render(canvas, result, { colormap, gain = 1, contrast = 1 } = {}
 export function renderBlend(canvas, oldResult, newResult, progress, revealOrder, opts = {}) {
   if (!oldResult || !newResult || !oldResult.frames || !newResult.frames) return;
 
-  const { magnitude: oldMag, bins: oldBins, frames: oldFrames } = oldResult;
-  const { magnitude: newMag, bins: newBins, frames: newFrames } = newResult;
+  const { magnitude: oldMag, frames: oldFrames } = oldResult;
+  const { magnitude: newMag, frames: newFrames } = newResult;
   const { colormap = colourMap, gain = 1, contrast = 1 } = opts;
 
-  const oldVisibleBins = oldBins;
-  const newVisibleBins = newBins;
+  const oldVisibleBins = oldResult.effectiveBins ?? oldResult.bins;
+  const newVisibleBins = newResult.effectiveBins ?? newResult.bins;
 
   // Pre-render both spectrograms to offscreen canvases at native size.
   const oldCvs = document.createElement('canvas');

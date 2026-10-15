@@ -651,13 +651,19 @@ export class ProcessingScreen {
     this._blendComplete = false;
 
     const opts = this._vizOpts();
-    const visibleBins = oldResult.bins;
+    // Use the same vertical range for both spectrograms so the frequency
+    // scale stays anchored across levels — only the top can shrink.
+    const sharedBins = Math.min(
+      oldResult.effectiveBins ?? oldResult.bins,
+      newResult.effectiveBins ?? newResult.bins,
+    );
+    const visibleBins = sharedBins;
 
     // Pre-render both spectrograms to ImageData (one-time cost).
-    this._blendOldData = renderToImageData(oldResult, opts.gain, opts.contrast);
+    this._blendOldData = renderToImageData(oldResult, opts.gain, opts.contrast, sharedBins);
 
-    const newVisibleBins = newResult.bins;
-    const newImageData = renderToImageData(newResult, opts.gain, opts.contrast);
+    const newVisibleBins = sharedBins;
+    const newImageData = renderToImageData(newResult, opts.gain, opts.contrast, sharedBins);
 
     // Scale the new spectrogram to match the old dimensions if they differ.
     if (newResult.frames !== oldResult.frames || newVisibleBins !== visibleBins) {
