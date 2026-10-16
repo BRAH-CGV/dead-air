@@ -3,11 +3,13 @@ import * as THREE from 'three';
 import { RedOut } from './RedOut.js';
 
 // ─────────────────────────────────────────────
-// RedOut  –  post-processing red filter
+// RedOut  –  post-processing red filter (pipeline pass)
 // ─────────────────────────────────────────────
 // Pure Three.js state + a mocked renderer. No GL context needed.
+// RedOut now lives inside a PostPipeline; the pipeline owns render targets
+// and the composite scene.  RedOut only owns its shader material and quad.
 
-function makeEngine() {
+function makeCtx() {
   return {
     renderer: {
       setRenderTarget: vi.fn(),
@@ -17,15 +19,15 @@ function makeEngine() {
 }
 
 describe('RedOut', () => {
-  it('attach() creates the shader material and composite scene', () => {
+  it('build() creates the shader material and fullscreen quad', () => {
     const ro = new RedOut();
-    ro.attach(makeEngine());
+    ro.build(makeCtx());
 
     expect(ro._material).toBeInstanceOf(THREE.ShaderMaterial);
     expect(ro._material.uniforms.tDiffuse).toBeDefined();
     expect(ro._material.uniforms.uIntensity).toBeDefined();
-    expect(ro._scene).toBeInstanceOf(THREE.Scene);
     expect(ro._quad).toBeInstanceOf(THREE.Mesh);
+    expect(ro._scene).toBeInstanceOf(THREE.Scene);
     expect(ro._camera).toBeInstanceOf(THREE.OrthographicCamera);
     ro.dispose();
   });
@@ -58,107 +60,62 @@ describe('RedOut', () => {
     expect(ro.active).toBe(false);
   });
 
-  it('preRender and postRender are no-ops when inactive', () => {
-    const engine = makeEngine();
+  it('composite() writes the input texture and intensity, then renders', () => {
+    const ctx = makeCtx();
     const ro = new RedOut();
-    ro.attach(engine);
-
-    ro.preRender();
-    ro.postRender();
-    expect(engine.renderer.setRenderTarget).not.toHaveBeenCalled();
-    expect(engine.renderer.render).not.toHaveBeenCalled();
-    ro.dispose();
-  });
-
-  it('preRender sets the render target, postRender composites to screen', () => {
-    const engine = makeEngine();
-    const ro = new RedOut();
-    ro.attach(engine);
+    ro.build(ctx);
     ro.setIntensity(0.5);
 
-    ro.preRender();
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledTimes(1);
-    // The render target was lazily created.
-    expect(ro._renderTarget).not.toBeNull();
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledWith(ro._renderTarget);
+    const fakeTexture = { isTexture: true };
 
-    ro.postRender();
-    // setRenderTarget called again (null = screen) + render called for composite.
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledTimes(2);
-    expect(engine.renderer.setRenderTarget).toHaveBeenLastCalledWith(null);
-    expect(engine.renderer.render).toHaveBeenCalledWith(ro._scene, ro._camera);
-    // The intensity uniform was written.
+    ro.composite(fakeTexture, null, ctx.renderer);
+
+    expect(ctx.renderer.setRenderTarget).toHaveBeenCalledWith(null);
+    expect(ctx.renderer.render).toHaveBeenCalledWith(ro._scene, ro._camera);
     expect(ro._material.uniforms.uIntensity.value).toBeCloseTo(0.5);
-    // The render target texture was bound to tDiffuse.
-    expect(ro._material.uniforms.tDiffuse.value).toBe(ro._renderTarget.texture);
+    expect(ro._material.uniforms.tDiffuse.value).toBe(fakeTexture);
     ro.dispose();
   });
 
-  it('render target is created eagerly in attach()', () => {
-    const engine = makeEngine();
+  it('composite() uses its own private scene, not an external one', () => {
+    const ctx = makeCtx();
     const ro = new RedOut();
-    expect(ro._renderTarget).toBeNull();
-    ro.attach(engine);
-    expect(ro._renderTarget).toBeInstanceOf(THREE.WebGLRenderTarget);
-    ro.dispose();
-  });
-
-  it('render target resizes when window size changes', () => {
-    const engine = makeEngine();
-    const ro = new RedOut();
-    ro.attach(engine);
+    ro.build(ctx);
     ro.setIntensity(0.3);
 
-    // First preRender creates the target (falls back to 1024x768 in Node).
-    ro.preRender();
-    const rt = ro._renderTarget;
-    const origW = rt.width, origH = rt.height;
-    rt.setSize = vi.fn();
-
-    // Simulate a window resize by patching the global window object.
-    const prevWindow = globalThis.window;
-    globalThis.window = { innerWidth: origW + 100, innerHeight: origH + 100 };
-
-    ro.preRender();
-    expect(rt.setSize).toHaveBeenCalledWith(origW + 100, origH + 100);
-
-    globalThis.window = prevWindow;
+    // The quad should already be in the pass's private scene.
+    expect(ro._scene.children).toContain(ro._quad);
+    expect(ro._scene.children.length).toBe(1);
     ro.dispose();
   });
 
-  it('warmUp() does a dummy composite render to pre-compile the shader', () => {
-    const engine = makeEngine();
+  it('warmUp() does a dummy render to screen to compile the shader', () => {
+    const ctx = makeCtx();
     const ro = new RedOut();
-    ro.attach(engine);
+    ro.build(ctx);
 
     ro.warmUp();
-    // Renders to the screen (null target), not the render target — avoids a
-    // feedback dependency that stalls lower-end GPUs during warm-up.
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledTimes(1);
-    expect(engine.renderer.setRenderTarget).toHaveBeenCalledWith(null);
-    expect(engine.renderer.render).toHaveBeenCalledWith(ro._scene, ro._camera);
+    expect(ctx.renderer.setRenderTarget).toHaveBeenCalledWith(null);
+    expect(ctx.renderer.render).toHaveBeenCalledWith(ro._scene, ro._camera);
     ro.dispose();
   });
 
   it('dispose frees all resources', () => {
-    const engine = makeEngine();
+    const ctx = makeCtx();
     const ro = new RedOut();
-    ro.attach(engine);
+    ro.build(ctx);
     ro.setIntensity(0.5);
-    ro.preRender();  // create the render target
 
-    const rtDispose = vi.spyOn(ro._renderTarget, 'dispose');
     const matDispose = vi.spyOn(ro._material, 'dispose');
     const geoDispose = vi.spyOn(ro._quad.geometry, 'dispose');
 
     ro.dispose();
-    expect(rtDispose).toHaveBeenCalled();
     expect(matDispose).toHaveBeenCalled();
     expect(geoDispose).toHaveBeenCalled();
-    expect(ro._renderTarget).toBeNull();
     expect(ro._material).toBeNull();
     expect(ro._quad).toBeNull();
     expect(ro._scene).toBeNull();
+    expect(ro._camera).toBeNull();
     expect(ro._renderer).toBeNull();
     expect(ro._intensity).toBe(0);
   });
