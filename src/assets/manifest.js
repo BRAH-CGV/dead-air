@@ -278,6 +278,14 @@ const PLACED = {
     castShadow: false,
     receiveShadow: false,
   },
+  // The player's rigged CJ body, visible only from the debug fly camera.
+  // The source is authored at roughly 71 units tall; this makes him 1.35 m.
+  'model:cj': {
+    type: 'model',
+    url: 'assets/models/cj.glb',
+    scale: 0.01897,
+    castShadow: false,
+  },
   // Ragno, the camera entity: a rigged, four-legged spider thing, already in
   // metres (2.2 m tall, 1.8 m across the feet as downloaded). Render-only;
   // its legs are walked by IK (RagnoFigure). Four fifths of its size keeps
