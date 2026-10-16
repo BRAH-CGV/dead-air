@@ -27,6 +27,7 @@ import { DreamScene } from '../scenes/DreamScene.js';
 import { DreamCraterScene } from '../scenes/DreamCraterScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
+import { createCJFigure } from '../gameobjects/CJFigure.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -732,6 +733,9 @@ export class Engine {
 
     // ── Flashlight component ──  F toggles; bright up close, short reach by design.
     player.addComponent(new Flashlight());
+
+    // Player body easter egg: hidden in first person, revealed by `fly`.
+    player.addChild(createCJFigure({ model: this.assets.instantiate('model:cj') }));
 
     this.player = player;           // the debug fly camera freezes whoever this is
     this.playerController = ctrl;
