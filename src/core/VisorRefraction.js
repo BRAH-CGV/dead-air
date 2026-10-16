@@ -13,8 +13,25 @@ import * as THREE from 'three';
 // the SuitVisor component: on when the helmet goes on, off when it comes
 // off, faded in over the same interval as the glass overlay.
 //
-// Works as a pass inside a PostPipeline.  The pipeline manages render
-// targets; this pass only owns its shader material and fullscreen quad.
+// A screen pass (engine.screenPasses), drawn after the frame:
+//
+//   pass.attach(renderer);              // at scene build
+//   engine.screenPasses.push(pass);     // render() after each frame
+//   pass.setIntensity(opacity);         // SuitVisor, every frame
+//
+// It copies the finished frame (copyFramebufferToTexture, as the CCTV
+// switch does) and draws it back over itself, warped. So the scene is drawn
+// exactly as it is without the helmet: antialiased, tone mapped, sRGB, at
+// full resolution. It used to be a PostPipeline pass, which drew the scene
+// into an off-screen target instead: no MSAA, CSS-pixel sized, 8-bit linear
+// and never tone mapped. Behind the glass the outside shimmered and banded.
+//
+// The copied pixels are already as shown, so the shader passes them through
+// without tone mapping or colour-space conversion.
+//
+// Cost while the helmet is on: one screen copy and one full-screen quad a
+// frame. With it off, nothing. The shader is compiled and the texture
+// allocated in attach(), so putting the helmet on doesn't hitch.
 // ─────────────────────────────────────────────
 
 const VERT = /* glsl */ `
@@ -56,19 +73,24 @@ const FRAG = /* glsl */ `
  *  by eye: 0.1 gives a visible but comfortable curve on a 16:9 screen. */
 const DEFAULT_STRENGTH = 0.1;
 
+const _size = new THREE.Vector2();
+
 export class VisorRefraction {
   _renderer = null;
   _material = null;
   _quad = null;
   _scene = null;
   _camera = null;
+  /** The finished frame, copied each frame the helmet is on. */
+  _texture = null;
 
   /** 0 = no distortion, 1 = full DEFAULT_STRENGTH.  Driven by SuitVisor's
    *  fade so the warp eases in with the glass overlay. */
   _intensity = 0;
 
-  /** Build the shader material.  Called once by PostPipeline.add(). */
-  build({ renderer }) {
+  /** Build the shader, quad and texture, and compile them.  Called once, as
+   *  the scene is built. */
+  attach(renderer) {
     this._renderer = renderer;
 
     this._material = new THREE.ShaderMaterial({
@@ -81,6 +103,7 @@ export class VisorRefraction {
       fragmentShader: FRAG,
       depthTest: false,
       depthWrite: false,
+      toneMapped: false,
     });
 
     this._quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this._material);
@@ -89,6 +112,8 @@ export class VisorRefraction {
     this._camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this._scene = new THREE.Scene();
     this._scene.add(this._quad);
+    this._ensureTexture();
+    renderer.compile?.(this._scene, this._camera);
   }
 
   /** True while the distortion is non-zero. */
@@ -97,46 +122,48 @@ export class VisorRefraction {
   /** Set the effect strength 0..1.  0 = flat glass, 1 = full warp. */
   setIntensity(v) { this._intensity = Math.max(0, Math.min(1, v)); }
 
-  /** Composite: sample the scene texture with barrel distortion and write
-   *  to the output target (null = screen). */
-  composite(inputTex, outputTarget, renderer) {
-    if (!this._material) return;
-    this._material.uniforms.tDiffuse.value = inputTex;
-    this._material.uniforms.uStrength.value = this._intensity * DEFAULT_STRENGTH;
-    const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const h = typeof window !== 'undefined' ? window.innerHeight : 768;
-    this._material.uniforms.uAspect.value = w / h;
+  /** After the frame is drawn: copy it, then draw it back over the screen
+   *  with the barrel distortion.  Nothing while the helmet is off. */
+  render() {
+    const renderer = this._renderer;
+    if (!renderer || !this._material || !this.active) return;
+    this._ensureTexture();
+    renderer.copyFramebufferToTexture(this._texture);
 
-    renderer.setRenderTarget(outputTarget);
-    renderer.render(this._scene, this._camera);
-  }
+    const u = this._material.uniforms;
+    u.uStrength.value = this._intensity * DEFAULT_STRENGTH;
+    u.uAspect.value = _size.x / _size.y;
 
-  /** Compile the composite shader by doing a dummy render to screen. */
-  warmUp() {
-    if (!this._material || !this._renderer) return;
-    this._material.uniforms.tDiffuse.value = null;
-    this._material.uniforms.uStrength.value = 0;
-    this._renderer.setRenderTarget(null);
-    this._renderer.render(this._scene, this._camera);
-  }
-
-  /** Compile the render-target output variants. */
-  async preCompile(renderer, targets) {
-    if (!this._material || !targets?.length) return;
-    this._material.uniforms.tDiffuse.value = targets[0].texture;
-    this._material.uniforms.uStrength.value = 0;
-    renderer.setRenderTarget(targets.length > 1 ? targets[1] : null);
-    await renderer.compileAsync(this._scene, this._camera);
+    // The quad covers every pixel, so there is nothing to clear.
+    const clear = renderer.autoClear;
+    renderer.autoClear = false;
     renderer.setRenderTarget(null);
+    renderer.render(this._scene, this._camera);
+    renderer.autoClear = clear;
   }
 
   /** Free GPU resources. */
   dispose() {
+    this._texture?.dispose();
+    this._texture = null;
     if (this._quad) { this._quad.geometry.dispose(); this._quad = null; }
     if (this._material) { this._material.dispose(); this._material = null; }
     if (this._scene) { this._scene.clear(); this._scene = null; }
     this._camera = null;
     this._renderer = null;
     this._intensity = 0;
+  }
+
+  /** A texture the size of the drawing buffer, made again if that changed.
+   *  Leaves the size in _size. */
+  _ensureTexture() {
+    this._renderer.getDrawingBufferSize(_size);
+    const t = this._texture;
+    if (t && t.image.width === _size.x && t.image.height === _size.y) return;
+    t?.dispose();
+    this._texture = new THREE.FramebufferTexture(_size.x, _size.y);
+    this._texture.minFilter = this._texture.magFilter = THREE.LinearFilter;
+    this._material.uniforms.tDiffuse.value = this._texture;
+    this._renderer.initTexture?.(this._texture);
   }
 }

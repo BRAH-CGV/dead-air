@@ -409,6 +409,13 @@ export class BaseScene extends Scene {
       this.cameraSignal.dispose();
       this.cameraSignal = null;
     }
+    if (this._visorRefraction) {
+      const passes = this.engine.screenPasses;
+      const at = passes?.indexOf(this._visorRefraction) ?? -1;
+      if (at >= 0) passes.splice(at, 1);
+      this._visorRefraction.dispose();
+      this._visorRefraction = null;
+    }
     this.monitorSpeaker?.dispose();
     this.monitorSpeaker = null;
     this._offCameraState?.();
@@ -2015,11 +2022,17 @@ export class BaseScene extends Scene {
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
-    this._visorRefraction ??= new VisorRefraction();
     this._pipeline = new PostPipeline();
     this._pipeline.attach(this.engine);
-    this._pipeline.add('visorRefraction', this._visorRefraction);
     this._pipeline.add('redOut', this._redOut);
+    // The helmet's warp bends the finished frame, so it is a screen pass,
+    // not a pipeline one: the scene under the glass is drawn as it always is.
+    this._visorRefraction ??= new VisorRefraction();
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this._visorRefraction.attach(renderer);
+      screenPasses.push(this._visorRefraction);
+    }
     this.engine.postProcess = this._pipeline;
     this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({

@@ -25,8 +25,13 @@ import * as THREE from 'three';
 // Passes are added / removed by name so gameplay code can look them up:
 //
 //   pipeline.add('redOut', redOutPass);
-//   pipeline.add('visorRefraction', visorPass);
 //   pipeline.get('redOut').setIntensity(0.5);
+//
+// A pass here draws the scene into an off-screen target: no MSAA, no tone
+// mapping, linear 8-bit. That suits an effect that replaces the picture
+// (RedOut). One that only bends or tints the frame as shown belongs in
+// engine.screenPasses instead, working on a copy of the screen
+// (VisorRefraction, CameraSignalPass).
 // ─────────────────────────────────────────────
 
 export class PostPipeline {
