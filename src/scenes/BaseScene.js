@@ -2015,7 +2015,7 @@ export class BaseScene extends Scene {
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
-    this._visorRefraction = new VisorRefraction();
+    this._visorRefraction ??= new VisorRefraction();
     this._pipeline = new PostPipeline();
     this._pipeline.attach(this.engine);
     this._pipeline.add('visorRefraction', this._visorRefraction);
@@ -2938,7 +2938,7 @@ export class BaseScene extends Scene {
     // No breathing on a death screen — the night has been lost.
     engine.player.addComponent(new SuitVisor({
       suit: this.suit,
-      refraction: this._visorRefraction,
+      refraction: (this._visorRefraction ??= new VisorRefraction()),
       silenced: () => this.gameController?.state === 'gameOver',
     }));
   }
