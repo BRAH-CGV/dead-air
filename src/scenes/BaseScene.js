@@ -2493,6 +2493,8 @@ export class BaseScene extends Scene {
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);
+    // Until the nap step the bunk is the way out of it (Bed, Tutorial.skip).
+    if (bed) bed.tutorial = this.tutorial;
   }
 
   /** The solid things standing in the yard, as ground-plan rectangles —

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { Tutorial, TUTORIAL } from './Tutorial.js';
-import { TUTORIAL_STEPS } from '../gameplay/TutorialSteps.js';
+import { TUTORIAL_STEPS, SKIP_NOTE } from '../gameplay/TutorialSteps.js';
 import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { NAP } from '../gameplay/Nap.js';
@@ -90,24 +90,24 @@ function rig({ night = 0, covered } = {}) {
   return s;
 }
 
-/** Run the tutorial past its timed intro cards. */
-function pastIntro(s) {
-  for (const step of TUTORIAL_STEPS) {
-    if (!step.seconds || s.tutorial.runner.step?.id !== step.id) continue;
-    s.tutorial.onUpdate(step.seconds + 0.01);
-  }
+/** Into the tutorial's first step (the first update enters it). */
+function firstStep(s) {
+  s.tutorial.onUpdate(0.01);
 }
 
 describe('Tutorial', () => {
   let s;
   beforeEach(() => { s = rig(); });
 
-  it('on night 0 holds the clock at 7 PM, dark, and opens on the story', () => {
+  it('on night 0 holds the clock at 7 PM, dark, and opens on the first job, the skip line under it', () => {
     s.tutorial.onUpdate(0.01);
     expect(s.clock.currentTime).toBe(TUTORIAL.startHour);
     expect(s.clock.paused).toBe(true);
     expect(s.tutorial.active).toBe(true);
-    expect(s.overlay.show).toHaveBeenLastCalledWith(expect.objectContaining({ title: TUTORIAL_STEPS[0].title }));
+    expect(s.tutorial.runner.step.id).toBe('deskBox');
+    expect(s.overlay.show).toHaveBeenLastCalledWith(expect.objectContaining({
+      title: TUTORIAL_STEPS[0].title, note: SKIP_NOTE,
+    }));
   });
 
   it('leaves every other night alone', () => {
@@ -143,7 +143,7 @@ describe('Tutorial', () => {
   });
 
   it('shows the signal on the radar once the player is at the computer', () => {
-    pastIntro(s);
+    firstStep(s);
     const [sig] = s.signalManager.signals;
     expect(sig.appeared).toBe(false);
     s.driveManager.driveInserted = true;
@@ -154,7 +154,7 @@ describe('Tutorial', () => {
   });
 
   it('follows what the player does', () => {
-    pastIntro(s);
+    firstStep(s);
     expect(s.tutorial.runner.step.id).toBe('deskBox');
     s.driveManager.driveInserted = true;
     s.tutorial.onUpdate(0.01);
@@ -186,7 +186,7 @@ describe('Tutorial', () => {
   it('a drive with the signal, seated in a box, is boxed', () => {
     const drive = { saved: true, corrupted: false };
     s.driveBoxes.push({ object3d: new THREE.Object3D(), receiver: { attachments: [null, { item: drive }] } });
-    pastIntro(s);
+    firstStep(s);
     const ctx = s.tutorial.readContext();
     expect(ctx.boxed).toBe(true);
     drive.corrupted = true;
@@ -194,7 +194,7 @@ describe('Tutorial', () => {
   });
 
   it('once the quota is met the clock runs, and the storm comes', () => {
-    pastIntro(s);
+    firstStep(s);
     s.quotaDock.isQuotaMet = () => true;
     s.driveManager.driveInserted = true;
     s.tutorial.runner.goTo('dock');
@@ -219,7 +219,7 @@ describe('Tutorial', () => {
     expect(s.clock.paused).toBe(false);
   });
 
-  it('a retry skips the story and starts at the drive box', () => {
+  it('a retry starts over at the drive box, the clock held again', () => {
     s.tutorial.onUpdate(0.01);
     s.controller.startNight(0, { retry: true });
     s.tutorial.onUpdate(0.01);
@@ -228,7 +228,7 @@ describe('Tutorial', () => {
   });
 
   it('points the arrow at the step\'s target, on screen or round the edge', () => {
-    pastIntro(s);                           // 'deskBox': a box, ahead
+    firstStep(s);                           // 'deskBox': a box, ahead
     s.overlay.setArrow.mockClear();
     s.tutorial.onUpdate(0.01);
     const ahead = s.overlay.setArrow.mock.calls.at(-1)[0];
@@ -241,13 +241,8 @@ describe('Tutorial', () => {
     expect(behind.onScreen).toBe(false);
   });
 
-  it('no arrow on the story cards', () => {
-    s.tutorial.onUpdate(0.01);
-    expect(s.overlay.setArrow).toHaveBeenLastCalledWith(null);
-  });
-
   it('hides while the night isn\'t being played, and keeps its place', () => {
-    pastIntro(s);
+    firstStep(s);
     s.controller.state = 'gameOver';
     s.overlay.hide.mockClear();
     s.tutorial.onUpdate(0.01);
@@ -325,6 +320,67 @@ describe('Tutorial', () => {
     s.tutorial.onUpdate(0.01);
     expect(s.tutorial.runner.step.id).toBe('sleep');
     expect(s.overlay.show).toHaveBeenCalled();
+  });
+
+  describe('skipping it: sleep until 6 AM at the bunk', () => {
+    it('can be skipped from the first step, while the night is played', () => {
+      s.tutorial.onUpdate(0.01);
+      expect(s.tutorial.canSkip).toBe(true);
+      s.tutorial.runner.goTo('inside');
+      expect(s.tutorial.canSkip).toBe(true);
+    });
+
+    it('not from the nap on: sleeping until 6 AM is then the lesson itself', () => {
+      s.tutorial.onUpdate(0.01);
+      for (const id of ['nap', 'wait', 'buggy', 'sleep']) {
+        s.tutorial.runner.goTo(id);
+        expect(s.tutorial.canSkip, id).toBe(false);
+      }
+    });
+
+    it('not on another night, nor off the shift, nor while already in the bunk', () => {
+      expect(rig({ night: 1 }).tutorial.canSkip).toBe(false);
+      s.tutorial.onUpdate(0.01);
+      s.controller.state = 'gameOver';
+      expect(s.tutorial.canSkip).toBe(false);
+      s.controller.state = 'playing';
+      s.nap.napping = true;
+      expect(s.tutorial.canSkip).toBe(false);
+      s.nap.napping = false;
+      s.bedRest.active = true;
+      expect(s.tutorial.canSkip).toBe(false);
+    });
+
+    it('skip() moves on to night 1 the way sleeping does, through the night counter', () => {
+      s.controller.nights = { advance: vi.fn(() => s.controller.startNight(1)) };
+      s.tutorial.onUpdate(0.01);
+      expect(s.tutorial.skip()).toBe(true);
+      expect(s.controller.nights.advance).toHaveBeenCalledTimes(1);
+      expect(s.controller.nightNumber).toBe(1);
+      expect(s.tutorial.active).toBe(false);
+      expect(s.overlay.hide).toHaveBeenCalled();
+      s.overlay.show.mockClear();
+      s.tutorial.onUpdate(0.01);
+      expect(s.overlay.show).not.toHaveBeenCalled();
+    });
+
+    it('skip() with no night counter starts the next night itself', () => {
+      s.tutorial.onUpdate(0.01);
+      expect(s.tutorial.skip()).toBe(true);
+      expect(s.controller.nightNumber).toBe(1);
+    });
+
+    it('skip() does nothing on another night, or off the shift', () => {
+      s = rig({ night: 1 });
+      s.tutorial.onUpdate(0.01);
+      expect(s.tutorial.skip()).toBe(false);
+      expect(s.controller.nightNumber).toBe(1);
+      s = rig();
+      s.tutorial.onUpdate(0.01);
+      s.controller.state = 'gameOver';
+      expect(s.tutorial.skip()).toBe(false);
+      expect(s.controller.nightNumber).toBe(0);
+    });
   });
 
   it('lets go of its listener when destroyed', () => {

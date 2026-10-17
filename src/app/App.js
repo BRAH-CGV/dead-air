@@ -258,10 +258,28 @@ export class App {
   }
 
   /** New game: the intro first, whose end card begins the shift
-   *  (`intro.onBegin`). The menu music plays on under it. */
+   *  (`intro.onBegin`). The menu music plays on under it. A new player's
+   *  shift is night 0, the tutorial (skipped by sleeping at the bunk). */
   async _newGame() {
-    if (this._playIntro(() => this._beginShift())) return;
-    await this._beginShift();
+    const begin = this._owesTutorial() ? () => this._beginTutorial() : () => this._beginShift();
+    if (this._playIntro(begin)) return;
+    await begin();
+  }
+
+  /** True where the scene has a tutorial night the player hasn't played. */
+  _owesTutorial() {
+    return this.engine.activeScene?.nights?.minNight === 0 && !this._tutorialSeen();
+  }
+
+  /** True once there is a save: night 1 was reached (the tutorial played
+   *  or skipped) or a run begun. Without storage, or blocked, it is never
+   *  forced on anyone. */
+  _tutorialSeen() {
+    try {
+      return !this.storage || this.storage.getItem(PROGRESS_KEY) != null;
+    } catch {
+      return true;
+    }
   }
 
   /** The intro over the main menu, its end card to run `then`. False where
@@ -732,6 +750,7 @@ export class App {
         return {
           tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint,
           tutorial: this.engine.activeScene?.nights?.minNight === 0,
+          nightSelect: !this._owesTutorial(),
         };
       case 'nightSelect':
         return { maxNight: this._maxNight(), highest: this._highestNight(), hint: this._hint };

@@ -275,6 +275,66 @@ describe('Bed', () => {
     });
   });
 
+  describe('skipping the tutorial: sleep until 6 AM on night 0', () => {
+    let tutorial, nap;
+    beforeEach(() => {
+      tutorial = { canSkip: true, skip: vi.fn(() => { controller.state = 'playing'; return true; }) };
+      nap = { canNap: true, napping: false, start: vi.fn(() => true) };
+      bed.tutorial = tutorial;
+      bed.nap = nap;
+      bed.dream = vi.fn(() => true);
+      controller.nightClock = { currentTime: -5, endHour: 6 };
+    });
+
+    it('offers to sleep until 6 AM and skip the tutorial, in place of a nap', () => {
+      expect(label('playing')).toMatch(/^\[E\] Sleep until 6:00 AM/);
+      expect(label('playing')).toMatch(/skip the tutorial/i);
+    });
+
+    it('R leaves the alarm alone: there is no alarm to set', () => {
+      const engine = { keyBinds: { rotateHeld: 'KeyR' }, isAction: () => true, consumeAction: vi.fn() };
+      bed.engine = engine;
+      const before = bed.napLength;
+      bed.onHover({});
+      expect(bed.napLength).toBe(before);
+      expect(engine.consumeAction).not.toHaveBeenCalled();
+    });
+
+    it('lies down, and once the eyes are shut skips into night 1 and gets up into it, no dream', () => {
+      const rest = {
+        active: false,
+        lieDown: vi.fn(onAsleep => { rest.active = true; rest.onAsleep = onAsleep; return true; }),
+        getUp: vi.fn(() => true),
+        cancel: vi.fn(),
+      };
+      bed.rest = rest;
+      bed.onInteract();
+      expect(nap.start).not.toHaveBeenCalled();
+      expect(rest.lieDown).toHaveBeenCalledOnce();
+      expect(tutorial.skip).not.toHaveBeenCalled();
+      rest.onAsleep();
+      expect(tutorial.skip).toHaveBeenCalledOnce();
+      expect(rest.getUp).toHaveBeenCalledWith('calm');
+      expect(bed.dream).not.toHaveBeenCalled();
+      expect(controller.sleep).not.toHaveBeenCalled();
+    });
+
+    it('without the bed animation, skips under the fade', () => {
+      bed.onInteract();
+      expect(fade.play).toHaveBeenCalledOnce();
+      expect(tutorial.skip).toHaveBeenCalledOnce();
+      expect(nap.start).not.toHaveBeenCalled();
+    });
+
+    it('once the tutorial can no longer be skipped, it is the ordinary nap again', () => {
+      tutorial.canSkip = false;
+      expect(label('playing')).toMatch(/^\[E\] Nap/);
+      bed.onInteract();
+      expect(nap.start).toHaveBeenCalled();
+      expect(tutorial.skip).not.toHaveBeenCalled();
+    });
+  });
+
   describe('dreaming between nights (#101)', () => {
     beforeEach(() => {
       controller.state = 'morning';

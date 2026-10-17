@@ -89,19 +89,23 @@ export class TutorialOverlay {
     this.keyLabel = keyLabel;
     this._title = null;
     this._text = null;
+    this._note = null;
     this._compact = null;
     this._arrowShown = null;
     if (!root) return;
     root.innerHTML = '<div class="tutorial-card"><div class="tutorial-title"></div>'
-      + '<div class="tutorial-text"></div></div>'
+      + '<div class="tutorial-text"></div><div class="tutorial-note"></div></div>'
       + `<div class="tutorial-arrow"><div class="tutorial-arrow-bob">${ARROW_SVG}</div></div>`;
     this.titleEl = root.querySelector('.tutorial-title');
     this.textEl = root.querySelector('.tutorial-text');
+    this.noteEl = root.querySelector('.tutorial-note');
+    this.noteEl.style.display = 'none';
     this.arrowEl = root.querySelector('.tutorial-arrow');
     this.hide();
   }
 
-  /** @param {{ title: string, text: string, compact: boolean }} view */
+  /** @param {{ title: string, text: string, note?: string, compact: boolean }} view
+   *  `note` is a standing line under the card (the skip line); '' or none hides it. */
   show(view) {
     if (!this.root) return;
     this.root.style.display = 'block';
@@ -113,6 +117,12 @@ export class TutorialOverlay {
     if (text !== this._text) {
       this._text = text;
       this.textEl.textContent = text;
+    }
+    const note = view.note ? this.keyLabel(view.note) : '';
+    if (note !== this._note) {
+      this._note = note;
+      this.noteEl.textContent = note;
+      this.noteEl.style.display = note ? '' : 'none';
     }
     if (view.compact !== this._compact) {
       this._compact = view.compact;

@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────
 // TutorialSteps  –  night 0's lessons, one at a time (pure)
 // ─────────────────────────────────────────────
-// Night 0 is the tutorial. It tells the story in a few timed cards, then
-// walks the player through one of everything: a drive box brought to the
+// Night 0 is the tutorial. The story is the intro animation's (ui/intro), so
+// it opens straight on the first job and walks the player through one of
+// everything: a drive box brought to the
 // desk, a drive from it into the reader, a signal found, scanned and saved,
 // the drive boxed and the box docked (a quota of one); a storm that takes
 // the power, the flashlight, the generator brought back; a nap until 6 AM,
@@ -21,6 +22,10 @@
 // arrow points at (the Tutorial component knows where each one is), or is
 // a function of ctx that names it; a step marked `desk` is done at the
 // computer, so away from it the view points back to the computer instead.
+//
+// Until the nap (`skipUntil`) a line stands under every step: the bunk
+// skips the tutorial (SKIP_NOTE, Tutorial.skip). From the nap on, sleeping
+// until 6 AM is the lesson itself.
 // ─────────────────────────────────────────────
 
 /** Shown in place of a `desk` step while the computer isn't up. */
@@ -30,15 +35,10 @@ export const COMPUTER_HINT = Object.freeze({
   target: 'computer',
 });
 
-export const TUTORIAL_STEPS = Object.freeze([
-  // The story (docs/STORY.md), before anything is asked of the player.
-  { id: 'intro-1', seconds: 6, title: 'NIGHT 0',
-    text: 'You are one of a few hundred explorers scattered across Mars.' },
-  { id: 'intro-2', seconds: 6, title: 'EVERY COLONY BEFORE YOU WENT SILENT',
-    text: 'Whatever silenced them came from the sky.' },
-  { id: 'intro-3', seconds: 6, title: 'LISTEN TO THE SKY',
-    text: 'Save the signals you pick up, and keep the array running for your neighbours.' },
+/** The line under every step until the nap: how to skip the tutorial. */
+export const SKIP_NOTE = 'Sleep until 6 AM at the bunk to skip the tutorial.';
 
+export const TUTORIAL_STEPS = Object.freeze([
   // The signal game.
   { id: 'deskBox', title: 'PUT A DRIVE BOX ON THE DESK',
     target: c => (c.holdingBox ? 'desk' : 'box'),
@@ -110,11 +110,14 @@ export class TutorialRunner {
    * @param {(step: object) => void} [opts.onEnter]  Called once for every
    *        step entered, skipped-through ones included, the first one on
    *        the first update.
+   * @param {string} [opts.skipUntil='nap']  The step from which the bunk is
+   *        the lesson, not a way out: no skip line from there on.
    */
-  constructor({ steps = TUTORIAL_STEPS, onEnter = null } = {}) {
+  constructor({ steps = TUTORIAL_STEPS, onEnter = null, skipUntil = 'nap' } = {}) {
     this.steps = steps;
     this.onEnter = onEnter;
-    this._view = { title: '', text: '', target: null, compact: false };
+    this.skipUntil = skipUntil;
+    this._view = { title: '', text: '', note: '', target: null, compact: false };
     this.reset();
   }
 
@@ -139,6 +142,12 @@ export class TutorialRunner {
 
   get finished() { return this.index >= this.steps.length; }
 
+  /** True before the `skipUntil` step: the bunk still skips the tutorial. */
+  get skippable() {
+    const until = this.steps.findIndex(s => s.id === this.skipUntil);
+    return until >= 0 && this.index < until;
+  }
+
   /** @param {number} dt @param {object} ctx */
   update(dt, ctx) {
     if (this.finished) return;
@@ -162,6 +171,7 @@ export class TutorialRunner {
     const shown = away ? COMPUTER_HINT : step;
     view.title = shown?.title ?? '';
     view.text = shown?.text ?? '';
+    view.note = this.skippable ? SKIP_NOTE : '';
     const target = typeof shown?.target === 'function' ? shown.target(ctx) : shown?.target;
     view.target = (!ctx.terminalOpen && target) || null;
     view.compact = !!ctx.terminalOpen;

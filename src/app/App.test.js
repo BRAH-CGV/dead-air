@@ -271,8 +271,22 @@ describe('App', () => {
       expect(engine.loadScene).not.toHaveBeenCalled();
     });
 
-    // Night 0 is the tutorial, which has a button of its own.
-    it('starts on night 1, even where the scene has a night 0', async () => {
+    it('starts on night 1 in a scene with no night 0', async () => {
+      await startGame();
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    // Night 0 is the tutorial: a new player (no save yet) plays it first.
+    // Night 0 isn't saved, so nothing is written until night 1.
+    it('a new player starts on night 0, the tutorial, where the scene has one', async () => {
+      engine.activeScene.nights.minNight = 0;
+      await startGame();
+      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(storage.map.has(PROGRESS_KEY)).toBe(false);
+    });
+
+    it('a player with a save starts on night 1, even where the scene has a night 0', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: null, highest: 1 }));
       engine.activeScene.nights.minNight = 0;
       await startGame();
       expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
@@ -314,6 +328,27 @@ describe('App', () => {
       e2.activeScene.gameController.nightNumber = 0;
       e2.activeScene.gameController.fire('playing');
       expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 2, highest: 2 });
+    });
+
+    it('reaching night 1 from it (slept through, or skipped at the bunk) marks it played: New game starts on night 1 next time', async () => {
+      const { e2 } = await withTutorial();
+      await click('newGame');
+      expect(e2.activeScene.nights.setNight).toHaveBeenLastCalledWith(0);
+      e2.activeScene.nights.setNight(1);
+      expect(JSON.parse(storage.map.get(PROGRESS_KEY))).toEqual({ night: 1, highest: 1 });
+      a2.dispose();
+      const { e2: e3 } = await withTutorial();
+      await click('newGame');
+      expect(e3.activeScene.nights.setNight).not.toHaveBeenCalled();
+    });
+
+    it('a new player\'s main menu keeps Select night back until the tutorial is played', async () => {
+      await withTutorial();
+      expect(document.querySelector('[data-action="nightSelect"]')).toBeNull();
+      a2.dispose();
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: null, highest: 1 }));
+      await withTutorial();
+      expect(document.querySelector('[data-action="nightSelect"]')).not.toBeNull();
     });
   });
 
@@ -1499,7 +1534,18 @@ describe('App intro (New game)', () => {
       expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
     });
 
+    it("a new player's New game: the intro, then its end card begins night 0", async () => {
+      await withTutorial();
+      await click('newGame');
+      expect(app.flow.screen).toBe('intro');
+      expect(engine.activeScene.nights.setNight).not.toHaveBeenCalled();
+      await begin();
+      expect(engine.activeScene.nights.setNight).toHaveBeenCalledWith(0);
+      expect(app.flow.state).toBe('playing');
+    });
+
     it('backed out of with Esc, New game\'s intro then begins night 1, not night 0', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: null, highest: 1 }));   // played before
       await withTutorial();
       await click('tutorial');
       key('Escape');

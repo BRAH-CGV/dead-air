@@ -25,6 +25,10 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 //   - In the morning the box goes in the buggy's boot and the buggy is
 //     sent off (the bunk waits for it); the words hide through the cutscene.
 //
+// It can be skipped: until the nap step the bunk offers to sleep until
+// 6 AM (Bed), which is `skip()`, straight on to night 1 the way sleeping
+// does; the line under every step says so (SKIP_NOTE).
+//
 // Subscribes in onStart and reads the controller's night there, like
 // Sandstorm: New game sets night 0 before the scene's first frame.
 // ─────────────────────────────────────────────
@@ -38,8 +42,6 @@ export const TUTORIAL = Object.freeze({
   /** The one signal: off the dish's park (45°, −55°) by more than a
    *  signal's reach, so the cursor has to be moved onto it. */
   signal: Object.freeze({ yaw: Math.PI / 4 + 0.6, pitch: -0.6 }),
-  /** Where a retry of night 0 starts, past the story. */
-  retryStep: 'deskBox',
 });
 
 export class Tutorial extends Component {
@@ -117,8 +119,9 @@ export class Tutorial extends Component {
     this.overlay?.hide();
   }
 
-  /** A night starts (or is retried): on for night 0, off for the rest. */
-  _begin(night, { retry = false } = {}) {
+  /** A night starts (or is retried, from the first step again): on for
+   *  night 0, off for the rest. */
+  _begin(night) {
     this.active = night === TUTORIAL.night;
     if (!this.active) {
       this.overlay?.hide();
@@ -128,7 +131,25 @@ export class Tutorial extends Component {
     this.clock.pause();
     this._setUpSignal();
     this.runner.reset();
-    if (retry) this.runner.goTo(TUTORIAL.retryStep);
+  }
+
+  /** The bunk may skip the tutorial: night 0 being played, before the nap
+   *  step (from there sleeping until 6 AM is the lesson), and not already
+   *  in the bunk. */
+  get canSkip() {
+    return this.active && this.controller.state === 'playing' && this.runner.skippable
+      && !this.nap?.napping && !this.bedRest?.active;
+  }
+
+  /** Skip the tutorial: on to night 1 the way sleeping does (through the
+   *  night counter, so the HUD and the quota follow), no quota or buggy
+   *  asked for. False where there is nothing to skip. */
+  skip() {
+    if (!this.active || this.controller.state !== 'playing') return false;
+    const { controller } = this;
+    if (controller.nights) controller.nights.advance();
+    else controller.startNight(controller.nightNumber + 1);
+    return true;
   }
 
   /** The night's signals cut to one, placed, hidden until the player is
