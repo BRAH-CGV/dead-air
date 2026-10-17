@@ -4,7 +4,8 @@
 // Night 0 is the tutorial. It tells the story in a few timed cards, then
 // walks the player through one of everything: a drive box brought to the
 // desk, a drive from it into the reader, a signal found, scanned and saved,
-// the drive boxed and the box docked (a quota of one); a storm that takes
+// the drive carried to the server room's processing console and processed
+// there, then boxed and the box docked (a quota of one); a storm that takes
 // the power, the flashlight, the generator brought back; a nap until 6 AM,
 // the box sent off in the buggy, and the sleep that starts night 1.
 //
@@ -13,14 +14,16 @@
 // component reads off the scene each frame:
 //
 //   holdingBox, boxOnDesk, driveIn, terminalOpen, onSignal, scanning,
-//   scanned, saved, boxed, quotaMet, powerOn, flashlightOn, suitOn,
-//   napping, morning, boxInBuggy, dispatched
+//   scanned, saved, driveAtConsole, consoleOpen, processed, boxed, quotaMet,
+//   powerOn, flashlightOn, suitOn, napping, morning, boxInBuggy, dispatched
 //
 // The runner skips past a step that is already done, so a player who runs
 // ahead is never told to do what they already did. `target` names what the
 // arrow points at (the Tutorial component knows where each one is), or is
 // a function of ctx that names it; a step marked `desk` is done at the
 // computer, so away from it the view points back to the computer instead.
+// A step marked `console` is done the same way at the server room's
+// processing console.
 // ─────────────────────────────────────────────
 
 /** Shown in place of a `desk` step while the computer isn't up. */
@@ -28,6 +31,13 @@ export const COMPUTER_HINT = Object.freeze({
   title: 'USE THE COMPUTER',
   text: '[E] at the monitor on the desk.',
   target: 'computer',
+});
+
+/** Shown in place of a `console` step while the processing console isn't up. */
+export const CONSOLE_HINT = Object.freeze({
+  title: 'USE THE PROCESSING CONSOLE',
+  text: 'Put the drive in its reader and [E] at the console at the back of the server room.',
+  target: 'serverConsole',
 });
 
 export const TUTORIAL_STEPS = Object.freeze([
@@ -59,8 +69,14 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'save', title: 'SAVE IT TO THE DRIVE',
     text: 'Q saves the signal to the drive and leaves the computer.',
     done: c => c.saved && !c.terminalOpen },
+  { id: 'carry', title: 'TAKE THE DRIVE TO THE SERVER ROOM', target: 'serverReader',
+    text: 'Take the drive out of the reader and carry it to the server room. Put it in the reader on the console at the back.',
+    done: c => c.driveAtConsole || c.processed },
+  { id: 'process', console: true, title: 'PROCESS THE SIGNAL',
+    text: 'Click Upgrade Signal. Hold the slider and drag it left or right to keep the bright line in the moving band until the bar fills.',
+    done: c => c.processed },
   { id: 'box', title: 'PUT THE DRIVE BACK IN THE BOX', target: 'box',
-    text: 'Take the drive out of the reader and put it back in the drive box.',
+    text: 'The drive glows cyan: processed. On night 3 only processed signals count. Q leaves the console; take the drive out and put it back in a drive box.',
     done: c => c.boxed },
   { id: 'dock', title: 'TAKE THE BOX TO THE AIRLOCK', target: 'dock',
     text: 'Set it in the dock by the suit locker. The drives in it are the night\'s quota.',
@@ -158,13 +174,17 @@ export class TutorialRunner {
   view(ctx) {
     const view = this._view;
     const step = this.step;
-    const away = step?.desk && !ctx.terminalOpen;
-    const shown = away ? COMPUTER_HINT : step;
+    const shown = step?.desk && !ctx.terminalOpen ? COMPUTER_HINT
+      : step?.console && !ctx.consoleOpen ? CONSOLE_HINT
+      : step;
     view.title = shown?.title ?? '';
     view.text = shown?.text ?? '';
     const target = typeof shown?.target === 'function' ? shown.target(ctx) : shown?.target;
-    view.target = (!ctx.terminalOpen && target) || null;
-    view.compact = !!ctx.terminalOpen;
+    // A screen up (the computer or the processing console) is where the
+    // player is looking: the words shrink to a strip at its top, no arrow.
+    const onScreen = !!(ctx.terminalOpen || ctx.consoleOpen);
+    view.target = (!onScreen && target) || null;
+    view.compact = onScreen;
     return view;
   }
 
