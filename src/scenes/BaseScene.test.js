@@ -646,8 +646,8 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
   });
 
-  /** Dock a shelf box with enough saved drives to meet the quota, then run
-   *  the clock out: it is morning. */
+  /** Dock a shelf box with enough saved drives to meet the quota, enough of
+   *  them processed, then run the clock out: it is morning. */
   function workTheShift() {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
@@ -657,6 +657,7 @@ describe('BaseScene gameplay loop', () => {
     for (let i = 0; i < dock.requiredCount; i++) {
       seated[i].setSaved(true);
     }
+    for (let i = 0; i < dock.requiredProcessed; i++) seated[i].setSignalLevel(2);
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
@@ -793,6 +794,7 @@ describe('BaseScene gameplay loop', () => {
     dock.socket.attach(docked, 0);
     const dockedDrives = docked.receiver.attachedItems.filter(Boolean);
     for (let i = 0; i < dock.requiredCount; i++) dockedDrives[i].setSaved(true);
+    for (let i = 0; i < dock.requiredProcessed; i++) dockedDrives[i].setSignalLevel(2);
     const otherDrive = other.receiver.attachedItems[0];
     otherDrive.setSaved(true);
     gameController.onSignalSaved();
