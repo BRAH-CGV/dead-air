@@ -2688,6 +2688,7 @@ export class BaseScene extends Scene {
   _addTutorial() {
     const office = this.rooms.MainOffice;
     const airlock = this.rooms.Airlock;
+    const server = this.rooms.ServerRoom;
     const boxes = office.driveBoxes ?? [];
     const eye = new THREE.Vector3();
     const at = new THREE.Vector3();
@@ -2714,6 +2715,8 @@ export class BaseScene extends Scene {
       drives:        office.drives ?? [],
       driveBoxes:    boxes,
       quotaDock:     airlock.quotaDock ?? null,
+      serverSlot:    server?.driveSlot ?? null,
+      processingScreen: this.processingScreen ?? null,
       grid:          this.power ?? null,
       suit:          this.suit ?? null,
       nap:           this.nap ?? null,
@@ -2730,6 +2733,7 @@ export class BaseScene extends Scene {
       }),
       camera:        this.engine.camera ?? null,
       // The breaker panel has the mouse (_usePanel): it covers the words.
+      // (So does the processing console, but the tutorial shows over it.)
       covered:       () => !!this.engine.uiHasMouse,
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
@@ -2737,6 +2741,8 @@ export class BaseScene extends Scene {
         box:       { object: nearestBox, lift: 0.1 },
         desk:      { object: office.boxSpot ?? null, lift: 0.1 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
+        serverReader:  { object: server?.driveSlot?.gameObject?.object3d ?? null, lift: 0.05 },
+        serverConsole: { object: server?.root.find('ServerConsole')?.object3d ?? null, lift: 0.6 },
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },

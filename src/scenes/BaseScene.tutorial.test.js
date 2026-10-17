@@ -86,6 +86,14 @@ describe('BaseScene tutorial (night 0)', () => {
     }
   });
 
+  it("reads the server room's processing console, and points at its reader", () => {
+    const server = scene.rooms.ServerRoom;
+    expect(scene.tutorial.serverSlot).toBe(server.driveSlot);
+    expect(scene.tutorial.processingScreen).toBe(scene.processingScreen);
+    expect(scene.tutorial.targets.serverReader.object).toBe(server.driveSlot.gameObject.object3d);
+    expect(scene.tutorial.targets.serverConsole.object).toBe(server.root.find('ServerConsole').object3d);
+  });
+
   it("reads the buggy's boot and the send-off, and points at the boot", () => {
     expect(scene.tutorial.cargoDock).toBe(scene.buggyCargo.dock);
     expect(scene.tutorial.sendOff).toBe(scene.buggySendOff ?? null);
