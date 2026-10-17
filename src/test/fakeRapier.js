@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { GameObject } from '../core/GameObject.js';
+import { onCleanup } from './cleanup.js';
 
 // ─────────────────────────────────────────────
 // Test helpers: a recording Rapier fake and an engine stub
@@ -16,6 +17,10 @@ import { GameObject } from '../core/GameObject.js';
 //   vi.mock('@dimforge/rapier3d', async () =>
 //     (await import('../../test/fakeRapier.js')).rapierModule());
 //   import { makeEngine } from '../../test/fakeRapier.js';
+//
+// An engine made in a test is emptied once the test is over, so whatever a
+// mock still holds of it keeps nothing; one made in a beforeAll lasts to the
+// end of the file (see cleanup.js).
 // ─────────────────────────────────────────────
 
 function bodyDesc(type) {
@@ -105,13 +110,15 @@ export class FakeWorld {
       bodyType: () => desc.type,
       setTranslation: (t) => { desc.t = { ...t }; },
       setRotation: (q) => { desc.q = { ...q }; },
-      setGravityScale: vi.fn(),
-      setLinearDamping: vi.fn(),
-      setAngularDamping: vi.fn(),
-      setLinvel: vi.fn(),
-      setAngvel: vi.fn(),
-      resetForces: vi.fn(),
-      addForce: vi.fn(),
+      // Plain functions, not vi.fn: a body per prop made seven mocks each,
+      // and Vitest keeps every mock until the file ends.
+      setGravityScale: () => {},
+      setLinearDamping: () => {},
+      setAngularDamping: () => {},
+      setLinvel: () => {},
+      setAngvel: () => {},
+      resetForces: () => {},
+      addForce: () => {},
       mass: () => 1,
       linvel: () => ({ x: 0, y: 0, z: 0 }),
     };
@@ -161,7 +168,14 @@ export function makeEngine() {
       return go;
     }),
   };
+  onCleanup(() => releaseEngine(engine));
   return engine;
+}
+
+/** Empties an engine: its scene, its world and what it spawned go with it,
+ *  however long a mock that closes over it is kept. */
+function releaseEngine(engine) {
+  for (const key of Object.keys(engine)) delete engine[key];
 }
 
 /** Every PointLight under a room. */

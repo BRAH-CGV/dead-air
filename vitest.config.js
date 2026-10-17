@@ -73,6 +73,9 @@ export default {
   },
   test: {
     include: ['src/**/*.test.js'],
+    // Clears every mock and frees each fake engine once a test is over:
+    // see src/test/cleanup.js.
+    setupFiles: ['src/test/setup.js'],
     server: {
       deps: { inline: [/rapier/] },
     },
