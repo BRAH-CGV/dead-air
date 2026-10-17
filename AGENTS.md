@@ -594,6 +594,11 @@ Centralized on `Engine.input`:
 
 `Engine.keyBinds` maps action names to codes (`flashlight` is `F`); every one of them can be rebound. There are no debug keys: the debug tools live in the developer console (see Debug tooling). `engine.consumeAction(action)` uses up the current press: `isAction` reads it as up until the key is released.
 
+**A carried object** (`PickupSystem`) works without a mouse wheel, for a laptop:
+
+- **R** (`rotateHeld`) turns it with the mouse instead of the view. Held, it turns while R is down. Tapped (let go within `ROTATE_TAP`, 0.25 s), it keeps turning until R is pressed again or the object is dropped, and the prompt reads "[R] Stop rotating". The tap is for a touchpad: Windows ignores the touchpad while a key is held (palm rejection), so holding R and moving a finger turned nothing.
+- **↑ / ↓** (`holdFurther` / `holdCloser`), held, push it away and pull it in at `PUSH_SPEED` (1.5 m/s), within the Pickupable's reach, as the wheel does. Not while the player is held still (`inputLocked`: the security monitor steps its cameras with them) or the terminal is up. Once either has been used, the object stops easing back to 1 m, as it does after the first scroll.
+
 ### Wind dust
 
 `createWindDust` (`src/gameobjects/WindDust.js`, as `scene.windDust`) is the wind made visible: low, ragged clouds of dust blowing across the ground outside and past the office window. Nothing reaches above 2.6 m, so the sky stays clear.
