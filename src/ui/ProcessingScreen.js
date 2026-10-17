@@ -72,6 +72,8 @@ export class ProcessingScreen {
   _isDragging = false;
   /** Last RAF timestamp for computing dt in the tuning loop. */
   _lastTuningTime = 0;
+  /** Whether the screen is up: from open() to close(). */
+  _open = false;
 
   constructor(root = typeof document !== 'undefined' ? document.getElementById('processing-screen') : null) {
     this.root = root;
@@ -103,12 +105,16 @@ export class ProcessingScreen {
    *  @param {import('../core/Engine.js').Engine} engine */
   setEngine(engine) { this._engine = engine; }
 
+  /** Whether the screen is up (the tutorial reads it). */
+  get isOpen() { return this._open; }
+
   /** Open the screen. `drive` may be null (blank preview). `actions` is an
    *  array of abstract control descriptors.
    *  @param {object|null} drive
    *  @param {Array<{id:string, label:string, enabled:boolean, onClick?:function, render?:function}>} actions */
   open(drive, actions = []) {
     if (!this.root) return;
+    this._open = true;
     this._drive = drive;
     this._actions = actions;
     this._updateSpectrogram(drive);
@@ -126,6 +132,7 @@ export class ProcessingScreen {
   /** Close the screen and restore input. */
   close() {
     if (!this.root) return;
+    this._open = false;
     this.root.style.display = 'none';
     this._stopScanline();
     this._stopProgressTracking();
