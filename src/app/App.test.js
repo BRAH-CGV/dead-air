@@ -72,6 +72,7 @@ function makeEngine() {
     keyBinds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
+      holdFurther: 'ArrowUp', holdCloser: 'ArrowDown',
     },
     revealed: Promise.resolve(),
     levelEditor: { enabled: false },
