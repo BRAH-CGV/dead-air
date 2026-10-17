@@ -10,6 +10,24 @@ import { createMarsSky } from '../gameobjects/MarsSky.js';
 
 // ── Suit indicator ────────────────────────────────────────
 // A stand-in root: HUD only ever reaches its elements through querySelector.
+describe('HUD drive count', () => {
+  function fakeRoot() {
+    const signals = { textContent: '' };
+    return { signals, root: { style: {}, querySelector: sel => (sel === '#hud-signals' ? signals : null) } };
+  }
+
+  it('shows the drives, and how many of them are processed when the night asks for any', () => {
+    const { signals, root } = fakeRoot();
+    const hud = new HUD(root);
+
+    hud.setSignals(3, 6, { processed: 1, processedRequired: 2 });
+    expect(signals.textContent).toBe('Drives: 3 / 6 · Processed: 1 / 2');
+
+    hud.setSignals(1, 1);
+    expect(signals.textContent).toBe('Drives: 1 / 1');
+  });
+});
+
 describe('HUD suit indicator', () => {
   function fakeRoot() {
     const suit = { textContent: '', style: { display: 'none' } };
