@@ -5,7 +5,7 @@ import { dreamLevel } from '../gameplay/dream.js';
 
 const DT = 1 / 60;
 
-function setup(level = 1) {
+function setup(level = 1, base = { x: 0, z: 0 }) {
   const position = new THREE.Vector3(0, 1, 6);
   const camera = new THREE.PerspectiveCamera(75);
   const controller = {
@@ -15,7 +15,7 @@ function setup(level = 1) {
   };
   const walk = new DreamWalk({
     level,
-    base: { x: 0, z: 0 },
+    base,
     controller,
     camera,
     sky: { setStorm: vi.fn() },
@@ -105,6 +105,41 @@ describe('DreamWalk (#101)', () => {
     expect(three.controller.speedScale).toBe(1);
     expect(three.controller.inputLocked).toBe(false);
     expect(three.camera.fov).toBe(75);
+  });
+
+  describe('a base with a footprint: measured from its walls, not its middle', () => {
+    const BASE = { x: 0, z: 2, halfX: 16, halfZ: 6 };
+
+    it('walks at full speed beside a long wall, however far that is from the middle', () => {
+      const s = setup(3, BASE);
+      // 15 m from the middle along the long side, but only 3 m from the east end.
+      stepTo(s.walk, s.position, BASE.halfX + 3, 2);
+      expect(s.controller.speedScale).toBe(1);
+      expect(s.walk.fog.density).toBeCloseTo(s.L.fogBase);
+    });
+
+    it('slows and pulls by the distance from the nearest wall', () => {
+      const s = setup(1, BASE);
+      stepTo(s.walk, s.position, 0, 2 + BASE.halfZ + (s.L.slowStart + s.L.pullRadius) / 2);
+      expect(s.controller.speedScale).toBeLessThan(1);
+      stepTo(s.walk, s.position, 0, 2 + BASE.halfZ + s.L.pullRadius + 1);
+      expect(s.walk.state).toBe('pulled');
+    });
+
+    it('drags the player straight back to the nearest wall, and wakes them clear of it', () => {
+      const s = setup(1, BASE);
+      stepTo(s.walk, s.position, BASE.halfX + s.L.pullRadius + 1, 4);
+      let nearest = Infinity;
+      for (let i = 0; i < 60 * 120 && s.walk.state === 'pulled'; i++) {
+        s.walk.onUpdate(DT);
+        expect(s.position.z).toBeCloseTo(4, 6);   // straight back, along x
+        nearest = Math.min(nearest, s.position.x - BASE.halfX);
+      }
+      expect(s.walk.state).toBe('awake');
+      // Never into the base: it lets go a few metres out from the wall.
+      expect(nearest).toBeGreaterThan(5);
+      expect(nearest).toBeLessThan(10);
+    });
   });
 
   describe('no endless crawl (playtest)', () => {

@@ -16,11 +16,16 @@ import { dreamLevel, walkScale, unease, RING_UNEASE } from '../gameplay/dream.js
 //   awake    back at the base: the screen goes black and onWake runs, once
 //            (the scene brings the picture back when the base is ready)
 //
+// Distances are from the base's footprint (`base`: a rectangle, its centre
+// and half its size each way), so every radius is metres from its walls,
+// and the pull lets go WAKE_RADIUS out from the nearest one: never inside a
+// long building. With no size it is a point, the base's middle.
+//
 // Everything it touched is handed back in onDestroy, so a scene swap
 // mid-dream leaves no slowed player or warped camera behind.
 // ─────────────────────────────────────────────
 
-/** Metres from the base where the pull lets go and the player wakes. */
+/** Metres from the base's walls where the pull lets go and the player wakes. */
 const WAKE_RADIUS = 7;
 
 export class DreamWalk extends Component {
@@ -30,7 +35,8 @@ export class DreamWalk extends Component {
   /**
    * @param {object} opts
    * @param {number} [opts.level=1]
-   * @param {{x: number, z: number}} [opts.base]  The base's centre
+   * @param {{x: number, z: number, halfX?: number, halfZ?: number}} [opts.base]
+   *        The base's footprint: its centre, and half its size each way (0, a point)
    * @param {object} opts.controller  The FirstPersonController (speedScale, inputLocked, yaw, pitch, teleport)
    * @param {THREE.PerspectiveCamera} [opts.camera]
    * @param {{ setStorm: (k: number) => void }} [opts.sky]
@@ -62,8 +68,10 @@ export class DreamWalk extends Component {
     const L = this.rules;
     const pos = this.controller.gameObject?.object3d?.position;
     if (!pos) return;
-    const dx = pos.x - this.base.x;
-    const dz = pos.z - this.base.z;
+    // From the nearest point of the footprint: the way back, and how far.
+    const { x, z, halfX = 0, halfZ = 0 } = this.base;
+    const dx = pos.x - Math.min(Math.max(pos.x, x - halfX), x + halfX);
+    const dz = pos.z - Math.min(Math.max(pos.z, z - halfZ), z + halfZ);
     const distance = Math.hypot(dx, dz);
     const k = this.state === 'pulled' ? 1 : unease(distance, L);
 
@@ -81,9 +89,11 @@ export class DreamWalk extends Component {
       return;
     }
 
-    // Pulled: dragged straight back, faster the longer it lasts.
+    // Pulled: dragged straight back to the nearest wall, faster the longer
+    // it lasts.
     this._pullSpeed += L.drag * dt;
-    const step = Math.min(this._pullSpeed * dt, Math.max(0, distance - WAKE_RADIUS));
+    if (distance <= WAKE_RADIUS) { this.wake(); return; }
+    const step = Math.min(this._pullSpeed * dt, distance - WAKE_RADIUS);
     const nx = pos.x - (dx / distance) * step;
     const nz = pos.z - (dz / distance) * step;
     this.controller.teleport([nx, pos.y, nz], { yaw: this.controller.yaw, pitch: this.controller.pitch });

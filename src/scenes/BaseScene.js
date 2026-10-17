@@ -576,8 +576,7 @@ export class BaseScene extends Scene {
     // metres along the edge from its corner.
     const louvre = (name, at) => ({ edge: edge(name), at, y: 2.2, width: 1.3, height: 0.5 });
     const backWindow = office.openings.find(o => o.side === 'back');
-    const shell = createBunkerShell({
-      engine: this.engine,
+    const spec = {
       outline: Object.values(corners),
       height: ob.max.y,
       roofProps: [
@@ -600,10 +599,14 @@ export class BaseScene extends Scene {
         width: backWindow.width, height: backWindow.height,
         radius: WINDOW_CORNER_RADIUS,
       }],
-    });
+    };
+    const shell = createBunkerShell({ engine: this.engine, ...spec });
     this._sceneRoot.addChild(shell);
     for (const resource of shell.resources) this._own(resource);
     this.bunker = shell;
+    /** What it was built from: the dream's base is the same shell
+     *  (DreamScene's BASE_SHELL, pinned to this by BaseScene.bunker.test.js). */
+    this.bunkerSpec = spec;
 
     // The office's back wall is the one stretch of the rooms' own shell left
     // in view outside: in the slopes' weathered concrete, laid out as theirs,
