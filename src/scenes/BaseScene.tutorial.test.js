@@ -79,6 +79,20 @@ describe('BaseScene tutorial (night 0)', () => {
     expect(scene.nightClock.paused).toBe(true);
   });
 
+  it('the bunk skips it: on night 0 it offers to sleep until 6 AM, and that lands on night 1', () => {
+    const bed = scene.rooms.LivingQuarters.bed;
+    expect(bed.tutorial).toBe(scene.tutorial);
+    scene.nights.setNight(0);
+    frames(0.1);
+    bed.onUpdate();
+    expect(bed.promptLabel).toMatch(/skip the tutorial/i);
+    expect(scene.tutorial.skip()).toBe(true);
+    expect(scene.nights.currentNight).toBe(1);
+    expect(scene.gameController.nightNumber).toBe(1);
+    expect(scene.gameController.state).toBe('playing');
+    expect(scene.tutorial.active).toBe(false);
+  });
+
   it('every arrow has something to point at', () => {
     for (const [name, target] of Object.entries(scene.tutorial.targets)) {
       const object = typeof target.object === 'function' ? target.object() : target.object;

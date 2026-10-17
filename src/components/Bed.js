@@ -37,6 +37,10 @@ import { keyName } from '../app/keyNames.js';
 // false when there's no dream to be had, and the sleep goes on as before.
 // Naps never dream.
 //
+// On night 0, until the tutorial's nap step (`bed.tutorial`, Tutorial), the
+// bunk is the way out of it: "[E] Sleep until 6:00 AM — skip the tutorial"
+// lies you down and wakes you into night 1, no quota, buggy or dream needed.
+//
 // promptLabel is a data field refreshed every frame — InteractionSystem
 // re-shows a label that changes while it's being looked at.
 // ─────────────────────────────────────────────
@@ -77,6 +81,7 @@ const LABEL = {
   uneasy: "Can't sleep now",
   deliver: 'Load the drive box into the buggy first',
   send: 'Send the buggy off first',
+  skip: '[E] Sleep until 6:00 AM — skip the tutorial',
 };
 
 export class Bed extends Interactable {
@@ -95,6 +100,8 @@ export class Bed extends Interactable {
   /** Between nights: `(night) => boolean`, dream instead of waking into the
    *  next night; false if there's no dream (#101). Set by the scene. */
   dream = null;
+  /** Night 0's Tutorial: while it `canSkip`, the bunk skips it. Set by the scene. */
+  tutorial = null;
 
   promptLabel = '';
 
@@ -104,6 +111,7 @@ export class Bed extends Interactable {
 
   /** Looked at: the rotate key steps the alarm, once per press. */
   onHover() {
+    if (this.tutorial?.canSkip) return;   // no alarm to set
     const engine = this._engine();
     if (!this.nap?.canNap || !engine?.isAction?.('rotateHeld')) return;
     engine.consumeAction?.('rotateHeld');
@@ -112,6 +120,10 @@ export class Bed extends Interactable {
 
   onInteract() {
     if (this.rest?.active) return;
+    if (this.tutorial?.canSkip) {
+      this._skipTutorial();
+      return;
+    }
     if (!this.controller?.canSleep) {
       if (this.nap?.canNap) this.nap.start(NAP.lengths[this.napLength]);
       return;
@@ -139,12 +151,26 @@ export class Bed extends Interactable {
     else sleep();
   }
 
+  /** Lie down, skip to night 1 once the eyes are shut, and get up into it. */
+  _skipTutorial() {
+    const skip = () => this.tutorial.skip();
+    if (this.rest) {
+      this.rest.lieDown(() => {
+        skip();
+        if (this.controller.state === 'playing') this.rest.getUp('calm');
+        else this.rest.cancel();
+      });
+    } else if (this.fade) this.fade.play(skip);
+    else skip();
+  }
+
   _label() {
     const c = this.controller;
     if (!c || this.rest?.active) return '';
     if (c.canSleep) return LABEL.sleep;
     if (c.state === 'morning') return c.delivered ? LABEL.send : LABEL.deliver;
     if (c.state !== 'playing' || this.nap?.napping) return '';
+    if (this.tutorial?.canSkip) return LABEL.skip;
     if (!this.nap) return LABEL.shift;
     return this.nap.canNap ? this._napLabel() : LABEL.uneasy;
   }

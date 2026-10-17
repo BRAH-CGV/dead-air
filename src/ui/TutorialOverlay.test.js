@@ -104,6 +104,18 @@ describe('TutorialOverlay', () => {
     expect(root.querySelector('.tutorial-text').textContent).toBe('[F] at the monitor.');
   });
 
+  it('a standing note under the card (the skip line), and none when the view has none', () => {
+    const note = root.querySelector('.tutorial-note');
+    expect(note).not.toBe(null);
+    overlay.show({ title: 'X', text: 'y', note: 'Sleep until 6 AM at the bunk to skip the tutorial.', compact: false });
+    expect(note.textContent).toBe('Sleep until 6 AM at the bunk to skip the tutorial.');
+    expect(note.style.display).not.toBe('none');
+    overlay.show({ title: 'X', text: 'y', note: '', compact: false });
+    expect(note.style.display).toBe('none');
+    overlay.show({ title: 'X', text: 'y', compact: false });
+    expect(note.style.display).toBe('none');
+  });
+
   it('compact while the computer is up', () => {
     overlay.show({ title: 'SCAN IT', text: 'Enter.', compact: true });
     expect(root.classList.contains('compact')).toBe(true);

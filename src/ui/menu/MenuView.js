@@ -186,8 +186,9 @@ export class MenuView {
 
   // ── Screens ───────────────────────────────
 
-  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string, tutorial?: boolean }} m */
-  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '', tutorial = false }) {
+  /** @param {{ tagline?: string[], version?: string, continueNight?: number|null, hint?: string, tutorial?: boolean, nightSelect?: boolean }} m
+   *  `nightSelect` false keeps Select night back (a new player plays the tutorial first). */
+  _drawMain({ tagline = TAGLINE, version = '', continueNight = null, hint = '', tutorial = false, nightSelect = true }) {
     this._hint = h('div', { class: 'menu-hint', role: 'status' }, hint);
     return [
       h('h1', { class: 'menu-title' }, COPY.title, h('span', { class: 'menu-cursor', 'aria-hidden': 'true' })),
@@ -197,7 +198,7 @@ export class MenuView {
         option('newGame', 'New game'),
         continueNight ? option('continue', `Continue — Night ${continueNight}`) : null,
         tutorial ? option('tutorial', 'Tutorial') : null,
-        option('nightSelect', 'Select night'),
+        nightSelect ? option('nightSelect', 'Select night') : null,
         option('settings', 'Settings'),
         option('credits', 'Credits'),
       ),

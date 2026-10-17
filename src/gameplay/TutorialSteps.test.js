@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT } from './TutorialSteps.js';
+import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT, SKIP_NOTE } from './TutorialSteps.js';
 
 // ─────────────────────────────────────────────
 // TutorialSteps — night 0's steps, one at a time (pure)
@@ -15,12 +15,24 @@ const fresh = (over = {}) => ({
 
 const ids = () => TUTORIAL_STEPS.map(s => s.id);
 
-/** A runner moved on to the step `id`, its intro cards played out. */
+/** A runner moved on to the step `id`, each step before it done in turn.
+ *  What is done stays done, as in the game: a step already done when it is
+ *  reached is passed straight on, so a fresh ctx at every step would run on
+ *  past `id`. */
 function at(id, ctx = fresh()) {
+  const target = ids().indexOf(id);
+  if (target < 0) throw new Error(`no step '${id}'`);
   const runner = new TutorialRunner();
-  const intro = TUTORIAL_STEPS.filter(s => s.seconds && ids().indexOf(s.id) < ids().indexOf('deskBox'));
-  for (const card of intro) runner.update(card.seconds + 0.01, ctx);
-  while (runner.step.id !== id) runner.update(0.01, { ...ctx, ...doneFor(runner.step) });
+  let state = { ...ctx };
+  runner.update(0.01, state);
+  while (runner.step?.id !== id) {
+    if (runner.finished || ids().indexOf(runner.step.id) > target) {
+      throw new Error(`ran past '${id}' to '${runner.step?.id ?? 'the end'}'`);
+    }
+    const step = runner.step;
+    state = { ...state, ...doneFor(step) };
+    runner.update(step.seconds ? step.seconds + 0.01 : 0.01, state);
+  }
   return runner;
 }
 
@@ -29,8 +41,10 @@ function doneFor(step) {
   return {
     deskBox: { boxOnDesk: true }, flashlight: { flashlightOn: true },
     drive: { driveIn: true }, computer: { terminalOpen: true }, aim: { onSignal: true },
-    scan: { scanned: true }, save: { saved: true }, box: { boxed: true }, dock: { quotaMet: true },
-    storm: { powerOn: false }, suit: { suitOn: true }, generator: { powerOn: true },
+    scan: { scanned: true }, save: { saved: true, terminalOpen: false }, box: { boxed: true },
+    dock: { quotaMet: true }, storm: { powerOn: false }, flashlight: { flashlightOn: true },
+    suit: { suitOn: true }, generator: { powerOn: true }, inside: { suitOn: false },
+    nap: { napping: true }, wait: { morning: true }, buggy: { dispatched: true },
   }[step.id] ?? {};
 }
 
@@ -43,10 +57,11 @@ describe('TUTORIAL_STEPS', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  it('opens on the story, in timed cards', () => {
-    const first = TUTORIAL_STEPS[0];
-    expect(first.seconds).toBeGreaterThan(0);
-    expect(first.title).toMatch(/NIGHT 0/);
+  it('opens straight on the first job: the story is the intro animation\'s, not told again here', () => {
+    expect(TUTORIAL_STEPS[0].id).toBe('deskBox');
+    const firstJob = ids().indexOf('deskBox');
+    expect(TUTORIAL_STEPS.slice(0, firstJob)).toEqual([]);
+    expect(TUTORIAL_STEPS.some(s => /NIGHT 0|COLONY|LISTEN TO THE SKY/.test(s.title))).toBe(false);
   });
 
   it('every step has big words and a line under them, and ends on a timer or a test', () => {
@@ -63,13 +78,13 @@ describe('TUTORIAL_STEPS', () => {
 });
 
 describe('TutorialRunner', () => {
-  it('plays each intro card for its seconds', () => {
-    const runner = new TutorialRunner();
-    const first = TUTORIAL_STEPS[0];
-    runner.update(first.seconds - 0.1, fresh());
-    expect(runner.step.id).toBe(first.id);
-    runner.update(0.2, fresh());
-    expect(runner.step.id).toBe(TUTORIAL_STEPS[1].id);
+  it('plays a timed card for its seconds', () => {
+    const runner = at('quota');
+    const quota = TUTORIAL_STEPS.find(t => t.id === 'quota');
+    runner.update(quota.seconds - 0.1, fresh({ quotaMet: true }));
+    expect(runner.step.id).toBe('quota');
+    runner.update(0.2, fresh({ quotaMet: true }));
+    expect(runner.step.id).toBe('storm');
   });
 
   it('first a drive box on the desk: the arrow is on the box, then on the desk while it is carried', () => {
@@ -110,7 +125,7 @@ describe('TutorialRunner', () => {
     expect(onEnter.mock.calls[0][0].id).toBe(TUTORIAL_STEPS[0].id);
     runner.update(0.01, fresh());
     expect(onEnter).toHaveBeenCalledTimes(1);
-    runner.update(TUTORIAL_STEPS[0].seconds, fresh());
+    runner.update(0.01, fresh({ boxOnDesk: true }));
     expect(onEnter).toHaveBeenCalledTimes(2);
     expect(onEnter.mock.calls[1][0].id).toBe(TUTORIAL_STEPS[1].id);
   });
@@ -223,10 +238,32 @@ describe('TutorialRunner.view', () => {
     expect(view.target).toBe('computer');
   });
 
-  it('no arrow on the story cards', () => {
+  it('no arrow on a timed card', () => {
+    const runner = at('quota');
+    expect(runner.view(fresh({ quotaMet: true })).target).toBe(null);
+  });
+
+  it('the skip line is under the first step, and stays, until the nap', () => {
+    expect(SKIP_NOTE).toMatch(/6 AM/);
+    expect(SKIP_NOTE).toMatch(/skip the tutorial/i);
     const runner = new TutorialRunner();
     runner.update(0.01, fresh());
-    expect(runner.view(fresh()).target).toBe(null);
+    expect(runner.view(fresh()).note).toBe(SKIP_NOTE);
+    expect(runner.skippable).toBe(true);
+    for (const id of ['computer', 'aim', 'quota', 'storm', 'generator', 'inside']) {
+      const later = at(id);
+      expect(later.view(fresh()).note, id).toBe(SKIP_NOTE);
+      expect(later.view(fresh({ terminalOpen: true })).note, `${id}, at the computer`).toBe(SKIP_NOTE);
+      expect(later.skippable, id).toBe(true);
+    }
+  });
+
+  it('from the nap on, sleeping until 6 AM is the lesson itself: no skip line', () => {
+    for (const id of ['nap', 'wait', 'buggy', 'sleep']) {
+      const runner = at(id);
+      expect(runner.view(fresh()).note, id).toBe('');
+      expect(runner.skippable, id).toBe(false);
+    }
   });
 
   it('reuses one view object (no garbage a frame)', () => {

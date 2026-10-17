@@ -69,6 +69,11 @@ describe('MenuView', () => {
       expect(byAction(view, 'tutorial').textContent).toMatch(/tutorial/i);
     });
 
+    it('keeps Select night back for a new player, who plays the tutorial first', () => {
+      view.show('main', { ...model, tutorial: true, nightSelect: false });
+      expect(items(view).map(b => b.dataset.action)).toEqual(['newGame', 'tutorial', 'settings', 'credits']);
+    });
+
     it('offers Continue with the saved night', () => {
       view.show('main', { ...model, continueNight: 2 });
       expect(byAction(view, 'continue').textContent).toMatch(/night 2/i);
