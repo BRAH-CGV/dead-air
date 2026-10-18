@@ -38,6 +38,7 @@ import { applySettings } from './applySettings.js';
 import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
 import { DevConsole } from './devConsole/DevConsole.js';
 import { createCommands } from './devConsole/commands.js';
+import { RunRecord } from '../gameplay/RunRecord.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -284,6 +285,7 @@ export class App {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
         this._saveNight(null);   // a new run: Continue returns from night 2
+        this._newRun(this.intro?.array);
         this.flow.newGame();
         this.engine.setPaused(false);
       } else if (this.flow.screen === 'intro') {
@@ -292,6 +294,14 @@ export class App {
         this._setHint(COPY.lockRefused);
       }
     });
+  }
+
+  /** Start the run's record over (engine.run: what each morning's buggy
+   *  took to the hub), under the array the intro named. Reset in place, not
+   *  replaced: the scene under the menu already holds it. A restart keeps it;
+   *  nothing saves it. */
+  _newRun(array = null) {
+    (this.engine.run ??= new RunRecord()).reset({ array: array ?? null });
   }
 
   /** The tutorial: the intro first, like New game, then night 0. */
@@ -309,6 +319,7 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        this._newRun(this.intro?.array);
         this.engine.activeScene?.nights?.setNight(0);
         this.flow.newGame();
         this.engine.setPaused(false);
@@ -338,6 +349,7 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        this._newRun(null);   // no intro, so no array name
         this.engine.activeScene?.nights?.setNight(night);
         this._saveNight(null);   // a new run from here: Continue comes back as it's played
         this.flow.newGame();

@@ -4,6 +4,7 @@ import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { Journal } from '../../components/Journal.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
+import { BedroomPC } from '../../components/BedroomPC.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -41,6 +42,10 @@ import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 // the corridor. Only the storage racks stand on the right wall, in the
 // back half (z < −0.5): from there forward the metre inside the wall is
 // clear, so the doorway works anywhere in the front half.
+//
+// The computer (#114) stands on the desk's far half, its screen turned to
+// the chair: a placeholder monitor with the BedroomPC on it. BaseScene
+// hands it the panel, the run and the map.
 // ─────────────────────────────────────────────
 
 export class LivingQuarters extends Room {
@@ -57,6 +62,9 @@ export class LivingQuarters extends Room {
 
   /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
   coffeeMachine = null;
+
+  /** On the desk's monitor, from buildProps(). @type {BedroomPC|null} */
+  pc = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -168,6 +176,9 @@ export class LivingQuarters extends Room {
     [-1.3, -0.26].forEach((x, i) => {
       this._spawnProp('model:shelf', { name: `OfficeShelf_${i + 1}`, position: [x, 0, inZ - 0.2], rotationY: Math.PI / 2 });
     });
+
+    // The computer on the desk's far half, beyond the lamp.
+    this._buildComputer([0.03, 2.75]);
   }
 
   /** The coffee: a tall drinks machine, its back to the wall at `[x, z]`
@@ -203,6 +214,26 @@ export class LivingQuarters extends Room {
     detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
 
     this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
+  }
+
+  /** The computer (#114): a monitor standing on the desk top at `[x, z]`,
+   *  its screen turned to the chair (−x). A placeholder, like the office's
+   *  security monitor, whose model it borrows: a box the model's size is
+   *  the collider the interact ray lands on, and carries the BedroomPC; the
+   *  model is drawn only. A quarter turn, so the box stays square to the
+   *  room, its width along z. */
+  _buildComputer([x, z]) {
+    const [w, h, d] = [0.6, 0.379, 0.331];   // camera-monitor.glb
+    const top = 0.79;                        // simple-desk.glb's top
+    const yaw = -Math.PI / 2;
+    const go = this._addGroup('BedroomPC');
+    const position = [x, top + h / 2, z];
+    go.object3d.position.set(...position);
+    this._attachFixedBox(go, position, [d, h, w]);
+    this._spawnProp('model:camera-monitor', {
+      name: 'BedroomPCModel', position: [x, top, z], rotationY: yaw, physics: 'none',
+    });
+    this.pc = go.addComponent(new BedroomPC());
   }
 
   /** A lamp on the desk: base, stem and a glowing shade. A glow, not a

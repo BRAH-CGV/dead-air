@@ -1,4 +1,5 @@
 import { Component } from '../core/Component.js';
+import { processedDrives } from './RunRecord.js';
 
 // ─────────────────────────────────────────────
 // GameController  –  Top-level game state machine (Component)
@@ -19,13 +20,14 @@ import { Component } from '../core/Component.js';
 // With a cargo bay wired (the buggy's boot, a second DriveBoxDock), the
 // morning has one job first: carry the night's drive box out to the buggy,
 // load it (`delivered`: the boot holds a box with the night's quota in it)
-// and send the buggy off (`dispatch()`). The bed stays shut (canSleep) until
-// it has gone. Every night start brings it back.
+// and send the buggy off (`dispatch()`), which counts the processed drives
+// in its boot on the run's record (`run`) for the hub. The bed stays shut
+// (canSleep) until it has gone. Every night start brings it back.
 //
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
 // External references (set by the scene during wiring):
-//   nightClock, signalManager, satellite, terminal, hud, quotaDock, cargo
+//   nightClock, signalManager, satellite, terminal, hud, quotaDock, cargo, run
 // and the night counter through bindNights(nights).
 // ─────────────────────────────────────────────
 
@@ -71,6 +73,10 @@ export class GameController extends Component {
   cargo = null;
   /** Whether this morning's buggy has been sent off with the drives. */
   dispatched = false;
+  /** The run's record (engine.run): each send-off counts the processed
+   *  drives in the boot, for the bedroom PC. Null: nothing is recorded.
+   *  @type {import('./RunRecord.js').RunRecord|null} */
+  run = null;
 
   /** Which shift prompt is up (a PROMPT key), so it is set once, on change. */
   _shiftPrompt = null;
@@ -194,6 +200,7 @@ export class GameController extends Component {
   dispatch() {
     if (this.state !== 'morning' || !this.cargo || this.dispatched || !this.delivered) return false;
     this.dispatched = true;
+    this.run?.deliver(this.nightNumber, processedDrives(this.cargo.depositedBox));
     this._updateMorningPrompt();
     return true;
   }
