@@ -47,7 +47,6 @@ import { HUD, RadarOverlay } from '../ui/HUD.js';
 import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
-import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -935,12 +934,6 @@ export class BaseScene extends Scene {
       signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
-    // The previous operator's notebook (#79): tonight's entry, on paper.
-    const { journal } = this.rooms.LivingQuarters;
-    if (journal) {
-      journal.controller = this.gameController;
-      journal.panel = new JournalPanel();
-    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
