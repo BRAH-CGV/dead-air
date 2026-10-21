@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SCREEN_GLASS_GLSL } from '../gameobjects/ScreenGlass.js';
 
 // ─────────────────────────────────────────────
 // FeedDisplay  –  the security monitor's own picture (#161)
@@ -71,8 +72,8 @@ const FRAG = /* glsl */ `
 
   // A share of the screen, not of the picture's pixels, so the screen
   // looks the same drawn small or leaned in to.
-  #define SCANLINES 128.0
   #define GRAIN 180.0
+  ${SCREEN_GLASS_GLSL}
 
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -125,13 +126,10 @@ const FRAG = /* glsl */ `
     #include <colorspace_fragment>
 
     // The overlay (its bytes are as painted), then the monitor's glass over
-    // both: scanlines crawling slowly down, and a darker edge.
+    // both, as every screen wears it (ScreenGlass).
     vec4 ov = texture2D(tOverlay, vUv);
     gl_FragColor.rgb = mix(gl_FragColor.rgb, ov.rgb, ov.a * uHasOverlay);
-    float scan = 0.86 + 0.14 * step(0.334, fract(vUv.y * SCANLINES - uTime * 0.6));
-    vec2 edge = vUv * (1.0 - vUv);
-    float vignette = clamp(pow(edge.x * edge.y * 16.0, 0.25), 0.0, 1.0);
-    gl_FragColor.rgb *= scan * mix(0.45, 1.0, vignette);
+    gl_FragColor.rgb *= screenGlass(vUv);
   }
 `;
 

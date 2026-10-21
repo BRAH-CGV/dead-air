@@ -1618,7 +1618,7 @@ export class BaseScene extends Scene {
     const overlay = this.cameraOverlay?.root ?? null;
     this.cameraPicture = picture(camera, office, overlay, camera ? layoutFor(camera) : null,
       (ctx, w, h) => { if (overlay) paintDom(overlay, ctx, w, h); },
-      { quad: false, glass: false, colorSpace: THREE.NoColorSpace });
+      { quad: false, colorSpace: THREE.NoColorSpace });
     if (this.cameraPicture?.texture) this.feedDisplay?.setOverlay(this.cameraPicture.texture);
   }
 

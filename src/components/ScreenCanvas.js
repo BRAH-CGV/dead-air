@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { screenMesh } from './ScreenView.js';
+import { createScreenMaterial } from '../gameobjects/ScreenGlass.js';
 
 // ─────────────────────────────────────────────
 // ScreenCanvas  –  a screen's own picture, painted in 2D (#161)
@@ -18,10 +19,12 @@ import { screenMesh } from './ScreenView.js';
 //     seen: () => …, focused: () => view.holds(surface),
 //   }));
 //
-// Over the picture, faint scanlines and a darker edge (`glass`). Unlit and
-// not tone mapped: the screen glows at the colours painted. With
-// `quad: false` it is a texture only, for another screen's shader to lay
-// over its own picture (the camera feed's overlay, FeedDisplay).
+// The quad's shader wears the screen's glass — scanlines, a darker edge,
+// the rounded corners (ScreenGlass, as the camera monitor's does) — so a
+// repaint is only the overlay's own picture. Unlit and not tone mapped: the
+// screen glows at the colours painted. With `quad: false` it is a texture
+// only, for another screen's shader to lay over its own picture (the camera
+// feed's overlay, FeedDisplay).
 // ─────────────────────────────────────────────
 
 export const SCREEN_CANVAS = {
@@ -49,21 +52,18 @@ export class ScreenCanvas extends Component {
    * @param {number} [opts.corner]  The screen's corner radius, a share of its height.
    * @param {number} [opts.lift]    Off the glass, in the surface object's units.
    * @param {boolean} [opts.quad]   Show it on a quad over `surface`.
-   * @param {boolean} [opts.glass]  Scanlines and a darker edge over the picture.
    * @param {string} [opts.colorSpace]
    * @param {() => HTMLCanvasElement|null} [opts.createCanvas]
    */
   constructor({
     surface = null, painter, layout, seen = () => true, focused = () => false,
-    corner = 0, lift = 0, quad = true, glass = true, colorSpace = THREE.SRGBColorSpace, createCanvas = defaultCanvas,
+    corner = 0, lift = 0, quad = true, colorSpace = THREE.SRGBColorSpace, createCanvas = defaultCanvas,
   }) {
     super();
     this.painter = painter;
     this.layout = layout;
     this.seen = seen;
     this.focused = focused;
-    this.corner = corner;
-    this.glass = glass;
     this._since = 0;
     this._detail = null;
 
@@ -80,15 +80,7 @@ export class ScreenCanvas extends Component {
     this.material = null;
     this.mesh = null;
     if (quad && surface) {
-      this.material = new THREE.MeshBasicMaterial({
-        map: this.texture,
-        color: this.texture ? 0xffffff : 0x050608,
-        toneMapped: false,
-        fog: false,
-        // The rounded corners are painted clear; cut, not blended, so the
-        // screen never needs sorting.
-        alphaTest: corner > 0 ? 0.5 : 0,
-      });
+      this.material = createScreenMaterial({ picture: this.texture, aspect: layout[0] / layout[1], corner });
       this.mesh = screenMesh(surface, this.material, { lift });
     }
   }
@@ -98,6 +90,8 @@ export class ScreenCanvas extends Component {
   }
 
   onUpdate(dt) {
+    // The glass's scanlines crawl, whether or not the picture is repainted.
+    if (this.material) this.material.uniforms.uTime.value += dt;
     if (!this.canvas) return;
     const detail = this.focused() ? 'close' : 'idle';
     if (detail !== this._detail) {
@@ -139,30 +133,8 @@ export class ScreenCanvas extends Component {
     const { width: w, height: h } = this.canvas;
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    if (this.corner > 0) {
-      ctx.beginPath();
-      ctx.roundRect(0, 0, w, h, h * this.corner);
-      ctx.clip();
-    }
     this.painter(ctx, w, h);
-    if (this.glass) paintGlass(ctx, w, h);
     ctx.restore();
     this.texture.needsUpdate = true;
   }
-}
-
-/** Scanlines down a screen, however big the canvas: the picture leaned in
- *  is the one from across the room, only sharper. */
-const SCANLINES = 128;
-
-/** Over any picture: scanlines, and a darker edge. */
-function paintGlass(ctx, w, h) {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-  const step = h / SCANLINES;
-  for (let i = 0; i < SCANLINES; i++) ctx.fillRect(0, i * step, w, step / 3);
-  const edge = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.62);
-  edge.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  edge.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
-  ctx.fillStyle = edge;
-  ctx.fillRect(0, 0, w, h);
 }

@@ -53,15 +53,22 @@ describe('ScreenCanvas', () => {
     expect(canvas.height).toBe(SCREEN_CANVAS.height);
     expect(canvas.width).toBe(SCREEN_CANVAS.height * 2);
     expect(screen.mesh.parent).toBe(surface.object);
-    expect(screen.material.map).toBe(screen.texture);
+    expect(screen.material.uniforms.tPicture.value).toBe(screen.texture);
     expect(screen.texture.image).toBe(canvas);
   });
 
-  it('glows as painted: unlit, not tone mapped, no fog, in sRGB', () => {
-    expect(screen.material).toBeInstanceOf(THREE.MeshBasicMaterial);
-    expect(screen.material.toneMapped).toBe(false);
-    expect(screen.material.fog).toBe(false);
+  it('is shown through the screen shader, which wears the glass: a repaint is only the picture', () => {
+    expect(screen.material.name).toBe('ScreenGlass');
+    expect(screen.material.uniforms.uAspect.value).toBeCloseTo(2);
     expect(screen.texture.colorSpace).toBe(THREE.SRGBColorSpace);
+    screen.onStart();
+    expect(canvas.ctx.fillRect).not.toHaveBeenCalled();   // no scanlines painted in 2D
+  });
+
+  it('keeps the glass\'s scanlines crawling', () => {
+    screen.onUpdate(0.25);
+    screen.onUpdate(0.25);
+    expect(screen.material.uniforms.uTime.value).toBeCloseTo(0.5);
   });
 
   it('paints once as it starts, so the screen is never blank', () => {
@@ -105,24 +112,20 @@ describe('ScreenCanvas', () => {
     expect(dispose).toHaveBeenCalled();
   });
 
-  it('clips the picture to the screen\'s rounded corners', () => {
+  it('cuts the screen\'s rounded corners in the shader', () => {
     const rounded = new ScreenCanvas({
       surface: makeSurface(), painter, layout: LAYOUT, seen: () => true, createCanvas: () => canvas, corner: 0.1,
     });
-    rounded.onStart();
-    expect(canvas.ctx.roundRect).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height, SCREEN_CANVAS.height * 0.1);
-    expect(canvas.ctx.clip).toHaveBeenCalled();
-    expect(rounded.material.alphaTest).toBeGreaterThan(0);
+    expect(rounded.material.uniforms.uCorner.value).toBe(0.1);
   });
 
   it('can be a texture alone, for another screen\'s shader (the camera feed\'s overlay)', () => {
     const overlay = new ScreenCanvas({
-      painter, layout: LAYOUT, quad: false, glass: false, colorSpace: THREE.NoColorSpace, createCanvas: () => canvas,
+      painter, layout: LAYOUT, quad: false, colorSpace: THREE.NoColorSpace, createCanvas: () => canvas,
     });
     expect(overlay.mesh).toBeNull();
+    expect(overlay.material).toBeNull();
     expect(overlay.texture.colorSpace).toBe(THREE.NoColorSpace);
-    overlay.onStart();
-    expect(canvas.ctx.fillRect).not.toHaveBeenCalled();   // no glass painted over it
   });
 
   it('without a canvas to paint (no DOM), it is a dark quad and never paints', () => {
@@ -130,7 +133,7 @@ describe('ScreenCanvas', () => {
     blind.onStart();
     blind.onUpdate(1);
     expect(painter).not.toHaveBeenCalled();
-    expect(blind.material.map).toBeNull();
+    expect(blind.material.uniforms.uHasPicture.value).toBe(0);
   });
 
   it('frees its texture, material and quad when it goes', () => {

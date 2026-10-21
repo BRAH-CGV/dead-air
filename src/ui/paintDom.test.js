@@ -212,3 +212,50 @@ describe('paintDom keeps what it read (the frame rate, leaned in)', () => {
     expect(ctx.drawImage).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('paintDom live elements (data-paint-live)', () => {
+  let root, ctx, styles, line;
+
+  /** jsdom has no layout: offsets stubbed. */
+  function offsets(el, left, top, width, height, parent) {
+    Object.defineProperties(el, {
+      offsetLeft: { get: () => left(), configurable: true },
+      offsetTop: { get: () => top, configurable: true },
+      offsetWidth: { get: () => width, configurable: true },
+      offsetHeight: { get: () => height, configurable: true },
+      offsetParent: { get: () => (el.style.display === 'none' ? null : parent), configurable: true },
+    });
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root = box(document.createElement('div'), 0, 0, 800, 400);
+    line = box(document.createElement('div'), 0, 0, 2, 100);
+    line.dataset.paintLive = '';
+    line.style.backgroundColor = 'white';
+    root.append(line);
+    document.body.append(root);
+    let x = 10;
+    offsets(line, () => x, 20, 2, 100, root);
+    line.moveTo = (v) => { x = v; line.style.left = `${v}px`; };
+    ctx = fakeCtx();
+    styles = vi.spyOn(window, 'getComputedStyle');
+  });
+
+  it('moving one every frame is no fresh read of the layout: it is drawn where it is now', () => {
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    line.moveTo(300);
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBe(read);
+    expect(ctx.roundRect).toHaveBeenLastCalledWith(300, 20, 2, 100, 0);
+  });
+
+  it('is not drawn while it is not displayed', () => {
+    paintDom(root, ctx, 800, 400);
+    ctx.roundRect.mockClear();
+    line.style.display = 'none';
+    paintDom(root, ctx, 800, 400);
+    expect(ctx.roundRect).not.toHaveBeenCalled();
+  });
+});

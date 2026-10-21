@@ -358,8 +358,9 @@ export class ComputerTerminal extends Component {
       }
       this._enterHeld = enterDown;
 
-      // Update radar display
-      this._updateRadarDisplay();
+      // On a screen, the radar is drawn as its picture is painted
+      // (paintScreen), not every frame.
+      if (!this.screen) this._updateRadarDisplay();
       return;
     }
 
@@ -385,23 +386,23 @@ export class ComputerTerminal extends Component {
         this.radar?.setInfo('Signal lost — re-aim the dish!');
       }
 
-      this._updateRadarDisplay();
+      if (!this.screen) this._updateRadarDisplay();
       return;
     }
 
   }
 
-  /** The computer's screen (ScreenCanvas, #161): the radar's own DOM as it
-   *  stands, painted into a 2D canvas — the same leaned in to it or not.
-   *  Away from it, the radar is brought up to date first. Dark without
-   *  power. */
+  /** The computer's screen (ScreenCanvas, #161): the radar drawn, then its
+   *  own DOM painted into a 2D canvas — the same leaned in to it or not.
+   *  The radar is drawn here only, as often as the screen is repainted, not
+   *  every frame. Dark without power. */
   paintScreen(ctx, w, h) {
     if (!this.powered || !this.radar?.root) {
       ctx.fillStyle = '#020304';
       ctx.fillRect(0, 0, w, h);
       return;
     }
-    if (this.state === 'idle') this._updateRadarDisplay();
+    this._updateRadarDisplay();
     paintDom(this.radar.root, ctx, w, h);
   }
 

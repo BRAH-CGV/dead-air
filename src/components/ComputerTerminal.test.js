@@ -841,6 +841,16 @@ describe('ComputerTerminal', () => {
       expect(radar.hide).toHaveBeenCalled();
     });
 
+    it('draws the radar only when the screen\'s picture is painted, not every frame', () => {
+      term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+      term.enter();
+      radar.update.mockClear();
+      for (let i = 0; i < 3; i++) term.onUpdate(1 / 60);
+      expect(radar.update).not.toHaveBeenCalled();
+      term.paintScreen({ fillRect: vi.fn() }, 690, 384);
+      expect(radar.update).toHaveBeenCalledTimes(1);
+    });
+
     it('gives the player back at once, without waiting for the lean', () => {
       term.enter();
       term.exit();
@@ -861,11 +871,11 @@ describe('ComputerTerminal', () => {
       expect(paintDom).toHaveBeenCalledWith(radar.root, c, 690, 384);
     });
 
-    it('leaned in, paints it without touching it: the terminal keeps it up to date', () => {
+    it('leaned in too, it draws the radar just before painting it', () => {
       term.enter();
       radar.update.mockClear();
       term.paintScreen(ctx(), 690, 384);
-      expect(radar.update).not.toHaveBeenCalled();
+      expect(radar.update).toHaveBeenCalledTimes(1);
       expect(paintDom).toHaveBeenCalled();
     });
 

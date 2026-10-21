@@ -26,7 +26,10 @@
 // focus moves (a hover or focus changes a look), and every READ_EVERY ms
 // for CSS animations (the REC mark blinking). Canvases and slider values
 // are read as they are drawn, so the radar and a dragged slider move every
-// frame regardless.
+// frame regardless. An element marked `data-paint-live` (the console's
+// play line, moved every frame) is drawn where its layout is at the time,
+// and changing its style is no fresh read: it is a box in its background
+// colour, nothing inside it.
 //
 // The layout is read with the root's transform taken off for the moment
 // (a transform changes no layout, so this costs a style pass, not a
@@ -81,7 +84,9 @@ function pictureOf(root) {
  *  only where it is laid on the screen (ScreenView, every frame). */
 function changed(root, records) {
   for (const r of records) {
-    if (r.type !== 'attributes' || r.target !== root || r.attributeName !== 'style') return true;
+    const moved = r.type === 'attributes' && r.attributeName === 'style'
+      && (r.target === root || r.target.dataset?.paintLive !== undefined);
+    if (!moved) return true;
   }
   return false;
 }
@@ -91,7 +96,8 @@ function record(root, picture) {
   const saved = root.style.transform;
   root.style.transform = 'none';
   try {
-    const base = root.getBoundingClientRect();
+    const b = root.getBoundingClientRect();
+    const base = { left: b.left, top: b.top, width: b.width, height: b.height, root };
     picture.width = base.width;
     picture.height = base.height;
     picture.ops.length = 0;
@@ -105,6 +111,11 @@ function record(root, picture) {
 
 function recordElement(el, ops, base, alpha, view, isRoot) {
   const cs = view.getComputedStyle(el);
+  if (!isRoot && el.dataset?.paintLive !== undefined) {
+    // Recorded even while hidden: whether it shows is read as it is drawn.
+    ops.push({ k: 'live', el, root: base.root, a: alpha * (parseFloat(cs.opacity) || 1), colour: cs.backgroundColor });
+    return;
+  }
   if (cs.display === 'none') return;
   const a = isRoot ? alpha : alpha * (parseFloat(cs.opacity) || (cs.opacity === '0' ? 0 : 1));
   if (a <= 0.001) return;
@@ -248,6 +259,21 @@ const DRAW = {
     ctx.fillRect(x0, cy - 2, x - x0, 4);
     ctx.beginPath();
     ctx.arc(x, cy, thumb, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  /** Where its layout is now, from offsets: no style read, no transform. */
+  live(ctx, op) {
+    const el = op.el;
+    if (!el.offsetParent || TRANSPARENT.has(op.colour)) return;
+    let x = 0, y = 0;
+    for (let p = el; p && p !== op.root; p = p.offsetParent) {
+      x += p.offsetLeft;
+      y += p.offsetTop;
+    }
+    ctx.globalAlpha = op.a;
+    ctx.fillStyle = op.colour;
+    ctx.beginPath();
+    ctx.roundRect(x, y, el.offsetWidth, el.offsetHeight, 0);
     ctx.fill();
   },
   text(ctx, op) {

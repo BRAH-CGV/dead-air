@@ -656,7 +656,6 @@ describe('BaseScene gameplay loop', () => {
 
   it('the camera\'s overlay is a picture too, laid over the feed rather than on a quad of its own', () => {
     expect(scene.cameraPicture.mesh).toBeNull();
-    expect(scene.cameraPicture.glass).toBe(false);
     expect(scene.cameraPicture.layout[1]).toBe(720);
     expect(scene.cameraPicture.layout[0] / 720).toBeCloseTo(0.55 / 0.323, 2);
   });
