@@ -266,6 +266,8 @@ export class ProcessingScreen {
       if (token.cancelled) return;
       this._spectrogramResult = result;
       renderSpectrogram(this._spectrogram, result, this._vizOpts());
+      // A run under way: show it as far as it got.
+      if (drive?.isProcessing) this._resumeBlend(drive);
     } catch (err) {
       // Decoding or rendering failed — leave the canvas blank.
       console.error('[ProcessingScreen] spectrogram error:', err);
@@ -706,6 +708,7 @@ export class ProcessingScreen {
     const targetUrl = this.signalRegistry?.getAudioUrl(drive.signalName, targetLevel) ?? '';
     if (!targetUrl) return;
 
+    this._blendPreparing = true;
     try {
       if (!this._audioContext) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -714,16 +717,36 @@ export class ProcessingScreen {
       const audioBuffer = await decodeAudio(targetUrl, this._audioContext);
       if (!this._spectrogram) return;  // screen closed during load
       const newResult = await computeSpectrogram(audioBuffer);
-      this._setupBlend(oldResult, newResult);
+      this._setupBlend(oldResult, newResult, `${drive.signalName}|${drive.signalLevel ?? 1}`);
     } catch {
       // Target audio failed to load — blend won't run; completion will
       // fall back to a direct spectrogram refresh.
+    } finally {
+      this._blendPreparing = false;
     }
   }
 
+  /** A run under way when the picture is worked out — the console reopened
+   *  midway, or its screen redrawn for the drive in the reader: the blend
+   *  again, shown as far as the run got, so the progress stays on the
+   *  picture and the run's ticks go on filling it in. The reveal order is
+   *  the signal's own (_setupBlend), so it is the picture that was left. */
+  async _resumeBlend(drive) {
+    if (this._blendNewData || this._blendPreparing) return;
+    await this.prepareBlend(drive);
+    if (!this._spectrogram || !this._blendOldData || !this._blendNewData) return;
+    blendFromImageData(
+      this._spectrogram, this._blendOldData, this._blendNewData,
+      drive.processingProgress, this._blendRevealOrder, this._blendRevealed,
+      this._blendOutBuf, this._blendOutImage,
+    );
+  }
+
   /** Set up the blend state. Pre-renders both spectrograms to ImageData
-   *  once so the per-frame blend is just a column copy — no pixel math. */
-  _setupBlend(oldResult, newResult) {
+   *  once so the per-frame blend is just a column copy — no pixel math.
+   *  `seed` (the signal and its level) fixes the reveal order, so a run
+   *  picked back up reveals the same columns it had. */
+  _setupBlend(oldResult, newResult, seed = '') {
     this._blendOldResult = oldResult;
     this._blendNewResult = newResult;
     this._blendComplete = false;
@@ -775,10 +798,11 @@ export class ProcessingScreen {
     const total = oldResult.frames;
     const order = Array.from({ length: total }, (_, i) => i);
     const chunkSize = Math.max(1, Math.ceil(total / 40));
+    const random = seededRandom(seed);
     for (let start = 0; start < total; start += chunkSize) {
       const end = Math.min(start + chunkSize, total);
       for (let i = end - 1; i > start; i--) {
-        const j = start + Math.floor(Math.random() * (i - start + 1));
+        const j = start + Math.floor(random() * (i - start + 1));
         [order[i], order[j]] = [order[j], order[i]];
       }
     }
@@ -801,4 +825,16 @@ export class ProcessingScreen {
     this._blendOutBuf = null;
     this._blendOutImage = null;
   }
+}
+
+/** A repeatable random sequence from a string (mulberry32 on its hash). */
+function seededRandom(seed) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return () => {
+    h = (h + 0x6D2B79F5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }

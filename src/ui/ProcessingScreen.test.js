@@ -16,6 +16,7 @@ vi.mock('./paintDom.js', () => ({ paintDom: vi.fn() }));
 
 import { ProcessingScreen } from './ProcessingScreen.js';
 import { paintDom } from './paintDom.js';
+import { decode, compute, renderToImageData, blendFromImageData } from './Spectrogram.js';
 
 // ── Minimal DOM helpers ────────────────────────────────────
 // ProcessingScreen queries its constructor argument for child elements.
@@ -266,6 +267,74 @@ describe('ProcessingScreen', () => {
     screen._updateProgress({ processingProgress: 0.41 });
     expect(observer.takeRecords().length).toBeGreaterThan(0);
     observer.disconnect();
+  });
+
+  describe('a processing run left midway (#161)', () => {
+    const flush = () => new Promise(r => setTimeout(r, 0));
+    const midway = () => ({
+      saved: true, signalName: 'Pulsar', signalLevel: 1,
+      processingStarted: true, isProcessing: true, processingProgress: 0.4,
+    });
+
+    beforeEach(() => {
+      vi.stubGlobal('requestAnimationFrame', () => 1);
+      vi.stubGlobal('cancelAnimationFrame', () => {});
+      vi.stubGlobal('AudioContext', class {});
+      // jsdom has no ImageData.
+      vi.stubGlobal('ImageData', class {
+        constructor(a, b, c) {
+          if (typeof a === 'number') { this.width = a; this.height = b; this.data = new Uint8ClampedArray(a * b * 4); }
+          else { this.data = a; this.width = b; this.height = c; }
+        }
+      });
+      decode.mockResolvedValue({});
+      compute.mockResolvedValue({ frames: 1, bins: 1 });
+      renderToImageData.mockReturnValue(new ImageData(1, 1));
+      blendFromImageData.mockClear();
+    });
+
+    it('reopened, the picture shows the run as far as it got, and goes on filling in', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      const drive = midway();
+      screen.open(drive, []);
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData).toHaveBeenCalled();
+      expect(blendFromImageData.mock.calls.at(-1)[3]).toBe(0.4);
+      expect(screen._blendNewData).not.toBeNull();   // the run's ticks blend on from here
+    });
+
+    it('its screen keeps the progress too, painted from across the room', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      screen.paint({}, 460, 384, midway());
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData.mock.calls.at(-1)?.[3]).toBe(0.4);
+    });
+
+    it('a drive not mid-run is shown as it is', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      screen.open({ saved: true, signalName: 'Pulsar', signalLevel: 1 }, []);
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData).not.toHaveBeenCalled();
+    });
+
+    it('reveals the same columns each time for the same signal, so picking a run back up matches', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      renderToImageData.mockReturnValue(new ImageData(200, 1));
+      const result = { frames: 200, bins: 1 };
+      screen._setupBlend(result, result, 'Pulsar|1');
+      const first = [...screen._blendRevealOrder];
+      screen._setupBlend(result, result, 'Pulsar|1');
+      expect(screen._blendRevealOrder).toEqual(first);
+      screen._setupBlend(result, result, 'Quasar|1');
+      expect(screen._blendRevealOrder).not.toEqual(first);
+    });
   });
 
   it('close() hides the overlay and clears controls', () => {
