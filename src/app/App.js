@@ -20,6 +20,10 @@
 //   • While a menu is open, a capture-phase keydown listener eats every
 //     keydown (never keyup) so the game's keys and the review panel's S / D
 //     can't fire behind it.
+//   • New game and the Tutorial play the intro first (src/ui/intro/), a
+//     screen over the main menu; its end card's click is the gesture that
+//     takes the lock, and starts whichever opened it (night 1 or night 0).
+//     A page without #intro goes straight in.
 //   • The developer console (dev builds) is a menu screen too: ` opens it
 //     from play, paused under it, and ` again plays on — the keydown is the
 //     gesture the lock needs. Its commands are src/app/devConsole/. In every
@@ -38,6 +42,7 @@ import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { MenuMusic } from './MenuMusic.js';
+import { IntroPlayer } from '../ui/intro/IntroPlayer.js';
 import { TAGLINE, TEAM, SHOW_ROLES, COPY } from '../ui/menu/text.js';
 import { ASSETS } from '../assets/manifest.js';
 import { buildCreditBlocks, creditWarnings } from '../ui/menu/credits.js';
@@ -47,6 +52,8 @@ import { version as PACKAGE_VERSION } from '../../package.json';
 /** body[data-app] per flow state — index.html hides the gameplay overlays
  *  whenever it isn't 'playing'. */
 const DATA_APP = { mainMenu: 'menu', playing: 'playing', paused: 'paused', ended: 'ended' };
+/** The keys that skip the intro, or begin from its end card. */
+const INTRO_KEYS = new Set(['Space', 'Enter', 'NumpadEnter']);
 
 /** Opens and closes the developer console. Reserved: it can't be rebound. */
 const CONSOLE_KEY = 'Backquote';
@@ -75,6 +82,8 @@ export class App {
    * @param {Window} [deps.win]
    * @param {{ load: () => void, setPlaying: (on: boolean) => void, dispose: () => void }} [deps.music]
    *        The main menu's music.
+   * @param {IntroPlayer|null} [deps.intro]  The story New game plays first;
+   *        null (a page with no #intro) goes straight into the shift.
    */
   constructor(engine, {
     pointerLock = new PointerLock(engine.renderer?.domElement),
@@ -88,9 +97,15 @@ export class App {
     doc = document,
     win = window,
     music = new MenuMusic({ engine }),
+    intro = IntroPlayer.fromDocument(doc),
   } = {}) {
     this.engine = engine;
     this.music = music;
+    this.intro = intro;
+    /** What the intro's end card starts: New game's night 1, or the
+     *  Tutorial's night 0. Set by whichever button opened it. */
+    this._afterIntro = () => this._beginShift();
+    if (intro) intro.onBegin = () => { if (!this._busy) this._afterIntro(); };
     this.flow = new AppFlow();
     this.pointerLock = pointerLock;
     this.view = view;
@@ -147,6 +162,10 @@ export class App {
     }
 
     this._offs.push(flow.onChange(() => this._render()));
+    // Back from the intro, or into the shift from its end card: put it away.
+    this._offs.push(flow.onChange(() => {
+      if (flow.screen !== 'intro' && this.intro?.playing) this.intro.stop();
+    }));
     this.view.onIntent((action, data) => this._onIntent(action, data));
 
     // The main menu's shot over the office computer (#115), fitted to the
@@ -190,7 +209,10 @@ export class App {
     this._offs.length = 0;
     this._offController?.();
     this._offController = null;
+    this._offNights?.();
+    this._offNights = null;
     this.music.dispose();
+    this.intro?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -223,7 +245,10 @@ export class App {
     engine.uiHasMouse = false;
     this._offController?.();
     this._offController = null;
-    engine.loadScene(engine.activeScene.constructor);
+    // A dream (DreamScene) is not where a fresh night starts: rebuild the
+    // scene it wakes into.
+    const Scene = engine.activeScene.constructor;
+    engine.loadScene(Scene.returnTo ?? Scene);
     // The camera outlives the scene, and nothing ticks under the menu to
     // turn it back: face the way the fresh player does (beside the bunk,
     // looking at the desk — not world forward).
@@ -232,7 +257,27 @@ export class App {
     this.flow.markClean();
   }
 
+  /** New game: the intro first, whose end card begins the shift
+   *  (`intro.onBegin`). The menu music plays on under it. */
   async _newGame() {
+    if (this._playIntro(() => this._beginShift())) return;
+    await this._beginShift();
+  }
+
+  /** The intro over the main menu, its end card to run `then`. False where
+   *  there is none to play (no #intro, or not from the main menu). */
+  _playIntro(then) {
+    if (!this.intro || this.flow.screen !== 'main') return false;
+    this._wakeAudio();
+    this._afterIntro = then;
+    this.flow.openIntro();
+    this.intro.play();
+    return true;
+  }
+
+  /** Into the first night, from New game or the intro's end card — either
+   *  way inside the click or key, which the lock needs. */
+  async _beginShift() {
     this._wakeAudio();
     const lock = this.pointerLock.request();   // inside the click, or it's refused
     await this._run(async () => {
@@ -241,6 +286,34 @@ export class App {
         this._saveNight(null);   // a new run: Continue returns from night 2
         this.flow.newGame();
         this.engine.setPaused(false);
+      } else if (this.flow.screen === 'intro') {
+        this.intro?.setHint(COPY.lockRefused);
+      } else {
+        this._setHint(COPY.lockRefused);
+      }
+    });
+  }
+
+  /** The tutorial: the intro first, like New game, then night 0. */
+  async _tutorial() {
+    if (this._playIntro(() => this._beginTutorial())) return;
+    await this._beginTutorial();
+  }
+
+  /** Night 0, on the fresh scene the menu sits over, from the Tutorial
+   *  button or the intro's end card. It is no part of a run: Continue is
+   *  left as it was, and night 0 is never saved (_onGameState). */
+  async _beginTutorial() {
+    this._wakeAudio();
+    const lock = this.pointerLock.request();   // inside the click, or it's refused
+    await this._run(async () => {
+      if (this.flow.needsRebuild) await this._fadeRebuild();
+      if (await this._lockHeld(lock)) {
+        this.engine.activeScene?.nights?.setNight(0);
+        this.flow.newGame();
+        this.engine.setPaused(false);
+      } else if (this.flow.screen === 'intro') {
+        this.intro?.setHint(COPY.lockRefused);
       } else {
         this._setHint(COPY.lockRefused);
       }
@@ -385,7 +458,8 @@ export class App {
    *  the lock released after it isn't read as a pause. */
   _onGameState(state) {
     if (state === 'playing') {
-      this._saveNight(this._currentNight());
+      const night = this._currentNight();
+      if (night >= 1) this._saveNight(night);   // night 0, the tutorial, isn't a run
       return;
     }
     if (state === 'gameOver') {
@@ -440,6 +514,14 @@ export class App {
   _onSceneLoaded(scene) {
     this._applySettings();
     this._syncMenuShot();
+    // The night moving on in play is saved for Continue, including a fresh
+    // scene put on its night (waking from a dream, #101), which no
+    // controller state change announces. From the menus, Continue and
+    // Select night keep their own rules.
+    this._offNights?.();
+    this._offNights = scene?.nights?.onChange?.((night) => {
+      if (this.flow.state === 'playing') this._saveNight(night);
+    }) ?? null;
     this._offController?.();
     this._offController = scene?.gameController?.onStateChange?.((state) => this._onGameState(state)) ?? null;
   }
@@ -501,10 +583,14 @@ export class App {
       // was opened from there, else back to Settings.
       e.preventDefault();
       if (!this._busy && !e.repeat && !this._closeConsoleIntoPlay()) this.flow.back();
+    } else if (this.flow.screen === 'intro' && INTRO_KEYS.has(e.code)) {
+      // Skip the story, or begin from the end card (a key is a gesture too).
+      e.preventDefault();
+      if (!this._busy && !e.repeat) this.intro?.advance();
     } else if (e.code === 'Escape') {
       e.preventDefault();
       if (!this._busy) this.flow.back();
-    } else if (this.view.handleKey(e)) {
+    } else if (this.flow.screen !== 'intro' && this.view.handleKey(e)) {
       e.preventDefault();
     }
     e.stopImmediatePropagation();
@@ -538,6 +624,7 @@ export class App {
     switch (action) {
       case 'newGame':  return this._newGame();
       case 'continue': return this._continue();
+      case 'tutorial': return this._tutorial();
       case 'nightSelect': return flow.openNightSelect();
       case 'selectNight': return this._startAtNight(Number(data.night));
       case 'resume':   return this._resume();
@@ -629,7 +716,8 @@ export class App {
     else delete body.dataset.app;
 
     if (view.screen !== flow.screen) this._hint = '';
-    if (!flow.isMenuOpen) {
+    // The intro draws itself (IntroPlayer), over the menu's place.
+    if (!flow.isMenuOpen || flow.screen === 'intro') {
       view.hide();
       return;
     }
@@ -641,7 +729,10 @@ export class App {
   _model(screen) {
     switch (screen) {
       case 'main':
-        return { tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint };
+        return {
+          tagline: TAGLINE, version: this.version, continueNight: this._savedNight(), hint: this._hint,
+          tutorial: this.engine.activeScene?.nights?.minNight === 0,
+        };
       case 'nightSelect':
         return { maxNight: this._maxNight(), highest: this._highestNight(), hint: this._hint };
       case 'pause':

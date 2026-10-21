@@ -211,7 +211,7 @@ export class Sandstorm extends Component {
 
   onStart() {
     this._off = this.controller.onNightStart?.(night => this.reset(night)) ?? null;
-    this.reset(this.controller.nightNumber || 1);
+    this.reset(this.controller.nightNumber ?? 1);
   }
 
   onDestroy() {

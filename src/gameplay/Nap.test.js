@@ -42,18 +42,19 @@ function makeRig({ alarms = {}, instant = true, rest = makeRest({ instant }) } =
   /** Press E (a fresh press: the last one was let go). */
   engine.press = () => { engine.held = true; engine.consumed = false; };
   const hud = { setPrompt: vi.fn() };
+  const banner = { show: vi.fn() };
   const hint = { show: vi.fn(), hide: vi.fn() };
   const hooks = { setPlayerLocked: vi.fn(), restless: vi.fn(() => false), watched: vi.fn(() => false) };
   const state = { power: false, ufo: false, eyes: false, ...alarms };
   const nap = new Nap({
-    controller, engine, hud, hooks, rest, hint,
+    controller, engine, banner, hooks, rest, hint,
     alarms: [
       { test: () => state.power, message: 'The power went out.' },
       { test: () => state.ufo,   message: 'Something on the radar woke you.' },
       { test: () => state.eyes,  message: 'You feel watched.' },
     ],
   });
-  return { nap, controller, engine, rest, hud, hooks, state, hint };
+  return { nap, controller, engine, rest, hud, banner, hooks, state, hint };
 }
 
 describe('Nap', () => {
@@ -119,7 +120,7 @@ describe('Nap', () => {
   });
 
   it('sleeps on until the shift ends, then wakes calmly without a word', () => {
-    const { nap, controller, engine, rest, hud } = rig;
+    const { nap, controller, engine, rest, banner } = rig;
     nap.start();
     nap.onUpdate(1);
     expect(nap.napping).toBe(true);
@@ -128,7 +129,7 @@ describe('Nap', () => {
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
     expect(rest.getUp).toHaveBeenCalledWith('calm');
-    expect(hud.setPrompt).not.toHaveBeenCalled();
+    expect(banner.show).not.toHaveBeenCalled();
   });
 
   it('a night failed under it (not the morning): real time, and the view handed straight back', () => {
@@ -143,14 +144,14 @@ describe('Nap', () => {
   });
 
   it('wakes when something happens, startled, and says what', () => {
-    const { nap, state, engine, hud, rest } = rig;
+    const { nap, state, engine, banner, rest } = rig;
     nap.start();
     state.power = true;
     nap.onUpdate(1);
     expect(nap.napping).toBe(false);
     expect(engine.timeScale).toBe(1);
     expect(rest.getUp).toHaveBeenCalledWith('startled');
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');
+    expect(banner.show).toHaveBeenLastCalledWith('The power went out.', { tone: 'warning' });
     expect(nap.wokeBy).toBe('The power went out.');
   });
 
@@ -162,19 +163,17 @@ describe('Nap', () => {
     r.state.ufo = true;
     r.nap.onUpdate(1);
     expect(r.nap.napping).toBe(false);
-    expect(r.hud.setPrompt).toHaveBeenLastCalledWith('Something on the radar woke you.');
+    expect(r.banner.show).toHaveBeenLastCalledWith('Something on the radar woke you.', { tone: 'warning' });
   });
 
-  it('puts the shift\'s own prompt back a few real seconds after the wake-up line', () => {
-    const { nap, state, controller, hud } = rig;
+  it("says what woke you on the banner, leaving the HUD's prompt (the shift's own) alone", () => {
+    const { nap, state, hud, banner } = rig;
     nap.start();
     state.eyes = true;
     nap.onUpdate(0.016);
-    nap.onUpdate(NAP.messageSeconds - 0.1);
-    expect(controller.refreshPrompt).not.toHaveBeenCalled();
-    nap.onUpdate(0.2);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('');
-    expect(controller.refreshPrompt).toHaveBeenCalledOnce();
+    expect(banner.show).toHaveBeenCalledOnce();
+    for (let i = 0; i < 10; i++) nap.onUpdate(1);
+    expect(hud.setPrompt).not.toHaveBeenCalled();
   });
 
   it('a scene torn down mid-nap leaves the engine at real time and the view handed back', () => {
@@ -194,7 +193,7 @@ describe('Nap', () => {
   });
 
   it('pressing E wakes you yourself, calmly — not the press that lay you down', () => {
-    const { nap, engine, rest, hud } = rig;
+    const { nap, engine, rest, banner } = rig;
     engine.press();                               // E at the bunk
     nap.start();
     nap.onUpdate(0.016);
@@ -207,7 +206,7 @@ describe('Nap', () => {
     expect(engine.timeScale).toBe(1);
     expect(rest.getUp).toHaveBeenCalledOnce();
     expect(rest.getUp).toHaveBeenCalledWith('calm');
-    expect(hud.setPrompt).not.toHaveBeenCalled(); // you know why you're up
+    expect(banner.show).not.toHaveBeenCalled(); // you know why you're up
     expect(engine.consumed).toBe(true);           // the bunk doesn't take it as a new nap
   });
 
@@ -296,7 +295,7 @@ describe('Nap', () => {
     });
 
     it('wakes you, calmly, when the clock has run on by the length you set', () => {
-      const { nap, controller, hud, engine, rest } = rig;
+      const { nap, controller, banner, engine, rest } = rig;
       controller.nightClock.currentTime = 1;      // 1:00 AM
       nap.start(2);
       expect(nap.wakeAt).toBe(3);
@@ -307,7 +306,7 @@ describe('Nap', () => {
       nap.onUpdate(1);
       expect(nap.napping).toBe(false);
       expect(engine.timeScale).toBe(1);
-      expect(hud.setPrompt).toHaveBeenLastCalledWith(expect.stringMatching(/alarm/i));
+      expect(banner.show).toHaveBeenLastCalledWith(expect.stringMatching(/alarm/i), { tone: 'info' });
       expect(rest.getUp).toHaveBeenCalledWith('calm');
     });
 
@@ -321,12 +320,12 @@ describe('Nap', () => {
     });
 
     it('anything that would wake you still does before the alarm', () => {
-      const { nap, state, hud } = rig;
+      const { nap, state, banner } = rig;
       nap.start(3);
       state.power = true;
       nap.onUpdate(1);
       expect(nap.napping).toBe(false);
-      expect(hud.setPrompt).toHaveBeenLastCalledWith('The power went out.');
+      expect(banner.show).toHaveBeenLastCalledWith('The power went out.', { tone: 'warning' });
     });
   });
 

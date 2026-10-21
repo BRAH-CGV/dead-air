@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as THREE from 'three';
 import { DevConsole, UsageError } from './DevConsole.js';
 import { createCommands, parseToggle, parseUnit, parseHour } from './commands.js';
 import { NightManager } from '../../systems/NightManager.js';
@@ -25,6 +26,18 @@ function fakeScene() {
       return true;
     }),
   };
+  // Drive manager mock for the signals command.
+  const driveManager = { drives: [], addDrive: vi.fn((d) => driveManager.drives.push(d)) };
+  // Room mocks for the signals command.
+  const mainOfficeRoot = {
+    object3d: new THREE.Object3D(),
+    addChild: vi.fn(),
+  };
+  const driveBoxes = [{ addDrive: vi.fn() }, { addDrive: vi.fn() }];
+  const rooms = {
+    MainOffice: { root: mainOfficeRoot, driveBoxes, driveReader: null },
+    ServerRoom: { driveSlot: null },
+  };
   return {
     nights: new NightManager(),
     nightClock: new NightClock(),
@@ -33,6 +46,7 @@ function fakeScene() {
     evilSignal: { summon: vi.fn(() => true) },
     sandstorm: { summon: vi.fn(() => true) },
     dustEyes: { summon: vi.fn(() => true) },
+    buggySendOff: { active: false, start: vi.fn() },
     ragno: { summon: vi.fn(() => true), dismiss: vi.fn(), logic: { active: false } },
     ambience,
     power,
@@ -41,6 +55,9 @@ function fakeScene() {
       switchOff: vi.fn(() => { power.on = false; }),
     },
     suit: flag('worn', 'putOn', 'takeOff'),
+    driveManager,
+    rooms,
+    _sceneRoot: mainOfficeRoot,
   };
 }
 
@@ -54,9 +71,12 @@ function withZones(scene) {
 function fakeEngine(scene) {
   const physicsDebug = { visible: false, toggle: vi.fn(() => { physicsDebug.visible = !physicsDebug.visible; }) };
   const levelEditor = { enabled: false, toggle: vi.fn(() => { levelEditor.enabled = !levelEditor.enabled; }) };
+  // Player with object3d for the signals command.
+  const playerObject = new THREE.Object3D();
+  playerObject.position.set(0, 0, 0);
   return {
     activeScene: scene,
-    player: { name: 'Player' },
+    player: { name: 'Player', object3d: playerObject },
     debugModels: false,
     physicsDebug,
     levelEditor,
@@ -194,7 +214,7 @@ describe('createCommands', () => {
 
   it('registers every old debug key as a command', () => {
     for (const name of ['colliders', 'editor', 'fly', 'noclip', 'fullbright', 'perf', 'fps',
-      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'ragno', 'music', 'stamina', 'time', 'power', 'suit', 'zones']) {
+      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'ragno', 'music', 'stamina', 'time', 'power', 'suit', 'zones', 'signals']) {
       expect(c.find(name), name).not.toBe(null);
     }
   });
@@ -336,6 +356,13 @@ describe('createCommands', () => {
       expect(scene.nights.currentNight).toBe(1);
     });
 
+    it('night 0, the tutorial, where the scene has one', () => {
+      scene.nights = new NightManager({ minNight: 0 });
+      expect(run('night 0').out).toEqual(['Night 0 of 3']);
+      expect(scene.nights.currentNight).toBe(0);
+      expect(run('night 9').out[0]).toBe('Night must be 0–3');
+    });
+
     it('a scene without nights says so', () => {
       delete scene.nights;
       expect(run('night')).toEqual({ ok: false, out: ['No nights in this scene'] });
@@ -353,6 +380,30 @@ describe('createCommands', () => {
       const { ok, out } = run('ufo');
       expect(ok).toBe(false);
       expect(out[0]).toMatch(/^UFO not summoned/);
+    });
+
+    it('buggy draws everything first, unculled, then sends it off', () => {
+      withZones(scene);
+      const order = [];
+      scene.zones.revealAll.mockImplementation((on) => { scene.zones.revealed = on; order.push(`reveal ${on}`); });
+      scene.buggySendOff.start.mockImplementation(() => order.push('start'));
+      expect(run('buggy').out).toEqual(['Zones revealed: everything is drawn (zones hide culls again)', 'Buggy sent off']);
+      expect(order).toEqual(['reveal true', 'start']);
+    });
+
+    it('buggy sends the buggy off now, cutscene and all; not twice at once', () => {
+      expect(run('buggy').out.at(-1)).toBe('Buggy sent off');
+      expect(scene.buggySendOff.start).toHaveBeenCalledOnce();
+      scene.buggySendOff.active = true;
+      const { ok, out } = run('buggy');
+      expect(ok).toBe(false);
+      expect(out[0]).toMatch(/already/i);
+      expect(scene.buggySendOff.start).toHaveBeenCalledOnce();
+    });
+
+    it('buggy says so when the scene has no send-off', () => {
+      delete scene.buggySendOff;
+      expect(run('buggy').out).toEqual(['No buggy send-off in this scene']);
     });
 
     it('storm brings a sandstorm', () => {
@@ -557,11 +608,114 @@ describe('createCommands', () => {
     });
   });
 
+  describe('signals', () => {
+    it('spawns one drive with a signal by default', () => {
+      const { ok, out } = run('signals');
+      expect(ok).toBe(true);
+      expect(out[0]).toBe('Spawned 1 drive with signals');
+      expect(scene.driveManager.addDrive).toHaveBeenCalledTimes(1);
+      const drive = scene.driveManager.drives[0];
+      expect(drive.saved).toBe(true);
+    });
+
+    it('spawns multiple drives when given a count', () => {
+      const { ok, out } = run('signals 5');
+      expect(ok).toBe(true);
+      expect(out[0]).toBe('Spawned 5 drives with signals');
+      expect(scene.driveManager.addDrive).toHaveBeenCalledTimes(5);
+      for (const drive of scene.driveManager.drives) {
+        expect(drive.saved).toBe(true);
+      }
+    });
+
+    it('adds drives to the room and snap receivers', () => {
+      run('signals 2');
+      expect(scene.rooms.MainOffice.root.addChild).toHaveBeenCalledTimes(2);
+      for (const box of scene.rooms.MainOffice.driveBoxes) {
+        expect(box.addDrive).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it('refuses non-number arguments', () => {
+      const { ok, out } = run('signals many');
+      expect(ok).toBe(false);
+      expect(out.at(-1)).toBe('Usage: signals [count]');
+    });
+
+    it('refuses zero or negative counts', () => {
+      expect(run('signals 0').ok).toBe(false);
+      expect(run('signals -1').ok).toBe(false);
+    });
+
+    it('requires a drive manager', () => {
+      delete scene.driveManager;
+      const { ok, out } = run('signals');
+      expect(ok).toBe(false);
+      expect(out[0]).toBe('No drive manager in this scene');
+    });
+
+    it('requires a player', () => {
+      engine.player = {};
+      const { ok, out } = run('signals');
+      expect(ok).toBe(false);
+      expect(out[0]).toBe('No player to spawn near');
+    });
+  });
+
   it('reads the scene live, so a rebuilt scene is the one changed', () => {
     const next = withZones(fakeScene());
     engine.activeScene = next;
     run('night 3');
     expect(next.nights.currentNight).toBe(3);
     expect(scene.nights.currentNight).toBe(1);
+  });
+
+  describe('dream (#101)', () => {
+    class Dream {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamScene', Dream]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('drops into the dream at the night\'s level, and remembers the night', () => {
+      scene.nights.setNight(2);
+      const { ok, out } = run('dream');
+      expect(ok).toBe(true);
+      expect(engine.loadScene).toHaveBeenCalledWith(Dream, { sceneOptions: { level: 2, night: 2 } });
+      expect(out.join(' ')).toMatch(/level 2/i);
+    });
+
+    it('takes a level 1-3', () => {
+      run('dream 3');
+      expect(engine.loadScene).toHaveBeenLastCalledWith(Dream, { sceneOptions: { level: 3, night: 1 } });
+      expect(run('dream 4').ok).toBe(false);
+      expect(run('dream x').ok).toBe(false);
+    });
+
+    it('says so when there is no dream scene', () => {
+      engine.sceneRegistry = new Map();
+      expect(run('dream').ok).toBe(false);
+    });
+  });
+
+  describe('dreamcrater', () => {
+    class DreamCrater {}
+    beforeEach(() => {
+      engine.sceneRegistry = new Map([['DreamCraterScene', DreamCrater]]);
+      engine.loadScene = vi.fn();
+    });
+
+    it('drops into the crater dream with the current night', () => {
+      scene.nights.setNight(2);
+      const { ok, out } = run('dreamcrater');
+      expect(ok).toBe(true);
+      expect(engine.loadScene).toHaveBeenCalledWith(DreamCrater, { sceneOptions: { night: 2 } });
+      expect(out.join(' ')).toMatch(/crater dream/i);
+    });
+
+    it('says so when there is no crater dream scene', () => {
+      engine.sceneRegistry = new Map();
+      expect(run('dreamcrater').ok).toBe(false);
+    });
   });
 });

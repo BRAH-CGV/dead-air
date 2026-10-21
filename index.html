@@ -132,8 +132,8 @@
       }
       #hud-prompt {
         margin-top: 8px;
-        font-size: 11px;
-        color: #8898a8;
+        font-size: 13px;
+        color: #b8c8d8;
       }
       #hud-suit {
         display: none;
@@ -170,6 +170,35 @@
       #hud-stamina[data-level="tired"] #hud-stamina-fill    { background: #e8a050; }
       #hud-stamina[data-level="critical"] #hud-stamina-fill { background: #e0503c; }
 
+      /* ── Event banner (EventBanner.js) ──────────────────
+         Centred in the upper third, large readable text with a subtle
+         dark backing. Fade in, hold, fade out: the opacity transitions as
+         EventBanner puts .is-shown on and takes it off. */
+      #event-banner {
+        position: fixed;
+        top: 28%;
+        left: 50%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        z-index: 92;
+        /* Above the fatigue tunnel (80), under the eyelids (100). */
+        max-width: min(720px, 80vw);
+        padding: 12px 28px;
+        background: rgba(8, 10, 18, 0.72);
+        border-radius: 4px;
+        font: 24px/1.3 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.04em;
+        color: #d8e8f0;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+      }
+      #event-banner.is-shown { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
+      #event-banner[data-tone="warning"] { color: #e8a050; }
+      #event-banner[data-tone="danger"]  { color: #e0503c; }
+
       /* ── Eyelids (FatigueOverlay.js) ──────────────────────
          The bed animation closes them (BedRest.js), and so does fatigue.
          The tunnel sits under the HUD so the stamina bar stays readable;
@@ -190,6 +219,65 @@
         inset: 0;
         pointer-events: none;
         z-index: 100;
+      }
+      /* Night 0's big words and arrow (TutorialOverlay.js): over the
+         radar, so the strip it shrinks to at the computer still reads;
+         under the lids, the fades and the menus. */
+      #tutorial {
+        display: none;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 98;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        color: #ffd27a;
+        text-shadow: 0 2px 6px #000, 0 0 2px #000;
+      }
+      #tutorial .tutorial-card {
+        position: absolute;
+        left: 50%;
+        top: 14%;
+        transform: translateX(-50%);
+        width: min(90vw, 900px);
+        text-align: center;
+      }
+      #tutorial .tutorial-title {
+        font-size: clamp(28px, 5vw, 56px);
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+      #tutorial .tutorial-text {
+        margin-top: 0.6em;
+        font-size: clamp(14px, 1.8vw, 20px);
+        letter-spacing: 0.04em;
+        color: #e8dcc0;
+      }
+      #tutorial.compact .tutorial-card { top: 10px; }
+      #tutorial.compact .tutorial-title { font-size: 20px; }
+      #tutorial.compact .tutorial-text { font-size: 13px; margin-top: 0.3em; }
+      /* Centred on the point TutorialOverlay translates it to, then turned. */
+      #tutorial .tutorial-arrow {
+        position: absolute;
+        left: -32px;
+        top: -20px;
+        width: 64px;
+        height: 40px;
+      }
+      #tutorial .tutorial-arrow svg { display: block; overflow: visible; }
+      #tutorial .tutorial-arrow path {
+        fill: #ffd27a;
+        stroke: #000;
+        stroke-width: 2;
+        stroke-linejoin: round;
+      }
+      /* Nudges along the way it points. */
+      #tutorial .tutorial-arrow-bob { animation: tutorial-bob 0.8s ease-in-out infinite alternate; }
+      @keyframes tutorial-bob {
+        from { transform: translateX(-10px); }
+        to   { transform: translateX(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #tutorial .tutorial-arrow-bob { animation: none; }
       }
       /* A nap's way out ("[E] Wake up", Nap.js): over the closed lids,
          which cover the HUD; under the white-out and the screen fade. */
@@ -883,7 +971,7 @@
       .cctv-cam.is-active { background: #c9d94a; color: #111; border-color: #f2ff8a; }
 
       /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
-      body.cctv-on :is(#crosshair, #prompt) { visibility: hidden !important; }
+      body.cctv-on :is(#crosshair, #prompt, #tutorial) { visibility: hidden !important; }
 
       /* ── Journal (JournalPanel.js): the previous operator's notebook ──
          A page of ruled paper held up close. Below the menus (150), so a
@@ -928,8 +1016,66 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint, #event-banner, #tutorial) {
         visibility: hidden !important;
+      }
+
+      /* ── The intro (IntroPlayer.js builds its parts) ────────
+         The story before the first shift: a canvas painted each frame,
+         the beat's caption over it, and the end card. Over the menu, under
+         the fade. */
+      #intro {
+        position: fixed;
+        inset: 0;
+        z-index: 160;
+        background: #000;
+        color: #d8e8f0;
+        font: 14px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        /* Watched, not pointed at: a click anywhere skips or begins. */
+        cursor: none;
+        user-select: none;
+      }
+      #intro[hidden] { display: none; }
+      #intro .intro-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      #intro .intro-caption {
+        position: absolute;
+        left: 50%;
+        bottom: 12%;
+        transform: translateX(-50%);
+        width: min(760px, calc(100% - 32px));
+        text-align: center;
+        font-size: clamp(15px, 2.2vw, 22px);
+        letter-spacing: 0.02em;
+        text-shadow: 0 0 6px #000, 0 0 16px #000;
+      }
+      #intro .intro-card {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 0 16px;
+        text-align: center;
+      }
+      #intro .intro-card[hidden] { display: none; }
+      #intro .intro-array { color: #00dcc8; font-size: clamp(14px, 2.4vw, 20px); letter-spacing: 0.08em; }
+      #intro .intro-begin { font-size: clamp(18px, 3.4vw, 30px); letter-spacing: 0.12em; animation: intro-blink 1.6s ease-in-out infinite; }
+      #intro .intro-hint { color: #e8a050; min-height: 1.5em; }
+      #intro .intro-skip {
+        position: absolute;
+        right: 16px;
+        bottom: 12px;
+        color: #8898a8;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      #intro .intro-skip[hidden] { display: none; }
+      @keyframes intro-blink { 50% { opacity: 0.45; } }
+      @media (prefers-reduced-motion: reduce) {
+        #intro .intro-begin { animation: none; }
       }
 
       /* ── Screen fade (ScreenFade.js sets the duration) ──── */
@@ -944,6 +1090,20 @@
         z-index: 200;
       }
       #fade.is-dark { opacity: 1; }
+      /* ScreenFade.caption: a line on the black while the next scene gets ready. */
+      #fade .fade-caption {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #8898a8;
+        font: 14px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        letter-spacing: 0.4em;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+      }
+      #fade .fade-caption.is-shown { opacity: 1; }
 
       /* ── Generator breaker panel (BreakerPanel.js) ──────── */
       #breaker-panel {
@@ -1064,6 +1224,7 @@
 
     <!-- HUD (hidden until gameplay starts) -->
     <div id="nap-hint"></div>
+    <div id="tutorial" aria-live="polite"></div>
     <div id="hud">
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>
@@ -1073,6 +1234,9 @@
       <div id="hud-suit">EVA suit on</div>
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
     </div>
+
+    <!-- Event banner (EventBanner.js) — centred, upper third -->
+    <div id="event-banner"><span id="event-banner-text"></span></div>
 
     <!-- The eyelids, and a tired player's tunnel vignette (FatigueOverlay.js) -->
     <div id="fatigue">
@@ -1140,6 +1304,9 @@
       <div id="menu-status" aria-hidden="true"></div>
       <div id="menu-panel"></div>
     </div>
+
+    <!-- The intro before the first shift (IntroPlayer.js fills it) -->
+    <div id="intro" hidden></div>
 
     <!-- The previous operator's journal (JournalPanel.js) -->
     <div id="journal"></div>

@@ -210,3 +210,16 @@ describe('Engine timeScale (#79: slowed time while reading)', () => {
     expect(engine.renderer.render).toHaveBeenCalledOnce();
   });
 });
+
+describe('Engine loadScene options (#101)', () => {
+  it('passes sceneOptions to the new scene', () => {
+    const { engine } = makeEngine();
+    engine._teardownScene = vi.fn();
+    engine.shadows = { release: vi.fn(), adopt: vi.fn() };
+    let got;
+    class OptScene { constructor(e, opts) { got = opts; } build() {} }
+    engine._rootObjects.length = 0;
+    engine.loadScene(OptScene, { compile: false, sceneOptions: { level: 3 } });
+    expect(got).toEqual({ level: 3 });
+  });
+});

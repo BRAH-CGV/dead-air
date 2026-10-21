@@ -312,4 +312,41 @@ describe('AppFlow', () => {
     flow.newGame();
     expect(flow.state).toBe('playing');
   });
+
+  describe('the intro', () => {
+    it('opens over the main menu, and Back returns there', () => {
+      flow.ready();
+      flow.openIntro();
+      expect(flow.state).toBe('mainMenu');
+      expect(flow.screen).toBe('intro');
+      flow.back();
+      expect(flow.screen).toBe('main');
+    });
+
+    it('opens from the main screen only', () => {
+      flow.ready();
+      flow.openSettings();
+      flow.openIntro();
+      expect(flow.screen).toBe('settings');
+      flow.back();
+      flow.newGame();
+      flow.pause();
+      flow.openIntro();
+      expect(flow.screen).toBe('pause');
+    });
+
+    it('its end card starts the game', () => {
+      flow.ready();
+      flow.openIntro();
+      flow.newGame();
+      expect(flow.state).toBe('playing');
+      expect(flow.screen).toBe(null);
+    });
+
+    it('is still a menu: the game stays paused under it', () => {
+      flow.ready();
+      flow.openIntro();
+      expect(flow.isMenuOpen).toBe(true);
+    });
+  });
 });

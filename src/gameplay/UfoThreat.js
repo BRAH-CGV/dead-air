@@ -287,7 +287,7 @@ export class UfoThreat extends Component {
     }
     if (this.radar) this.radar.threat = this.radarThreat;
     this._off = this.controller.onNightStart?.(night => this.reset(night)) ?? null;
-    this.reset(this.controller.nightNumber || 1);
+    this.reset(this.controller.nightNumber ?? 1);
   }
 
   onDestroy() {

@@ -85,6 +85,13 @@ export class StormOutage extends Component {
     }
   }
 
+  /** Make the storm now blowing take the power `at` (0 … 1) of the way
+   *  through, whatever the roll — the tutorial's storm (Tutorial). */
+  force(at = 0) {
+    this._stormId = this.sandstorm.stormId;
+    this._at = at;
+  }
+
   reset() {
     this._stormId = null;
     this._at = null;

@@ -18,8 +18,11 @@
 //                           next applySettings doesn't undo it
 // ─────────────────────────────────────────────
 
+import * as THREE from 'three';
 import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
+import { Drive } from '../../gameobjects/Drive.js';
+import { DriveSlot } from '../../components/DriveSlot.js';
 import { SignalTarget } from '../../gameplay/SignalTarget.js';
 import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
 
@@ -165,6 +168,31 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
     }),
 
     {
+      name: 'dream', usage: 'dream [level]', help: 'Drop into the dream (1-3, default: tonight); waking comes back to this night',
+      run: ([arg]) => {
+        const Dream = engine.sceneRegistry?.get('DreamScene');
+        if (!Dream) throw new CommandError('No dream scene registered');
+        const night = engine.activeScene?.nights?.currentNight ?? 1;
+        let level = Math.min(night, 3);
+        if (arg !== undefined) {
+          level = /^[1-3]$/.test(arg) ? Number(arg) : NaN;
+          if (!level) throw new UsageError('Level must be 1-3');
+        }
+        engine.loadScene(Dream, { sceneOptions: { level, night } });
+        return `Dreaming, level ${level}: walk away from the base`;
+      },
+    },
+    {
+      name: 'dreamcrater', usage: 'dreamcrater', help: 'Drop into the crater dream (sandstorm + dust eyes); survive a minute to wake',
+      run: () => {
+        const DreamCrater = engine.sceneRegistry?.get('DreamCraterScene');
+        if (!DreamCrater) throw new CommandError('No crater dream scene registered');
+        const night = engine.activeScene?.nights?.currentNight ?? 1;
+        engine.loadScene(DreamCrater, { sceneOptions: { night } });
+        return `Entering the crater dream (night ${night})`;
+      },
+    },
+    {
       name: 'night', usage: 'night [n]', help: 'Jump to a night, or on to the next (wraps to 1)',
       run: ([arg]) => {
         const nights = system('nights', 'nights');
@@ -173,7 +201,8 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           night = nights.isLastNight() ? 1 : nights.currentNight + 1;
         } else {
           night = /^\d+$/.test(arg) ? Number(arg) : NaN;
-          if (!(night >= 1 && night <= nights.maxNight)) throw new UsageError(`Night must be 1–${nights.maxNight}`);
+          const first = nights.minNight ?? 1;   // 0 where there is a tutorial
+          if (!(night >= first && night <= nights.maxNight)) throw new UsageError(`Night must be ${first}–${nights.maxNight}`);
           if (night === nights.currentNight) return `Already night ${night}`;
         }
         nights.setNight(night);
@@ -189,6 +218,28 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           throw new CommandError('UFO not summoned: a visit is under way, or no shift is');
         }
         return 'UFO summoned';
+      },
+    },
+    {
+      // Diagnosis: the morning's send-off cutscene on demand, box or not.
+      // It only dispatches in a morning; otherwise the buggy stays gone
+      // (parked under the ground) until the next night start. Everything is
+      // drawn first, unculled, so it can be watched from indoors too.
+      name: 'buggy', usage: 'buggy', help: 'Send the buggy off now, cutscene and all, everything drawn',
+      run: () => {
+        const sendOff = system('buggySendOff', 'buggy send-off');
+        if (sendOff.active) throw new CommandError('The buggy is already driving off');
+        const out = [];
+        const zones = engine.activeScene?.zones;
+        if (zones) {
+          // AirlockPortal sets the reveal every frame; this keeps it on.
+          engine.revealZones = true;
+          zones.revealAll(true);
+          out.push('Zones revealed: everything is drawn (zones hide culls again)');
+        }
+        sendOff.start();
+        out.push('Buggy sent off');
+        return out;
       },
     },
     {
@@ -349,6 +400,50 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       set: (zones, on) => zones.revealAll(on),
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
     }),
+
+    {
+      name: 'signals', usage: 'signals [count]', help: 'Spawn drives with signals already stored (default 1)',
+      run: ([arg]) => {
+        const driveManager = system('driveManager', 'drive manager');
+        const count = arg === undefined ? 1 : /^\d+$/.test(arg) ? Number(arg) : NaN;
+        if (!(count >= 1)) throw new UsageError('Give a number of drives to spawn');
+
+        const player = engine.player;
+        const scene = engine.activeScene;
+        if (!player?.object3d) throw new CommandError('No player to spawn near');
+
+        // Spawn in front of the player, slightly above ground.
+        const pos = player.object3d.position.clone();
+        const forward = new THREE.Vector3(0, 0, -1)
+          .applyEuler(player.object3d.rotation);
+        const spawnPos = pos.add(forward.multiplyScalar(0.5));
+        spawnPos.y = 0.1; // Just above the floor.
+
+        const room = scene.rooms?.MainOffice;
+        const parent = room?.root ?? scene._sceneRoot;
+
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+          const drive = new Drive(`DevSignalDrive_${spawned + 1}`);
+          drive.setSaved(true);
+          drive.object3d.position.copy(spawnPos);
+          // Offset each drive slightly so they don't stack.
+          drive.object3d.position.x += (i % 4) * 0.12;
+          drive.object3d.position.z += Math.floor(i / 4) * 0.15;
+          parent.addChild(drive);
+          driveManager.addDrive(drive);
+          // Also add to every snap receiver so the drive can be picked up.
+          const driveBoxes = room?.driveBoxes ?? [];
+          const driveSlot = room?.driveReader?.getComponent?.(DriveSlot);
+          const serverSlot = scene.rooms?.ServerRoom?.driveSlot;
+          for (const box of driveBoxes) box.addDrive?.(drive);
+          if (driveSlot) driveSlot.addDrive(drive);
+          if (serverSlot) serverSlot.addDrive(drive);
+          spawned++;
+        }
+        return `Spawned ${spawned} drive${spawned !== 1 ? 's' : ''} with signals`;
+      },
+    },
   ];
 }
 

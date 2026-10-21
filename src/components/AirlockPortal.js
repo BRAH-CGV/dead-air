@@ -70,7 +70,7 @@ export class AirlockPortal extends Component {
 
   onUpdate() {
     const engine = this.engine;
-    this.zones.revealAll(!!(engine?.debugCamera?.active || engine?.levelEditor?.enabled));
+    this.zones.revealAll(!!(engine?.debugCamera?.active || engine?.levelEditor?.enabled || engine?.revealZones));
     this.zones.tick();
   }
 

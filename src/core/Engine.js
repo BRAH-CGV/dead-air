@@ -23,8 +23,11 @@ import { Fullbright } from './Fullbright.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
+import { DreamScene } from '../scenes/DreamScene.js';
+import { DreamCraterScene } from '../scenes/DreamCraterScene.js';
 import { logModelDebugInfo } from './ModelUtils.js';
 import { LevelEditor } from '../editor/LevelEditor.js';
+import { createCJFigure } from '../gameobjects/CJFigure.js';
 
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
@@ -67,9 +70,10 @@ export class Engine {
    *  Cleared on every scene load.
    *  @type {THREE.Camera|null} */ viewCamera = null;
   /** @type {Fullbright}   */ fullbright;
-  /** Optional post-processing pass (e.g. RedOut). When set, preRender()
-   *  redirects the scene render to a target and postRender() composites.
-   *  @type {import('./RedOut.js').RedOut|null} */ postProcess = null;
+  /** Optional post-processing (PostPipeline, RedOut, or compatible).
+   *  When set, preRender() redirects the scene render to a target and
+   *  postRender() composites.
+   *  @type {import('./PostPipeline.js').PostPipeline|import('./RedOut.js').RedOut|null} */ postProcess = null;
   /** Drawn over the finished frame, in order, after postProcess — each
    *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
    *  scene that added them: emptied on every scene load.
@@ -342,6 +346,8 @@ export class Engine {
     this.registerScene('OfficeScene', OfficeScene);
     this.registerScene('TestScene', TestScene);
     this.registerScene('BaseScene', BaseScene);
+    this.registerScene('DreamScene', DreamScene);
+    this.registerScene('DreamCraterScene', DreamCraterScene);
     // Not compiled here: warmUp, below, does that and more.
     this.loadScene(BaseScene, { compile: false });
 
@@ -430,7 +436,7 @@ export class Engine {
    *
    *  @param {typeof import('./Scene.js').Scene} SceneClass
    *  @param {{ compile?: boolean }} [opts] */
-  loadScene(SceneClass, { compile = true } = {}) {
+  loadScene(SceneClass, { compile = true, sceneOptions } = {}) {
     // ── Tear down the old scene ──
     // Shadows first: the scene registers its watches while it builds.
     this.shadows.release();
@@ -439,7 +445,7 @@ export class Engine {
     this.screenPasses = [];
 
     // ── Build the new one ──
-    this.activeScene = new SceneClass(this);
+    this.activeScene = new SceneClass(this, sceneOptions);
     this.activeScene.build();
 
     // Initialise every new root object (sets scene/world refs, adds to
@@ -727,6 +733,9 @@ export class Engine {
 
     // ── Flashlight component ──  F toggles; bright up close, short reach by design.
     player.addComponent(new Flashlight());
+
+    // Player body easter egg: hidden in first person, revealed by `fly`.
+    player.addChild(createCJFigure({ model: this.assets.instantiate('model:cj') }));
 
     this.player = player;           // the debug fly camera freezes whoever this is
     this.playerController = ctrl;

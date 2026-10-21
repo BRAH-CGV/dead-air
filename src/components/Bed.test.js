@@ -40,6 +40,23 @@ describe('Bed', () => {
     expect(label('playing')).not.toMatch(/\[E\]/);
   });
 
+  it('in the morning, before the drives are in the buggy, says so and does nothing', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    expect(label('morning')).toMatch(/buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+    bed.onInteract();
+    expect(fade.play).not.toHaveBeenCalled();
+    expect(controller.sleep).not.toHaveBeenCalled();
+  });
+
+  it('in the morning, with the drives loaded but the buggy still here, says to send it off', () => {
+    Object.defineProperty(controller, 'canSleep', { get() { return false; } });
+    controller.delivered = true;
+    controller.dispatched = false;
+    expect(label('morning')).toMatch(/send the buggy/i);
+    expect(label('morning')).not.toMatch(/\[E\]/);
+  });
+
   it('offers nothing after a failed night or the last shift', () => {
     expect(label('gameOver')).toBe('');
     expect(label('finished')).toBe('');
@@ -255,6 +272,58 @@ describe('Bed', () => {
       expect(bed.promptLabel).toBe('');
       bed.onInteract();
       expect(rest.lieDown).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('dreaming between nights (#101)', () => {
+    beforeEach(() => {
+      controller.state = 'morning';
+      controller.nightNumber = 1;
+      controller.nights = { isLastNight: () => false };
+      bed.dream = vi.fn(() => true);
+    });
+
+    it('falling asleep after a night dreams instead of waking straight into the next', () => {
+      bed.onInteract();
+      expect(bed.dream).toHaveBeenCalledWith(1);
+      expect(controller.sleep).not.toHaveBeenCalled();
+    });
+
+    it('after the last night there is no dream: the run ends as before', () => {
+      controller.nights = { isLastNight: () => true };
+      bed.onInteract();
+      expect(bed.dream).not.toHaveBeenCalled();
+      expect(controller.sleep).toHaveBeenCalledOnce();
+    });
+
+    it('with no dream to be had, sleeps on into the next night as before', () => {
+      bed.dream = vi.fn(() => false);
+      bed.onInteract();
+      expect(controller.sleep).toHaveBeenCalledOnce();
+    });
+
+    it('in the bed animation: dreams once the eyes are shut, and does not get up', () => {
+      const rest = {
+        active: false,
+        lieDown: vi.fn(onAsleep => { rest.active = true; rest.onAsleep = onAsleep; return true; }),
+        getUp: vi.fn(() => true),
+        cancel: vi.fn(),
+      };
+      bed.rest = rest;
+      bed.onInteract();
+      expect(bed.dream).not.toHaveBeenCalled();
+      rest.onAsleep();
+      expect(bed.dream).toHaveBeenCalledWith(1);
+      expect(rest.getUp).not.toHaveBeenCalled();
+      expect(rest.cancel).not.toHaveBeenCalled();
+    });
+
+    it('a nap never dreams', () => {
+      controller.state = 'playing';
+      bed.nap = { canNap: true, start: vi.fn(), napping: false };
+      bed.onInteract();
+      expect(bed.nap.start).toHaveBeenCalled();
+      expect(bed.dream).not.toHaveBeenCalled();
     });
   });
 });

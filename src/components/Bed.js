@@ -7,7 +7,9 @@ import { keyName } from '../app/keyNames.js';
 // ─────────────────────────────────────────────
 // Bed  –  sleep through the day to the next night
 // ─────────────────────────────────────────────
-// In the morning after a met quota (controller.canSleep): the screen fades
+// In the morning after a met quota, once the drive box is loaded into the
+// buggy and it has been sent off (controller.canSleep; until then it says
+// which is left): the screen fades
 // to black and the GameController moves on to the next night (or ends the
 // run after the last). During the shift it offers a nap instead (Nap.js):
 // the night fast-forwarded until the alarm, 6 AM, or something wakes you.
@@ -28,6 +30,12 @@ import { keyName } from '../app/keyNames.js';
 // The bunk's poses for that animation are here, in the bunk's own frame
 // (BUNK_POSES), so they follow the bunk wherever the room puts it:
 // pillowPose(), sitPose(), getOutSpot() and the demon's watchSpots().
+//
+// Between nights (#101) the scene hands it `bed.dream(night)`: on any night
+// but the last, falling asleep dreams (DreamScene) instead of waking
+// straight into the next night — the dream wakes you into it. It returns
+// false when there's no dream to be had, and the sleep goes on as before.
+// Naps never dream.
 //
 // promptLabel is a data field refreshed every frame — InteractionSystem
 // re-shows a label that changes while it's being looked at.
@@ -67,6 +75,8 @@ const LABEL = {
   sleep: '[E] Sleep',
   shift: "Can't sleep — the shift runs until 6:00 AM",
   uneasy: "Can't sleep now",
+  deliver: 'Load the drive box into the buggy first',
+  send: 'Send the buggy off first',
 };
 
 export class Bed extends Interactable {
@@ -82,6 +92,9 @@ export class Bed extends Interactable {
   napLength = DEFAULT_LENGTH;
   /** The bed animation (BedRest); without one the morning sleep fades. */
   rest = null;
+  /** Between nights: `(night) => boolean`, dream instead of waking into the
+   *  next night; false if there's no dream (#101). Set by the scene. */
+  dream = null;
 
   promptLabel = '';
 
@@ -104,15 +117,21 @@ export class Bed extends Interactable {
       return;
     }
     // Checked again at black: a second press during the fade must not sleep
-    // through a second night.
+    // through a second night. Returns true when it went into a dream — the
+    // scene is about to be swapped for it, so nothing more happens here.
     const sleep = () => {
-      if (this.controller.canSleep) this.controller.sleep();
+      if (!this.controller.canSleep) return false;
+      const last = this.controller.nights?.isLastNight?.() ?? false;
+      if (!last && this.dream?.(this.controller.nightNumber)) return true;
+      this.controller.sleep();
+      return false;
     };
     if (this.rest) {
       // Asleep, the next night begins: up out of bed into it. The run over
-      // (the last night), the view is handed straight back.
+      // (the last night), the view is handed straight back. Dreaming, the
+      // dream takes the view.
       this.rest.lieDown(() => {
-        sleep();
+        if (sleep()) return;
         if (this.controller.state === 'playing') this.rest.getUp('calm');
         else this.rest.cancel();
       });
@@ -124,6 +143,7 @@ export class Bed extends Interactable {
     const c = this.controller;
     if (!c || this.rest?.active) return '';
     if (c.canSleep) return LABEL.sleep;
+    if (c.state === 'morning') return c.delivered ? LABEL.send : LABEL.deliver;
     if (c.state !== 'playing' || this.nap?.napping) return '';
     if (!this.nap) return LABEL.shift;
     return this.nap.canNap ? this._napLabel() : LABEL.uneasy;
