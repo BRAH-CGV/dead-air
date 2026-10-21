@@ -266,12 +266,6 @@ describe('BaseScene', () => {
     expect(scene.rooms.LivingQuarters.bed.dream(1)).toBe(false);
   });
 
-  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
-    const { journal } = scene.rooms.LivingQuarters;
-    expect(journal.controller).toBe(scene.gameController);
-    expect(journal.panel).toBeTruthy();
-  });
-
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
     const sys = engine.player.getComponent(RoomTransitionSystem);
     expect(sys).not.toBeNull();

@@ -421,10 +421,13 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
 
         const room = scene.rooms?.MainOffice;
         const parent = room?.root ?? scene._sceneRoot;
+        // Whoever holds the drive frees its geometry and material with the
+        // scene, as for the office's own drives.
+        const owner = room ?? scene;
 
         let spawned = 0;
         for (let i = 0; i < count; i++) {
-          const drive = new Drive(`DevSignalDrive_${spawned + 1}`);
+          const drive = owner._own(new Drive(`DevSignalDrive_${spawned + 1}`));
           drive.setSaved(true);
           drive.object3d.position.copy(spawnPos);
           // Offset each drive slightly so they don't stack.

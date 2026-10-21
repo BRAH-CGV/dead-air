@@ -748,6 +748,29 @@ describe('MainOffice placement', () => {
     expect(geom).toBe(true);
     expect(mat).toBe(true);
   });
+
+  it('dispose frees the drives it stocks the boxes with', () => {
+    // Each drive builds its own geometry and material. Left unowned, every
+    // rebuild from the menu kept 32 of each on the GPU.
+    const room = new MainOffice(makeEngine());
+    room.build();
+    expect(room.drives.length).toBeGreaterThan(0);
+    const freed = new Set();
+    for (const drive of room.drives) {
+      drive.object3d.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry.addEventListener('dispose', () => freed.add(o.geometry));
+        o.material.addEventListener('dispose', () => freed.add(o.material));
+      });
+    }
+    const meshes = room.drives.flatMap(d => d.object3d.children.filter(o => o.isMesh));
+    expect(meshes.length).toBeGreaterThan(0);
+    room.dispose();
+    for (const mesh of meshes) {
+      expect(freed.has(mesh.geometry)).toBe(true);
+      expect(freed.has(mesh.material)).toBe(true);
+    }
+  });
 });
 
 describe('MainOffice wall clock teardown', () => {

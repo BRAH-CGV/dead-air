@@ -35,7 +35,7 @@ function fakeScene() {
   };
   const driveBoxes = [{ addDrive: vi.fn() }, { addDrive: vi.fn() }];
   const rooms = {
-    MainOffice: { root: mainOfficeRoot, driveBoxes, driveReader: null },
+    MainOffice: { root: mainOfficeRoot, driveBoxes, driveReader: null, _own: vi.fn((r) => r) },
     ServerRoom: { driveSlot: null },
   };
   return {
@@ -58,6 +58,7 @@ function fakeScene() {
     driveManager,
     rooms,
     _sceneRoot: mainOfficeRoot,
+    _own: vi.fn((r) => r),
   };
 }
 
@@ -634,6 +635,21 @@ describe('createCommands', () => {
       for (const box of scene.rooms.MainOffice.driveBoxes) {
         expect(box.addDrive).toHaveBeenCalledTimes(2);
       }
+    });
+
+    it('hands each drive to the office, which frees it with the room', () => {
+      // Each drive builds its own geometry and material. Unowned, the ones
+      // spawned here stayed on the GPU after a rebuild.
+      run('signals 3');
+      const owned = scene.rooms.MainOffice._own.mock.calls.map(([r]) => r);
+      expect(owned).toEqual(scene.driveManager.drives);
+    });
+
+    it('hands them to the scene when there is no office', () => {
+      delete scene.rooms.MainOffice;
+      run('signals 2');
+      const owned = scene._own.mock.calls.map(([r]) => r);
+      expect(owned).toEqual(scene.driveManager.drives);
     });
 
     it('refuses non-number arguments', () => {

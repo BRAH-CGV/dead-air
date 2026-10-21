@@ -47,7 +47,6 @@ import { HUD, RadarOverlay } from '../ui/HUD.js';
 import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
-import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -580,8 +579,7 @@ export class BaseScene extends Scene {
     // metres along the edge from its corner.
     const louvre = (name, at) => ({ edge: edge(name), at, y: 2.2, width: 1.3, height: 0.5 });
     const backWindow = office.openings.find(o => o.side === 'back');
-    const shell = createBunkerShell({
-      engine: this.engine,
+    const spec = {
       outline: Object.values(corners),
       height: ob.max.y,
       roofProps: [
@@ -604,10 +602,14 @@ export class BaseScene extends Scene {
         width: backWindow.width, height: backWindow.height,
         radius: WINDOW_CORNER_RADIUS,
       }],
-    });
+    };
+    const shell = createBunkerShell({ engine: this.engine, ...spec });
     this._sceneRoot.addChild(shell);
     for (const resource of shell.resources) this._own(resource);
     this.bunker = shell;
+    /** What it was built from: the dream's base is the same shell
+     *  (DreamScene's BASE_SHELL, pinned to this by BaseScene.bunker.test.js). */
+    this.bunkerSpec = spec;
 
     // The office's back wall is the one stretch of the rooms' own shell left
     // in view outside: in the slopes' weathered concrete, laid out as theirs,
@@ -942,12 +944,6 @@ export class BaseScene extends Scene {
       signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
-    // The previous operator's notebook (#79): tonight's entry, on paper.
-    const { journal } = this.rooms.LivingQuarters;
-    if (journal) {
-      journal.controller = this.gameController;
-      journal.panel = new JournalPanel();
-    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
@@ -1216,6 +1212,8 @@ export class BaseScene extends Scene {
       // know about them or they survive a scene reload.
       this._ownResourcesOf(field);
     }
+    // The beacons' glow is a texture, which _ownResourcesOf leaves alone.
+    this._own(towers.glowTexture);
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and

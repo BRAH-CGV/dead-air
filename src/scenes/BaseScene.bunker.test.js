@@ -10,6 +10,7 @@ import { BUNKER, roundedRect } from '../gameobjects/BunkerShell.js';
 import { SIGNAL_MAST } from '../gameobjects/SignalMast.js';
 import { WINDOW_CORNER_RADIUS } from './rooms/MainOffice.js';
 import { PLAYER_BODY } from '../components/PlayerBody.js';
+import { BASE_SHELL } from './DreamScene.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -192,6 +193,12 @@ describe('BaseScene bunker shell', () => {
       expect(hit.point.z).toBeCloseTo(toe, 3);
       expect(Math.abs(x - (x < 0 ? scene.fence.rect.minX : scene.fence.rect.maxX))).toBeLessThan(1e-6);
     }
+  });
+
+  it("is the shell the dreams show: DreamScene's BASE_SHELL is this one's spec", () => {
+    // Rounded: the spec is worked out from the rooms, with float noise.
+    const round = v => JSON.parse(JSON.stringify(v, (k, x) => (typeof x === 'number' ? Math.round(x * 1000) / 1000 : x)));
+    expect(round(BASE_SHELL)).toEqual(round(scene.bunkerSpec));
   });
 
   it('is solid, and far too steep to climb', () => {
