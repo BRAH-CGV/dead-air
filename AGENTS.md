@@ -954,6 +954,9 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 **Rules:**
 - Tests live beside source: `src/core/Foo.test.js` next to `src/core/Foo.js`.
 - Use `vitest` with `jsdom` environment for DOM-touching code (editor, UI).
+- **Each test is cleaned up after.** `src/test/setup.js` (`setupFiles` in vitest.config.js) clears every mock's calls once a test is over, and runs whatever was handed to `onCleanup` (`src/test/cleanup.js`). Vitest otherwise keeps every `vi.fn` until the file ends, with its arguments, its results and whatever its implementation closes over, so a file that built the base in every test kept every base it built. Two rules follow:
+  - Check a mock's calls in the test that made them. A later test, or one reading calls made in a `beforeAll`, sees none.
+  - A fake engine from `makeEngine` (`src/test/fakeRapier.js`) is emptied once the test that made it is over; one made in a `beforeAll` lasts to the end of the file. Hand anything else big a test builds to `onCleanup(fn)`.
 - Never commit code without its tests passing.
 - Pre-existing WASM-related test failures in unrelated modules are acknowledged as background noise — do not block new feature tests on them. Filter to the affected module: `npx vitest run src/path/to/module.test.js`.
 - When implementing from a plan document, follow the phase order — each phase lists the exact tests to write before the implementation.
