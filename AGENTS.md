@@ -50,6 +50,7 @@ src/
 │   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen; precompile() for a rebuild
 │   ├── ShadowSides.js   # sealAgainst: make a building solid to one light's shadow map
 │   ├── CameraSignalPass.js # The CCTV switch drawn over the frame: the old picture frozen, degraded, resolved out of grain
+│   ├── VisorRefraction.js # The helmet's barrel warp: the finished frame copied and drawn back bent (a screen pass, so the scene keeps its MSAA and tone mapping)
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── app/                 # The menus around the game (see "App flow and menus")
 │   ├── App.js           # Glue: AppFlow ↔ Engine ↔ MenuView ↔ PointerLock ↔ SettingsStore
@@ -74,7 +75,7 @@ src/
 │   ├── ClipVoice.js     # One of a set of clips, at random, from a point in the world (ImpactSound, SnapSocket)
 │   ├── MonitorSpeaker.js # The security monitor's small speaker: what the camera on screen hears, thin and fuzzy
 │   ├── WindowSand.js    # A storm's sand on the office window: louder the nearer the glass
-│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
+│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop; the glass only on the player's own view (a cutscene's camera fades it)
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
