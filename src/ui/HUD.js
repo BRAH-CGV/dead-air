@@ -165,12 +165,14 @@ export class RadarOverlay {
     this._backdrop = null;
   }
 
+  // Only on a change: the radar is painted onto the computer's screen from
+  // this DOM, and every change is a fresh read of it (paintDom).
   setInfo(text) {
-    if (this._info) this._info.textContent = text || '';
+    if (this._info && this._info.textContent !== (text || '')) this._info.textContent = text || '';
   }
 
   setHint(text) {
-    if (this._hint) this._hint.textContent = text || '';
+    if (this._hint && this._hint.textContent !== (text || '')) this._hint.textContent = text || '';
   }
 
   /** The flashing red warning line above the info line; '' hides it.

@@ -389,7 +389,6 @@
         overflow: hidden;
         opacity: 0 !important;
         pointer-events: none;
-        will-change: transform;
       }
       #radar-overlay.on-screen,
       #processing-screen.on-screen { display: flex !important; }
@@ -397,6 +396,8 @@
       #radar-overlay.on-screen.is-focused,
       #processing-screen.on-screen.is-focused,
       #cctv.on-screen.is-focused { pointer-events: auto; }
+      /* Leaned in to a screen (ScreenView): nothing to aim at or [E]. */
+      body.screen-on :is(#crosshair, #prompt) { visibility: hidden !important; }
       /* The screen's own colour, painted edge to edge. The camera's overlay
          has none: it goes over the feed. */
       #radar-overlay.on-screen { background: #05080d; }

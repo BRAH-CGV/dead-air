@@ -85,10 +85,11 @@ describe('ScreenCanvas', () => {
     expect(painter).not.toHaveBeenCalled();
   });
 
-  it('leaned in, the same picture at the overlay\'s full size, every frame', () => {
+  it('leaned in, the same picture at the overlay\'s full size, closeFps times a second', () => {
     focused = true;
-    run(0.5);
-    expect(painter.mock.calls.length).toBeGreaterThanOrEqual(29);
+    run(1);
+    expect(painter.mock.calls.length).toBeGreaterThanOrEqual(SCREEN_CANVAS.closeFps - 1);
+    expect(painter.mock.calls.length).toBeLessThanOrEqual(SCREEN_CANVAS.closeFps + 2);
     expect(canvas.width).toBe(LAYOUT[0]);
     expect(canvas.height).toBe(LAYOUT[1]);
     expect(painter).toHaveBeenLastCalledWith(canvas.ctx, LAYOUT[0], LAYOUT[1]);

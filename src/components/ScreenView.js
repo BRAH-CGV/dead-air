@@ -93,6 +93,8 @@ export class ScreenView extends Component {
     this._surface = null;
     this._element = null;
     this._onClosed = null;
+    /** The transform last written, so a still view writes nothing. */
+    this._transform = '';
   }
 
   /** Leaning in, on the screen, or leaning back out. */
@@ -114,6 +116,9 @@ export class ScreenView extends Component {
     this._element = element;
     this._onClosed = null;
     element?.classList.add('is-focused');
+    // Nothing to aim at or use here: the crosshair and the [E] prompt go
+    // (index.html), the tutorial's words stay.
+    this._body(element)?.classList.add('screen-on');
     this.engine.viewCamera = this._camera;
     this.motion.enter();
   }
@@ -186,7 +191,14 @@ export class ScreenView extends Component {
     }
     const w = el.offsetWidth || parseFloat(el.style.width) || 1;
     const h = el.offsetHeight || parseFloat(el.style.height) || 1;
-    el.style.transform = quadToCss(w, h, this._quad);
+    const css = quadToCss(w, h, this._quad);
+    if (css === this._transform) return;
+    this._transform = css;
+    el.style.transform = css;
+  }
+
+  _body(element) {
+    return (element?.ownerDocument ?? globalThis.document)?.body ?? null;
   }
 
   /** A world point to page pixels through `camera`; leaves its NDC in _ndc. */
@@ -200,6 +212,7 @@ export class ScreenView extends Component {
   /** Back at the eyes: the frame given back, the overlay let go. */
   _finish() {
     if (this.engine.viewCamera === this._camera) this.engine.viewCamera = null;
+    this._body(this._element)?.classList.remove('screen-on');
     this._release();
     const onClosed = this._onClosed;
     this._onClosed = null;
@@ -213,6 +226,7 @@ export class ScreenView extends Component {
       el.classList.remove('is-focused');
       el.style.transform = '';
     }
+    this._transform = '';
     this._element = null;
   }
 }

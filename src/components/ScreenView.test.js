@@ -123,6 +123,30 @@ describe('ScreenView', () => {
     expect(element.style.opacity).toBe('');
   });
 
+  it('hides the crosshair and the [E] prompt while the view is on a screen', () => {
+    const { view, element } = makeView();
+    view.open(makeSurface(), element);
+    expect(document.body.classList.contains('screen-on')).toBe(true);
+    run(view, 1);
+    view.close();
+    run(view, 1);
+    expect(document.body.classList.contains('screen-on')).toBe(false);
+  });
+
+  it('writes the overlay\'s transform only when it changes: a still view is no style work', () => {
+    const { view, element } = makeView();
+    element.style.width = '1000px';
+    element.style.height = '600px';
+    view.open(makeSurface(), element);
+    run(view, 1);
+    const writes = vi.fn();
+    const style = element.style;
+    let value = style.transform;
+    Object.defineProperty(style, 'transform', { get: () => value, set: (v) => { writes(); value = v; }, configurable: true });
+    run(view, 0.5);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
   it('holds(surface): the view is on that screen, leaning in, on it or leaning out', () => {
     const { view, element } = makeView();
     const surface = makeSurface();

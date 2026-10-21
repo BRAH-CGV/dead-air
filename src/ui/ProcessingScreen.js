@@ -587,6 +587,10 @@ export class ProcessingScreen {
 
   _updateProgress(drive) {
     const pct = (drive.processingProgress * 100).toFixed(0);
+    // Every frame of a run: only a new percent is worth a DOM change (and
+    // with it a fresh read of the screen's picture, paintDom).
+    if (pct === this._progressShown) return;
+    this._progressShown = pct;
     if (this._progressFill) this._progressFill.style.width = `${pct}%`;
     if (this._progressLabel) this._progressLabel.textContent = `Processing… ${pct}%`;
   }

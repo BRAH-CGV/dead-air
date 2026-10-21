@@ -40,3 +40,23 @@ describe('RadarOverlay.fit', () => {
   });
 });
 
+
+// The radar is painted onto the computer's screen from its DOM (paintDom),
+// and any change to that DOM is a fresh read of its layout: lines set every
+// frame (the evil signal's countdown) are written only when they change.
+describe('RadarOverlay lines', () => {
+  it('writes the info and hint lines only when they change', () => {
+    const radar = makeRadar();
+    const observer = new MutationObserver(() => {});
+    observer.observe(radar.root, { subtree: true, childList: true, characterData: true });
+    radar.setInfo('Silenced in 9 s');
+    radar.setHint('Q: exit');
+    observer.takeRecords();
+    radar.setInfo('Silenced in 9 s');
+    radar.setHint('Q: exit');
+    expect(observer.takeRecords()).toHaveLength(0);
+    radar.setInfo('Silenced in 8 s');
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    observer.disconnect();
+  });
+});

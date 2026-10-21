@@ -254,6 +254,20 @@ describe('ProcessingScreen', () => {
     });
   });
 
+  it('touches the progress bar only when the whole percent changes: each touch is a fresh read of the screen\'s layout', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const observer = new MutationObserver(() => {});
+    observer.observe(domRoot, { subtree: true, childList: true, characterData: true, attributes: true });
+    screen._updateProgress({ processingProgress: 0.401 });
+    observer.takeRecords();
+    screen._updateProgress({ processingProgress: 0.403 });
+    expect(observer.takeRecords()).toHaveLength(0);
+    screen._updateProgress({ processingProgress: 0.41 });
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    observer.disconnect();
+  });
+
   it('close() hides the overlay and clears controls', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);

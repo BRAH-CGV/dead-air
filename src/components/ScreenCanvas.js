@@ -8,8 +8,8 @@ import { screenMesh } from './ScreenView.js';
 // What a computer's screen shows, the same whether the player is leaned in
 // to it or across the room: its overlay's DOM, painted into a canvas
 // (`painter`, paintDom) and shown on a quad over the screen. Leaned in
-// (`focused()`), the same picture is painted every frame at the overlay's
-// own layout size, so it is sharp up close; otherwise a small one a few
+// (`focused()`), the same picture is painted closeFps times a second at the
+// overlay's own layout size, so it is sharp up close; otherwise a small one a few
 // times a second, and only while `seen()` — each repaint is uploaded to the
 // GPU, so from another room it costs nothing.
 //
@@ -30,6 +30,9 @@ export const SCREEN_CANVAS = {
   height: 384,
   /** Repaints a second from across the room, while it can be seen. */
   fps: 10,
+  /** Repaints a second leaned in: smooth enough for a cursor and a slider,
+   *  half the cost of every frame. */
+  closeFps: 30,
 };
 
 const defaultCanvas = () => (typeof document !== 'undefined' ? document.createElement('canvas') : null);
@@ -102,13 +105,10 @@ export class ScreenCanvas extends Component {
       this._paint();
       return;
     }
-    if (detail === 'close') {
-      this._paint();
-      return;
-    }
     this._since += dt;
-    if (this._since + 1e-6 < 1 / SCREEN_CANVAS.fps) return;
-    if (!this.seen()) return;
+    const close = detail === 'close';
+    if (this._since + 1e-6 < 1 / (close ? SCREEN_CANVAS.closeFps : SCREEN_CANVAS.fps)) return;
+    if (!close && !this.seen()) return;
     this._since = 0;
     this._paint();
   }

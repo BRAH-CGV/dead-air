@@ -138,3 +138,77 @@ describe('paintDom', () => {
     expect(y).toBeCloseTo(110);
   });
 });
+
+describe('paintDom keeps what it read (the frame rate, leaned in)', () => {
+  let root, ctx, styles;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root = box(document.createElement('div'), 0, 0, 800, 400);
+    const panel = box(document.createElement('div'), 10, 10, 100, 50);
+    panel.style.backgroundColor = 'blue';
+    root.append(panel);
+    document.body.append(root);
+    ctx = fakeCtx();
+    styles = vi.spyOn(window, 'getComputedStyle');
+  });
+
+  it('reads the layout once, then only draws it again', () => {
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    expect(read).toBeGreaterThan(0);
+    paintDom(root, ctx, 800, 400);
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBe(read);
+    expect(ctx.fill).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads it again once the DOM changes', () => {
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    root.firstChild.style.backgroundColor = 'red';
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBeGreaterThan(read);
+  });
+
+  it('but not when the root is only moved: ScreenView lays it on the screen every frame', () => {
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    root.style.transform = 'matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,9,9,0,1)';
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBe(read);
+    root.classList.add('is-flash');      // a class on it is a change of look
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBeGreaterThan(read);
+  });
+
+  it('…and when the pointer moves over something (a hover changes its look)', () => {
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    root.firstChild.dispatchEvent(new Event('pointerover', { bubbles: true }));
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBeGreaterThan(read);
+  });
+
+  it('…and every so often, for CSS animations (the REC mark blinking)', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    paintDom(root, ctx, 800, 400);
+    const read = styles.mock.calls.length;
+    now.mockReturnValue(1000 + 100);
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBe(read);
+    now.mockReturnValue(1000 + 300);
+    paintDom(root, ctx, 800, 400);
+    expect(styles.mock.calls.length).toBeGreaterThan(read);
+    now.mockRestore();
+  });
+
+  it('draws canvases as they are now, though the layout was read before', () => {
+    const canvas = box(document.createElement('canvas'), 0, 0, 10, 10);
+    canvas.width = 10;
+    root.append(canvas);
+    paintDom(root, ctx, 800, 400);
+    paintDom(root, ctx, 800, 400);
+    expect(ctx.drawImage).toHaveBeenCalledTimes(2);
+  });
+});
