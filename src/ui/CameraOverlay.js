@@ -22,7 +22,7 @@
 const MAP_MARGIN = [1.5, 1.5];
 /** Pixels: a camera's square on the map, and the gap kept between it and
  *  the wall it is pushed off. */
-export const CAMERA_SQUARE = 26;
+export const CAMERA_SQUARE = 18;
 const MAP_GAP = 2;
 
 export class CameraOverlay {

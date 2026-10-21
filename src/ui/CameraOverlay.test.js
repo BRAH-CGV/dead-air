@@ -157,3 +157,22 @@ describe('CameraOverlay', () => {
     }).not.toThrow();
   });
 });
+
+// The overlay is laid out at the monitor's own size and painted onto it
+// (#161), so the map is sized as a share of the monitor — never of the
+// browser window — and kept to a corner of it.
+describe('the map\'s size on the monitor (index.html)', () => {
+  it('is a fixed share of the monitor\'s width, small enough to leave the picture clear', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+    const rule = html.match(/#cctv-map\s*\{([^}]*)\}/)[1];
+    const width = rule.match(/width:\s*([^;]+);/)[1].trim();
+    expect(width).toMatch(/^\d+(\.\d+)?%$/);
+    expect(parseFloat(width)).toBeLessThanOrEqual(30);
+  });
+
+  it('its camera buttons are small squares', () => {
+    expect(CAMERA_SQUARE).toBeLessThanOrEqual(20);
+  });
+});

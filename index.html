@@ -963,7 +963,9 @@
         position: absolute;
         left: 22px;
         bottom: 44px;
-        width: min(540px, 46vw);
+        /* A share of the monitor (the overlay is laid out at its size), so
+           the map is the same on any window, in the corner of the picture. */
+        width: 28%;
         background: rgba(6, 12, 10, 0.72);
         border: 1px solid rgba(160, 220, 180, 0.45);
         z-index: 1;
@@ -994,7 +996,7 @@
            off its wall and the square agree. */
         box-sizing: border-box;
         padding: 0;
-        font: bold 14px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font: bold 11px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
         color: #dfe9e2;
         background: #2a3530;
         border: 2px solid #9fb8a8;
