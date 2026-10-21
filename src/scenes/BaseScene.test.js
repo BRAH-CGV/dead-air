@@ -96,6 +96,35 @@ describe('BaseScene', () => {
     expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
   });
 
+  it('wires the bedroom PC (#114): the night, the panel, the run, the map; a screen the demon counts', () => {
+    const { pc } = scene.rooms.LivingQuarters;
+    expect(pc.controller).toBe(scene.gameController);
+    expect(pc.panel).toBeTruthy();
+    // One run record, on the engine, so it outlives a dream's rebuild; the
+    // controller writes each morning's delivery to it.
+    expect(engine.run).toBeTruthy();
+    expect(pc.run).toBe(engine.run);
+    expect(scene.gameController.run).toBe(engine.run);
+    // The six neighbours and the buggy's way out to the hub.
+    expect(pc.map.neighbours).toHaveLength(6);
+    expect(pc.map.route.length).toBeGreaterThan(1);
+    expect(pc.map.hub).not.toBeNull();
+    // Reading it, the player is at a screen, as at the terminal.
+    expect(scene.sleepDemon.terminal.state).toBe('idle');
+    pc.open = true;
+    expect(scene.sleepDemon.terminal.state).toBe('reading');
+    pc.open = false;
+  });
+
+  it('keeps the run record a rebuild finds on the engine', () => {
+    const run = engine.run;
+    engine._rootObjects.length = 0;
+    const again = new BaseScene(engine);
+    again.build();
+    expect(engine.run).toBe(run);
+    expect(again.rooms.LivingQuarters.pc.run).toBe(run);
+  });
+
   it('butts the airlock flush on the office front wall, lined up with its front doorway', () => {
     const office = scene.rooms.MainOffice;
     const airlock = scene.rooms.Airlock;

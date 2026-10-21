@@ -97,6 +97,9 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { EventBanner } from '../ui/EventBanner.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
+import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
+import { colonyMap } from '../ui/colonyMap.js';
+import { RunRecord } from '../gameplay/RunRecord.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
@@ -372,6 +375,7 @@ export class BaseScene extends Scene {
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
+    this._addBedroomPC();
     this._addFatigue();
     this._addSleepDemon();
     this._addUfo();
@@ -760,6 +764,9 @@ export class BaseScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     this.gameController.banner        = this.banner;
+    // What each morning's buggy takes to the hub, for the bedroom PC. On
+    // the engine, so a dream's rebuild between nights keeps it.
+    this.gameController.run           = (this.engine.run ??= new RunRecord());
     gameplayGO.addComponent(this.gameController);
 
     // The banner's timing runs on real time (engine.realDt), ticked by a
@@ -1804,11 +1811,11 @@ export class BaseScene extends Scene {
    *  itself: a pitch-black shade no light shows, and it casts none — a solid
    *  shadow under a faint figure gave it away — so moving it never redraws
    *  the frozen shadow maps. */
-  /** The screens at the desk that fill the view: the terminal's radar or
-   *  review and the security monitor. Whichever is up is the state; 'idle'
-   *  while neither is. Read every frame, so it allocates nothing. */
+  /** The screens that fill the view: the terminal's radar or review, the
+   *  security monitor and the bedroom PC. Whichever is up is the state;
+   *  'idle' while none is. Read every frame, so it allocates nothing. */
   _screens() {
-    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    const screens = [this.terminal, this.cameraTerminal, this.rooms.LivingQuarters?.pc].filter(Boolean);
     return {
       get state() {
         for (let i = 0; i < screens.length; i++) {
@@ -1909,15 +1916,7 @@ export class BaseScene extends Scene {
     const buggy = this._outside.find('Buggy');
     if (!buggy) return;
 
-    // Build the route.
-    const startYaw = buggy.object3d.rotation.y;
-    const forward = { x: Math.sin(startYaw), z: Math.cos(startYaw) };
-    const points = buggyRoute({
-      start: { x: buggy.object3d.position.x, z: buggy.object3d.position.z },
-      forward,
-      gate: this.exitGate,
-      rect: this.fence.rect,
-    });
+    const points = this._buggyRoutePoints(buggy);
     const curve = routeCurve(points, (x, z) => terrainHeightAt(x, z) + 1.237);
     const length = curve.getLength();
     const gateAt = distanceAlong(curve, new THREE.Vector3(this.exitGate.at, 0, this.fence.rect.maxZ));
@@ -1947,6 +1946,40 @@ export class BaseScene extends Scene {
 
     this._offBuggyNight = this.gameController.onNightStart(() => {
       this.buggySendOff.resetForNight();
+    });
+  }
+
+  /** The buggy's way out, in world metres from its parking spot: straight
+   *  at the gate, through it and down the lane (buggyRoute). The send-off
+   *  drives it; the bedroom PC's map draws it. Empty with no gate. */
+  _buggyRoutePoints(buggy = this._outside?.find('Buggy')) {
+    if (!this.exitGate || !buggy) return [];
+    const startYaw = buggy.object3d.rotation.y;
+    const forward = { x: Math.sin(startYaw), z: Math.cos(startYaw) };
+    return buggyRoute({
+      start: { x: buggy.object3d.position.x, z: buggy.object3d.position.z },
+      forward,
+      gate: this.exitGate,
+      rect: this.fence.rect,
+    });
+  }
+
+  // ──────────────────────────────────────────
+  // The bedroom PC (#114)
+  // ──────────────────────────────────────────
+  /** The computer on the bedroom desk: the room put it there, this hands
+   *  it the night, its panel (#bedroom-pc), the run record and the colony
+   *  map — the six neighbours where the radar has them, and the buggy's
+   *  route out toward the hub. */
+  _addBedroomPC() {
+    const pc = this.rooms.LivingQuarters?.pc;
+    if (!pc) return;
+    pc.controller = this.gameController;
+    pc.panel = new BedroomPCPanel();
+    pc.run = this.engine.run;
+    pc.map = colonyMap({
+      neighbours: this.satellite?.neighbours ?? [],
+      route: this._buggyRoutePoints(),
     });
   }
 
