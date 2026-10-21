@@ -87,6 +87,7 @@ src/
 │   ├── CoffeeMachine.js # Interactable: brew a cup, wait, drink it; a couple of cups a night (COFFEE)
 │   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns, the walk-down's heartbeat floor (setDread)
 │   ├── CameraTerminal.js # The security monitor: view through a camera, pan, flash, static
+│   ├── ScreenView.js    # Leaning in to a screen: its own camera on engine.viewCamera, the overlay laid onto the screen (#161)
 │   ├── AirlockPortal.js # Airlock state → which occlusion zone is drawn; holds the doors until ready
 │   └── Tutorial.js      # Night 0 on the live scene: reads what the player did, bends the night to teach it, shows the steps
 ├── gameobjects/
@@ -130,6 +131,7 @@ src/
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
 │   ├── BreakerPuzzle.js # Breakers to throw back + colour-coded leads to reconnect (pure)
 │   ├── CameraFeed.js    # Which camera is on screen, its pan, flash, and when the picture is live (pure)
+│   ├── ScreenFocus.js   # Where the camera stands to frame a screen; the lean in and back out (pure)
 │   ├── BuggyDeparture.js # The buggy's way out: exit lane, route curve, eagle view, the timeline (pure)
 │   └── CameraTransition.js # A camera switch as one timeline: drop → wait → resolve, for picture and hiss; glitch() for a vent (pure)
 ├── scenes/
@@ -153,6 +155,7 @@ src/
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── CameraOverlay.js # The security monitor's label, hints, map and CONNECTING (#cctv)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
+│   ├── screenTransform.js # The CSS matrix3d laying a DOM box onto a screen's projected corners (pure)
 │   ├── intro/           # The story before the first shift, on New game (see "App flow and menus")
 │   │   ├── IntroTimeline.js # The beats, their captions and timing; the array's name (pure)
 │   │   ├── introDraw.js # One 2D canvas painter per beat: flat shapes and gradients, no files
@@ -452,6 +455,18 @@ waiting ─▶ approaching ─▶ expanding ─▶ lethal ─▶ gone
   - **Back to the spawn.** A retry starts the night over from the beginning: the controller tells its night-start listeners `{ retry: true }`, and `BaseScene._respawn` takes the suit off and `FirstPersonController.teleport`s the player to the spawn, facing the window. A new night after sleeping doesn't move you.
   - **The E is used up.** The retry calls `engine.consumeAction('interact')`, so that press can't also reach whatever the player died looking at. Before this, dying at the generator meant the retry's E switched the freshly restored power straight back off.
 - **Every night start** (`controller.onNightStart`) repairs the bulbs and breakers, switches the generator on, closes a breaker panel left open, clears the white-out and schedules the next visit.
+
+### On the screen (#161)
+
+Using the office computer or the server room's console doesn't throw its overlay over the whole view. The view leans in until the screen fills it, and the overlay (the radar, the processing screen) is drawn on the screen in the world, in its perspective. `ScreenView` (on `GameplaySystems`, `scene.screenView`, one for both) does it. The rules are `ScreenFocus` (pure).
+
+- **The lean.** A camera of its own, handed to `engine.viewCamera` as the buggy's send-off does, so the player's camera keeps the ears and the interaction ray and the controller is left alone. It eases from the player's eye to `framePose`: on the screen's normal, square to it, at `SCREEN_FOCUS.fov` (40°), the screen filling `fill` (92 %) of the view in its tighter direction, so the bezel shows. In over `inSeconds` (0.55 s), out over `outSeconds` (0.4 s), on real time (`engine.realDt`). Leaning out follows the player's live eye.
+- **The overlay on the screen.** It stays the same DOM, with `.on-screen` (index.html) put on its root: put at the page's top left and sized to the screen as it will be seen once leaned in, so its text is drawn at the size it shows. Each frame the screen's four corners are projected to the page and the root is laid onto them with a CSS `matrix3d` (`screenTransform`, a homography). The browser hit-tests through the transform, so the console's buttons still click. The picture fades up over the first `revealIn` (30 %) of the lean and goes down with it on the way out; the overlay is hidden only once the lean is back at the eye.
+  - The radar reflows to its box (`RadarOverlay.fit`).
+  - The processing screen is a fixed column, so it keeps `SCREEN_LAYOUT` (1032 × 860, the console screen's 1.2 aspect) and is scaled onto the screen.
+- **The screens** are rectangles read off the models, in each model's own space, so they follow it: `MainOffice.computerScreen` (`COMPUTER_SCREEN`, the retro computer's sloping face, 0.35 × 0.20 m, tipped back about 33°) and `ServerRoom.consoleScreen` (`CONSOLE_SCREEN`, the CRT's face). A different model needs them read again.
+- **Off at once.** `BaseScene._leaveScreens()` exits the terminal, closes the processing screen and `cut()`s the lean, with no ease. It runs on every night start (a retry teleports the player), on the Sleep Demon's kill (its `terminal` is `_screens()`, whose `exit()` calls it) and on Ragno's catch (`hooks.leaveScreens`), so a death plays on the player's own view.
+- **Not yet:** the security monitor. Its picture is the game's frame drawn through the camera, so on its screen it would need a second render to a texture.
 
 ### Security cameras
 

@@ -13,6 +13,7 @@ import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { screenSurface } from '../../components/ScreenView.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
@@ -121,6 +122,17 @@ function insidePolygon(x, z, pts) {
   return inside;
 }
 
+/** The computer's screen, read off retro-computer.glb (#161): the corners
+ *  of the face its "HELLO WORLD" texture is drawn on, [tl, tr, br, bl] as
+ *  seen from the seat, in the model's own units (0.016 m each at the desk's
+ *  spawn scale). It is flat, 0.35 × 0.20 m, its top tipped back about 33°:
+ *  the monitor's sloping face. The texture's corners are rounded; this is
+ *  the rectangle round them. */
+const COMPUTER_SCREEN = [
+  [-10.97, 62.54, -20.45], [10.97, 62.54, -20.45],
+  [10.97, 52.25, -13.86], [-10.97, 52.25, -13.86],
+];
+
 /** The security-camera monitor on the left wing (camera-monitor.glb):
  *  width, height, depth. */
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
@@ -145,6 +157,10 @@ export class MainOffice extends Room {
   /** The security-camera monitor on the desk's left wing. The scene hangs
    *  the CameraTerminal on it. @type {GameObject|null} */
   cameraMonitor = null;
+
+  /** The computer's screen, for ScreenView: the radar is drawn on it.
+   *  Marked by buildProps(). */
+  computerScreen = null;
 
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
@@ -255,6 +271,7 @@ export class MainOffice extends Room {
     const desk = this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
+    this.computerScreen = desk ? screenSurface(desk.object3d, COMPUTER_SCREEN) : null;
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);

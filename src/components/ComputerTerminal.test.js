@@ -810,4 +810,55 @@ describe('ComputerTerminal', () => {
     term.exit();
     expect(radar.setWarning).toHaveBeenLastCalledWith('');
   });
+
+  // ── On the screen itself (#161) ──
+
+  describe('with a screen to lean in to', () => {
+    let view, surface;
+    beforeEach(() => {
+      view = { open: vi.fn(), close: vi.fn() };
+      surface = { worldCorners: vi.fn() };
+      radar.root = {};
+      radar.fit = vi.fn();
+      term.screenView = view;
+      term.screen = surface;
+    });
+
+    it('leans in to the screen and lays the radar on it', () => {
+      term.enter();
+      expect(view.open).toHaveBeenCalledWith(surface, radar.root, expect.any(Object));
+      expect(radar.show).toHaveBeenCalled();
+    });
+
+    it('fits the radar to the box the screen gives it', () => {
+      term.enter();
+      view.open.mock.calls[0][2].onSize(900, 500);
+      expect(radar.fit).toHaveBeenCalledWith(900, 500);
+    });
+
+    it('keeps the radar up while leaning back out, and drops it once out', () => {
+      term.enter();
+      term.exit();
+      expect(view.close).toHaveBeenCalledTimes(1);
+      expect(radar.hide).not.toHaveBeenCalled();
+      const onClosed = view.close.mock.calls[0][0];
+      onClosed();
+      expect(radar.hide).toHaveBeenCalled();
+      expect(radar.fit).toHaveBeenLastCalledWith(null);
+    });
+
+    it('gives the player back at once, without waiting for the lean', () => {
+      term.enter();
+      term.exit();
+      expect(term.state).toBe('idle');
+      expect(crosshair.show).toHaveBeenCalled();
+    });
+  });
+
+  it('without a screen, the radar goes over the view as before', () => {
+    term.enter();
+    expect(radar.show).toHaveBeenCalled();
+    term.exit();
+    expect(radar.hide).toHaveBeenCalled();
+  });
 });

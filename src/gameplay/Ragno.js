@@ -128,7 +128,8 @@ export class Ragno extends Component {
    * @param {THREE.Camera} [o.camera]  The player's eye.
    * @param {object} o.hooks  zoneOf(p) → a room or corridor name, 'outside';
    *        ufoBusy(); setPlayerLocked(locked); isFrozen(); rayHit(from, dir, max)
-   *        → metres to the first solid thing (sightRay).
+   *        → metres to the first solid thing (sightRay); leaveScreens(): off
+   *        the computer's or the console's screen, for the lunge.
    */
   constructor({
     controller, clock, layout, figure, terminal = null, cameras = [], flashlight = null, power,
@@ -496,6 +497,7 @@ export class Ragno extends Component {
     this._locked = true;
     this.hooks.setPlayerLocked?.(true);
     this.terminal?.exit?.();
+    this.hooks.leaveScreens?.();
     this._walk.silence();
     this._lunge = 0;
     const death = this._audio().death;

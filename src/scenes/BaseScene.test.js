@@ -13,6 +13,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { ScreenView } from '../components/ScreenView.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
@@ -612,6 +613,49 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.driveManager).toBe(scene.driveManager);
     expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
+  });
+
+  it('leans in to the computer\'s and the console\'s screens, one view for both (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.getComponent(ScreenView)).toBe(scene.screenView);
+    expect(scene.terminal.screenView).toBe(scene.screenView);
+    expect(scene.terminal.screen).toBe(scene.rooms.MainOffice.computerScreen);
+    expect(scene.processingScreen.view).toBe(scene.screenView);
+    expect(scene.processingScreen.screen).toBe(scene.rooms.ServerRoom.consoleScreen);
+  });
+
+  it('using the computer hands the frame to the screen view', () => {
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    desk.getComponent(Interactable).onInteract({});
+    expect(scene.screenView.active).toBe(true);
+    expect(engine.viewCamera).toBe(scene.screenView._camera);
+  });
+
+  it('the screens\' exit takes the player off the computer at once, no lean back', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.sleepDemon.terminal.exit();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('a retry takes the player off whichever screen they were at', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.processingScreen.isOpen = true;   // no DOM here to open it with
+    const close = vi.spyOn(scene.processingScreen, 'close');
+    scene.gameController.fail('taken');
+    scene.gameController.retryNight();
+    expect(close).toHaveBeenCalled();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('hands Ragno the way off the screens, for his lunge', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.ragno.hooks.leaveScreens();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
   });
 
   it('runs the game controller as a component under SceneRoot, so it ticks', () => {

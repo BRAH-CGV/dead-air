@@ -152,6 +152,7 @@ export function makeEngine() {
       const [x, y, z] = opts.position ?? [0, 0, 0];
       go.object3d.position.set(x, y, z);
       go.object3d.rotation.y = opts.rotationY ?? 0;
+      go.object3d.scale.setScalar(opts.scale ?? 1);
       if (opts.physics !== 'none') {
         go.rigidBody = engine.world.createRigidBody({ type: 'fixed', t: { x, y, z } });
         engine._bodyToGO.set(go.rigidBody.handle, go);

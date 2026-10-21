@@ -105,6 +105,8 @@ export class RadarOverlay {
     this._hint   = root?.querySelector('#radar-hint')    ?? null;
     this._warning = root?.querySelector('#radar-warning') ?? null;
     this._warningText = '';
+    /** The box fit() was given, [width, height], or null for the window. */
+    this._box = null;
     this._resizeHandler = null;
     this._resize();
     // Resize when the window changes
@@ -114,9 +116,17 @@ export class RadarOverlay {
     }
   }
 
-  /** Recompute the canvas size and internal metrics. Called on construction
-   *  and on window resize. The overlay fills the smaller of the window's
-   *  width or height, leaving a margin for the text below. */
+  /** Lay the radar out in a box of `width` × `height` CSS pixels instead of
+   *  the window: the office computer's screen, as ScreenView sizes it
+   *  (#161). `fit(null)` goes back to the window. */
+  fit(width, height) {
+    this._box = width && height ? [width, height] : null;
+    this._resize();
+  }
+
+  /** Recompute the canvas size and internal metrics. Called on construction,
+   *  on window resize and by fit(). The disc fills the smaller of the box's
+   *  (or the window's) width or height, leaving a margin for the text below. */
   _resize() {
     if (!this._canvas) {
       // Fallback for tests / no DOM
@@ -127,9 +137,11 @@ export class RadarOverlay {
     }
     // Leave room for the info/hint text below the canvas
     const margin = 80;
-    const size = typeof window !== 'undefined'
-      ? Math.min(window.innerWidth, window.innerHeight) - margin
-      : 400;
+    const size = this._box
+      ? Math.min(this._box[0], this._box[1] - margin)
+      : typeof window !== 'undefined'
+        ? Math.min(window.innerWidth, window.innerHeight) - margin
+        : 400;
     // Clamp to a reasonable range
     this._canvas.width = Math.max(200, Math.min(size, 1200));
     this._canvas.height = this._canvas.width;

@@ -20,12 +20,27 @@ import { FirstPersonController } from '../components/FirstPersonController.js';
 import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend, renderToImageData, blendFromImageData } from './Spectrogram.js';
 import { TuningGame, TARGET_ZONE_WIDTH } from '../gameplay/TuningGame.js';
 
+/** The console's layout on its screen, CSS pixels (#161): a fixed column
+ *  that doesn't reflow, so it is laid out at this size and scaled onto the
+ *  screen. The console's screen is 1.2 wide to 1 tall. */
+export const SCREEN_LAYOUT = [1032, 860];
+
 export class ProcessingScreen {
   /** @type {import('../gameplay/SignalRegistry.js').SignalRegistry|null} */
   signalRegistry = null;
 
   /** Engine reference for input locking. Set by the scene that owns it. */
   _engine = null;
+
+  /** Leans the view in to the console's screen and draws this on it
+   *  (#161). Without one the screen goes over the whole view. Both set by
+   *  the scene. @type {import('../components/ScreenView.js').ScreenView|null} */
+  view = null;
+  /** The console's screen, for `view`. */
+  screen = null;
+
+  /** Between open() and close(). */
+  isOpen = false;
 
   /** The actions currently rendered, so refreshActions can re-evaluate. */
   _actions = [];
@@ -115,6 +130,8 @@ export class ProcessingScreen {
     this._renderMediaButtons(drive);
     this._renderActions(actions);
     this.root.style.display = 'flex';
+    this.isOpen = true;
+    if (this.view && this.screen) this.view.open(this.screen, this.root, { size: SCREEN_LAYOUT });
     this._lockInput(true);
     this._installKeyHandler();
     // Show the tuning game as disabled until processing starts.
@@ -126,7 +143,11 @@ export class ProcessingScreen {
   /** Close the screen and restore input. */
   close() {
     if (!this.root) return;
-    this.root.style.display = 'none';
+    this.isOpen = false;
+    // On the screen, it stays up while the view leans back out.
+    const root = this.root;
+    if (this.view && this.screen) this.view.close(() => { root.style.display = 'none'; });
+    else root.style.display = 'none';
     this._stopScanline();
     this._stopProgressTracking();
     this._stopTuningGame();

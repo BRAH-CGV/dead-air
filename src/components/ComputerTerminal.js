@@ -67,6 +67,13 @@ export class ComputerTerminal extends Component {
   gameController = null;
   /** @type {import('../ui/Crosshair.js').Crosshair|null} */
   crosshair = null;
+  /** Leans the view in to the computer's screen and draws the radar on it
+   *  (#161). Without one (tests, other scenes) the radar goes over the
+   *  whole view. @type {import('./ScreenView.js').ScreenView|null} */
+  screenView = null;
+  /** The computer's screen, for screenView.
+   *  @type {ReturnType<typeof import('./ScreenView.js').screenSurface>|null} */
+  screen = null;
 
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
@@ -223,7 +230,15 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = null;
     this._setInputLocked(false);
     this.radar?.setWarning?.('');
-    this.radar?.hide();
+    // On the screen, the radar stays up while the view leans back out.
+    if (this.screenView && this.screen) {
+      this.screenView.close(() => {
+        this.radar?.hide();
+        this.radar?.fit?.(null);
+      });
+    } else {
+      this.radar?.hide();
+    }
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     // Restore the first-person reticle now that the terminal is closed.
@@ -237,6 +252,12 @@ export class ComputerTerminal extends Component {
     // overlay has its own cursor.
     this.crosshair?.hide();
     this.radar?.show();
+    // Lean in to the screen, the radar drawn on it.
+    if (this.screenView && this.screen) {
+      this.screenView.open(this.screen, this.radar?.root ?? null, {
+        onSize: (width, height) => this.radar?.fit?.(width, height),
+      });
+    }
     // Check drive state first — scanning requires a drive in the reader,
     // and a drive with a signal already on it blocks further scanning.
     if (this.driveManager && !this.driveManager.driveInserted) {

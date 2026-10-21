@@ -12,7 +12,7 @@ vi.mock('./Spectrogram.js', () => ({
   blendFromImageData: vi.fn(),
 }));
 
-import { ProcessingScreen } from './ProcessingScreen.js';
+import { ProcessingScreen, SCREEN_LAYOUT } from './ProcessingScreen.js';
 
 // ── Minimal DOM helpers ────────────────────────────────────
 // ProcessingScreen queries its constructor argument for child elements.
@@ -175,6 +175,42 @@ describe('ProcessingScreen', () => {
     expect(buttons[0].textContent).toBe('Upgrade Signal');
     expect(buttons[0].disabled).toBe(false);
     expect(buttons[0].dataset.actionId).toBe('upgrade');
+  });
+
+  it('with a screen, leans in to it and lays the console on it (#161)', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const view = { open: vi.fn(), close: vi.fn() };
+    const surface = {};
+    screen.view = view;
+    screen.screen = surface;
+    screen.open(null, []);
+    expect(view.open).toHaveBeenCalledWith(surface, domRoot, { size: SCREEN_LAYOUT });
+    expect(domRoot.style.display).toBe('flex');
+  });
+
+  it('with a screen, stays up while the view leans back out, then hides', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const view = { open: vi.fn(), close: vi.fn() };
+    screen.view = view;
+    screen.screen = {};
+    screen.open(null, []);
+    screen.close();
+    expect(view.close).toHaveBeenCalledTimes(1);
+    expect(domRoot.style.display).toBe('flex');
+    view.close.mock.calls[0][0]();
+    expect(domRoot.style.display).toBe('none');
+  });
+
+  it('isOpen follows open() and close()', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    expect(screen.isOpen).toBe(false);
+    screen.open(null, []);
+    expect(screen.isOpen).toBe(true);
+    screen.close();
+    expect(screen.isOpen).toBe(false);
   });
 
   it('close() hides the overlay and clears controls', () => {

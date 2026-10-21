@@ -43,6 +43,7 @@ import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { ScreenView } from '../components/ScreenView.js';
 import { HUD, RadarOverlay } from '../ui/HUD.js';
 import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -751,6 +752,14 @@ export class BaseScene extends Scene {
     const gameplayGO = new GameObject('GameplaySystems').makeGroup();
     this._sceneRoot.addChild(gameplayGO);
 
+    // Using the computer, or the server room's console, leans the view in
+    // to its screen and draws the overlay on it (#161). One view for both:
+    // only one screen is used at a time.
+    this.screenView = new ScreenView({ engine: this.engine });
+    gameplayGO.addComponent(this.screenView);
+    this.terminal.screenView = this.screenView;
+    this.terminal.screen = this.rooms.MainOffice.computerScreen;
+
     this.gameController = new GameController();
     this.gameController.nightClock    = this.nightClock;
     this.gameController.signalManager = this.signalManager;
@@ -806,6 +815,8 @@ export class BaseScene extends Scene {
     // registry (for audio URL lookup from the drive's signal name).
     this.processingScreen.signalRegistry = this.signalRegistry;
     this.processingScreen.setEngine(this.engine);
+    this.processingScreen.view = this.screenView;
+    this.processingScreen.screen = this.rooms.ServerRoom?.consoleScreen ?? null;
     if (this.rooms.ServerRoom) {
       this.rooms.ServerRoom.processingScreen = this.processingScreen;
     }
@@ -955,6 +966,7 @@ export class BaseScene extends Scene {
     // back at the spawn, facing the window, suit off (the airlock cycles
     // back with it). A new night after sleeping leaves you where you woke.
     this._offRetry = this.gameController.onNightStart((_night, { retry }) => {
+      this._leaveScreens();
       if (retry) this._respawn();
     });
 
@@ -1745,6 +1757,14 @@ export class BaseScene extends Scene {
     return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
+  /** Off the computer's or the console's screen at once, with no lean back
+   *  (#161): a kill or a new night wants the player's own view now. */
+  _leaveScreens() {
+    if (this.terminal?.state !== 'idle') this.terminal?.exit();
+    if (this.processingScreen?.isOpen) this.processingScreen.close();
+    this.screenView?.cut();
+  }
+
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
   _setPlayerLocked(locked) {
     const ctrl = this.engine.player?.getComponent(FirstPersonController);
@@ -1811,7 +1831,13 @@ export class BaseScene extends Scene {
    *  while neither is. Read every frame, so it allocates nothing. */
   _screens() {
     const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    const scene = this;
     return {
+      /** Off whichever is up, at once: the Sleep Demon's kill. */
+      exit() {
+        scene._leaveScreens();
+        scene.cameraTerminal?.exit?.();
+      },
       get state() {
         for (let i = 0; i < screens.length; i++) {
           if (screens[i].state !== 'idle') return screens[i].state;
@@ -2387,6 +2413,7 @@ export class BaseScene extends Scene {
         zoneOf:          p => this._zoneOf(p),
         ufoBusy,
         setPlayerLocked: locked => this._setPlayerLocked(locked),
+        leaveScreens:    () => this._leaveScreens(),
         isFrozen:        () => !!engine.debugCamera?.active,
         rayHit:          ragnoRay(engine.world, engine.player?.rigidBody ?? null),
       },

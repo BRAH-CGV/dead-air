@@ -369,6 +369,39 @@
         letter-spacing: 0.06em;
       }
 
+      /* ── On a screen (ScreenView, #161) ──────────────────
+         Using a computer leans the view in to its screen, and its overlay
+         is drawn on that screen in the world rather than over the view:
+         ScreenView sizes it, puts it at the page's top left and lays it
+         onto the screen's four corners with a matrix3d each frame. */
+      #radar-overlay.on-screen,
+      #processing-screen.on-screen {
+        inset: auto;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        border-radius: 14px;
+        backface-visibility: hidden;
+        will-change: transform, opacity;
+      }
+      #radar-overlay.on-screen { background: #05080d; }
+      #processing-screen.on-screen { background: #04060b; }
+      /* A glass screen: faint scanlines and a darker edge, over the picture
+         and never in the way of a click. */
+      #radar-overlay.on-screen::after,
+      #processing-screen.on-screen::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background:
+          repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 3px),
+          radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.55) 100%);
+      }
+
       /* ── Processing screen (ServerRoom console) ────────── */
       #processing-screen {
         position: fixed;
