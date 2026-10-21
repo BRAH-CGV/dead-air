@@ -230,7 +230,7 @@ describe('LivingQuarters', () => {
     }
 
     // The lamp is drawn only (no collider), and lit (#79): one small light
-    // of its own beside the ceiling lamp, to read the journal by.
+    // of its own beside the ceiling lamp, over the desk.
     const lamp = room.root.find('DeskLamp');
     expect(lamp.rigidBody).toBeNull();
     const { x, y, z } = lamp.object3d.position;
@@ -372,21 +372,9 @@ describe('LivingQuarters', () => {
     expect(engine.world.bodies.len()).toBe(0);
   });
 
-  describe('the journal desk (#79)', () => {
-    it('puts a notebook on the desk top, with the Journal on it', () => {
-      const notebook = room.root.find('Notebook');
-      expect(notebook).toBeTruthy();
-      const desk = footprint(room.root.find('Desk'));
-      const { x, y, z } = notebook.object3d.position;
-      expect(x).toBeGreaterThan(desk.x0);
-      expect(x).toBeLessThan(desk.x1);
-      expect(z).toBeGreaterThan(desk.z0);
-      expect(z).toBeLessThan(desk.z1);
-      expect(y).toBeGreaterThan(0.79);   // simple-desk.glb's top
-      expect(y).toBeLessThan(0.83);
-      expect(room.journal).toBeTruthy();
-      expect(notebook.getComponent(Interactable)).toBe(room.journal);
-      expect(notebook.collider).toBeTruthy();       // the interaction ray needs one
+  describe('the bedroom desk', () => {
+    it('has no notebook on it: the desk is free for the PC (#114)', () => {
+      expect(room.root.find('Notebook')).toBeFalsy();
     });
 
     it('lights the desk lamp: a real light, no shadow, under the room (so the grid switches it)', () => {
