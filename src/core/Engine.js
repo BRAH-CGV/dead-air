@@ -168,7 +168,9 @@ export class Engine {
     crouch:   'KeyC',
     interact: 'KeyE',
     flashlight: 'KeyF',
-    rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
+    rotateHeld: 'KeyR',   // hold (or tap) to turn a carried object with the mouse
+    holdFurther: 'ArrowUp',    // push a carried object away (the wheel, without one)
+    holdCloser: 'ArrowDown',   // pull it in
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup

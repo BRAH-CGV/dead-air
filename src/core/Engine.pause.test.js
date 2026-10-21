@@ -176,7 +176,7 @@ describe('Engine devTools gate', () => {
 
   it('binds no debug keys: the dev console drives the tools', () => {
     const binds = Object.keys(new Engine().keyBinds);
-    expect(binds).toEqual(['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld']);
+    expect(binds).toEqual(['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld', 'holdFurther', 'holdCloser']);
   });
 });
 
