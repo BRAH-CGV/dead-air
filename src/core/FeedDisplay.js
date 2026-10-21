@@ -68,12 +68,29 @@ const FRAG = /* glsl */ `
   uniform float uTime;
   uniform sampler2D tOverlay;  // the overlay's own picture (CameraOverlay, painted)
   uniform float uHasOverlay;
+  uniform float uMotion;       // 0 under reduced motion: the lines and band hold still
   varying vec2 vUv;
 
   // A share of the screen, not of the picture's pixels, so the screen
   // looks the same drawn small or leaned in to.
   #define GRAIN 180.0
   ${SCREEN_GLASS_GLSL}
+
+  // The CCTV's own lines, finer than the computers': a dark one every
+  // third row of a 720-row picture, crawling down a line every 0.9 s.
+  #define CCTV_LINES 240.0
+  float cctvLines(vec2 uv) {
+    return 1.0 - 0.2 * step(fract(uv.y * CCTV_LINES + uTime * uMotion / 0.9), 1.0 / 3.0);
+  }
+
+  // A faint band rolling down through the picture every 7 s: 40 % of the
+  // screen tall, brightest (7 %) in its middle.
+  float cctvRoll(vec2 uv) {
+    float top = 1.0 - uv.y;
+    float bandTop = mix(-0.9, 1.5, fract(uTime * uMotion / 7.0));
+    float d = abs(top - (bandTop + 0.2)) / 0.4;
+    return d < 0.05 ? mix(0.07, 0.045, d / 0.05) : d < 0.5 ? mix(0.045, 0.0, (d - 0.05) / 0.45) : 0.0;
+  }
 
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -126,10 +143,11 @@ const FRAG = /* glsl */ `
     #include <colorspace_fragment>
 
     // The overlay (its bytes are as painted), then the monitor's glass over
-    // both, as every screen wears it (ScreenGlass).
+    // both: its lines, the rolling band, and the dark edge every screen has.
     vec4 ov = texture2D(tOverlay, vUv);
     gl_FragColor.rgb = mix(gl_FragColor.rgb, ov.rgb, ov.a * uHasOverlay);
-    gl_FragColor.rgb *= screenGlass(vUv);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb * cctvLines(vUv), vec3(1.0), cctvRoll(vUv));
+    gl_FragColor.rgb *= screenEdge(vUv);
   }
 `;
 
@@ -145,8 +163,12 @@ export class FeedDisplay {
    * @param {THREE.Scene} opts.scene  What the camera sees.
    * @param {import('../systems/OcclusionZones.js').OcclusionZones|null} [opts.zones]
    * @param {number} opts.aspect  The screen's width over its height.
+   * @param {boolean} [opts.reducedMotion]  The lines and band hold still.
    */
-  constructor({ scene, zones = null, aspect }) {
+  constructor({
+    scene, zones = null, aspect,
+    reducedMotion = typeof matchMedia === 'function' && !!matchMedia('(prefers-reduced-motion: reduce)')?.matches,
+  }) {
     this.scene = scene;
     this.zones = zones;
     this.aspect = aspect;
@@ -173,6 +195,7 @@ export class FeedDisplay {
         uTime: { value: 0 },
         tOverlay: { value: null },
         uHasOverlay: { value: 0 },
+        uMotion: { value: reducedMotion ? 0 : 1 },
       },
       vertexShader: VERT,
       fragmentShader: FRAG,

@@ -5,12 +5,15 @@ import * as THREE from 'three';
 // ─────────────────────────────────────────────
 // What makes a picture read as a monitor: scanlines crawling slowly down
 // and a darker edge. Drawn in the fragment shader, so a repaint of the
-// picture costs nothing extra for it — the camera monitor's shader
-// (FeedDisplay) and the computer's and console's (createScreenMaterial,
-// for ScreenCanvas) share it, so all three screens wear the same glass.
+// picture costs nothing extra for it. The computer's and the console's
+// screens (createScreenMaterial, for ScreenCanvas) wear all of it; the
+// camera monitor's shader (FeedDisplay) takes the edge and draws its own,
+// finer CCTV lines.
 //
 //   gl_FragColor.rgb *= screenGlass(vUv);   // in display space, after
 //                                           // <colorspace_fragment>
+//   gl_FragColor.rgb *= screenEdge(vUv);    // the edge alone (the camera
+//                                           // monitor has its own lines)
 //
 // Scanlines are a share of the screen (SCANLINES down it), not of the
 // picture's pixels, so the screen looks the same drawn small or leaned in
@@ -19,11 +22,14 @@ import * as THREE from 'three';
 
 export const SCREEN_GLASS_GLSL = /* glsl */ `
   #define SCANLINES 128.0
+  // The darker edge every screen has.
+  float screenEdge(vec2 uv) {
+    vec2 edge = uv * (1.0 - uv);
+    return mix(0.45, 1.0, clamp(pow(edge.x * edge.y * 16.0, 0.25), 0.0, 1.0));
+  }
   float screenGlass(vec2 uv) {
     float scan = 0.86 + 0.14 * step(0.334, fract(uv.y * SCANLINES - uTime * 0.6));
-    vec2 edge = uv * (1.0 - uv);
-    float vignette = clamp(pow(edge.x * edge.y * 16.0, 0.25), 0.0, 1.0);
-    return scan * mix(0.45, 1.0, vignette);
+    return scan * screenEdge(uv);
   }
 `;
 

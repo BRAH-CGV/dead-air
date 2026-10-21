@@ -146,6 +146,20 @@ describe('FeedDisplay', () => {
     expect(fs).not.toMatch(/mod\(px\.y/);
   });
 
+  it('wears the CCTV\'s own scanlines: fine and crawling, a band rolling through, the screen\'s dark edge', () => {
+    const fs = display.material.fragmentShader;
+    expect(fs).toContain('CCTV_LINES');
+    expect(fs).toContain('cctvRoll(');
+    expect(fs).toContain('screenEdge(');
+    expect(fs).not.toContain('screenGlass(vUv)');   // not the computer's coarser lines on top
+  });
+
+  it('holds its scanlines and band still under reduced motion', () => {
+    expect(display.material.uniforms.uMotion.value).toBe(1);
+    const still = new FeedDisplay({ scene, zones, aspect: 1.7, reducedMotion: true });
+    expect(still.material.uniforms.uMotion.value).toBe(0);
+  });
+
   it('dispose frees the target and the material', () => {
     const target = display.target;
     const material = display.material;
