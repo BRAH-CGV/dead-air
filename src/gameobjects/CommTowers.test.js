@@ -218,6 +218,15 @@ describe('the beacons', () => {
     expect(new Set(phases).size).toBe(phases.length);
   });
 
+  it('hands over the one glow texture, so whoever builds the towers can free it', () => {
+    // A texture is never freed with a mesh's geometry and material, so the
+    // scene has to be given it by name.
+    const towers = createCommTowers();
+    const { sprites } = partsOf(towers);
+    expect(towers.glowTexture?.isTexture).toBe(true);
+    for (const sprite of sprites) expect(sprite.material.map).toBe(towers.glowTexture);
+  });
+
   it('marks the lamps as rewritten every frame, so the occlusion sort leaves the mesh whole', () => {
     // Split into per-zone copies, the copies kept their first colour and the
     // lamps stayed red between flashes.

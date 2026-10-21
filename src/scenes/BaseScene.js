@@ -1212,6 +1212,8 @@ export class BaseScene extends Scene {
       // know about them or they survive a scene reload.
       this._ownResourcesOf(field);
     }
+    // The beacons' glow is a texture, which _ownResourcesOf leaves alone.
+    this._own(towers.glowTexture);
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
