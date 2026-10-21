@@ -65,7 +65,14 @@ const FRAG = /* glsl */ `
   uniform float uDesat;    // 0..1
   uniform float uBand;     // 0..1, the resolve's tear band, top to bottom
   uniform float uTime;
+  uniform sampler2D tOverlay;  // the overlay's own picture (CameraOverlay, painted)
+  uniform float uHasOverlay;
   varying vec2 vUv;
+
+  // A share of the screen, not of the picture's pixels, so the screen
+  // looks the same drawn small or leaned in to.
+  #define SCANLINES 128.0
+  #define GRAIN 180.0
 
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -80,13 +87,14 @@ const FRAG = /* glsl */ `
       #include <colorspace_fragment>
       return;
     }
-    vec2 px = floor(vUv * uRes);
+    float aspect = uRes.x / uRes.y;
+    vec2 cell = floor(vUv * vec2(GRAIN * aspect, GRAIN));
 
-    // Grain: blocks of 2 picture pixels, re-rolled ~24 times a second,
-    // cool and dim, darker on alternate lines.
+    // Grain: blocks of a fixed share of the screen, re-rolled ~24 times a
+    // second, cool and dim, darker on alternate rows.
     float frame = floor(uTime * 24.0);
-    float g = hash(floor(px / 2.0) + frame * 17.0);
-    float line = 0.82 + 0.18 * step(1.0, mod(px.y, 3.0));
+    float g = hash(cell + frame * 17.0);
+    float line = 0.82 + 0.18 * step(1.0, mod(cell.y, 3.0));
     vec3 grain = vec3(0.6, 0.7, 0.85) * g * 0.25 * line;
 
     // A tear: bands of rows pushed sideways, changing ~12 times a second.
@@ -112,15 +120,18 @@ const FRAG = /* glsl */ `
     float amount = mix(clamp(uNoise * 0.9 + band * uTear * 0.5, 0.0, 1.0), uNoise * 0.6, uFrozen);
     col = mix(col, grain * (1.0 + band), amount) + grain * uNoise * 0.25 * uFrozen;
 
-    // The monitor: scanlines crawling slowly down, and a darker edge.
-    float scan = 0.86 + 0.14 * step(1.0, mod(px.y + floor(uTime * 3.3), 3.0));
-    vec2 edge = vUv * (1.0 - vUv);
-    float vignette = clamp(pow(edge.x * edge.y * 16.0, 0.25), 0.0, 1.0);
-    col *= scan * mix(0.45, 1.0, vignette);
-
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+
+    // The overlay (its bytes are as painted), then the monitor's glass over
+    // both: scanlines crawling slowly down, and a darker edge.
+    vec4 ov = texture2D(tOverlay, vUv);
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, ov.rgb, ov.a * uHasOverlay);
+    float scan = 0.86 + 0.14 * step(0.334, fract(vUv.y * SCANLINES - uTime * 0.6));
+    vec2 edge = vUv * (1.0 - vUv);
+    float vignette = clamp(pow(edge.x * edge.y * 16.0, 0.25), 0.0, 1.0);
+    gl_FragColor.rgb *= scan * mix(0.45, 1.0, vignette);
   }
 `;
 
@@ -162,6 +173,8 @@ export class FeedDisplay {
         uDesat: { value: 0 },
         uBand: { value: 0 },
         uTime: { value: 0 },
+        tOverlay: { value: null },
+        uHasOverlay: { value: 0 },
       },
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -200,6 +213,13 @@ export class FeedDisplay {
     const width = Math.round(height * this.aspect);
     if (this.target.width !== width || this.target.height !== height) this.target.setSize(width, height);
     this.material.uniforms.uRes.value.set(width, height);
+  }
+
+  /** What goes over the picture: the camera's label, the controls, the
+   *  map (CameraOverlay, painted into a ScreenCanvas texture). */
+  setOverlay(texture) {
+    this.material.uniforms.tOverlay.value = texture;
+    this.material.uniforms.uHasOverlay.value = texture ? 1 : 0;
   }
 
   /** Draw a new picture after this frame. */

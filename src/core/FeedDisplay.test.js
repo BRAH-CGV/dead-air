@@ -132,6 +132,20 @@ describe('FeedDisplay', () => {
     expect(display.material.fragmentShader).toContain('#include <tonemapping_fragment>');
   });
 
+  it('lays an overlay over the picture: the camera\'s label and the map, on the monitor itself', () => {
+    expect(display.material.uniforms.uHasOverlay.value).toBe(0);
+    const overlay = new THREE.Texture();
+    display.setOverlay(overlay);
+    expect(display.material.uniforms.tOverlay.value).toBe(overlay);
+    expect(display.material.uniforms.uHasOverlay.value).toBe(1);
+  });
+
+  it('its grain and scanlines are a share of the screen, not of the picture\'s pixels: the same up close', () => {
+    const fs = display.material.fragmentShader;
+    expect(fs).toContain('SCANLINES');
+    expect(fs).not.toMatch(/mod\(px\.y/);
+  });
+
   it('dispose frees the target and the material', () => {
     const target = display.target;
     const material = display.material;

@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // vitest (BUG-003). Nothing here constructs a controller, so an empty
 // module is enough to let this file run.
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
+vi.mock('../ui/paintDom.js', () => ({ paintDom: vi.fn() }));
 
 import * as THREE from 'three';
 import { ComputerTerminal, createComputerInteractable } from './ComputerTerminal.js';
@@ -12,6 +13,7 @@ import { SignalManager } from '../gameplay/SignalManager.js';
 import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
+import { paintDom } from '../ui/paintDom.js';
 
 // ── Minimal test doubles ──────────────────────────────────
 
@@ -819,21 +821,14 @@ describe('ComputerTerminal', () => {
       view = { open: vi.fn(), close: vi.fn() };
       surface = { worldCorners: vi.fn() };
       radar.root = {};
-      radar.fit = vi.fn();
       term.screenView = view;
       term.screen = surface;
     });
 
-    it('leans in to the screen and lays the radar on it', () => {
+    it('leans in to the screen, the radar\'s DOM on it to take the keys', () => {
       term.enter();
-      expect(view.open).toHaveBeenCalledWith(surface, radar.root, expect.any(Object));
+      expect(view.open).toHaveBeenCalledWith(surface, radar.root);
       expect(radar.show).toHaveBeenCalled();
-    });
-
-    it('fits the radar to the box the screen gives it', () => {
-      term.enter();
-      view.open.mock.calls[0][2].onSize(900, 500);
-      expect(radar.fit).toHaveBeenCalledWith(900, 500);
     });
 
     it('keeps the radar up while leaning back out, and drops it once out', () => {
@@ -844,7 +839,6 @@ describe('ComputerTerminal', () => {
       const onClosed = view.close.mock.calls[0][0];
       onClosed();
       expect(radar.hide).toHaveBeenCalled();
-      expect(radar.fit).toHaveBeenLastCalledWith(null);
     });
 
     it('gives the player back at once, without waiting for the lean', () => {
@@ -852,6 +846,35 @@ describe('ComputerTerminal', () => {
       term.exit();
       expect(term.state).toBe('idle');
       expect(crosshair.show).toHaveBeenCalled();
+    });
+  });
+
+  describe('the screen when nobody is at it (paintScreen)', () => {
+    const ctx = () => ({ fillRect: vi.fn(), fillStyle: '' });
+
+    beforeEach(() => { radar.root = {}; paintDom.mockClear(); });
+
+    it('shows the radar as it stands: refreshed, then its own DOM painted', () => {
+      const c = ctx();
+      term.paintScreen(c, 690, 384);
+      expect(radar.update).toHaveBeenCalled();
+      expect(paintDom).toHaveBeenCalledWith(radar.root, c, 690, 384);
+    });
+
+    it('leaned in, paints it without touching it: the terminal keeps it up to date', () => {
+      term.enter();
+      radar.update.mockClear();
+      term.paintScreen(ctx(), 690, 384);
+      expect(radar.update).not.toHaveBeenCalled();
+      expect(paintDom).toHaveBeenCalled();
+    });
+
+    it('goes dark without power', () => {
+      term.setPowered(false);
+      const c = ctx();
+      term.paintScreen(c, 690, 384);
+      expect(paintDom).not.toHaveBeenCalled();
+      expect(c.fillRect).toHaveBeenCalledWith(0, 0, 690, 384);
     });
   });
 

@@ -153,9 +153,11 @@ export class CameraTerminal extends Component {
     }
     if (overlay) overlay.onSelect = i => this.select(i);
     this.feed = new CameraFeed({ cameras, isReady: zone => hooks.isReady?.(zone) ?? true });
-    // The monitor shows the camera last watched, from the start.
+    // The monitor shows the camera last watched, from the start, its
+    // overlay (painted on the monitor too) naming it.
     this._onAir = 0;
     display?.show(cameras[0] ?? null);
+    if (cameras.length) overlay?.setCamera(this._label());
     if (flash) {
       flash.intensity = 0;
       flash.angle = CAMERA_FLASH.angle;
@@ -164,6 +166,11 @@ export class CameraTerminal extends Component {
       flash.color.setHex(CAMERA_FLASH.color);
       flash.castShadow = false;
     }
+  }
+
+  /** The keys, once the engine's binds can be read. */
+  onStart() {
+    this.overlay?.setHint(this._hint());
   }
 
   get _engine() {
@@ -336,7 +343,7 @@ export class CameraTerminal extends Component {
       return;
     }
     this._sinceFrame += dt;
-    if (this._sinceFrame < 1 / FEED.idleFps) return;
+    if (this._sinceFrame + 1e-6 < 1 / FEED.idleFps) return;
     if (!(this.hooks.seen?.() ?? true)) return;
     this._sinceFrame = 0;
     this.display.want();

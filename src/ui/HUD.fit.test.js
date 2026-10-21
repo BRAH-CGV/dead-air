@@ -39,3 +39,4 @@ describe('RadarOverlay.fit', () => {
     radar.dispose();
   });
 });
+

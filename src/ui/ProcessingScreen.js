@@ -19,10 +19,11 @@
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend, renderToImageData, blendFromImageData } from './Spectrogram.js';
 import { TuningGame, TARGET_ZONE_WIDTH } from '../gameplay/TuningGame.js';
+import { paintDom } from './paintDom.js';
 
-/** The console's layout on its screen, CSS pixels (#161): a fixed column
- *  that doesn't reflow, so it is laid out at this size and scaled onto the
- *  screen. The console's screen is 1.2 wide to 1 tall. */
+/** The console's layout on its screen, CSS pixels (#161): a fixed column,
+ *  laid out at this size, painted onto the screen and laid onto it for the
+ *  mouse. The console's screen is 1.2 wide to 1 tall. */
 export const SCREEN_LAYOUT = [1032, 860];
 
 export class ProcessingScreen {
@@ -41,6 +42,10 @@ export class ProcessingScreen {
 
   /** Between open() and close(). */
   isOpen = false;
+
+  /** Which drive the spectrogram was last worked out for (_driveKey), so
+   *  the idle screen only works it out again when that changes. */
+  _shownKey = null;
 
   /** The actions currently rendered, so refreshActions can re-evaluate. */
   _actions = [];
@@ -131,7 +136,8 @@ export class ProcessingScreen {
     this._renderActions(actions);
     this.root.style.display = 'flex';
     this.isOpen = true;
-    if (this.view && this.screen) this.view.open(this.screen, this.root, { size: SCREEN_LAYOUT });
+    this._shownKey = this._driveKey(drive);
+    if (this.view && this.screen) this.view.open(this.screen, this.root);
     this._lockInput(true);
     this._installKeyHandler();
     // Show the tuning game as disabled until processing starts.
@@ -152,7 +158,7 @@ export class ProcessingScreen {
     this._stopProgressTracking();
     this._stopTuningGame();
     this._stopBlend();
-    this._clearSpectrogram();
+    // The spectrogram stays: the console's screen goes on showing it (paint).
     this._clearMediaButtons();
     this._clearActions();
     this._lockInput(false);
@@ -160,6 +166,29 @@ export class ProcessingScreen {
     this._drive = null;
     this._actions = [];
     if (this._audio) { this._audio.pause(); this._audio.currentTime = 0; }
+  }
+
+  /**
+   * The console's screen (ScreenCanvas, #161): its own DOM painted into a
+   * 2D canvas of `w` × `h` — the same leaned in to it or not. Away from it,
+   * the spectrogram is kept to the drive in the reader, worked out again
+   * only when that changes.
+   * @param {object|null} drive  The drive in the console's reader.
+   */
+  paint(ctx, w, h, drive) {
+    if (!this.isOpen) {
+      const key = this._driveKey(drive);
+      if (key !== this._shownKey) {
+        this._shownKey = key;
+        this._updateSpectrogram(drive);
+      }
+    }
+    if (this.root) paintDom(this.root, ctx, w, h);
+  }
+
+  /** What the spectrogram depends on, as a key. */
+  _driveKey(drive) {
+    return drive ? `${drive.saved ? 1 : 0}|${drive.signalName ?? ''}|${drive.signalLevel ?? 1}` : '';
   }
 
   /** Re-render the controls with updated enabled/label state. Call after

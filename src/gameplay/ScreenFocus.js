@@ -10,8 +10,7 @@
 //       frame a screen: on its normal, square to it, the screen filling
 //       `fill` of the view in the tighter direction.
 //   ScreenFocusMotion                          the lean in and back out:
-//       `t` (0 the player's eye … 1 the screen, eased) and `reveal`
-//       (how much of the picture shows).
+//       `t` (0 the player's eye … 1 the screen, eased).
 // ─────────────────────────────────────────────
 
 import * as THREE from 'three';
@@ -20,8 +19,6 @@ export const SCREEN_FOCUS = {
   /** Seconds to lean in, and to lean back out. */
   inSeconds: 0.55,
   outSeconds: 0.4,
-  /** The share of the way in by which the picture is fully up. */
-  revealIn: 0.3,
   /** Vertical field of view, degrees, once on the screen: narrower than
    *  the player's, so the camera stands back a little and the screen is
    *  seen nearly flat. */
@@ -82,17 +79,6 @@ export class ScreenFocusMotion {
 
   /** How far from the eye to the screen, eased. */
   get t() { return smoothstep(this._raw); }
-
-  /** How much of the picture shows: up early on the way in, and going
-   *  down with the camera on the way out. */
-  get reveal() {
-    switch (this.phase) {
-      case 'in':  return Math.min(1, this._raw / this.opts.revealIn);
-      case 'on':  return 1;
-      case 'out': return this._raw;
-      default:    return 0;
-    }
-  }
 
   /** Lean in, from wherever the camera is now. */
   enter() {

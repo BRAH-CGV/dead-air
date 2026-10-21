@@ -94,6 +94,12 @@ describe('CameraTerminal', () => {
     desk.addComponent(terminal);
   });
 
+  it('the monitor\'s overlay names the camera and lists the keys from the start: it is on the monitor always (#161)', () => {
+    expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 0, count: 2, label: 'ROOM' });
+    terminal.onStart();
+    expect(overlay.setHint).toHaveBeenLastCalledWith(expect.stringMatching(/Q: exit/));
+  });
+
   describe('what is on air (Ragno reads it)', () => {
     it('nothing while away from the monitor', () => {
       expect(terminal.onAir).toBeNull();

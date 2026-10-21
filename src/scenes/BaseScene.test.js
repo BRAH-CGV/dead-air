@@ -14,6 +14,7 @@ import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
 import { ScreenView } from '../components/ScreenView.js';
+import { ScreenCanvas } from '../components/ScreenCanvas.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
@@ -622,6 +623,42 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.screen).toBe(scene.rooms.MainOffice.computerScreen);
     expect(scene.processingScreen.view).toBe(scene.screenView);
     expect(scene.processingScreen.screen).toBe(scene.rooms.ServerRoom.consoleScreen);
+  });
+
+  it('the computer and the console show their pictures on their own screens, always (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const pictures = gameplay.components.filter(c => c instanceof ScreenCanvas);
+    expect(pictures).toContain(scene.computerPicture);
+    expect(pictures).toContain(scene.consolePicture);
+    expect(scene.computerPicture.mesh.parent).toBe(scene.rooms.MainOffice.computerScreen.object);
+    expect(scene.consolePicture.mesh.parent).toBe(scene.rooms.ServerRoom.consoleScreen.object);
+
+    const ctx = {};
+    const paint = vi.spyOn(scene.terminal, 'paintScreen').mockImplementation(() => {});
+    scene.computerPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+    const drive = {};
+    scene.rooms.ServerRoom.driveSlot._insertedDrive = drive;
+    const console_ = vi.spyOn(scene.processingScreen, 'paint').mockImplementation(() => {});
+    scene.consolePicture.painter(ctx, 4, 3);
+    expect(console_).toHaveBeenCalledWith(ctx, 4, 3, drive);
+  });
+
+  it('a screen\'s picture is painted sharp and every frame while the view is on it', () => {
+    const holds = vi.spyOn(scene.screenView, 'holds').mockReturnValue(true);
+    expect(scene.computerPicture.focused()).toBe(true);
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.computerScreen);
+    scene.consolePicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.ServerRoom.consoleScreen);
+    scene.cameraPicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.cameraScreen);
+  });
+
+  it('the camera\'s overlay is a picture too, laid over the feed rather than on a quad of its own', () => {
+    expect(scene.cameraPicture.mesh).toBeNull();
+    expect(scene.cameraPicture.glass).toBe(false);
+    expect(scene.cameraPicture.layout[1]).toBe(720);
+    expect(scene.cameraPicture.layout[0] / 720).toBeCloseTo(0.55 / 0.323, 2);
   });
 
   it('using the computer hands the frame to the screen view', () => {

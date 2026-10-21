@@ -63,7 +63,6 @@ describe('ScreenFocusMotion', () => {
     const m = new ScreenFocusMotion();
     expect(m.phase).toBe('idle');
     expect(m.t).toBe(0);
-    expect(m.reveal).toBe(0);
     expect(m.active).toBe(false);
   });
 
@@ -77,7 +76,6 @@ describe('ScreenFocusMotion', () => {
     m.update(SCREEN_FOCUS.inSeconds);
     expect(m.phase).toBe('on');
     expect(m.t).toBe(1);
-    expect(m.reveal).toBe(1);
   });
 
   it('starts slow: eased, not linear', () => {
@@ -87,15 +85,7 @@ describe('ScreenFocusMotion', () => {
     expect(m.t).toBeLessThan(0.1);
   });
 
-  it('brings the picture up early on the way in', () => {
-    const m = new ScreenFocusMotion();
-    m.enter();
-    m.update(SCREEN_FOCUS.inSeconds * SCREEN_FOCUS.revealIn);
-    expect(m.reveal).toBeCloseTo(1);
-    expect(m.phase).toBe('in');
-  });
-
-  it('moves back out, the picture going with it, and says when it is done', () => {
+  it('moves back out, and says when it is done', () => {
     const m = new ScreenFocusMotion();
     m.enter();
     m.update(10);
@@ -103,7 +93,6 @@ describe('ScreenFocusMotion', () => {
     expect(m.phase).toBe('out');
     expect(m.update(SCREEN_FOCUS.outSeconds / 2)).toBe(false);
     expect(m.t).toBeCloseTo(0.5);
-    expect(m.reveal).toBeLessThan(1);
     expect(m.update(SCREEN_FOCUS.outSeconds)).toBe(true);   // just closed
     expect(m.phase).toBe('idle');
     expect(m.t).toBe(0);

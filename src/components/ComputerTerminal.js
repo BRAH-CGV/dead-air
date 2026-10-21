@@ -3,6 +3,7 @@ import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { cursorToSky, skyToCursor } from '../gameobjects/DishRig.js';
+import { paintDom } from '../ui/paintDom.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -232,10 +233,7 @@ export class ComputerTerminal extends Component {
     this.radar?.setWarning?.('');
     // On the screen, the radar stays up while the view leans back out.
     if (this.screenView && this.screen) {
-      this.screenView.close(() => {
-        this.radar?.hide();
-        this.radar?.fit?.(null);
-      });
+      this.screenView.close(() => this.radar?.hide());
     } else {
       this.radar?.hide();
     }
@@ -252,12 +250,8 @@ export class ComputerTerminal extends Component {
     // overlay has its own cursor.
     this.crosshair?.hide();
     this.radar?.show();
-    // Lean in to the screen, the radar drawn on it.
-    if (this.screenView && this.screen) {
-      this.screenView.open(this.screen, this.radar?.root ?? null, {
-        onSize: (width, height) => this.radar?.fit?.(width, height),
-      });
-    }
+    // Lean in to the screen the radar is drawn on.
+    if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
     // Check drive state first — scanning requires a drive in the reader,
     // and a drive with a signal already on it blocks further scanning.
     if (this.driveManager && !this.driveManager.driveInserted) {
@@ -395,6 +389,20 @@ export class ComputerTerminal extends Component {
       return;
     }
 
+  }
+
+  /** The computer's screen (ScreenCanvas, #161): the radar's own DOM as it
+   *  stands, painted into a 2D canvas — the same leaned in to it or not.
+   *  Away from it, the radar is brought up to date first. Dark without
+   *  power. */
+  paintScreen(ctx, w, h) {
+    if (!this.powered || !this.radar?.root) {
+      ctx.fillStyle = '#020304';
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    if (this.state === 'idle') this._updateRadarDisplay();
+    paintDom(this.radar.root, ctx, w, h);
   }
 
   /** Refresh the radar canvas with current state. */

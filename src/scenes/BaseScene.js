@@ -44,8 +44,10 @@ import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
 import { ScreenView, screenMesh } from '../components/ScreenView.js';
+import { ScreenCanvas } from '../components/ScreenCanvas.js';
+import { paintDom } from '../ui/paintDom.js';
 import { HUD, RadarOverlay } from '../ui/HUD.js';
-import { ProcessingScreen } from '../ui/ProcessingScreen.js';
+import { ProcessingScreen, SCREEN_LAYOUT as PROCESSING_LAYOUT } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { JournalPanel } from '../ui/JournalPanel.js';
@@ -241,6 +243,10 @@ const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angl
  *  dish big; the window frames it at any screen shape from 4:3 to 21:9. */
 const MENU_SHOT = { eye: [0.15, 1.35, -1.9], look: 3.5, lead: -6, fov: 60 };
 
+/** The height, CSS px, the radar's and the camera's overlays are laid out
+ *  at on their screens (#161); their widths follow each screen's shape. */
+const SCREEN_LAYOUT_HEIGHT = 720;
+
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
  *  the corner's two walls, and down from the ceiling. Outdoors: how far off
  *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
@@ -371,6 +377,7 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addScreenPictures();
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
@@ -1571,6 +1578,59 @@ export class BaseScene extends Scene {
     });
   }
 
+  /** What the screens show (#161): each overlay's own DOM — the radar,
+   *  the processing console, the camera's label and map — painted onto its
+   *  screen, the same whether the player is leaned in to it or across the
+   *  room. Each overlay is laid out once at a fixed size, invisible on the
+   *  page (`.on-screen`); leaned in, ScreenView lays it onto the screen to
+   *  take the mouse. The camera monitor's overlay goes over its feed, in
+   *  the feed's own shader (FeedDisplay). */
+  _addScreenPictures() {
+    const gameplay = this._sceneRoot.find('GameplaySystems');
+    if (!gameplay) return;
+    const office = this.rooms.MainOffice, server = this.rooms.ServerRoom;
+    const layoutFor = (surface) => {
+      const [tl, tr, , bl] = surface.local;
+      return [Math.round(SCREEN_LAYOUT_HEIGHT * tl.distanceTo(tr) / tl.distanceTo(bl)), SCREEN_LAYOUT_HEIGHT];
+    };
+    const picture = (surface, room, root, layout, painter, opts = {}) => {
+      if (!surface) return null;
+      this._hostOnScreen(root, layout);
+      const screen = new ScreenCanvas({
+        surface, layout, painter, ...opts,
+        seen: () => this._screenSeen(surface, room),
+        focused: () => !!this.screenView?.holds(surface),
+      });
+      gameplay.addComponent(screen);
+      return screen;
+    };
+
+    // Lifts are in each model's own units: ~2.4 mm off the glass.
+    const radarLayout = office.computerScreen ? layoutFor(office.computerScreen) : null;
+    if (radarLayout) this.radarOverlay.fit(...radarLayout);
+    this.computerPicture = picture(office.computerScreen, office, this.radarOverlay.root, radarLayout,
+      (ctx, w, h) => this.terminal.paintScreen(ctx, w, h), { corner: 0.15, lift: 0.15 });
+    this.consolePicture = picture(server?.consoleScreen, server, this.processingScreen.root, PROCESSING_LAYOUT,
+      (ctx, w, h) => this.processingScreen.paint(ctx, w, h, server.driveSlot?.insertedDrive ?? null),
+      { corner: 0.06, lift: 0.005 });
+    // The camera's overlay: a texture alone, over the feed in its shader.
+    const camera = office.cameraScreen;
+    const overlay = this.cameraOverlay?.root ?? null;
+    this.cameraPicture = picture(camera, office, overlay, camera ? layoutFor(camera) : null,
+      (ctx, w, h) => { if (overlay) paintDom(overlay, ctx, w, h); },
+      { quad: false, glass: false, colorSpace: THREE.NoColorSpace });
+    if (this.cameraPicture?.texture) this.feedDisplay?.setOverlay(this.cameraPicture.texture);
+  }
+
+  /** An overlay laid out at `layout` CSS px for its screen, for good:
+   *  invisible on the page, painted onto the screen (index.html). */
+  _hostOnScreen(root, layout) {
+    if (!root || !layout) return;
+    root.classList.add('on-screen');
+    root.style.width = `${layout[0]}px`;
+    root.style.height = `${layout[1]}px`;
+  }
+
   // ──────────────────────────────────────────
   // Power (the generator outside feeds the base)
   // ──────────────────────────────────────────
@@ -1774,17 +1834,22 @@ export class BaseScene extends Scene {
     this.screenView?.cut();
   }
 
-  /** The security monitor can be seen from where the frame is drawn: from
-   *  inside the office, with its screen in view. Only then is its picture
-   *  worth drawing from across the room. */
+  /** The security monitor can be seen (_screenSeen): only then is its
+   *  picture worth drawing from across the room. */
   _monitorSeen() {
-    const surface = this.rooms.MainOffice.cameraScreen;
+    return this._screenSeen(this.rooms.MainOffice.cameraScreen, this.rooms.MainOffice);
+  }
+
+  /** A screen can be seen from where the frame is drawn: from inside its
+   *  room, with its middle in view. */
+  _screenSeen(surface, room) {
     const camera = this.engine.renderCamera ?? this.engine.camera;
-    if (!surface || !camera) return false;
-    const t = (this._seenScratch ??= { eye: new THREE.Vector3(), centre: new THREE.Vector3(), m: new THREE.Matrix4(), frustum: new THREE.Frustum() });
+    if (!surface || !room || !camera) return false;
+    const t = (this._seenScratch ??= { eye: new THREE.Vector3(), centre: new THREE.Vector3(), m: new THREE.Matrix4(), frustum: new THREE.Frustum(), shells: new Map() });
     camera.getWorldPosition(t.eye);
-    this._officeShell ??= this.rooms.MainOffice.bounds();
-    if (!this._officeShell.containsPoint(t.eye)) return false;
+    let shell = t.shells.get(room);
+    if (!shell) t.shells.set(room, (shell = room.bounds()));
+    if (!shell.containsPoint(t.eye)) return false;
     const [tl, , br] = surface.worldCorners();
     t.centre.addVectors(tl, br).multiplyScalar(0.5);
     camera.updateMatrixWorld();

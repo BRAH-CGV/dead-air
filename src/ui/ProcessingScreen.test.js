@@ -12,7 +12,10 @@ vi.mock('./Spectrogram.js', () => ({
   blendFromImageData: vi.fn(),
 }));
 
-import { ProcessingScreen, SCREEN_LAYOUT } from './ProcessingScreen.js';
+vi.mock('./paintDom.js', () => ({ paintDom: vi.fn() }));
+
+import { ProcessingScreen } from './ProcessingScreen.js';
+import { paintDom } from './paintDom.js';
 
 // ── Minimal DOM helpers ────────────────────────────────────
 // ProcessingScreen queries its constructor argument for child elements.
@@ -185,7 +188,7 @@ describe('ProcessingScreen', () => {
     screen.view = view;
     screen.screen = surface;
     screen.open(null, []);
-    expect(view.open).toHaveBeenCalledWith(surface, domRoot, { size: SCREEN_LAYOUT });
+    expect(view.open).toHaveBeenCalledWith(surface, domRoot);
     expect(domRoot.style.display).toBe('flex');
   });
 
@@ -211,6 +214,44 @@ describe('ProcessingScreen', () => {
     expect(screen.isOpen).toBe(true);
     screen.close();
     expect(screen.isOpen).toBe(false);
+  });
+
+  describe('the console\'s screen (paint, #161)', () => {
+    const fakeCtx = () => ({});
+
+    it('paints its own DOM: the same picture leaned in to it or not', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const ctx = fakeCtx();
+      paintDom.mockClear();
+      screen.paint(ctx, 460, 384, null);
+      expect(paintDom).toHaveBeenCalledWith(domRoot, ctx, 460, 384);
+    });
+
+    it('works its spectrogram out again only when the drive in the reader changes', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const update = vi.spyOn(screen, '_updateSpectrogram').mockResolvedValue();
+      const drive = { saved: true, signalName: 'Pulsar', signalLevel: 1 };
+      screen.paint(fakeCtx(), 460, 384, drive);
+      screen.paint(fakeCtx(), 460, 384, drive);
+      expect(update).toHaveBeenCalledTimes(1);
+      drive.signalLevel = 2;
+      screen.paint(fakeCtx(), 460, 384, drive);
+      expect(update).toHaveBeenCalledTimes(2);
+      screen.paint(fakeCtx(), 460, 384, null);
+      expect(update).toHaveBeenCalledTimes(3);
+    });
+
+    it('closing keeps the spectrogram on the screen', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const clear = vi.spyOn(screen, '_clearSpectrogram');
+      screen.open(null, []);
+      clear.mockClear();
+      screen.close();
+      expect(clear).not.toHaveBeenCalled();
+    });
   });
 
   it('close() hides the overlay and clears controls', () => {
