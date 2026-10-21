@@ -188,6 +188,17 @@ describe('ProcessingScreen', () => {
     expect(domRoot.querySelectorAll('.processing-btn').length).toBe(0);
   });
 
+  it('isOpen is true from open() to close() (the tutorial reads it)', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    expect(screen.isOpen).toBe(false);
+    screen.open(null, []);
+    expect(screen.isOpen).toBe(true);
+    screen.close();
+    expect(screen.isOpen).toBe(false);
+    expect(new ProcessingScreen(null).isOpen).toBe(false);
+  });
+
   it('disabled actions render as disabled buttons without click handlers', () => {
     domRoot = makeDOM();
     const screen = new ProcessingScreen(domRoot);
