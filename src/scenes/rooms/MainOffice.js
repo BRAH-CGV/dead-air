@@ -137,6 +137,13 @@ const COMPUTER_SCREEN = [
  *  width, height, depth. */
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
 
+/** Its screen (#161): the model's CameraMonitorScreen, a flat 0.55 × 0.32 m
+ *  face at its front, [tl, tr, br, bl] in the model's own metres. */
+const CAMERA_MONITOR_SCREEN = [
+  [-0.275, 0.360, 0.144], [0.275, 0.360, 0.144],
+  [0.275, 0.037, 0.144], [-0.275, 0.037, 0.144],
+];
+
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
   wallClock = null;
@@ -161,6 +168,10 @@ export class MainOffice extends Room {
   /** The computer's screen, for ScreenView: the radar is drawn on it.
    *  Marked by buildProps(). */
   computerScreen = null;
+
+  /** The camera monitor's screen: the security feed is drawn on it, and
+   *  ScreenView leans in to it. Marked by buildProps(). */
+  cameraScreen = null;
 
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
@@ -518,8 +529,8 @@ export class MainOffice extends Room {
    *  straight out of its front edge, toward the front of the room. A box
    *  the size of the model is the collider the interact ray lands on;
    *  BaseScene attaches the CameraTerminal and its Interactable to it, as it
-   *  does the computer's. The model is drawn only. Its screen is dark glass,
-   *  as if switched off, until it is given something to show. */
+   *  does the computer's. The model is drawn only. Its screen is marked
+   *  (cameraScreen): BaseScene lays the security feed over it. */
   _buildCameraMonitor() {
     const [w, h, d] = CAMERA_MONITOR;
     const [cx, cz] = deskWingOutline(-1, DESK).centre;
@@ -529,6 +540,7 @@ export class MainOffice extends Room {
       name: 'CameraMonitorModel', position: [cx, DESK.top, cz], rotationY: yaw, physics: 'none',
     });
     this.cameraMonitor = go;
+    this.cameraScreen = model ? screenSurface(model.object3d, CAMERA_MONITOR_SCREEN) : null;
   }
 
   /** A digital clock where the desk top meets the right wing, turned to

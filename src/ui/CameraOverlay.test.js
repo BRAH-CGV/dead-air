@@ -48,7 +48,7 @@ describe('CameraOverlay', () => {
     expect(root.classList.contains('is-connecting')).toBe(false);
   });
 
-  it('has no static of its own: the switch is drawn on the GPU (CameraSignalPass)', () => {
+  it('has no static of its own: the switch is drawn on the GPU (FeedDisplay)', () => {
     expect(overlay.setLive).toBeUndefined();
     expect(overlay.tick).toBeUndefined();
   });

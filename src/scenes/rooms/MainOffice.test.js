@@ -527,6 +527,20 @@ describe('MainOffice', () => {
     expect(tr.x).toBeGreaterThan(tl.x);
   });
 
+  it('marks the camera monitor\'s screen: upright, turned with it to face the room (#161)', () => {
+    const [tl, tr, , bl] = room.cameraScreen.worldCorners();
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.y).toBeGreaterThan(bl.y);
+    expect(tl.y - tr.y).toBeCloseTo(0);
+    // On the left wing's monitor, facing out of its front edge (45° to the room).
+    const model = room.root.find('CameraMonitorModel').object3d;
+    expect(room.cameraScreen.object).toBe(model);
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    const front = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion);
+    expect(normal.dot(front)).toBeCloseTo(1);
+  });
+
   it('props are room children only — not also root objects (no double update)', () => {
     const computer = room.root.find('ComputerDesk');
     expect(computer.parent).toBe(room.root);

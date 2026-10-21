@@ -6,6 +6,7 @@ import { GameObject } from '../core/GameObject.js';
 import { Interactable } from './Interactable.js';
 import { CCTV } from '../gameplay/CameraFeed.js';
 import { SIGNAL } from '../gameplay/CameraTransition.js';
+import { FEED } from '../core/FeedDisplay.js';
 
 // ─────────────────────────────────────────────
 // CameraTerminal  –  the security monitor on the desk's left wing
@@ -31,6 +32,17 @@ function fakeOverlay() {
   };
 }
 
+/** A FeedDisplay stand-in: the camera on the monitor, and each picture asked for. */
+function fakeDisplay() {
+  const display = {
+    camera: null, wants: 0,
+    show: vi.fn((cam) => { display.camera = cam; }),
+    want: vi.fn(() => { display.wants++; }),
+    set: vi.fn(), tick: vi.fn(), setDetail: vi.fn(), setPowered: vi.fn(),
+  };
+  return display;
+}
+
 /** A THREE.Audio stand-in: play / stop and whether it is playing. */
 function fakeSound() {
   const sound = {
@@ -43,7 +55,7 @@ function fakeSound() {
 }
 
 describe('CameraTerminal', () => {
-  let engine, cameras, flash, overlay, hooks, crosshair, terminal, ready, sounds;
+  let engine, cameras, flash, overlay, hooks, crosshair, terminal, ready, sounds, display;
 
   /** A frame with these keys pressed this frame (and held). */
   function frame(pressed = [], dt = 1 / 60) {
@@ -68,7 +80,6 @@ describe('CameraTerminal', () => {
     overlay = fakeOverlay();
     ready = new Set(['interior']);
     hooks = {
-      setViewZones: vi.fn(),
       isReady: zone => ready.has(zone),
       holdPlayer: vi.fn(),
       listenFrom: vi.fn(),
@@ -76,7 +87,8 @@ describe('CameraTerminal', () => {
     crosshair = { show: vi.fn(), hide: vi.fn() };
 
     sounds = { servo: fakeSound(), static: fakeSound(), spotlight: fakeSound(), spotlightOff: fakeSound() };
-    terminal = new CameraTerminal({ cameras, flash, overlay, hooks, crosshair, sounds });
+    display = fakeDisplay();
+    terminal = new CameraTerminal({ cameras, flash, overlay, hooks, crosshair, sounds, display });
     const desk = new GameObject('CameraTerminal');
     desk.scene = { userData: { engine } };
     desk.addComponent(terminal);
@@ -136,26 +148,27 @@ describe('CameraTerminal', () => {
   });
 
   describe('entering and leaving', () => {
-    it('starts idle, drawing through the player’s eyes', () => {
+    it('starts idle, the monitor already showing the first camera', () => {
       expect(terminal.state).toBe('idle');
+      expect(display.camera).toBe(cameras[0]);
       expect(engine.viewCamera).toBeNull();
     });
 
     it('[E] on it puts the first camera on screen and holds the player still', () => {
       terminal.enter();
       expect(terminal.state).toBe('viewing');
-      expect(engine.viewCamera).toBe(cameras[0].lens);
+      expect(display.camera).toBe(cameras[0]);
+      expect(display.setDetail).toHaveBeenLastCalledWith('close');
+      expect(engine.viewCamera).toBeNull();   // the frame is the player's: the picture is on the monitor
       expect(hooks.holdPlayer).toHaveBeenLastCalledWith(true);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['interior']);
       expect(overlay.show).toHaveBeenCalled();
       expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 0, count: 2, label: 'ROOM' });
       expect(crosshair.hide).toHaveBeenCalled();
     });
 
-    it('fits the lens to the screen and the render distance', () => {
+    it('fits the lens to the render distance', () => {
       terminal.enter();
       frame();
-      expect(cameras[0].lens.aspect).toBe(1.5);
       expect(cameras[0].lens.far).toBe(600);
     });
 
@@ -163,9 +176,9 @@ describe('CameraTerminal', () => {
       terminal.enter();
       frame(['KeyQ']);
       expect(terminal.state).toBe('idle');
-      expect(engine.viewCamera).toBeNull();
+      expect(display.camera).toBe(cameras[0]);              // still on the monitor
+      expect(display.setDetail).toHaveBeenLastCalledWith('idle');
       expect(hooks.holdPlayer).toHaveBeenLastCalledWith(false);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(null);
       expect(overlay.hide).toHaveBeenCalled();
       expect(crosshair.show).toHaveBeenCalled();
     });
@@ -194,7 +207,7 @@ describe('CameraTerminal', () => {
       terminal.enter();
       frame(['Digit2']);
       terminal.enter();
-      expect(engine.viewCamera).toBe(cameras[1].lens);
+      expect(display.camera).toBe(cameras[1]);
     });
   });
 
@@ -214,7 +227,7 @@ describe('CameraTerminal', () => {
       terminal.enter();
       terminal.setPowered(false);
       expect(terminal.state).toBe('idle');
-      expect(engine.viewCamera).toBeNull();
+      expect(display.setPowered).toHaveBeenLastCalledWith(false);
     });
 
     it('the Interactable opens it', () => {
@@ -227,45 +240,49 @@ describe('CameraTerminal', () => {
   describe('switching cameras', () => {
     beforeEach(() => terminal.enter());
 
-    it('a number key picks that camera, and asks for the zones it sees', () => {
+    it('a number key puts that camera on the monitor', () => {
       frame(['Digit2']);
-      expect(engine.viewCamera).toBe(cameras[1].lens);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['yard', 'unseen']);
+      expect(display.camera).toBe(cameras[1]);
       expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 1, count: 2, label: 'YARD' });
     });
 
     it('forward / back step through them', () => {
       frame(['KeyW']);
-      expect(engine.viewCamera).toBe(cameras[1].lens);
+      expect(display.camera).toBe(cameras[1]);
       release('KeyW');
       frame(['KeyS']);
-      expect(engine.viewCamera).toBe(cameras[0].lens);
+      expect(display.camera).toBe(cameras[0]);
     });
 
     it('a click on the map picks that camera', () => {
       expect(typeof overlay.onSelect).toBe('function');
       overlay.onSelect(1);
-      expect(engine.viewCamera).toBe(cameras[1].lens);
+      expect(display.camera).toBe(cameras[1]);
       expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 1, count: 2, label: 'YARD' });
     });
 
     it('a click while away from the monitor does nothing', () => {
       terminal.exit();
       overlay.onSelect(1);
-      expect(engine.viewCamera).toBeNull();
+      expect(display.camera).toBe(cameras[0]);
     });
 
     it('a number past the last camera is ignored', () => {
       frame(['Digit9']);
-      expect(engine.viewCamera).toBe(cameras[0].lens);
+      expect(display.camera).toBe(cameras[0]);
     });
   });
 
   describe('the switch', () => {
     beforeEach(() => terminal.enter());
 
+    it('sitting down is no switch: the picture is on the monitor already', () => {
+      expect(terminal.transition.active).toBe(false);
+    });
+
     it('plays a switch, then goes idle once the camera’s zones are in', () => {
-      frame();
+      ready.add('yard'); ready.add('unseen');
+      frame(['Digit2']);
       expect(terminal.transition.active).toBe(true);
       run(CCTV.minStatic + SIGNAL.drop + SIGNAL.resolve + 0.1);
       expect(terminal.feed.live).toBe(true);
@@ -292,69 +309,93 @@ describe('CameraTerminal', () => {
     });
   });
 
-  describe('the switch, drawn (CameraSignalPass)', () => {
-    let signal;
-    /** A pass stand-in: holds the switch until the frame is "drawn". */
-    function fakeSignal() {
-      const pass = {
-        pending: null,
-        capture: vi.fn(fn => { pass.pending = fn; }),
-        cancel: vi.fn(() => { pass.pending = null; }),
-        set: vi.fn(), tick: vi.fn(),
-        draw() { const fn = pass.pending; pass.pending = null; fn?.(); },
-      };
-      return pass;
-    }
-
-    beforeEach(() => {
-      signal = fakeSignal();
-      terminal.signal = signal;
+  describe('the picture on the monitor (FeedDisplay)', () => {
+    it('leaned in, a new picture every frame', () => {
+      terminal.enter();
+      const before = display.wants;
+      run(0.5);
+      expect(display.wants - before).toBeGreaterThanOrEqual(29);
     });
 
-    it('sitting down covers the screen with blank grain at once: no frozen desk, nothing to capture', () => {
-      terminal.enter();
-      expect(signal.capture).not.toHaveBeenCalled();
-      expect(terminal.transition.blank).toBe(true);
-      expect(terminal.transition.active).toBe(true);
-      // The cover is handed to the pass before the frame is drawn, so the
-      // camera can go on screen at once underneath it.
-      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
-      expect(engine.viewCamera).toBe(cameras[0].lens);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['interior']);
+    it('from across the room, a few a second, while the monitor is seen', () => {
+      hooks.seen = () => true;
+      run(1);
+      expect(display.wants).toBeGreaterThanOrEqual(FEED.idleFps - 1);
+      expect(display.wants).toBeLessThanOrEqual(FEED.idleFps + 1);
     });
 
-    it('a switch captures the old camera first, keeping its zones drawn for that frame', () => {
+    it('none while nobody can see the monitor', () => {
+      hooks.seen = () => false;
+      run(1);
+      expect(display.wants).toBe(0);
+    });
+
+    it('none without power', () => {
+      hooks.seen = () => true;
+      terminal.setPowered(false);
+      run(1);
+      expect(display.wants).toBe(0);
+    });
+
+    it('a switch holds the last picture: none drawn until it resolves, then the new camera\'s', () => {
       terminal.enter();
+      run(0.2);
       frame(['Digit2']);
-      expect(engine.viewCamera).toBe(cameras[0].lens);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['interior']);
-      signal.draw();
-      expect(engine.viewCamera).toBe(cameras[1].lens);
-      expect(hooks.setViewZones).toHaveBeenLastCalledWith(['yard', 'unseen']);
+      expect(display.camera).toBe(cameras[1]);
+      const held = display.wants;
+      run(SIGNAL.drop + 0.02);
+      expect(terminal.transition.frozen).toBe(true);
+      expect(display.wants).toBe(held);
+      ready.add('yard'); ready.add('unseen');
+      run(CCTV.minStatic + 0.1);
+      expect(terminal.transition.frozen).toBe(false);
+      expect(display.wants).toBeGreaterThan(held);
     });
 
-    it('the label changes at once; only the picture waits for its frame', () => {
+    it('the label changes at once', () => {
       terminal.enter();
       frame(['Digit2']);
       expect(overlay.setCamera).toHaveBeenLastCalledWith({ index: 1, count: 2, label: 'YARD' });
     });
 
-    it('hands the timeline to the pass every frame, with the frame time', () => {
-      terminal.enter();
+    it('hands the switch to the screen every frame, with the frame time', () => {
       frame();
-      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
-      expect(signal.tick).toHaveBeenLastCalledWith(1 / 60);
+      expect(display.set).toHaveBeenLastCalledWith(terminal.transition);
+      expect(display.tick).toHaveBeenLastCalledWith(1 / 60);
     });
 
-    it('leaving before the frame is drawn drops the switch: the player’s eyes stay', () => {
+    it('leaving mid-switch drops it: the monitor goes back to a steady picture', () => {
       terminal.enter();
       frame(['Digit2']);
       frame(['KeyQ']);
-      expect(signal.cancel).toHaveBeenCalled();
-      signal.draw();
-      expect(engine.viewCamera).toBeNull();
       expect(terminal.transition.active).toBe(false);
-      expect(signal.set).toHaveBeenLastCalledWith(terminal.transition);
+      expect(display.set).toHaveBeenLastCalledWith(terminal.transition);
+      expect(display.camera).toBe(cameras[1]);
+    });
+  });
+
+  describe('leaning in to the monitor (ScreenView)', () => {
+    let view, surface;
+    beforeEach(() => {
+      view = { open: vi.fn(), close: vi.fn() };
+      surface = {};
+      overlay.root = {};
+      terminal.screenView = view;
+      terminal.screen = surface;
+    });
+
+    it('leans in to the monitor\'s screen with the overlay on it', () => {
+      terminal.enter();
+      expect(view.open).toHaveBeenCalledWith(surface, overlay.root);
+    });
+
+    it('keeps the overlay up while leaning back out, and drops it once out', () => {
+      terminal.enter();
+      terminal.exit();
+      expect(view.close).toHaveBeenCalledTimes(1);
+      expect(overlay.hide).not.toHaveBeenCalled();
+      view.close.mock.calls[0][0]();
+      expect(overlay.hide).toHaveBeenCalled();
     });
   });
 

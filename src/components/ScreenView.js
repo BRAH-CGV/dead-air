@@ -39,6 +39,8 @@ export function screenSurface(object, corners) {
   const world = local.map(() => new THREE.Vector3());
   return {
     object,
+    /** The corners in the object's own space. */
+    local,
     /** The corners in the world, now. The same four vectors every call. */
     worldCorners() {
       object.updateWorldMatrix(true, false);
@@ -46,6 +48,32 @@ export function screenSurface(object, corners) {
       return world;
     },
   };
+}
+
+/**
+ * A quad over a screen, on its object: what the screen shows when nobody is
+ * leaning in to it (a live camera feed, the radar). Its uv runs the way the
+ * screen is read, (0, 1) at the top left. `lift` stands it off the glass
+ * along the screen's normal, in the object's own units, so it never sinks
+ * into a curved face.
+ * @param {ReturnType<typeof screenSurface>} surface
+ * @param {THREE.Material} material
+ * @param {{ lift?: number }} [opts]
+ */
+export function screenMesh(surface, material, { lift = 0 } = {}) {
+  const [tl, tr, br, bl] = surface.local;
+  const normal = new THREE.Vector3().crossVectors(
+    new THREE.Vector3().subVectors(tr, tl), new THREE.Vector3().subVectors(tl, bl)).normalize();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(
+    [tl, tr, br, bl].flatMap(c => c.clone().addScaledVector(normal, lift).toArray()), 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+  geometry.setIndex([0, 3, 2, 0, 2, 1]);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'ScreenPicture';
+  mesh.castShadow = mesh.receiveShadow = false;
+  surface.object.add(mesh);
+  return mesh;
 }
 
 const _eyePos = new THREE.Vector3();

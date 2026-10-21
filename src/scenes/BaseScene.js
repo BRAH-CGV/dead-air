@@ -43,7 +43,7 @@ import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
-import { ScreenView } from '../components/ScreenView.js';
+import { ScreenView, screenMesh } from '../components/ScreenView.js';
 import { HUD, RadarOverlay } from '../ui/HUD.js';
 import { ProcessingScreen } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -71,7 +71,7 @@ import { PostPipeline } from '../core/PostPipeline.js';
 import { VisorRefraction } from '../core/VisorRefraction.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
-import { CameraSignalPass } from '../core/CameraSignalPass.js';
+import { FeedDisplay } from '../core/FeedDisplay.js';
 import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
@@ -400,15 +400,14 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
-    // Off the monitor first: the frame goes back to the player's eyes, and
-    // the zones a camera asked for go back to the airlock's choice.
-    this.cameraTerminal?.exit();
+    // Off every screen first: the frame goes back to the player's eyes.
+    this._leaveScreens();
     this.cameraOverlay?.hide();
-    if (this.cameraSignal) {
+    if (this.feedDisplay) {
       const passes = this.engine.screenPasses;
-      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
-      this.cameraSignal.dispose();
-      this.cameraSignal = null;
+      passes?.splice(passes.indexOf(this.feedDisplay) >>> 0, 1);
+      this.feedDisplay.dispose();
+      this.feedDisplay = null;
     }
     this.monitorSpeaker?.dispose();
     this.monitorSpeaker = null;
@@ -1502,14 +1501,22 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
-    // The switch, drawn over the frame: the old picture frozen and degraded
-    // while the new camera loads. Needs the renderer; headless (tests) the
-    // terminal switches at once.
+    // The monitor's own picture (#161): the camera on it, drawn into a
+    // small target after each frame and shown on its screen, always. The
+    // switch between cameras is the screen's shader. The zones the yard
+    // cameras need are handed over once built (_buildOcclusion), and drawn
+    // for the picture alone.
+    const screen = this.rooms.MainOffice.cameraScreen;
+    const [tl, tr, , bl] = screen?.local ?? [];
+    this.feedDisplay = new FeedDisplay({
+      scene: this.engine.scene,
+      aspect: screen ? tl.distanceTo(tr) / tl.distanceTo(bl) : 16 / 9,
+    });
+    if (screen) screenMesh(screen, this.feedDisplay.material, { lift: 0.002 });
     const { renderer, screenPasses } = this.engine;
     if (renderer && screenPasses) {
-      this.cameraSignal = new CameraSignalPass();
-      this.cameraSignal.attach(renderer);
-      screenPasses.push(this.cameraSignal);
+      this.feedDisplay.attach(renderer);
+      screenPasses.push(this.feedDisplay);
     }
     // The monitor's speaker: everything the camera on screen hears
     // (_listenFrom), and the flash's clicks, thin and fuzzy through it. The
@@ -1518,7 +1525,9 @@ export class BaseScene extends Scene {
     this.monitorSpeaker = new MonitorSpeaker(this.engine.audioListener);
     const speaker = this.monitorSpeaker;
     this.cameraTerminal = new CameraTerminal({
-      signal:    this.cameraSignal ?? null,
+      display:    this.feedDisplay,
+      screenView: this.screenView ?? null,
+      screen:     screen ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,
@@ -1530,8 +1539,7 @@ export class BaseScene extends Scene {
         spotlightOff: speaker.route(this._sound('sfx:camera-spotlight-off')),
       },
       hooks: {
-        setViewZones: zones => this.portal?.setViewZones(zones),
-        isReady:      zone => this.zones?.isReady(zone) ?? true,
+        seen:         () => this._monitorSeen(),
         listenFrom:   (lens, level) => this._listenFrom(lens, level),
         // The mouse goes to the page, for the map — as for the breaker panel.
         // Taken off the monitor by the shift ending (a game over, the
@@ -1762,7 +1770,26 @@ export class BaseScene extends Scene {
   _leaveScreens() {
     if (this.terminal?.state !== 'idle') this.terminal?.exit();
     if (this.processingScreen?.isOpen) this.processingScreen.close();
+    this.cameraTerminal?.exit();
     this.screenView?.cut();
+  }
+
+  /** The security monitor can be seen from where the frame is drawn: from
+   *  inside the office, with its screen in view. Only then is its picture
+   *  worth drawing from across the room. */
+  _monitorSeen() {
+    const surface = this.rooms.MainOffice.cameraScreen;
+    const camera = this.engine.renderCamera ?? this.engine.camera;
+    if (!surface || !camera) return false;
+    const t = (this._seenScratch ??= { eye: new THREE.Vector3(), centre: new THREE.Vector3(), m: new THREE.Matrix4(), frustum: new THREE.Frustum() });
+    camera.getWorldPosition(t.eye);
+    this._officeShell ??= this.rooms.MainOffice.bounds();
+    if (!this._officeShell.containsPoint(t.eye)) return false;
+    const [tl, , br] = surface.worldCorners();
+    t.centre.addVectors(tl, br).multiplyScalar(0.5);
+    camera.updateMatrixWorld();
+    t.frustum.setFromProjectionMatrix(t.m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    return t.frustum.containsPoint(t.centre);
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
@@ -1836,7 +1863,6 @@ export class BaseScene extends Scene {
       /** Off whichever is up, at once: the Sleep Demon's kill. */
       exit() {
         scene._leaveScreens();
-        scene.cameraTerminal?.exit?.();
       },
       get state() {
         for (let i = 0; i < screens.length; i++) {
@@ -2632,6 +2658,8 @@ export class BaseScene extends Scene {
     zones.add('unseen', sorted.unseen);
     zones.hide('unseen');
     this.zones = zones;
+    // The yard cameras' picture draws the yard for itself alone (FeedDisplay).
+    if (this.feedDisplay) this.feedDisplay.zones = zones;
 
     this.portal = new AirlockPortal({ airlock: this.rooms.Airlock, zones });
     this._sceneRoot.addComponent(this.portal);

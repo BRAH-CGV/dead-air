@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { ScreenView, screenSurface } from './ScreenView.js';
+import { ScreenView, screenSurface, screenMesh } from './ScreenView.js';
 import { SCREEN_FOCUS } from '../gameplay/ScreenFocus.js';
 
 // ─────────────────────────────────────────────
@@ -51,6 +51,38 @@ describe('screenSurface', () => {
     expect(tl.z).toBeCloseTo(-1.5);
     expect(br.x).toBeCloseTo(0.25);
     expect(br.y).toBeCloseTo(0.85);
+  });
+});
+
+describe('screenMesh', () => {
+  it('lays a quad over the screen, on the object, facing out of it', () => {
+    const s = makeSurface();
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = screenMesh(s, material, { lift: 0.01 });
+    expect(mesh.parent).toBe(s.object);
+    expect(mesh.material).toBe(material);
+    mesh.geometry.computeVertexNormals();
+    const n = new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.normal, 0);
+    expect(n.z).toBeCloseTo(1);                       // out of the screen, toward the viewer
+    const box = new THREE.Box3().setFromBufferAttribute(mesh.geometry.attributes.position);
+    expect(box.min.z).toBeCloseTo(0.01);              // lifted off the glass
+    expect(box.max.x - box.min.x).toBeCloseTo(0.5);
+    expect(box.max.y - box.min.y).toBeCloseTo(0.3);
+  });
+
+  it('maps its uv the way the screen is read: (0, 1) top left, (1, 0) bottom right', () => {
+    const mesh = screenMesh(makeSurface(), new THREE.MeshBasicMaterial());
+    const { position, uv } = mesh.geometry.attributes;
+    for (let i = 0; i < 4; i++) {
+      expect(uv.getX(i)).toBeCloseTo(position.getX(i) > 0 ? 1 : 0);
+      expect(uv.getY(i)).toBeCloseTo(position.getY(i) > 0 ? 1 : 0);
+    }
+  });
+
+  it('casts and takes no shadow: it is a lit picture', () => {
+    const mesh = screenMesh(makeSurface(), new THREE.MeshBasicMaterial());
+    expect(mesh.castShadow).toBe(false);
+    expect(mesh.receiveShadow).toBe(false);
   });
 });
 

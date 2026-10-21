@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────
 // CameraOverlay  –  the security monitor's frame over the camera's picture
 // ─────────────────────────────────────────────
-// The picture itself is the game's own frame, drawn through the camera
-// (Engine.viewCamera); this is what goes over it: the camera's name, a REC
+// The picture itself is on the monitor's screen in the world (FeedDisplay);
+// this is what goes over it, laid onto that screen while the player leans
+// in (ScreenView, #161): the camera's name, a REC
 // mark, the flash indicator, the controls, a map of the base to click a
 // camera on (setMap, onSelect), and CONNECTING while a switch waits long.
 // The switch itself — the frozen frame and its grain — is drawn on the GPU
-// (CameraSignalPass), not here.
+// (FeedDisplay's shader), not here.
 //
 //   overlay.show();
 //   overlay.setCamera({ index: 0, count: 6, label: 'LIVING QUARTERS' });

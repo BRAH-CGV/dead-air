@@ -5,14 +5,16 @@ import { CameraFeed } from '../gameplay/CameraFeed.js';
 import { keyName } from '../app/keyNames.js';
 import { LoopVoice } from './LoopVoice.js';
 import { CameraTransition } from '../gameplay/CameraTransition.js';
+import { FEED } from '../core/FeedDisplay.js';
 
 // ─────────────────────────────────────────────
 // CameraTerminal  –  Component (attach to the security monitor)
 // ─────────────────────────────────────────────
-// [E] on the monitor puts the base's security cameras on screen. The frame
-// is drawn through the camera's own lens (Engine.viewCamera); the player
-// stays at the desk, held still — only the picture moves, and what the
-// monitor's speaker plays.
+// The monitor on the desk's left wing always shows a security camera: its
+// picture is drawn into a small target and shown on the monitor's screen in
+// the world (FeedDisplay). [E] on it leans the view in to that screen
+// (ScreenView) and lays the overlay — the label, the controls, the map — on
+// it; the player stays at the desk, held still.
 //
 //   idle ──[E]──▶ viewing ──Q / Esc / power lost / BaseScene says so──▶ idle
 //
@@ -41,14 +43,15 @@ import { CameraTransition } from '../gameplay/CameraTransition.js';
 // (1 - hiss), so a lost signal is lost sound too; leaving says
 // listenFrom(null, 0).
 //
-// A switch (CameraTransition, drawn by CameraSignalPass) freezes the screen
-// as it stands, degrades it, and holds it for as long as the zones the new
-// camera sees are still loading — the yard is left undrawn while the player
-// is indoors (BaseScene._buildOcclusion), so `hooks.setViewZones` asks for
-// it and `hooks.isReady` says when it's in (CameraFeed.live). Only then does
-// the live picture resolve out of the grain; a long wait says CONNECTING.
-// The camera and its zones change one frame after the switch is asked for,
-// once the pass has copied the old picture (_showCamera → _applyCamera).
+// A new picture is drawn (display.want()) every frame while leaned in, and
+// FEED.idleFps times a second from across the room — only while
+// `hooks.seen()` says the monitor is in view. A switch (CameraTransition,
+// drawn by the screen's shader) holds the last picture by drawing no new
+// one: it freezes, degrades, and holds for at least CCTV.minStatic (longer
+// while `hooks.isReady` says a zone is still loading, if given; a long wait
+// says CONNECTING), then the new camera's picture resolves out of the grain.
+// The yard the outdoor cameras see is drawn for their picture alone
+// (OcclusionZones.drawFor): the player's own frame stays culled.
 //
 // The flash is one SpotLight for every camera, built with the scene (so the
 // boot warm-up compiles the lit shaders for it) and moved to whichever
@@ -109,8 +112,10 @@ export class CameraTerminal extends Component {
    * @param {THREE.SpotLight} [opts.flash]  Built by the scene, at intensity 0.
    * @param {import('../ui/CameraOverlay.js').CameraOverlay} [opts.overlay]
    * @param {object} [opts.hooks]
-   * @param {(zones: string[]|null) => void} [opts.hooks.setViewZones]
-   * @param {(zone: string) => boolean} [opts.hooks.isReady]
+   * @param {(zone: string) => boolean} [opts.hooks.isReady]  A zone is in,
+   *        for the switch to wait on; left out, every zone is.
+   * @param {() => boolean} [opts.hooks.seen]  The monitor can be seen, so
+   *        its picture is worth drawing from across the room.
    * @param {(held: boolean) => void} [opts.hooks.holdPlayer]  Hold the player
    *        still and free the mouse for the map (true), or give both back.
    * @param {(lens: THREE.Object3D|null, level: number) => void} [opts.hooks.listenFrom]
@@ -118,12 +123,18 @@ export class CameraTerminal extends Component {
    *        for the player's own ears.
    * @param {{ show(): void, hide(): void }} [opts.crosshair]
    * @param {{ servo?: THREE.Audio, static?: THREE.Audio, spotlight?: THREE.Audio, spotlightOff?: THREE.Audio }} [opts.sounds]
-   * @param {import('../core/CameraSignalPass.js').CameraSignalPass} [opts.signal]  Draws
-   *        the switch over the frame. Without one, a switch is immediate.
+   * @param {import('../core/FeedDisplay.js').FeedDisplay} [opts.display]  The
+   *        monitor's picture: the camera on it, the switch drawn by its shader.
+   * @param {import('./ScreenView.js').ScreenView} [opts.screenView]  Leans in
+   *        to `screen`, the monitor's, with the overlay on it.
    */
-  constructor({ cameras, flash = null, overlay = null, hooks = {}, crosshair = null, sounds = {}, signal = null }) {
+  constructor({ cameras, flash = null, overlay = null, hooks = {}, crosshair = null, sounds = {}, display = null, screenView = null, screen = null }) {
     super();
-    this.signal = signal;
+    this.display = display;
+    this.screenView = screenView;
+    this.screen = screen;
+    /** Seconds since the last picture from across the room. */
+    this._sinceFrame = Infinity;
     this.cameras = cameras;
     this.flash = flash;
     this.overlay = overlay;
@@ -142,6 +153,9 @@ export class CameraTerminal extends Component {
     }
     if (overlay) overlay.onSelect = i => this.select(i);
     this.feed = new CameraFeed({ cameras, isReady: zone => hooks.isReady?.(zone) ?? true });
+    // The monitor shows the camera last watched, from the start.
+    this._onAir = 0;
+    display?.show(cameras[0] ?? null);
     if (flash) {
       flash.intensity = 0;
       flash.angle = CAMERA_FLASH.angle;
@@ -169,29 +183,29 @@ export class CameraTerminal extends Component {
     this.overlay?.show();
     this.overlay?.setHint(this._hint());
     this.feed.open();
-    // Nothing worth freezing yet — it would be the desk — so the cover is
-    // grain over black, behind the monitor's overlay.
-    this._showCamera({ blank: true });
+    // The picture is on the monitor already: no switch, just lean in.
+    this._applyCamera();
+    this.overlay?.setCamera(this._label());
+    this.display?.setDetail('close');
+    if (this.screenView && this.screen) this.screenView.open(this.screen, this.overlay?.root ?? null);
   }
 
-  /** Back to the desk: the player's own eyes, the zones as the airlock
-   *  has them, the flash out. */
+  /** Back to the desk: the player's own eyes and ears, the flash out. The
+   *  monitor goes on showing the camera. */
   exit() {
     if (this.state === 'idle') return;
     this.state = 'idle';
     this.feed.close();
     this._applyFlash();
     this.silence();
-    this.signal?.cancel();
     this.transition.reset();
-    this.signal?.set(this.transition);
+    this.display?.set(this.transition);
+    this.display?.setDetail('idle');
     this.overlay?.setConnecting(false);
-    this._onAir = null;
     this.hooks.listenFrom?.(null, 0);
-    const engine = this._engine;
-    if (engine) engine.viewCamera = null;
-    this.hooks.setViewZones?.(null);
-    this.overlay?.hide();
+    // On the screen, the overlay stays up while the view leans back out.
+    if (this.screenView && this.screen) this.screenView.close(() => this.overlay?.hide());
+    else this.overlay?.hide();
     this.crosshair?.show();
     this.hooks.holdPlayer?.(false);
   }
@@ -227,7 +241,7 @@ export class CameraTerminal extends Component {
   interfere(i, seconds) {
     if (this.state !== 'viewing' || this._onAir !== i) return false;
     this.transition.glitch(seconds);
-    this.signal?.set(this.transition);
+    this.display?.set(this.transition);
     return true;
   }
 
@@ -241,6 +255,7 @@ export class CameraTerminal extends Component {
   setPowered(powered) {
     this.powered = powered;
     if (this._interactable) this._interactable.promptLabel = powered ? this.promptLabel : NO_POWER_LABEL;
+    this.display?.setPowered(powered);
     if (!powered) this.exit();
   }
 
@@ -249,7 +264,15 @@ export class CameraTerminal extends Component {
   // ──────────────────────────────────────────
 
   onUpdate(dt) {
-    if (this.state !== 'viewing') return;
+    if (this.state === 'viewing') this._watch(dt);
+    if (this.state === 'viewing') this._applyFlash();
+    this.display?.set(this.transition);
+    this.display?.tick(dt);
+    this._schedule(dt);
+  }
+
+  /** At the monitor: the keys, the switch, the sound. */
+  _watch(dt) {
     const engine = this._engine;
     if (!engine) return;
     const { keys, pressed } = engine.input;
@@ -286,58 +309,64 @@ export class CameraTerminal extends Component {
       this.overlay?.setFlash(this.feed.flash);
     }
 
-    // The lens matches the screen and the render distance (Settings).
+    // The lens sees as far as the player does (Settings).
     const lens = cam.lens;
-    if (lens.aspect !== engine.camera.aspect || lens.far !== engine.camera.far) {
-      lens.aspect = engine.camera.aspect;
+    if (lens.far !== engine.camera.far) {
       lens.far = engine.camera.far;
       lens.updateProjectionMatrix();
     }
 
     this.feed.update(dt);
     this.transition.update(dt, this.feed.live);
-    this.signal?.set(this.transition);
-    this.signal?.tick(dt);
     this.overlay?.setConnecting(this.transition.waitingLong);
     // A glitch (something at a vent) hisses louder than a switch: the
     // camera's own sound is cut under it (listenFrom, below), storm or not.
     const hissLevel = this.transition.phase === 'glitch' ? CAMERA_SOUNDS.glitch : CAMERA_SOUNDS.static;
     this._static.set(hissLevel * this.transition.hiss, dt);
     if (this._onAir !== null) this.hooks.listenFrom?.(this.cameras[this._onAir].lens, 1 - this.transition.hiss);
-    this._applyFlash();
+  }
+
+  /** Whether the monitor gets a new picture after this frame: every frame
+   *  leaned in, idleFps times a second from across the room while it can
+   *  be seen, and never while a switch holds the last one. */
+  _schedule(dt) {
+    if (!this.display || !this.powered || this.transition.frozen) return;
+    if (this.state === 'viewing') {
+      this.display.want();
+      return;
+    }
+    this._sinceFrame += dt;
+    if (this._sinceFrame < 1 / FEED.idleFps) return;
+    if (!(this.hooks.seen?.() ?? true)) return;
+    this._sinceFrame = 0;
+    this.display.want();
   }
 
   // ──────────────────────────────────────────
   // Internals
   // ──────────────────────────────────────────
 
-  /** A switch to the feed's camera: the label at once, the switch's
-   *  timeline from the top, and the picture once the screen as it stands
-   *  has been captured — the pass copies it after this frame is drawn, then
-   *  runs _applyCamera. Without a pass, or with `blank` (sitting down:
-   *  nothing to freeze, grain over black instead), at once. */
-  _showCamera({ blank = false } = {}) {
-    const cam = this.cameras[this.feed.index];
-    this.overlay?.setCamera({ index: this.feed.index, count: this.cameras.length, label: cam.label });
+  /** A switch to the feed's camera: the label at once, and the switch's
+   *  timeline from the top. The new camera goes on the monitor at once; the
+   *  switch holds the last picture (no new one is drawn) until it resolves. */
+  _showCamera() {
+    this.overlay?.setCamera(this._label());
     this.overlay?.setFlash(false);
-    this.transition.cut({ blank });
-    // Handed over before this frame is drawn: a blank cover is opaque from
-    // the first frame, so the camera can go on screen under it at once.
-    this.signal?.set(this.transition);
-    if (this.signal && !blank) this.signal.capture(() => this._applyCamera());
-    else this._applyCamera();
+    this.transition.cut();
+    this.display?.set(this.transition);
+    this._applyCamera();
   }
 
-  /** Draw through the feed's camera, and ask for the zones it sees. Only
-   *  while still at the monitor: a switch dropped by leaving does nothing. */
+  /** The feed's camera on the monitor. */
   _applyCamera() {
-    if (this.state !== 'viewing') return;
     this._onAir = this.feed.index;
-    const cam = this.cameras[this._onAir];
-    const engine = this._engine;
-    if (engine) engine.viewCamera = cam.lens;
-    this.hooks.setViewZones?.(cam.zones);
+    this.display?.show(this.cameras[this._onAir]);
     this._applyFlash();
+  }
+
+  _label() {
+    const cam = this.cameras[this.feed.index];
+    return { index: this.feed.index, count: this.cameras.length, label: cam.label };
   }
 
   /** Start or stop a looping sound. */

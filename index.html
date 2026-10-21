@@ -375,7 +375,8 @@
          ScreenView sizes it, puts it at the page's top left and lays it
          onto the screen's four corners with a matrix3d each frame. */
       #radar-overlay.on-screen,
-      #processing-screen.on-screen {
+      #processing-screen.on-screen,
+      #cctv.on-screen {
         inset: auto;
         left: 0;
         top: 0;
@@ -388,6 +389,11 @@
       }
       #radar-overlay.on-screen { background: #05080d; }
       #processing-screen.on-screen { background: #04060b; }
+      /* The camera's picture is the monitor's own (FeedDisplay), scanlines
+         and dark edge included: the overlay is only its words and map. */
+      #cctv.on-screen { background: none; border-radius: 0; }
+      #cctv.on-screen::before,
+      #cctv.on-screen::after { display: none; }
       /* A glass screen: faint scanlines and a darker edge, over the picture
          and never in the way of a click. */
       #radar-overlay.on-screen::after,
