@@ -399,7 +399,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
-| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32 |
+| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32; its trash lowered from the rim to a thin layer on the floor (`scripts/settle-bin-trash.mjs`) |
 
 ### Crate
 

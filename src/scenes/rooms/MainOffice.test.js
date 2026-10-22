@@ -472,6 +472,31 @@ describe('MainOffice', () => {
     expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
+  it('keeps only a little trash in the bin, on its floor, inside its wall', () => {
+    // trash-bin.glb: the bin (Trashbin) and its trash (Trash) in one frame,
+    // z up, the bin 0 … 2 high, its inside wall 1.0 round its axis.
+    const glb = readFileSync(new URL(`../../../public/${ASSETS['model:trash-bin'].url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const bounds = name => {
+      const prim = json.meshes.flatMap(m => m.primitives).find(p => json.materials[p.material].name === name);
+      return json.accessors[prim.attributes.POSITION];
+    };
+    const bin = bounds('Trashbin'), trash = bounds('Trash');
+    const height = bin.max[2] - bin.min[2];
+    expect(trash.min[2]).toBeGreaterThan(bin.min[2]);                     // on the floor, not through it
+    expect(trash.max[2]).toBeLessThan(bin.min[2] + height * 0.1);        // a bit at the bottom
+    for (const v of [...trash.min.slice(0, 2), ...trash.max.slice(0, 2)]) expect(Math.abs(v)).toBeLessThan(1.0);
+
+    // Lit, so the bin's own shade darkens it, and dull: an unlit layer
+    // shone at full brightness at the bottom of a dark bin.
+    const material = json.materials.find(m => m.name === 'Trash');
+    expect(material.extensions?.KHR_materials_unlit).toBeUndefined();
+    expect(json.extensionsUsed ?? []).not.toContain('KHR_materials_unlit');
+    const [r, g, b] = material.pbrMetallicRoughness.baseColorFactor ?? [1, 1, 1];
+    expect(Math.max(r, g, b)).toBeLessThanOrEqual(0.6);
+    expect(material.pbrMetallicRoughness.roughnessFactor ?? 1).toBeGreaterThan(0.8);
+  });
+
   it('keeps the food dispenser, idle until the grow beds feed it (#109); the coffee is in the bedroom', () => {
     const use = room.root.find('VendingMachine').getComponent(Interactable);
     expect(use.promptLabel).toMatch(/food dispenser/i);
