@@ -110,10 +110,9 @@ export class Engine {
   paused = false;
 
   /** How fast game time runs: the updates are handed frameDt × timeScale.
-   *  A nap sets it above 1 (Nap.js) to fast-forward the night; the journal
-   *  sets it below 1 (Journal.js), so it reads in slowed time. Physics keeps
-   *  real time either way, since many more steps a frame would only cost
-   *  frames. The frame and its input never change speed. */
+   *  A nap sets it above 1 (Nap.js) to fast-forward the night; below 1
+   *  slows it, though nothing does that now. Physics keeps real time
+   *  either way, since many more steps a frame would only cost frames. The frame and its input never change speed. */
   timeScale = 1;
   /** Real seconds in the frame being simulated, whatever timeScale is: for
    *  what must keep real speed through a nap (getting into and out of bed,
@@ -126,6 +125,11 @@ export class Engine {
   /** True while a DOM panel has the mouse (the generator's breaker panel):
    *  the pointer lock was let go on purpose, so losing it isn't a pause. */
   uiHasMouse = false;
+  /** The run's record (src/gameplay/RunRecord.js): what each morning's buggy
+   *  took to the hub, for the bedroom PC. Held here because a dream rebuilds
+   *  the scene between nights; BaseScene makes one if there is none, and App
+   *  starts it over on New game, the Tutorial, Continue and Select night. */
+  run = null;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();
   /** Told when the simulation pauses and resumes (onPauseChange). */
@@ -164,7 +168,9 @@ export class Engine {
     crouch:   'KeyC',
     interact: 'KeyE',
     flashlight: 'KeyF',
-    rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
+    rotateHeld: 'KeyR',   // hold (or tap) to turn a carried object with the mouse
+    holdFurther: 'ArrowUp',    // push a carried object away (the wheel, without one)
+    holdCloser: 'ArrowDown',   // pull it in
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup

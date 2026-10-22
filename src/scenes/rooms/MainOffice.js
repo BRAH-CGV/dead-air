@@ -419,7 +419,8 @@ export class MainOffice extends Room {
       // and installs the detach-on-pickup hook; the drive's deferred
       // kinematic lands the body kinematic in the socket once _init runs.
       for (let i = 0; i < (spec.fill ?? 0); i++) {
-        const drive = new Drive(`${spec.name}_Drive_${i + 1}`);
+        // Owned like the box: each drive builds its own geometry and material.
+        const drive = this._own(new Drive(`${spec.name}_Drive_${i + 1}`));
         this.root.addChild(drive);
         box.receiver.attach(drive, i);
         this.drives.push(drive);

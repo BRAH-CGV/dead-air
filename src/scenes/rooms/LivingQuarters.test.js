@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
+import { BedroomPC } from '../../components/BedroomPC.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -230,7 +231,7 @@ describe('LivingQuarters', () => {
     }
 
     // The lamp is drawn only (no collider), and lit (#79): one small light
-    // of its own beside the ceiling lamp, to read the journal by.
+    // of its own beside the ceiling lamp, over the desk.
     const lamp = room.root.find('DeskLamp');
     expect(lamp.rigidBody).toBeNull();
     const { x, y, z } = lamp.object3d.position;
@@ -346,6 +347,36 @@ describe('LivingQuarters', () => {
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 
+  it('puts the computer on the desk (#114): a monitor facing the chair, the BedroomPC on it', () => {
+    const go = room.root.find('BedroomPC');
+    expect(go).toBeTruthy();
+    expect(room.pc).toBeInstanceOf(BedroomPC);
+    expect(go.getComponent(Interactable)).toBe(room.pc);
+    expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);    // the interact ray lands on it
+
+    // Standing on the desk top, wholly over the desk, clear of the lamp.
+    const desk = footprint(room.root.find('Desk'));
+    const pc = footprint(go);
+    expect(go.object3d.position.y - go._originalSize[1] / 2).toBeCloseTo(0.79);
+    expect(pc.x0).toBeGreaterThanOrEqual(desk.x0);
+    expect(pc.x1).toBeLessThanOrEqual(desk.x1);
+    expect(pc.z0).toBeGreaterThanOrEqual(desk.z0);
+    expect(pc.z1).toBeLessThanOrEqual(desk.z1);
+    const lamp = room.root.find('DeskLamp').object3d.position;
+    expect(overlaps(pc, { x0: lamp.x - 0.12, x1: lamp.x + 0.12, z0: lamp.z - 0.12, z1: lamp.z + 0.12 })).toBe(false);
+
+    // The placeholder screen is the security monitor's model, drawn only,
+    // its screen (+z) turned to the chair.
+    const model = room.root.find('BedroomPCModel');
+    expect(model.physicsAssetKey).toBe('model:camera-monitor');
+    expect(model.rigidBody).toBeFalsy();
+    expect(model.object3d.position.y).toBeCloseTo(0.79);
+    const chair = room.root.find('DeskChair').object3d.position;
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(model.object3d.rotation);
+    const toChair = new THREE.Vector3(chair.x - model.object3d.position.x, 0, chair.z - model.object3d.position.z).normalize();
+    expect(facing.dot(toChair)).toBeGreaterThan(0.95);
+  });
+
   it('stands the furniture apart, nothing overlapping', () => {
     const prints = FURNITURE.map(name => [name, footprint(room.root.find(name))]);
     for (const [i, [a, fa]] of prints.entries()) {
@@ -372,21 +403,9 @@ describe('LivingQuarters', () => {
     expect(engine.world.bodies.len()).toBe(0);
   });
 
-  describe('the journal desk (#79)', () => {
-    it('puts a notebook on the desk top, with the Journal on it', () => {
-      const notebook = room.root.find('Notebook');
-      expect(notebook).toBeTruthy();
-      const desk = footprint(room.root.find('Desk'));
-      const { x, y, z } = notebook.object3d.position;
-      expect(x).toBeGreaterThan(desk.x0);
-      expect(x).toBeLessThan(desk.x1);
-      expect(z).toBeGreaterThan(desk.z0);
-      expect(z).toBeLessThan(desk.z1);
-      expect(y).toBeGreaterThan(0.79);   // simple-desk.glb's top
-      expect(y).toBeLessThan(0.83);
-      expect(room.journal).toBeTruthy();
-      expect(notebook.getComponent(Interactable)).toBe(room.journal);
-      expect(notebook.collider).toBeTruthy();       // the interaction ray needs one
+  describe('the bedroom desk', () => {
+    it('has no notebook on it: the desk is free for the PC (#114)', () => {
+      expect(room.root.find('Notebook')).toBeFalsy();
     });
 
     it('lights the desk lamp: a real light, no shadow, under the room (so the grid switches it)', () => {

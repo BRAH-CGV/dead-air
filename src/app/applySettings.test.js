@@ -4,6 +4,7 @@ import { applySettings, BASE_SENSITIVITY, MIN_FAR } from './applySettings.js';
 const binds = () => ({
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
+  holdFurther: 'ArrowUp', holdCloser: 'ArrowDown',
 });
 
 const settings = (over = {}) => ({

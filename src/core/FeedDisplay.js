@@ -279,6 +279,8 @@ export class FeedDisplay {
   }
 
   dispose() {
+    // A target's dispose frees its GPU memory, not the texture object.
+    this.target.texture.dispose();
     this.target.dispose();
     this.material.dispose();
     this._renderer = null;

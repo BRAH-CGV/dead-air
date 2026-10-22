@@ -53,6 +53,7 @@ Either we show a boring "you win!" screen after the third night or we make it en
 - Aim the cursor and the dishes will follow
 - Look for signal 'blips', aim the satellites, and start scanning.
 - Download each signal to a drive and \[do something with it, not sure yet\]
+	- Each morning the buggy takes the night's drives to the colony's central hub; what the hub makes of them comes back to the bedroom computer the next evening \[proposed in #114, for Haydn to confirm\]
 - Signal blips appear occasionally throughout the night
 - There is a lightbulb that will indicate when there is a signal to scan
 

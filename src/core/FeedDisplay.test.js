@@ -164,9 +164,11 @@ describe('FeedDisplay', () => {
     const target = display.target;
     const material = display.material;
     const t = vi.spyOn(target, 'dispose');
+    const tex = vi.spyOn(target.texture, 'dispose');
     const m = vi.spyOn(material, 'dispose');
     display.dispose();
     expect(t).toHaveBeenCalled();
+    expect(tex).toHaveBeenCalled();
     expect(m).toHaveBeenCalled();
     display.want();
     display.render();   // nothing to draw with: no throw

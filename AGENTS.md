@@ -50,6 +50,7 @@ src/
 │   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen; precompile() for a rebuild
 │   ├── ShadowSides.js   # sealAgainst: make a building solid to one light's shadow map
 │   ├── FeedDisplay.js   # The security monitor's own picture: a camera drawn to a small target, the CCTV switch in its screen shader
+│   ├── VisorRefraction.js # The helmet's barrel warp: the finished frame copied and drawn back bent (a screen pass, so the scene keeps its MSAA and tone mapping)
 │   └── FrameSettle.js   # Holds the loading screen until the first frames run smooth
 ├── app/                 # The menus around the game (see "App flow and menus")
 │   ├── App.js           # Glue: AppFlow ↔ Engine ↔ MenuView ↔ PointerLock ↔ SettingsStore
@@ -74,7 +75,7 @@ src/
 │   ├── ClipVoice.js     # One of a set of clips, at random, from a point in the world (ImpactSound, SnapSocket)
 │   ├── MonitorSpeaker.js # The security monitor's small speaker: what the camera on screen hears, thin and fuzzy
 │   ├── WindowSand.js    # A storm's sand on the office window: louder the nearer the glass
-│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop
+│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop; the glass only on the player's own view (a cutscene's camera fades it)
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
@@ -85,6 +86,7 @@ src/
 │   ├── BuggySendOff.js  # The send-off cutscene: lid shuts, eagle view, buggy drives out the gate, fade
 │   ├── StaminaDrain.js  # Ticks Stamina through the shift (faster outside, or staring at the dust eyes); a tired player sees the base dim
 │   ├── CoffeeMachine.js # Interactable: brew a cup, wait, drink it; a couple of cups a night (COFFEE)
+│   ├── BedroomPC.js     # Interactable on the bedroom desk: opens the PC's screens; a screen the Sleep Demon counts
 │   ├── FatigueEffects.js # Low stamina played out: tunnel, eyelids, light stutter, heartbeat, yawns, the walk-down's heartbeat floor (setDread)
 │   ├── CameraTerminal.js # The security monitor: view through a camera, pan, flash, static
 │   ├── ScreenView.js    # Leaning in to a screen: its own camera on engine.viewCamera, the overlay's DOM laid onto the screen for the mouse (#161)
@@ -135,6 +137,7 @@ src/
 │   ├── CameraFeed.js    # Which camera is on screen, its pan, flash, and when the picture is live (pure)
 │   ├── ScreenFocus.js   # Where the camera stands to frame a screen; the lean in and back out (pure)
 │   ├── BuggyDeparture.js # The buggy's way out: exit lane, route curve, eagle view, the timeline (pure)
+│   ├── RunRecord.js     # The run on engine.run: the array's name, what each morning's buggy took to the hub (pure)
 │   └── CameraTransition.js # A camera switch as one timeline: drop → wait → resolve, for picture and hiss; glitch() for a vent (pure)
 ├── scenes/
 │   ├── BaseScene.js     # The whole base: rooms, corridors, airlock, outside
@@ -156,6 +159,8 @@ src/
 │   ├── TutorialOverlay.js # Night 0's big words and arrow (#tutorial); placeArrow (pure)
 │   ├── BreakerPanel.js  # The generator's repair minigame (#breaker-panel)
 │   ├── CameraOverlay.js # The security monitor's label, hints, map and CONNECTING (#cctv)
+│   ├── BedroomPCPanel.js # The bedroom PC's screens: colony map, findings, forecast (#bedroom-pc)
+│   ├── colonyMap.js     # Where the colony map puts the base, the neighbours, the route and the hub (pure)
 │   ├── promptKeys.js    # '[E] …' prompts name the real interact key
 │   ├── screenTransform.js # The CSS matrix3d laying a DOM box onto a screen's projected corners (pure)
 │   ├── paintDom.js      # An overlay's laid-out DOM painted into a 2D canvas: what its screen shows
@@ -216,9 +221,11 @@ An Interactable whose `promptLabel` changes while you look at it (the locker's P
 Every prop has a job:
 
 - **MainOffice** — the work. The computer desk faces the window, with its chair pulled out clear of the kneehole. The window is glazed: `Room` fills every window opening (a `sill` above the floor) with a solid, undrawn pane (`BackWindow`), so nothing gets out over the sill. What is seen of the glass is `WindowGlass` (`rooms.MainOffice.windowGlass`): a faint film of dust and smears, so the pane reads as glass without reflections. It is unlit and baked — one texture read per pixel — and shows by the lights it is handed (`addLight`: the ceiling light, the scene's ambient light, the UFO's window flood), read live at each draw, so a power cut darkens it. `WINDOW_GLASS.opacity` is the one number for more or less dirt. It never writes depth; the desk's transparent materials do, so they stay in front of it. Down the left wall, the grow rack (`GrowRack.js`, on the `GrowBeds` collider): two tiers of soil trays, a steel frame merged into one mesh per material, the ceiling-light model hung face-down as UV grow lights (one InstancedMesh, no real lights) and two cherry-tomato plants to a tray (`GrowPlant.js`, built in code: stems, leaflets and fruit coloured by vertex, instanced and seeded). Then the food dispenser (`VendingMachine`, procedural), idle for now: it only reads "Food dispenser — empty" until the grow beds' crop feeds it (#109). There is also a bin, a shelf, an extinguisher by the airlock door and a poster.
-- **LivingQuarters** — the bedroom. Back left, the bunk you sleep through the day in (`model:bed`, a single steel-framed bed: low, so nothing stands between the pillow and the bedside clock; a bunk bed's ladder did), its side table (a `DigitalClock`, `BedsideClock`, on it, facing the pillow) and the lockers on the back wall. Halfway down the left wall, a tall drinks machine (procedural, on the `CoffeeMachine` collider) is `coffeeMachine`, a `CoffeeMachine`: brew a cup, wait for it, drink it for 0.35 stamina, two cups a night (see "Stamina and the Sleep Demon"). It is here rather than in the office so a cup means leaving the desk. Back right, storage: two rows of big racks (`model:bigger-shelf`) running out from the back wall, with an aisle between, waiting for clutter. Front, the desk (`model:simple-desk`) end-on to the front wall, its chair and lamp, two small shelves behind it. Only the racks reach the right wall, in the back half, so the metre inside it stays clear forward of z −0.5, wherever `doorOffset` slides the doorway.
+- **LivingQuarters** — the bedroom. Back left, the bunk you sleep through the day in (`model:bed`, a single steel-framed bed: low, so nothing stands between the pillow and the bedside clock; a bunk bed's ladder did), its side table (a `DigitalClock`, `BedsideClock`, on it, facing the pillow) and the lockers on the back wall. Halfway down the left wall, a tall drinks machine (procedural, on the `CoffeeMachine` collider) is `coffeeMachine`, a `CoffeeMachine`: brew a cup, wait for it, drink it for 0.35 stamina, two cups a night (see "Stamina and the Sleep Demon"). It is here rather than in the office so a cup means leaving the desk. Back right, storage: two rows of big racks (`model:bigger-shelf`) running out from the back wall, with an aisle between, waiting for clutter. Front, the desk (`model:simple-desk`) end-on to the front wall, its chair and lamp, two small shelves behind it, and the computer on its far half (`pc`, a `BedroomPC`; see "The bedroom PC"). Only the racks reach the right wall, in the back half, so the metre inside it stays clear forward of z −0.5, wherever `doorOffset` slides the doorway.
 
 **The bunker shell** (`BunkerShell`, `scene.bunker`, built by `BaseScene._addBunkerShell`) is what the building looks like from outside: a battered concrete mass wrapped round the rooms' outline, every wall sloping from `BUNKER.batter` (1.5 m) out at the ground to `shoulder` (0.15 m) under the roof, with a flat roof slab on top whose edge is a rusted band (`fascia`), a vent stack and housings, and louvre plates on the slopes. The outline walks round the airlock too, so it is a sloped porch on the front. Two stretches are `flat` (no slope), each under a brow where the roof runs out (`cap.visor`): the office's back wall, so the window looks straight out, and the airlock's hatch end, so the hatch opens on the yard. The window is framed outside in a flared concrete embrasure (`EMBRASURE`: rounded corners of `WINDOW_CORNER_RADIUS`, a steel collar at the glass, bolts round its face), its flare wide enough that it never cuts into the view from the desk; inside, `MainOffice` puts a curved steel fillet through the wall in each corner (`WindowFillets`) and bolt heads round the frame (`WindowBolts`). A `SignalMast` stands on the server wing's roof (`scene.signalMast`): a lattice mast whose red lamp flashes (`SIGNAL_MAST.beacon`: a lamp and an additive glow, no light, on its own battery like the airlock beacon). The dust eyes count the airlock's obstacle box out to the slopes' toe. The fence runs into it: the yard's two side runs start at the foot of the front slope (`createPerimeterFence`'s `sideStart`; `fence.rect` is unchanged) and each ends on a concrete buttress (`shell.addAnchor`, `scene.fenceAnchors`) filling the wedge between its last post and the slope, solid, so there is no gap to slip into. The office's back wall wears the slopes' concrete (`shell.clad`), its texture laid out by height like theirs. It stands wholly outside the rooms (so `bounds()`, `_isOutside` and every interior system are unchanged), hangs on the scene root (always drawn, never sorted into a zone), takes no fog like the rest of the building, and is solid: a convex hull per slope — not the slope's shape but a sheer face at its toe, standing `BUNKER.climbGuard` (1.5 m) over the roof. Rapier's character controller counts any upward-facing contact as ground however steep, so against a sloped collider every jump landed higher and the player walked up onto the roof; stopped at the toe, they never touch the slope, which recedes as it rises. The four outdoor security cameras hang on its roof band (`fascia.y`, `fascia.out`), since a bracket on the slope would sink into it. Its slopes are also wind-dust cut-outs (`cutouts()`). The concrete is two 256 px `DataTexture`s baked at build (streaks, seams, dirt at the foot; a plain tiling grain), no files. The outline is read off the rooms, assuming the office juts out behind the wings and the fronts line up; a layout that breaks that needs `_addBunkerShell`'s corner list redone. `BaseScene.bunker.test.js` pins the view from the desk and the airlock clear, the airlock wrapped, the roofs covered, the mast on the roof and the cameras on the band.
+
+**The dream's base is the same shell.** The run-away dream (`DreamScene`) builds it from `BASE_SHELL`, a copy of what `_addBunkerShell` builds from (`scene.bunkerSpec`). `BaseScene.bunker.test.js` keeps the two equal, so a change to the rooms fails there until `BASE_SHELL` is updated. There are no rooms behind it, so the dream closes the window wall and the hatch wall in the slopes' concrete, solid like the slopes (`DreamWall`), lights the window warm and shuts the hatch. Unlike the base scene's, it takes the dream's fog. The player starts 3 m out of the hatch, facing away. `DreamWalk` measures its pull from the outline's bounding box, not a point, so it lets go 7 m out from the nearest wall.
 
 The airlock is a `Corridor` with `static kind = 'Room'`, so `RoomTransitionSystem` tracks it as a room. Corridor `ends` take one mode for both ends or a `[first, second]` pair along the axis (`[back, front]` on z); the airlock is `['open', 'doorway']` — open where it sits flush on the office's front wall face, a doorway for the hatch at the far end.
 
@@ -601,6 +608,19 @@ Every morning, once the night's drive box is in the buggy's boot and the quota i
 - **Shadows.** `engine.shadows?.watch(buggy.object3d, [moonLight])` once.
 - **Exposed for a sound owner:** `get active`, `get driving`, `logic`, `curve`. No sound files are added; the state is exposed for the sound owner to follow.
 
+### The bedroom PC
+
+The computer on the bedroom desk (#114): "[E] Use the computer" opens three screens of an old green terminal. A barebones slot for the story's words, all placeholders until the story has them (docs/STORY.md).
+
+- **On the desk.** `LivingQuarters._buildComputer` stands a placeholder monitor (`model:camera-monitor`, the security monitor's) on the desk's far half, turned to the chair, on a box collider (`BedroomPC` GO) carrying the `BedroomPC` (`rooms.LivingQuarters.pc`). `BaseScene._addBedroomPC` hands it the controller, its panel, the run record and the map, since rooms don't know about gameplay.
+- **Using it.** The player is held still (`inputLocked`), but the night runs on: no slow-down, so reading costs time. 1 / 2 / 3 or ← / → switch screens; a fresh E or Q puts it away. It opens in the shift and the morning, not behind a failed night, and a night failed under it puts it away. Its `state` is `'reading'` while open, and it is one of `BaseScene._screens()`, so the Sleep Demon treats it as the desk's terminal: nobody watches the room.
+- **The screens** (`BedroomPCPanel`, `#bedroom-pc`; every word in `PC_TEXT`):
+  - **Colony:** a top-down map (`colonyMap`, pure): our base in the middle under the array's name, the six neighbouring arrays (`satellite.neighbours`) at their radar bearings on a ring, the buggy's route out of the yard (`BaseScene._buggyRoutePoints`, shared with the send-off), and a line on its bearing off the map's edge to the central hub, whose distance isn't known. The window side is at the top, +x on the right, as on the security monitor's map: the radar flipped top to bottom (negate y in `colonyMap` to match the radar instead).
+  - **Findings:** one placeholder entry per processed signal the buggy delivered, from the night after (`RunRecord.findings(night)`).
+  - **Forecast:** "insufficient data".
+- **The run record** (`RunRecord`, on `engine.run`, so a dream's rebuild between nights keeps it; `BaseScene` makes one if there is none). `GameController.dispatch()` records the night's processed drives (`processedDrives`: saved, not red, processed at the ServerRoom console) as the buggy is sent off. App starts it over on New game and the Tutorial, with the intro's array name (`intro.array`), and on Continue and Select night with none. Never saved: Continue after a reload has no name and nothing back yet, and the Tutorial's delivery shows on night 1.
+- **No sound.** `pc.open` / `pc.state` and `panel.screen` are there for the sound owner to follow.
+
 ### Ragno (the camera entity)
 
 `Ragno` (on `GameplaySystems`, after the sandstorm, before the nap) is STORY.md's camera entity: a long-haired, four-legged spider thing that comes in through a side room's air vent. The rules are `RagnoLogic` (pure), the walk `RagnoGait` (pure) on `RagnoFigure`, the routes `RagnoPaths` (pure), laid out from the rooms by `BaseScene._ragnoLayout`. The plan it was built from is `docs/RAGNO-PLAN.md`. "Window side" is the building's back (−z), "yard side" its front (+z).
@@ -660,6 +680,11 @@ Centralized on `Engine.input`:
 - `locked` — boolean, pointer-lock active
 
 `Engine.keyBinds` maps action names to codes (`flashlight` is `F`); every one of them can be rebound. There are no debug keys: the debug tools live in the developer console (see Debug tooling). `engine.consumeAction(action)` uses up the current press: `isAction` reads it as up until the key is released.
+
+**A carried object** (`PickupSystem`) works without a mouse wheel, for a laptop:
+
+- **R** (`rotateHeld`) turns it with the mouse instead of the view. Held, it turns while R is down. Tapped (let go within `ROTATE_TAP`, 0.25 s), it keeps turning until R is pressed again or the object is dropped, and the prompt reads "[R] Stop rotating". The tap is for a touchpad: Windows ignores the touchpad while a key is held (palm rejection), so holding R and moving a finger turned nothing.
+- **↑ / ↓** (`holdFurther` / `holdCloser`), held, push it away and pull it in at `PUSH_SPEED` (1.5 m/s), within the Pickupable's reach, as the wheel does. Not while the player is held still (`inputLocked`: the security monitor steps its cameras with them) or the terminal is up. Once either has been used, the object stops easing back to 1 m, as it does after the first scroll.
 
 ### Wind dust
 
@@ -948,6 +973,9 @@ This project uses **test-driven development**. For every new feature, bug fix, o
 **Rules:**
 - Tests live beside source: `src/core/Foo.test.js` next to `src/core/Foo.js`.
 - Use `vitest` with `jsdom` environment for DOM-touching code (editor, UI).
+- **Each test is cleaned up after.** `src/test/setup.js` (`setupFiles` in vitest.config.js) clears every mock's calls once a test is over, and runs whatever was handed to `onCleanup` (`src/test/cleanup.js`). Vitest otherwise keeps every `vi.fn` until the file ends, with its arguments, its results and whatever its implementation closes over, so a file that built the base in every test kept every base it built. Two rules follow:
+  - Check a mock's calls in the test that made them. A later test, or one reading calls made in a `beforeAll`, sees none.
+  - A fake engine from `makeEngine` (`src/test/fakeRapier.js`) is emptied once the test that made it is over; one made in a `beforeAll` lasts to the end of the file. Hand anything else big a test builds to `onCleanup(fn)`.
 - Never commit code without its tests passing.
 - Pre-existing WASM-related test failures in unrelated modules are acknowledged as background noise — do not block new feature tests on them. Filter to the affected module: `npx vitest run src/path/to/module.test.js`.
 - When implementing from a plan document, follow the phase order — each phase lists the exact tests to write before the implementation.

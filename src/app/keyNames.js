@@ -8,13 +8,14 @@
 
 /** The gameplay actions the player can rebind, in the order the UI lists
  *  them. */
-export const REBINDABLE = ['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld'];
+export const REBINDABLE = ['forward', 'back', 'left', 'right', 'jump', 'crouch', 'interact', 'flashlight', 'rotateHeld', 'holdFurther', 'holdCloser'];
 
 /** Labels for the rebind rows. */
 export const ACTION_LABELS = {
   forward: 'Move forward', back: 'Move back', left: 'Move left', right: 'Move right',
   jump: 'Jump', crouch: 'Crouch', interact: 'Interact', flashlight: 'Flashlight',
-  rotateHeld: 'Rotate held object',
+  rotateHeld: 'Rotate held object', holdFurther: 'Push held object away',
+  holdCloser: 'Pull held object closer',
 };
 
 const NAMED = {
