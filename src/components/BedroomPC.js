@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
 import { paintDom } from '../ui/paintDom.js';
 
@@ -28,7 +29,23 @@ import { paintDom } from '../ui/paintDom.js';
 // On a screen (#161) the panel is what the monitor shows in the world,
 // whether or not anyone is at it (paintScreen, for a ScreenCanvas); using
 // it leans the view in, and closing it leans back out.
+//
+// A key click (PC_CLICK) whenever a press changes the screen: the camera
+// flash's switch click, quiet and pitched up to a small plastic keycap,
+// each press a touch apart, from the laptop. Not when the screen asked for
+// is already up.
 // ─────────────────────────────────────────────
+
+/** The key click. */
+export const PC_CLICK = {
+  key: 'sfx:camera-spotlight',
+  volume: 0.15,
+  /** Cents up, to a small keycap, and how far each press strays from it. */
+  detune: 700,
+  spread: 120,
+  /** Full volume within this of the laptop, metres. */
+  refDistance: 1,
+};
 
 /** Fresh presses that pick a screen, and those that step through them. */
 const SCREEN_KEYS = Object.freeze({ Digit1: 'colony', Digit2: 'findings', Digit3: 'forecast' });
@@ -59,6 +76,10 @@ export class BedroomPC extends Interactable {
 
   /** True while the panel is up. */
   open = false;
+
+  /** The key click: built from PC_CLICK.key the first time it is wanted
+   *  when left undefined; null for none. @type {THREE.Audio|null|undefined} */
+  click = undefined;
 
   /** What the panel was last drawn for (paintScreen). */
   _shown = null;
@@ -100,13 +121,39 @@ export class BedroomPC extends Interactable {
       return;
     }
     if (pressed.KeyQ) { this.close(); return; }
+    const before = this.panel?.screen;
     for (const code in SCREEN_KEYS) if (pressed[code]) this.panel?.setScreen(SCREEN_KEYS[code]);
     for (const code in STEP_KEYS) if (pressed[code]) this.panel?.step(STEP_KEYS[code]);
+    if (this.panel && this.panel.screen !== before) this._click();
+  }
+
+  /** A key's click, started over if one is still sounding. */
+  _click() {
+    if (this.click === undefined) this.click = this._buildClick();
+    const click = this.click;
+    if (!click) return;
+    if (click.isPlaying) click.stop();
+    click.setVolume(PC_CLICK.volume);
+    click.setDetune(PC_CLICK.detune + PC_CLICK.spread * (Math.random() * 2 - 1));
+    click.play();
+  }
+
+  _buildClick() {
+    const engine = this._engine();
+    const object3d = this.gameObject?.object3d;
+    if (!engine?.audioListener || !engine.assets?.has?.(PC_CLICK.key) || !object3d) return null;
+    const audio = new THREE.PositionalAudio(engine.audioListener);
+    audio.setBuffer(engine.assets.get(PC_CLICK.key));
+    audio.setRefDistance(PC_CLICK.refDistance);
+    object3d.add(audio);
+    return audio;
   }
 
   onDestroy() {
     // A rebuild with the panel up must not leave the player locked.
     this.close();
+    if (this.click?.isPlaying) this.click.stop();
+    try { this.click?.disconnect?.(); } catch (_) { /* never connected */ }
   }
 
   /** The monitor's screen (ScreenCanvas): the panel drawn for tonight,

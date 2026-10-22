@@ -624,7 +624,7 @@ The computer on the bedroom desk (#114): its monitor shows three screens of an o
   - **Findings:** one placeholder entry per processed signal the buggy delivered, from the night after (`RunRecord.findings(night)`).
   - **Forecast:** "insufficient data".
 - **The run record** (`RunRecord`, on `engine.run`, so a dream's rebuild between nights keeps it; `BaseScene` makes one if there is none). `GameController.dispatch()` records the night's processed drives (`processedDrives`: saved, not red, processed at the ServerRoom console) as the buggy is sent off. App starts it over on New game and the Tutorial, with the intro's array name (`intro.array`), and on Continue and Select night with none. Never saved: Continue after a reload has no name and nothing back yet, and the Tutorial's delivery shows on night 1.
-- **No sound.** `pc.open` / `pc.state` and `panel.screen` are there for the sound owner to follow.
+- **A key click** whenever a press changes the screen (`PC_CLICK`): the camera flash's switch click (`sfx:camera-spotlight`) at 0.15, pitched up 700 cents to a small plastic keycap, each press ±120 cents apart, from the laptop (full within 1 m); not when the screen asked for is already up. `pc.open` / `pc.state` and `panel.screen` are there for more to follow.
 
 ### Ragno (the camera entity)
 
