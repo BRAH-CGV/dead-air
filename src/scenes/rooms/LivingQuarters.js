@@ -4,6 +4,7 @@ import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { CoffeeCup } from '../../gameobjects/CoffeeCup.js';
+import { layoutShelf, buildClutter, RACK_SHELF, SMALL_SHELF } from '../../gameobjects/ShelfClutter.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
 import { screenSurface } from '../../components/ScreenView.js';
 
@@ -234,6 +235,29 @@ export class LivingQuarters extends Room {
     // The computer on the desk's far half, beyond the lamp, near the edge
     // the chair is at: a laptop is used up close.
     this._buildComputer([-0.25, 2.75]);
+
+    this._fillShelves();
+  }
+
+  /** The racks and the small shelves, filled with the base's odds and ends
+   *  (ShelfClutter): boxes, bins, cases, bottles, cable. Each shelf its own
+   *  seed, so no two look alike, and the same every build. A small shelf's
+   *  length runs along the model's z, so its frame turns a quarter. */
+  _fillShelves() {
+    const quarter = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    const frame = (go, turn) => {
+      go.object3d.updateMatrix();
+      const matrix = go.object3d.matrix.clone();
+      return turn ? matrix.multiply(quarter) : matrix;
+    };
+    const shelves = [];
+    let seed = 1;
+    for (const go of this.root.children) {
+      if (/^StorageRack_/.test(go.name)) shelves.push({ items: layoutShelf(RACK_SHELF, seed++), matrix: frame(go, false) });
+      else if (/^OfficeShelf_/.test(go.name)) shelves.push({ items: layoutShelf(SMALL_SHELF, seed++), matrix: frame(go, true) });
+    }
+    const group = this._addGroup('ShelfClutter');
+    buildClutter(group.object3d, shelves, { own: r => this._own(r) });
   }
 
   /** The coffee: an espresso machine on a small table, the table's back to

@@ -14,6 +14,7 @@ import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
 import { LAPTOP, LAPTOP_SCREEN, COFFEE_MACHINE, CUP_SPOT } from './LivingQuarters.js';
 import { CoffeeCup, CUP } from '../../gameobjects/CoffeeCup.js';
+import { CLUTTER } from '../../gameobjects/ShelfClutter.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -561,6 +562,27 @@ describe('LivingQuarters', () => {
     const facing = new THREE.Vector3(0, 0, 1).applyEuler(model.object3d.rotation);
     const toChair = new THREE.Vector3(chair.x - model.object3d.position.x, 0, chair.z - model.object3d.position.z).normalize();
     expect(facing.dot(toChair)).toBeGreaterThan(0.95);
+  });
+
+  it('fills every rack and both small shelves with clutter, each thing standing in its own shelf', () => {
+    const group = room.root.find('ShelfClutter');
+    expect(group).toBeTruthy();
+    const meshes = group.object3d.children.filter(o => o.isInstancedMesh);
+    expect(meshes.length).toBeGreaterThan(4);
+    expect(meshes.length).toBeLessThanOrEqual(Object.keys(CLUTTER).length);   // a draw call a kind, at most
+
+    const shelves = [...RACKS, ...SHELVES].map(name => ({ name, print: footprint(room.root.find(name)), count: 0 }));
+    const m = new THREE.Matrix4(), at = new THREE.Vector3();
+    for (const mesh of meshes) {
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        at.setFromMatrixPosition(m);
+        const home = shelves.find(({ print: f }) => at.x > f.x0 && at.x < f.x1 && at.z > f.z0 && at.z < f.z1);
+        expect(home, `${mesh.name} #${i} at ${at.toArray().map(v => v.toFixed(2))}`).toBeDefined();
+        home.count++;
+      }
+    }
+    for (const { name, count } of shelves) expect(count, name).toBeGreaterThan(6);
   });
 
   it('stands the furniture apart, nothing overlapping', () => {
