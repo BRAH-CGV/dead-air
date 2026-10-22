@@ -734,14 +734,22 @@ describe('ComputerTerminal', () => {
     expect(radar.hide).toHaveBeenCalled();
   });
 
-  it('exit during scanning drops the scan in progress', () => {
+  it('exit during scanning preserves the scan so the satellite keeps going', () => {
     term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
     term._enterScanning();
+    sat.scanProgress = 1.5;
     expect(term.state).toBe('scanning');
 
     term.exit();
     expect(term.state).toBe('idle');
-    expect(sat.isScanning).toBe(false);
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+    expect(sat.scanProgress).toBe(1.5);
   });
 
   it('exit from idle does nothing', () => {
@@ -751,13 +759,14 @@ describe('ComputerTerminal', () => {
 
   // ── Scan state cleanup ──
 
-  it('cleanup resets satellite scan state on exit', () => {
+  it('cleanup resets satellite scan state on power loss', () => {
     term.enter();
     sat.scanProgress = 2.5;
     sat.isScanning = true;
     sat.scanTarget = mgr.signals[0];
 
-    term.exit();
+    // Losing power is a hard interruption — full cleanup even mid-scan.
+    term.setPowered(false);
     expect(sat.scanProgress).toBe(0);
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
@@ -893,5 +902,84 @@ describe('ComputerTerminal', () => {
     expect(radar.show).toHaveBeenCalled();
     term.exit();
     expect(radar.hide).toHaveBeenCalled();
+  });
+
+  // ── Background scan continuation ──
+
+  it('saves the signal when a background scan completes while the terminal is idle', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    // Exit mid-scan — scan state preserved.
+    term.exit();
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(true);
+
+    // Satellite finishes the scan while the terminal is closed.
+    sat.scanProgress = sig.scanTime;
+    sig.scanned = true;
+    sat.isScanning = false;
+    sat._scanComplete = true;
+
+    // onUpdate detects the completion and saves.
+    term.onUpdate(1 / 60);
+    expect(term.state).toBe('idle');
+    expect(sig.saved).toBe(true);
+    expect(driveMgr.saveToDrive).toHaveBeenCalled();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
+  });
+
+  it('re-entering during an active background scan resumes the scanning UI', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going.
+    term.exit();
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(true);
+
+    // Come back — should resume scanning, not radar.
+    radar.show.mockClear();
+    crosshair.hide.mockClear();
+    term.enter();
+    expect(term.state).toBe('scanning');
+    expect(term._hoveredSignal).toBe(sig);
+    expect(radar.show).toHaveBeenCalled();
+    expect(crosshair.hide).toHaveBeenCalled();
+  });
+
+  it('power loss during a background scan cancels it', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    sat.scanProgress = 1.5;
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    term.setPowered(false);
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
   });
 });

@@ -111,6 +111,17 @@ export class ComputerTerminal extends Component {
   /** Enter the terminal (called when the player interacts with the computer). */
   enter() {
     if (this.state !== 'idle' || !this.powered) return;
+    // Background scan still running on the satellite — resume the scanning UI.
+    if (this.satellite?.isScanning && this.satellite?.scanTarget) {
+      this._hoveredSignal = this.satellite.scanTarget;
+      this.state = 'scanning';
+      this._setInputLocked(true);
+      this.crosshair?.hide();
+      this.radar?.show();
+      if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
+      this.radar?.setInfo('Scanning… keep dish aimed!');
+      return;
+    }
     this._enterRadar();
   }
 
@@ -127,7 +138,8 @@ export class ComputerTerminal extends Component {
   /** Exit the terminal back to IDLE (Q key). */
   exit() {
     if (this.state === 'idle') return;
-    this._cleanupState();
+    // Exiting mid-scan: let the satellite keep scanning in the background.
+    if (this.state !== 'scanning') this._cleanupState();
     this._enterIdle();
   }
 
@@ -283,6 +295,7 @@ export class ComputerTerminal extends Component {
    *  drive is full, so there is nothing left to scan from this seat. */
   _onSignalResolved() {
     this._hoveredSignal = null;
+    this._cleanupState();   // scan is done — release the satellite.
     this.exit();
   }
 
@@ -304,7 +317,15 @@ export class ComputerTerminal extends Component {
     if (!engine) return;
 
     // ── IDLE: handled by the Interactable component (onInteract hook) ──
-    if (this.state === 'idle') return;
+    if (this.state === 'idle') {
+      // Background scan completed while the terminal was closed.
+      if (this.satellite?._scanComplete) {
+        this._hoveredSignal = this.satellite.scanTarget;
+        this.saveSignal();
+        this._cleanupState();
+      }
+      return;
+    }
 
     // ── Global: Q exits from any state ──
     if (engine.input.keys['KeyQ']) {
