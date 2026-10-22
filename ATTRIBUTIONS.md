@@ -912,6 +912,17 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | A coffee drunk at the bedroom's machine (`BaseScene._addStamina`) |
 | **Modifications** | Renamed |
 
+### Globe spinning
+
+"SpinningGlobeSound1" (https://freesound.org/people/TunaBombs/sounds/848502/) by TunaBombs, from Freesound, is used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. Downloaded as `848502__tunabombs__spinningglobesound1.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/globe-spin.wav` |
+| **Manifest key** | `sfx:globe-spin` |
+| **Used for** | The desk globe spun (`GlobeSound`) |
+| **Modifications** | Renamed; trimmed to start on the push, its last 20 ms faded out; otherwise as recorded |
+
 ### Ragno in the vents
 
 "metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.

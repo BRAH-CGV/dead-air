@@ -7,6 +7,7 @@ import { Interactable } from '../../components/Interactable.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { GlobeSpin } from '../../components/GlobeSpin.js';
+import { GlobeSound } from '../../components/GlobeSound.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
@@ -568,6 +569,7 @@ export class MainOffice extends Room {
     this._spawnProp('model:mars-stand', { name: 'GlobeStand', ...place, physics: 'none' });
     const globe = this._spawnProp('model:mars-globe', { name: 'Globe', ...place });
     globe.addComponent(new GlobeSpin());
+    globe.addComponent(new GlobeSound());
   }
 
   /** An empty node at the middle of the right wing's top, for the

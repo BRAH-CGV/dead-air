@@ -696,6 +696,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/coffee-machine.mp3',
   },
+  // The desk globe spun (GlobeSound): one real spin, the push and the globe
+  // dying away, played from its top with every push.
+  'sfx:globe-spin': {
+    type: 'audio',
+    url: 'assets/audio/globe-spin.wav',
+  },
   'sfx:whispering': {
     type: 'audio',
     url: 'assets/audio/whispering.mp3',

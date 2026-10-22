@@ -23,6 +23,13 @@ describe('GlobeSpin', () => {
     expect(spin.promptLabel).toMatch(/\[E\].*globe/i);
   });
 
+  it('counts its pushes, at top speed too (for its sound)', () => {
+    expect(spin.pushes).toBe(0);
+    for (let i = 0; i < 5; i++) spin.onInteract({});
+    expect(spin.speed).toBe(spin.maxSpeed);
+    expect(spin.pushes).toBe(5);
+  });
+
   it('sits still until it is used', () => {
     const before = globe.object3d.quaternion.clone();
     run(spin, 1);
