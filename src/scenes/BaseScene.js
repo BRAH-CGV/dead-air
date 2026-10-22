@@ -1839,11 +1839,13 @@ export class BaseScene extends Scene {
     return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
-  /** Off the computer's or the console's screen at once, with no lean back
-   *  (#161): a kill or a new night wants the player's own view now. */
+  /** Off any screen at once (the computer, the console, the cameras, the
+   *  bedroom PC), with no lean back (#161): a kill or a new night wants the
+   *  player's own view now. */
   _leaveScreens() {
     if (this.terminal?.state !== 'idle') this.terminal?.exit();
     if (this.processingScreen?.isOpen) this.processingScreen.close();
+    this.rooms.LivingQuarters?.pc?.close();
     this.cameraTerminal?.exit();
     this.screenView?.cut();
   }
@@ -2107,6 +2109,25 @@ export class BaseScene extends Scene {
       neighbours: this.satellite?.neighbours ?? [],
       route: this._buggyRoutePoints(),
     });
+
+    // On its own monitor (#161): the panel is what the screen shows, leaned
+    // in to or not, as for the office's screens (_addScreenPictures).
+    const quarters = this.rooms.LivingQuarters;
+    const surface = quarters.pcScreen;
+    const gameplay = this._sceneRoot.find('GameplaySystems');
+    if (!surface || !gameplay) return;
+    const [tl, tr, , bl] = surface.local;
+    const layout = [Math.round(SCREEN_LAYOUT_HEIGHT * tl.distanceTo(tr) / tl.distanceTo(bl)), SCREEN_LAYOUT_HEIGHT];
+    this._hostOnScreen(pc.panel.root, layout);
+    pc.screenView = this.screenView ?? null;
+    pc.screen = surface;
+    this.pcPicture = new ScreenCanvas({
+      surface, layout, lift: 0.002,
+      painter: (ctx, w, h) => pc.paintScreen(ctx, w, h),
+      seen: () => this._screenSeen(surface, quarters),
+      focused: () => !!this.screenView?.holds(surface),
+    });
+    gameplay.addComponent(this.pcPicture);
   }
 
   // ──────────────────────────────────────────

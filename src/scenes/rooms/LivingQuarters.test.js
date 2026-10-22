@@ -347,6 +347,17 @@ describe('LivingQuarters', () => {
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 
+  it('marks the computer\'s screen (#161): the monitor model\'s face, turned to the chair', () => {
+    const [tl, tr, , bl] = room.pcScreen.worldCorners();
+    expect(room.pcScreen.object).toBe(room.root.find('BedroomPCModel').object3d);
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.y).toBeGreaterThan(bl.y);
+    // Facing the chair, which is at −x.
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    expect(normal.x).toBeCloseTo(-1);
+  });
+
   it('puts the computer on the desk (#114): a monitor facing the chair, the BedroomPC on it', () => {
     const go = room.root.find('BedroomPC');
     expect(go).toBeTruthy();

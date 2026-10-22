@@ -683,6 +683,29 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.cameraPicture.layout[0] / 720).toBeCloseTo(0.55 / 0.323, 2);
   });
 
+  it('the bedroom PC shows its panel on its own monitor, and leans in to it (#161)', () => {
+    const quarters = scene.rooms.LivingQuarters;
+    expect(quarters.pc.screenView).toBe(scene.screenView);
+    expect(quarters.pc.screen).toBe(quarters.pcScreen);
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(scene.pcPicture);
+    expect(scene.pcPicture.mesh.parent).toBe(quarters.pcScreen.object);
+    const ctx = {};
+    const paint = vi.spyOn(quarters.pc, 'paintScreen').mockImplementation(() => {});
+    scene.pcPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+  });
+
+  it('a kill at the bedroom PC takes the player straight off it', () => {
+    const pc = scene.rooms.LivingQuarters.pc;
+    scene.gameController.startNight(1);
+    pc.onInteract();
+    expect(pc.open).toBe(true);
+    scene.sleepDemon.terminal.exit();
+    expect(pc.open).toBe(false);
+    expect(scene.screenView.active).toBe(false);
+  });
+
   it('using the computer hands the frame to the screen view', () => {
     const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
     desk.getComponent(Interactable).onInteract({});

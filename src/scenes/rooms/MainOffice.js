@@ -138,8 +138,9 @@ const COMPUTER_SCREEN = [
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
 
 /** Its screen (#161): the model's CameraMonitorScreen, a flat 0.55 × 0.32 m
- *  face at its front, [tl, tr, br, bl] in the model's own metres. */
-const CAMERA_MONITOR_SCREEN = [
+ *  face at its front, [tl, tr, br, bl] in the model's own metres. The
+ *  bedroom PC wears the same model (LivingQuarters). */
+export const CAMERA_MONITOR_SCREEN = [
   [-0.275, 0.360, 0.144], [0.275, 0.360, 0.144],
   [0.275, 0.037, 0.144], [-0.275, 0.037, 0.144],
 ];

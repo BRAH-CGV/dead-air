@@ -380,7 +380,8 @@
          so clicks, hovers and drags land where they are painted. */
       #radar-overlay.on-screen,
       #processing-screen.on-screen,
-      #cctv.on-screen {
+      #cctv.on-screen,
+      #bedroom-pc.on-screen {
         inset: auto;
         left: 0;
         top: 0;
@@ -391,7 +392,8 @@
         pointer-events: none;
       }
       #radar-overlay.on-screen,
-      #processing-screen.on-screen { display: flex !important; }
+      #processing-screen.on-screen,
+      #bedroom-pc.on-screen { display: flex !important; }
       #cctv.on-screen { display: block !important; background: none; }
       #radar-overlay.on-screen.is-focused,
       #processing-screen.on-screen.is-focused,
@@ -402,6 +404,21 @@
          has none: it goes over the feed. */
       #radar-overlay.on-screen { background: #05080d; }
       #processing-screen.on-screen { background: #04060b; }
+      #bedroom-pc.on-screen { background: #07130c; z-index: auto; }
+      /* The PC's panel fills its monitor, sized to be read on it. */
+      #bedroom-pc.on-screen .pc-screen {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        padding: 30px 40px 24px;
+        gap: 18px;
+        border: 0;
+        border-radius: 0;
+        font-size: 24px;
+      }
+      #bedroom-pc.on-screen .pc-body { min-height: 0; flex: 1; }
+      #bedroom-pc.on-screen .pc-map { width: min(470px, 100%); }
+      #bedroom-pc.on-screen :is(.pc-note, .pc-hint) { font-size: 18px; }
 
       /* ── Processing screen (ServerRoom console) ────────── */
       #processing-screen {
@@ -1116,7 +1133,7 @@
         pointer-events: none;
       }
       #bedroom-pc.is-open { display: flex; }
-      body:not([data-app="playing"]) #bedroom-pc { visibility: hidden !important; }
+      body:not([data-app="playing"]) #bedroom-pc:not(.on-screen) { visibility: hidden !important; }
       .pc-screen {
         box-sizing: border-box;
         display: flex;

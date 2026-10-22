@@ -1,4 +1,5 @@
 import { Interactable } from './Interactable.js';
+import { paintDom } from '../ui/paintDom.js';
 
 // ─────────────────────────────────────────────
 // BedroomPC  –  the computer on the bedroom desk (#114)
@@ -21,6 +22,12 @@ import { Interactable } from './Interactable.js';
 //   pc.panel      = new BedroomPCPanel();
 //   pc.run        = engine.run;        // the array's name, the hub's results
 //   pc.map        = colonyMap({ … });  // where things are on the map
+//   pc.screenView = screenView;        // leans in to its screen (#161)
+//   pc.screen     = rooms.LivingQuarters.pcScreen;
+//
+// On a screen (#161) the panel is what the monitor shows in the world,
+// whether or not anyone is at it (paintScreen, for a ScreenCanvas); using
+// it leans the view in, and closing it leans back out.
 // ─────────────────────────────────────────────
 
 /** Fresh presses that pick a screen, and those that step through them. */
@@ -43,19 +50,26 @@ export class BedroomPC extends Interactable {
   /** @type {ReturnType<import('../ui/colonyMap.js').colonyMap>|null} */
   map = null;
 
+  /** Leans the view in to the monitor's screen (#161). Without one (tests,
+   *  other scenes) the panel goes over the whole view.
+   *  @type {import('./ScreenView.js').ScreenView|null} */
+  screenView = null;
+  /** The monitor's screen, for screenView. */
+  screen = null;
+
   /** True while the panel is up. */
   open = false;
+
+  /** What the panel was last drawn for (paintScreen). */
+  _shown = null;
 
   get state() { return this.open ? 'reading' : 'idle'; }
 
   onInteract() {
     if (this.open || !this._usable()) return;
     this.open = true;
-    this.panel?.show({
-      array: this.run?.array ?? null,
-      map: this.map,
-      findings: this.run?.findings(this.controller?.nightNumber ?? 1) ?? [],
-    });
+    this.panel?.show(this._data());
+    if (this.screenView && this.screen) this.screenView.open(this.screen, this.panel?.root ?? null);
     const engine = this._engine();
     // The press that opened it has done its job.
     engine?.consumeAction?.('interact');
@@ -66,7 +80,9 @@ export class BedroomPC extends Interactable {
   close() {
     if (!this.open) return;
     this.open = false;
-    this.panel?.hide();
+    // On the screen, the panel stays up while the view leans back out.
+    if (this.screenView && this.screen) this.screenView.close(() => this.panel?.hide());
+    else this.panel?.hide();
     const engine = this._engine();
     if (engine?.playerController) engine.playerController.inputLocked = false;
   }
@@ -91,6 +107,27 @@ export class BedroomPC extends Interactable {
   onDestroy() {
     // A rebuild with the panel up must not leave the player locked.
     this.close();
+  }
+
+  /** The monitor's screen (ScreenCanvas): the panel drawn for tonight,
+   *  again only when that changes, then painted from its DOM. */
+  paintScreen(ctx, w, h) {
+    const data = this._data();
+    const key = `${data.array}|${this.controller?.nightNumber ?? 1}|${data.findings.length}`;
+    if (key !== this._shown) {
+      this._shown = key;
+      this.panel?.render?.(data);
+    }
+    if (this.panel?.root) paintDom(this.panel.root, ctx, w, h);
+  }
+
+  /** What the panel shows: the array, the map, the findings so far. */
+  _data() {
+    return {
+      array: this.run?.array ?? null,
+      map: this.map,
+      findings: this.run?.findings(this.controller?.nightNumber ?? 1) ?? [],
+    };
   }
 
   _usable() {
