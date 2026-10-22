@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
-import { LAPTOP, LAPTOP_SCREEN } from './LivingQuarters.js';
+import { LAPTOP, LAPTOP_SCREEN, COFFEE_MACHINE } from './LivingQuarters.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -37,7 +37,7 @@ const MODEL = {
 const RACKS = Object.keys(MODEL).filter(name => MODEL[name] === RACK);
 const SHELVES = Object.keys(MODEL).filter(name => MODEL[name] === SHELF);
 /** Everything standing on the floor: the spawned models and the procedural boxes. */
-const FURNITURE = [...Object.keys(MODEL), 'SideTable', 'CoffeeMachine'];
+const FURNITURE = [...Object.keys(MODEL), 'SideTable', 'CoffeeTable'];   // the coffee machine stands on its table
 
 /** Floor footprint {x0, x1, z0, z1} of a piece of furniture, room-local: a
  *  spawned model's MODEL size turned by its yaw, or a static box's own size. */
@@ -319,20 +319,78 @@ describe('LivingQuarters', () => {
     }
   });
 
-  it('the coffee machine: on the left wall between the bunk and the desk, facing into the room', () => {
+  it('the coffee machine: on a table on the left wall between the bunk and the desk, facing into the room', () => {
     const at = name => footprint(room.root.find(name));
-    const machine = at('CoffeeMachine'), bunk = at('Bunk'), chair = at('DeskChair');
+    const table = at('CoffeeTable'), bunk = at('Bunk'), chair = at('DeskChair');
     const inX = room.width / 2 - room.wallThick / 2;
-    expect(machine.x0).toBeCloseTo(-inX);                            // against the left wall
-    expect(machine.z0).toBeGreaterThan(bunk.z1 + 0.25);              // past the foot of the bunk
-    expect(machine.z1).toBeLessThan(chair.z0 - 0.5);                 // and short of the desk's corner
+    expect(table.x0).toBeCloseTo(-inX);                              // against the left wall
+    expect(table.z0).toBeGreaterThan(bunk.z1 + 0.25);                // past the foot of the bunk
+    expect(table.z1).toBeLessThan(chair.z0 - 0.5);                   // and short of the desk's corner
+    expect(room.root.find('CoffeeTable').rigidBody.isFixed()).toBe(true);
 
-    // Its face is on the room side: the status screen stands proud of +x.
+    // The machine stands on the table top, wholly over it, a box its size
+    // the collider the interact ray lands on.
     const go = room.root.find('CoffeeMachine');
-    const use = go.getComponent(Interactable);
-    let screen = null;
-    go.object3d.traverse(o => { if (o.isMesh && o.material === use.screen) screen = o; });
-    expect(screen.position.x).toBeGreaterThan(go._originalSize[0] / 2);
+    const top = room.root.find('CoffeeTable')._originalSize[1];
+    const machine = at('CoffeeMachine');
+    expect(go.object3d.position.y - go._originalSize[1] / 2).toBeCloseTo(top);
+    expect(go._originalSize).toEqual([COFFEE_MACHINE[2], COFFEE_MACHINE[1], COFFEE_MACHINE[0]]);
+    expect(machine.x0).toBeGreaterThanOrEqual(table.x0);
+    expect(machine.x1).toBeLessThanOrEqual(table.x1);
+    expect(machine.z0).toBeGreaterThanOrEqual(table.z0);
+    expect(machine.z1).toBeLessThanOrEqual(table.z1);
+
+    // The model, drawn only, its front (+z) turned into the room (+x).
+    const model = room.root.find('CoffeeMachineModel');
+    expect(model.physicsAssetKey).toBe('model:coffee-machine');
+    expect(model.rigidBody).toBeFalsy();
+    expect(model.object3d.position.y).toBeCloseTo(top);
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(model.object3d.rotation);
+    expect(facing.x).toBeCloseTo(1);
+  });
+
+  it('reads the coffee machine\'s size off coffee-machine.glb, at its manifest scale', () => {
+    const entry = ASSETS['model:coffee-machine'];
+    const glb = readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const box = new THREE.Box3();
+    for (const node of json.nodes.filter(n => n.mesh !== undefined)) {
+      const matrix = new THREE.Matrix4().compose(
+        new THREE.Vector3(...(node.translation ?? [0, 0, 0])),
+        new THREE.Quaternion(...(node.rotation ?? [0, 0, 0, 1])),
+        new THREE.Vector3(...(node.scale ?? [1, 1, 1])));
+      for (const prim of json.meshes[node.mesh].primitives) {
+        const { min, max } = json.accessors[prim.attributes.POSITION];
+        box.union(new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...max)).applyMatrix4(matrix));
+      }
+    }
+    const size = box.getSize(new THREE.Vector3()).multiplyScalar(entry.scale);
+    expect(entry.origin).toBe('floor');
+    size.toArray().forEach((v, i) => expect(COFFEE_MACHINE[i]).toBeCloseTo(v, 3));
+  });
+
+  it('lights the machine\'s white switch as its status light, on its own copy of the material', () => {
+    const shared = Object.assign(new THREE.MeshStandardMaterial(), { name: 'Plastic_white' });
+    const chrome = Object.assign(new THREE.MeshStandardMaterial(), { name: 'Chrome' });
+    const spawn = engine.spawnModel.getMockImplementation();
+    engine.spawnModel.mockImplementation((key, opts) => {
+      const go = spawn(key, opts);
+      if (key === 'model:coffee-machine') go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(), shared), new THREE.Mesh(new THREE.BoxGeometry(), chrome));
+      return go;
+    });
+    const lit = new LivingQuarters(engine);
+    lit.build();
+
+    const meshes = [];
+    lit.root.find('CoffeeMachineModel').object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+    const [switchMesh, chromeMesh] = meshes;
+    const use = lit.coffeeMachine;
+    expect(switchMesh.material).toBe(use.screen);
+    expect(use.screen).not.toBe(shared);                           // the cached model's material is untouched
+    expect(shared.emissive.getHex()).toBe(0);
+    expect(chromeMesh.material).toBe(chrome);
+    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
+    expect(use.screen.emissiveIntensity).toBeGreaterThan(0);
   });
 
   it("makes the machine usable: it is the room's CoffeeMachine, raycastable, its screen lit by what it is doing", () => {

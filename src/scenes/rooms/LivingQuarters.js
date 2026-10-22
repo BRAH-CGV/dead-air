@@ -6,6 +6,13 @@ import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
 import { screenSurface } from '../../components/ScreenView.js';
 
+/** The coffee machine (coffee-machine.glb at its manifest scale): width,
+ *  height, depth, in metres. */
+export const COFFEE_MACHINE = [0.4029, 0.5178, 0.5084];
+
+/** Its table: depth out from the wall, height, length along it. */
+const COFFEE_TABLE = [0.65, 0.75, 0.9];
+
 /** The bedroom PC (laptop.glb at its manifest scale): width, height (the
  *  lid's top), depth, in metres. */
 export const LAPTOP = [0.326, 0.2714, 0.243];
@@ -37,7 +44,8 @@ export const LAPTOP_SCREEN = [
 //
 //   bedroom   back left: the bunk (a single bed) and a side table with the
 //             bedside clock, the lockers on the back wall beside the table
-//   coffee    the left wall, halfway down: the coffee machine, facing in
+//   coffee    the left wall, halfway down: the coffee machine on its
+//             table, facing in
 //   storage   back right: two rows of big racks running front to back (one
 //             against the right wall), with an aisle between
 //   office    front: the desk end-on to the front wall with its chair and a
@@ -156,7 +164,7 @@ export class LivingQuarters extends Room {
 
     // ── Coffee ──
     // Halfway down the left wall, between the bunk and the desk.
-    this._buildCoffeeMachine([-inX, 0]);
+    this._buildCoffeeMachine([-inX, 0], wood);
 
     // ── Storage ──
     // Two rows of three big racks (0.92 × 0.6 m) running out from the back
@@ -194,39 +202,55 @@ export class LivingQuarters extends Room {
     this._buildComputer([-0.25, 2.75]);
   }
 
-  /** The coffee: a tall drinks machine, its back to the wall at `[x, z]`
-   *  (the wall's inner face, the middle of the machine), facing +x into the
-   *  room. Built here rather than imported — the downloaded vending machine
-   *  is a broken fragment. The body is the collider the interact ray hits;
-   *  the face details are plain meshes on it. Its status screen shows what
-   *  it is doing (CoffeeMachine colours it); the cup goes in the bay below. */
-  _buildCoffeeMachine([x, z]) {
-    const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
-    const size = [0.7, 1.9, 0.9];
-    const go = this._addStaticBox('CoffeeMachine', [x + size[0] / 2, size[1] / 2, z], size, body);
-
-    // Positions are relative to the body's centre, 0.95 m up.
-    const front = size[0] / 2;
-    const detail = (geometry, material, position) => {
-      const mesh = new THREE.Mesh(this._own(geometry), material);
+  /** The coffee: an espresso machine on a small table, the table's back to
+   *  the wall at `[x, z]` (the wall's inner face, the middle of the table),
+   *  the machine facing +x into the room. A box the machine's size is the
+   *  collider the interact ray lands on, and carries the CoffeeMachine; the
+   *  model is drawn only. Its white switch, beside the gauge, is the status
+   *  light (CoffeeMachine colours it), on a copy of its material: the
+   *  cached model's is shared. */
+  _buildCoffeeMachine([x, z], wood) {
+    const [tw, th, tl] = COFFEE_TABLE;
+    const table = this._addGroup('CoffeeTable');
+    const middle = [x + tw / 2, th / 2, z];
+    table.object3d.position.set(...middle);
+    this._attachFixedBox(table, middle, [tw, th, tl]);
+    const slab = 0.04, leg = 0.05;
+    const part = (size, position) => {
+      const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), wood);
       mesh.position.set(...position);
-      go.object3d.add(mesh);
-      return mesh;
+      mesh.castShadow = mesh.receiveShadow = true;
+      table.object3d.add(mesh);
     };
-    const dark  = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 }));
-    const glass = this._own(new THREE.MeshStandardMaterial({
-      color: 0x0a140e, emissive: 0x6dff9c, emissiveIntensity: 0.9, roughness: 0.3,
-    }));
-    const light = this._own(new THREE.MeshStandardMaterial({
-      color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
-    }));
+    part([tw, slab, tl], [0, th / 2 - slab / 2, 0]);
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        part([leg, th - slab, leg], [sx * (tw - leg) / 2, -slab / 2, sz * (tl - leg) / 2]);
+      }
+    }
 
-    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
-    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // brew button
-    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // cup bay
-    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // drip tray
+    // The machine's back 4 cm off the wall, turned a quarter so its front
+    // (+z) faces into the room and its depth runs along x.
+    const [w, h, d] = COFFEE_MACHINE;
+    const mx = x + 0.04 + d / 2;
+    const go = this._addGroup('CoffeeMachine');
+    const position = [mx, th + h / 2, z];
+    go.object3d.position.set(...position);
+    this._attachFixedBox(go, position, [d, h, w]);
+    const model = this._spawnProp('model:coffee-machine', {
+      name: 'CoffeeMachineModel', position: [mx, th, z], rotationY: Math.PI / 2, physics: 'none',
+    });
 
-    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
+    let screen = null;
+    model?.object3d.traverse((o) => {
+      if (!o.isMesh || o.material?.name !== 'Plastic_white') return;
+      screen ??= this._own(o.material.clone());
+      o.material = screen;
+    });
+    screen ??= this._own(new THREE.MeshStandardMaterial({ roughness: 0.5 }));
+    screen.color.setHex(0x1a1a1a);   // dark under the glow, so its colour reads, not a pale tint
+    screen.emissiveIntensity = 1.4;
+    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen }));
   }
 
   /** The computer (#114): a laptop open on the desk top at `[x, z]`, its

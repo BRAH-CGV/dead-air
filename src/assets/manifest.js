@@ -339,6 +339,17 @@ const PLACED = {
     url: 'assets/models/laptop.glb',
     scale: 0.5,
   },
+  // The bedroom's coffee machine: free3d.io's Ascaso Dream, prepared by
+  // scripts/prep-coffee-machine.mjs. Modelled in its own units; 0.00264
+  // would be the real machine (24.5 cm wide, 34.5 cm tall), and it is half
+  // as big again to read across the bedroom: 0.40 × 0.52 × 0.51 m with the
+  // steam knob and the portafilter's handle. Its front faces +z.
+  'model:coffee-machine': {
+    type: 'model',
+    url: 'assets/models/coffee-machine.glb',
+    scale: 0.00396,
+    origin: 'floor',
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {

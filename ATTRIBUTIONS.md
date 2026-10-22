@@ -291,6 +291,23 @@ by felixawani is licensed under Creative Commons Attribution
 | **Used for** | The bedroom's desk |
 | **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
 
+### Coffee machine — ⚠ no redistribution of the file
+
+"Coffee Machine Ascaso Dream" (https://free3d.io/model/Coffee-machine-Ascaso-Dream/d655706f)
+from free3D.io, uploader not named on the page. Free for personal and
+commercial visualization under free3D.io's Terms of Use, which also say
+"Redistribution or resale of the files is not allowed".
+
+⚠ The game ships the model as a file (`coffee-machine.glb` in `dist/`),
+which may count as redistribution. Check the Terms of Use before release.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/coffee-machine.glb` |
+| **Manifest key** | `model:coffee-machine` |
+| **Used for** | The bedroom's coffee machine |
+| **Modifications** | `scripts/prep-coffee-machine.mjs`: transmission and specular extensions dropped, finishes changed, the body dulled to rust, the maker's name painted off the gauge face; scaled to 0.00396 and stood on the floor at load (manifest `scale`, `origin`) |
+
 ### Bedroom laptop
 
 "Classic Laptop" (https://polyhaven.com/a/classic_laptop) by Arrangemonk from
