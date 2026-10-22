@@ -466,6 +466,9 @@ export class ComputerTerminal extends Component {
       cursorR,
     });
 
+    // Scan progress bar on the right.
+    this.radar.setScanProgress?.(scanProgress >= 0 ? scanProgress : 0);
+
     // Parking the cursor on the UFO's blob reads it out.
     const onThreat = this.radar.threatAt?.(this._cursorX, this._cursorY) ?? false;
     this.radar.setWarning?.(onThreat ? ANOMALY_WARNING : '');

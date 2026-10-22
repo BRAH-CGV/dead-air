@@ -74,7 +74,7 @@ function makeRadar() {
   return {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
-    setWarning: vi.fn(), setTelemetry: vi.fn(), threatAt: vi.fn(() => false),
+    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), threatAt: vi.fn(() => false),
   };
 }
 

@@ -302,6 +302,15 @@ export class RadarOverlay {
     this._telemetry.update(values);
   }
 
+  /** Update the scan progress bar (0–1).  Called every frame by the terminal. */
+  setScanProgress(progress) {
+    const bar = this.root?.querySelector('#radar-scan-progress');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
+    const fill = bar.querySelector('.scan-fill');
+    if (fill) fill.style.height = pct + '%';
+  }
+
   // Only on a change: the radar is painted onto the computer's screen from
   // this DOM, and every change is a fresh read of it (paintDom).
   setInfo(text) {
@@ -797,27 +806,6 @@ export class RadarOverlay {
 
     // The dish is locked on the evil signal — same glitch, red.
     this._drawEvilGlitch(ctx, s);
-
-    // Hover highlight — pulsing glow around the hovered signal
-    if (hoveredSignal && !hoveredSignal.resolved) {
-      const hPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
-      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
-      ctx.beginPath();
-      ctx.arc(hPos.x, hPos.y, (10 + pulse * 3) * s, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0, 255, 230, ${0.3 + pulse * 0.3})`;
-      ctx.lineWidth = 2 * s;
-      ctx.stroke();
-    }
-
-    // Scan progress ring — arc around the hovered/scanning signal
-    if (scanProgress >= 0 && hoveredSignal) {
-      const sPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
-      ctx.beginPath();
-      ctx.arc(sPos.x, sPos.y, 14 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * scanProgress);
-      ctx.strokeStyle = 'rgba(0, 255, 200, 0.9)';
-      ctx.lineWidth = 3 * s;
-      ctx.stroke();
-    }
 
     // Dish direction line + dot — same mapping as the blips
     const dish = this._skyToCanvas(dishYaw, dishPitch);
