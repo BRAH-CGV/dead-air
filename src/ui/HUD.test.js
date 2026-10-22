@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { HUD, RadarOverlay } from './HUD.js';
+import { HUD, RadarOverlay, RadarTelemetry } from './HUD.js';
 import {
   DishRig,
   createLocalRig,
@@ -488,5 +489,99 @@ describe('RadarOverlay UFO warning', () => {
     expect(el.classList.toggle).toHaveBeenCalledTimes(1);
     overlay.setWarning('');
     expect(el.classList.toggle).toHaveBeenLastCalledWith('is-shown', false);
+  });
+});
+
+// ── RadarTelemetry ──────────────────────────────────────────
+
+describe('RadarTelemetry', () => {
+  function makeRoot() {
+    const root = document.createElement('div');
+    return root;
+  }
+
+  it('registers blocks and rows, creating the expected DOM structure', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'a', label: 'A', format: String },
+        { key: 'b', label: 'B', format: (v) => v.toFixed(1) },
+      ]},
+    ]);
+
+    const blocks = root.querySelectorAll('.telemetry-block');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].dataset.block).toBe('test');
+
+    const title = blocks[0].querySelector('.telemetry-block-title');
+    expect(title.textContent).toBe('TEST');
+
+    const rows = blocks[0].querySelectorAll('.telemetry-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('.telemetry-label').textContent).toBe('A');
+    expect(rows[0].querySelector('.telemetry-value').textContent).toBe('—');
+    expect(rows[1].querySelector('.telemetry-label').textContent).toBe('B');
+  });
+
+  it('update() writes formatted values into the DOM', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'val', label: 'V', format: (v) => v.toFixed(2) },
+      ]},
+    ]);
+
+    tm.update({ val: 3.14159 });
+    const valueEl = root.querySelector('.telemetry-value');
+    expect(valueEl.textContent).toBe('3.14');
+  });
+
+  it('update() skips DOM writes when the formatted value is unchanged', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'val', label: 'V', format: (v) => v.toFixed(0) },
+      ]},
+    ]);
+
+    tm.update({ val: 42.1 });
+    const valueEl = root.querySelector('.telemetry-value');
+    expect(valueEl.textContent).toBe('42');
+
+    // Same formatted value — no DOM write
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { subtree: true, childList: true, characterData: true });
+    tm.update({ val: 42.4 });  // also formats to '42'
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+
+    // Different formatted value — DOM write
+    tm.update({ val: 43.0 });
+    expect(valueEl.textContent).toBe('43');
+  });
+
+  it('is null-safe: constructing with no root does not throw', () => {
+    expect(() => new RadarTelemetry(null)).not.toThrow();
+    const tm = new RadarTelemetry(null);
+    expect(() => tm.update({ val: 1 })).not.toThrow();
+    expect(() => tm.show()).not.toThrow();
+    expect(() => tm.hide()).not.toThrow();
+  });
+
+  it('ignores update keys that were not registered', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'a', label: 'A', format: String },
+      ]},
+    ]);
+    expect(() => tm.update({ a: 'ok', unknown: 'ignored' })).not.toThrow();
+    expect(root.querySelector('.telemetry-value').textContent).toBe('ok');
+  });
+
+  it('RadarOverlay wires a telemetry panel and exposes setTelemetry', () => {
+    const overlay = new RadarOverlay(null);
+    // Null-root telemetry is created; setTelemetry should not throw
+    expect(() => overlay.setTelemetry({ dishAz: 1.0 })).not.toThrow();
   });
 });

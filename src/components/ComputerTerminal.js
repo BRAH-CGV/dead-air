@@ -454,6 +454,18 @@ export class ComputerTerminal extends Component {
       this.satellite.rig ?? null,
     );
 
+    // Telemetry readouts — dish pose, cursor pose, dish state.
+    const cursorSky = this._cursorToSky();
+    const cursorR   = Math.hypot(this._cursorX, this._cursorY);
+    this.radar.setTelemetry?.({
+      dishAz:     dishYaw,
+      dishEl:     dishPitch,
+      dishStatus: this.satellite.isRotating() ? 'SLEWING' : 'LOCKED',
+      cursorAz:   cursorSky.yaw,
+      cursorEl:   cursorSky.pitch,
+      cursorR,
+    });
+
     // Parking the cursor on the UFO's blob reads it out.
     const onThreat = this.radar.threatAt?.(this._cursorX, this._cursorY) ?? false;
     this.radar.setWarning?.(onThreat ? ANOMALY_WARNING : '');

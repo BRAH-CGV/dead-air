@@ -94,6 +94,127 @@ export class HUD {
   }
 }
 
+// ── RadarTelemetry ──────────────────────────────────────────
+// A data-driven panel of stylised readouts beside the radar disc.
+// Organised in titled blocks (e.g. DISH, CURSOR), each block holding
+// labelled rows whose values are formatted on the way in.  Adding a new
+// readout is just registering a row in a block; updating is passing a
+// value by key.  The panel only writes the DOM when a formatted value
+// actually changes, so paintDom re-reads are cheap.
+
+/** Format a radian angle as a signed degree string with one decimal. */
+function _deg(rad) {
+  return (rad * 180 / Math.PI).toFixed(1);
+}
+
+/** Format an azimuth (radians) as a 0–360° string with one decimal. */
+function _az(rad) {
+  let d = rad * 180 / Math.PI;
+  d = ((d % 360) + 360) % 360;
+  return d.toFixed(1) + '°';
+}
+
+/** Format an elevation (radians, negative = up) as a signed degree string.
+ *  The sign is flipped so the display reads positive-up (zenith = +90°). */
+function _el(rad) {
+  return _deg(-rad) + '°';
+}
+
+/** The default block/row descriptors wired by RadarOverlay.  Each entry
+ *  names a block, its title, and the rows it contains.  A row's format
+ *  function turns a raw number into the display string. */
+const DEFAULT_BLOCKS = [
+  {
+    name: 'dish',
+    title: 'DISH',
+    rows: [
+      { key: 'dishAz',     label: 'AZ',    format: _az },
+      { key: 'dishEl',     label: 'EL',    format: _el },
+      { key: 'dishStatus', label: 'STATE', format: String },
+    ],
+  },
+  {
+    name: 'cursor',
+    title: 'CURSOR',
+    rows: [
+      { key: 'cursorAz', label: 'AZ', format: _az },
+      { key: 'cursorEl', label: 'EL', format: _el },
+      { key: 'cursorR',  label: 'R',  format: (v) => v.toFixed(2) },
+    ],
+  },
+];
+
+export class RadarTelemetry {
+  /**
+   * @param {HTMLElement|null} root  Container element (#radar-telemetry).
+   *        Null-safe: every method no-ops when root is absent (tests, other
+   *        scenes).
+   * @param {Array} [blocks=DEFAULT_BLOCKS]  Block descriptors to register.
+   */
+  constructor(root = null, blocks = DEFAULT_BLOCKS) {
+    this._root = root;
+    /** key → { valueEl, format, last } */
+    this._rows = new Map();
+    if (!root) return;
+    for (const block of blocks) this._addBlock(block);
+  }
+
+  /** Build the DOM for one block (a titled group of rows). */
+  _addBlock({ name, title, rows }) {
+    const block = document.createElement('div');
+    block.className = 'telemetry-block';
+    block.dataset.block = name;
+
+    const heading = document.createElement('div');
+    heading.className = 'telemetry-block-title';
+    heading.textContent = title;
+    block.appendChild(heading);
+
+    for (const row of rows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'telemetry-row';
+
+      const label = document.createElement('span');
+      label.className = 'telemetry-label';
+      label.textContent = row.label;
+
+      const value = document.createElement('span');
+      value.className = 'telemetry-value';
+      value.textContent = '—';
+
+      rowEl.appendChild(label);
+      rowEl.appendChild(value);
+      block.appendChild(rowEl);
+
+      this._rows.set(row.key, {
+        valueEl: value,
+        format: row.format ?? String,
+        last: null,
+      });
+    }
+
+    this._root.appendChild(block);
+  }
+
+  /** Update values by key.  Only writes the DOM when the formatted string
+   *  actually changed — the radar is painted onto the computer screen via
+   *  paintDom every frame, so minimising DOM mutation matters. */
+  update(values) {
+    if (!this._root) return;
+    for (const [key, raw] of Object.entries(values)) {
+      const row = this._rows.get(key);
+      if (!row) continue;
+      const text = row.format(raw);
+      if (text === row.last) continue;
+      row.last = text;
+      row.valueEl.textContent = text;
+    }
+  }
+
+  show() { if (this._root) this._root.style.display = ''; }
+  hide() { if (this._root) this._root.style.display = 'none'; }
+}
+
 // ── RadarOverlay ───────────────────────────────────────────
 
 export class RadarOverlay {
@@ -105,6 +226,10 @@ export class RadarOverlay {
     this._hint   = root?.querySelector('#radar-hint')    ?? null;
     this._warning = root?.querySelector('#radar-warning') ?? null;
     this._warningText = '';
+    // Telemetry panel — stylised dish/cursor readouts on the left.
+    this._telemetry = new RadarTelemetry(
+      root?.querySelector('#radar-telemetry') ?? null,
+    );
     /** The box fit() was given, [width, height], or null for the window. */
     this._box = null;
     this._resizeHandler = null;
@@ -150,8 +275,14 @@ export class RadarOverlay {
     this._cy = this._radius;
   }
 
-  show() { if (this.root) this.root.style.display = 'flex'; }
-  hide() { if (this.root) this.root.style.display = 'none'; }
+  show() {
+    if (this.root) this.root.style.display = 'flex';
+    this._telemetry.show();
+  }
+  hide() {
+    if (this.root) this.root.style.display = 'none';
+    this._telemetry.hide();
+  }
 
   /** Stop listening for resizes and drop the sky. The window listener
    *  would otherwise keep this overlay — and the scene's sky through the
@@ -163,6 +294,12 @@ export class RadarOverlay {
     }
     this._resizeHandler = null;
     this._backdrop = null;
+  }
+
+  /** Push new values into the telemetry panel.  See RadarTelemetry.update.
+   *  Called every frame by ComputerTerminal._updateRadarDisplay. */
+  setTelemetry(values) {
+    this._telemetry.update(values);
   }
 
   // Only on a change: the radar is painted onto the computer's screen from
