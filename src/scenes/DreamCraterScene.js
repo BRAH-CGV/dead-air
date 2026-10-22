@@ -15,6 +15,7 @@ import { DreamFilter } from '../core/DreamFilter.js';
 import { BaseScene } from './BaseScene.js';
 import { wakeInto } from './dreamWake.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { DreamMusic } from '../components/DreamMusic.js';
 
 // ─────────────────────────────────────────────
 // DreamCraterScene  –  the dream in the empty crater
@@ -86,6 +87,8 @@ export class DreamCraterScene extends Scene {
     this._addLighting();
     this._addFog();
     this._addDust();
+    // The spooky music, creeping in under the dream.
+    root.addComponent(new DreamMusic());
     this._spawnPlayer();
     this._addDustEyes();
     this._addSurvival();

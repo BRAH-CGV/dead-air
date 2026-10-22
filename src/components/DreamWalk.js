@@ -10,9 +10,10 @@ import { dreamLevel, walkScale, unease, RING_UNEASE } from '../gameplay/dream.js
 //            the fog thickens and the sky turns rust (MarsSky.setStorm);
 //            at level 3 the view starts to breathe (the camera's FOV)
 //   pulled   past the pull radius — or after ringSeconds deep in the slow
-//            ring, so the edge is never an endless crawl — the controls go (inputLocked) and the
-//            player is dragged backwards to the base, faster and faster,
-//            still looking out at what they were walking towards
+//            ring, so the edge is never an endless crawl — the legs go
+//            (moveLocked; the mouse still looks) and the player is dragged
+//            backwards to the base, faster and faster, facing whichever way
+//            they look
 //   awake    back at the base: the screen goes black and onWake runs, once
 //            (the scene brings the picture back when the base is ready)
 //
@@ -31,6 +32,10 @@ const WAKE_RADIUS = 7;
 export class DreamWalk extends Component {
   /** 'walking' | 'pulled' | 'awake' */
   state = 'walking';
+
+  /** How fast the pull is dragging them back, m/s (0 until it starts): for
+   *  the wind rushing past (DreamWind). */
+  get pullSpeed() { return this._pullSpeed; }
 
   /**
    * @param {object} opts
@@ -84,7 +89,8 @@ export class DreamWalk extends Component {
       this._ringTime = k >= RING_UNEASE ? this._ringTime + dt : 0;
       if (distance >= L.pullRadius || this._ringTime >= L.ringSeconds) {
         this.state = 'pulled';
-        this.controller.inputLocked = true;
+        // The legs go, not the eyes: they can look round as they fly.
+        this.controller.moveLocked = true;
       }
       return;
     }
@@ -115,6 +121,7 @@ export class DreamWalk extends Component {
     if (this.controller) {
       this.controller.speedScale = 1;
       this.controller.inputLocked = false;
+      this.controller.moveLocked = false;
     }
     if (this.camera && this._baseFov !== null && this.camera.fov !== this._baseFov) {
       this.camera.fov = this._baseFov;

@@ -109,6 +109,11 @@ export class FirstPersonController extends Component {
      *  can still walk. PickupSystem sets it while R turns a held object. */
     this.lookLocked = false;
 
+    /** Public: the other way round — the mouse still looks, but nothing
+     *  walks, jumps or crouches. The dream's pull sets it while it drags the
+     *  player back (DreamWalk), so they can look round as they fly. */
+    this.moveLocked = false;
+
     this.pitch     = 0;
     this.yaw       = 0;
     this._smoothYaw = 0;
@@ -239,6 +244,13 @@ export class FirstPersonController extends Component {
                     Math.min( Math.PI / 2 - 0.01, this.pitch));
     }
     
+    // Legs locked, eyes free: drop the last sample, as for inputLocked.
+    if (this.moveLocked) {
+      this._wish = false;
+      this._wantJump = false;
+      return;
+    }
+
     // ── Crouch input — the entire input-mode seam ──
     const crouchHeld = engine.isAction('crouch');
     if (this.crouchMode === 'hold') {

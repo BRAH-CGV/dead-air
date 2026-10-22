@@ -56,4 +56,17 @@ describe('FirstPersonController input lock (#58)', () => {
     ctrl.onUpdate(DT);
     expect(ctrl._wish).toBe(true);
   });
+
+  it('moveLocked takes the legs but not the eyes: no walking, jumping or crouching, the mouse still looks', () => {
+    const ctrl = makeController({ KeyW: true, Space: true });
+    const engine = ctrl.gameObject.scene.userData.engine;
+    ctrl.moveLocked = true;
+    engine.input.mouse.dx = 40;
+    engine.input.mouse.dy = 20;
+    ctrl.onUpdate(DT);
+    expect(ctrl._wish).toBe(false);
+    expect(ctrl._wantJump).toBe(false);
+    expect(ctrl.yaw).not.toBe(0);
+    expect(ctrl.pitch).not.toBe(0);
+  });
 });

@@ -10,6 +10,8 @@ import { GameObject } from '../core/GameObject.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
+import { DreamMusic } from '../components/DreamMusic.js';
+import { DreamWind } from '../components/DreamWind.js';
 
 // Imports and builds against the whole base scene module: as slow as
 // BaseScene.test.js under a parallel run, so it gets the same budget.
@@ -49,6 +51,20 @@ describe('DreamScene (#101)', () => {
     engine = makeDreamEngine();
     scene = new DreamScene(engine, { level: 2, night: 2 });
     scene.build();
+  });
+
+  it('has the wind rush past as the base drags the dreamer back', () => {
+    const all = go => [go, ...(go.children ?? []).flatMap(all)];
+    const winds = engine._rootObjects.flatMap(all).map(g => g.getComponent?.(DreamWind)).filter(Boolean);
+    expect(winds).toHaveLength(1);
+    expect(winds[0].walk).toBe(scene.walk);
+  });
+
+  it('plays the spooky music under the dream', () => {
+    const found = [];
+    const all = go => [go, ...(go.children ?? []).flatMap(all)];
+    for (const go of engine._rootObjects) for (const g of all(go)) { const m = g.getComponent?.(DreamMusic); if (m) found.push(m); }
+    expect(found).toHaveLength(1);
   });
 
   it('wakes back into the base scene', () => {
