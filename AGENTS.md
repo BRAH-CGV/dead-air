@@ -98,6 +98,7 @@ src/
 │   ├── MarsSky.js       # Night/day sky dome shader, stars, moons; setHour turns it
 │   ├── WallClock.js     # Analogue clock driven by the NightClock
 │   ├── DigitalClock.js  # The desk's and the bedside table's seven-segment clock, in 24-hour time
+│   ├── CoffeeCup.js     # The coffee's mug: a picture round it (a cat, HANG IN THERE), coffee that rises (setFill)
 │   ├── WindowGlass.js   # The office window's dust film: baked smudge map, unlit shader lit by uLight
 │   ├── DustEye.js       # A pair of storm eyes (glow shader) and the jaw that grows in when it turns
 │   ├── DustStorm.js     # Sandstorm grit: one GPU-driven point cloud wrapped round the player
@@ -341,6 +342,7 @@ The Sleep Demon comes every night, 1 to 3 — heard before it is seen: whispers 
   - **Brewing.** [E] starts a cup, and it is `brewSeconds` (20 s) before there is anything to drink: time stood at the machine, away from the desk. A brewed cup waits, so the player can walk off and come back.
   - **Drinking.** [E] again drinks it: `amount` (0.35) back.
   - **Two a night** (`cups`): a cup is used as it starts brewing. Then it reads "Out of coffee tonight" until the next night or a retry calls `reset()`.
+  - **The cup** (`CoffeeCup`, `cup`) stands in the middle of the drip tray (`CUP_SPOT`) while a cup brews, filling as it does with a stream falling straight down from each of the double spout's tips (`SPOUT_TIPS`, `setPouring`), and while it waits to be drunk; otherwise it is gone. A cream mug wearing `tex:mug-hang-in-there` all the way round: a ginger cat hanging off a branch over HANG IN THERE on the front, paw prints on the sides, drawn in SVG by `scripts/make-mug-picture.mjs` (ours, so no credit). It casts no shadow, so the frozen shadow maps never need it.
   - **Its status light** (`screen`: the machine's white switch beside the gauge, on its own copy of the material) shows the state in its emissive colour (`COFFEE.screen`: green ready, amber brewing, green brewed, red out); the PowerGrid still dims it.
   - **Sound.** Drinking plays the `sfx:ration` placeholder. `onBrew` and `onBrewed` are hooks with nothing on them yet. `BaseScene._addStamina` hands it the stamina and the sound, since rooms don't know about gameplay.
 - **The Sleep Demon** (`SleepDemon`, on `GameplaySystems` after the drain; the rules are pure, in `SleepDemonLogic`) lives in the corner of the player's eye:

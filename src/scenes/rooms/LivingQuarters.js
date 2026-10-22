@@ -3,12 +3,22 @@ import { Room } from './Room.js';
 import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
+import { CoffeeCup } from '../../gameobjects/CoffeeCup.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
 import { screenSurface } from '../../components/ScreenView.js';
 
 /** The coffee machine (coffee-machine.glb at its manifest scale): width,
  *  height, depth, in metres. */
 export const COFFEE_MACHINE = [0.4029, 0.5178, 0.5084];
+
+/** Where its cup stands, in the model's own metres (front +z): the middle
+ *  of the drip tray (x −0.132 … 0.095, z −0.079 … 0.103), on its grille's
+ *  top, 0.092 m up, read off coffee-machine.glb. */
+export const CUP_SPOT = [-0.018, 0.092, 0.012];
+
+/** The double spout's two tips over it, the same way: where the coffee
+ *  pours from. */
+const SPOUT_TIPS = [[-0.0555, 0.2115, 0.0266], [0.0189, 0.2115, 0.0266]];
 
 /** Its table: depth out from the wall, height, length along it. */
 const COFFEE_TABLE = [0.65, 0.75, 0.9];
@@ -250,7 +260,17 @@ export class LivingQuarters extends Room {
     screen ??= this._own(new THREE.MeshStandardMaterial({ roughness: 0.5 }));
     screen.color.setHex(0x1a1a1a);   // dark under the glow, so its colour reads, not a pale tint
     screen.emissiveIntensity = 1.4;
-    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen }));
+
+    // The cup on the drip tray, shown while one brews and waits, the coffee
+    // pouring into it from the spouts; its handle to the right of anyone
+    // facing the machine.
+    const cup = this._own(new CoffeeCup({
+      picture: this.engine.assets?.get('tex:mug-hang-in-there') ?? null,
+      spouts: SPOUT_TIPS.map(tip => tip.map((v, i) => v - CUP_SPOT[i])),
+    }));
+    cup.object3d.position.set(...CUP_SPOT);
+    (model ?? go).addChild(cup);
+    this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen, cup }));
   }
 
   /** The computer (#114): a laptop open on the desk top at `[x, z]`, its

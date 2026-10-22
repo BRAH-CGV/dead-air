@@ -350,6 +350,14 @@ const PLACED = {
     scale: 0.00396,
     origin: 'floor',
   },
+  // The coffee's mug: its picture all the way round, the cat on the front
+  // (scripts/make-mug-picture.mjs). Stretched to a power of two; the mug's
+  // mapping stretches it back.
+  'tex:mug-hang-in-there': {
+    type: 'texture',
+    url: 'assets/textures/mug-hang-in-there.png',
+    colorSpace: 'srgb',
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {

@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs';
 import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
-import { LAPTOP, LAPTOP_SCREEN, COFFEE_MACHINE } from './LivingQuarters.js';
+import { LAPTOP, LAPTOP_SCREEN, COFFEE_MACHINE, CUP_SPOT } from './LivingQuarters.js';
+import { CoffeeCup, CUP } from '../../gameobjects/CoffeeCup.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -391,6 +392,52 @@ describe('LivingQuarters', () => {
     expect(chromeMesh.material).toBe(chrome);
     expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);
+  });
+
+  it('puts the machine\'s cup on its drip tray, under the spouts, gone until a cup brews', () => {
+    const cup = room.coffeeMachine.cup;
+    expect(cup).toBeInstanceOf(CoffeeCup);
+    expect(cup.object3d.parent).toBe(room.root.find('CoffeeMachineModel').object3d);
+    expect(cup.object3d.position.toArray()).toEqual(CUP_SPOT);
+    expect(cup.object3d.visible).toBe(false);
+    // Under the spouts' tips, 0.211 m up the machine (read off
+    // coffee-machine.glb at its manifest scale), with a little to spare.
+    expect(CUP_SPOT[1] + CUP.height).toBeLessThan(0.211 - 0.005);
+    // Centred on the drip tray, which runs x −0.132 … 0.095 and z −0.079 …
+    // 0.103, its grille's top 0.092 m up (read off the .glb the same way),
+    // and clear of the machine's face behind it, at z −0.064.
+    expect(CUP_SPOT[0]).toBeCloseTo((-0.132 + 0.095) / 2, 2);
+    expect(CUP_SPOT[2]).toBeCloseTo((-0.079 + 0.103) / 2, 2);
+    expect(CUP_SPOT[1]).toBeCloseTo(0.092, 3);
+    expect(CUP_SPOT[2] - CUP.radius).toBeGreaterThan(-0.064);
+    expect(CUP_SPOT[0] + CUP.radius + CUP.handle + CUP.handleTube).toBeLessThan(0.095);   // the handle too
+
+    // Poured from the double spout's two tips, x −0.0555 and 0.0189, z 0.0266,
+    // 0.2115 m up (the .glb again): each stream starts at one.
+    const tips = cup.streams.map(stream => stream.position.toArray().map((v, i) => v + CUP_SPOT[i]));
+    expect(tips).toHaveLength(2);
+    [[-0.0555, 0.2115, 0.0266], [0.0189, 0.2115, 0.0266]].forEach((tip, i) => {
+      tip.forEach((v, k) => expect(tips[i][k]).toBeCloseTo(v, 4));
+    });
+    // They fall straight down, so each must be inside the cup's foot, with
+    // the stream's width to spare.
+    for (const stream of cup.streams) {
+      const { x, z } = stream.position;
+      expect(Math.hypot(x, z) + 0.003).toBeLessThan(CUP.footRadius - CUP.wall);
+    }
+  });
+
+  it('dresses the cup in its picture, from the asset cache', () => {
+    const entry = ASSETS['tex:mug-hang-in-there'];
+    expect(entry).toMatchObject({ type: 'texture', colorSpace: 'srgb' });
+    expect(PRELOAD).toContain('tex:mug-hang-in-there');
+    expect(() => readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url))).not.toThrow();
+
+    const picture = new THREE.Texture();
+    engine.assets = { get: key => (key === 'tex:mug-hang-in-there' ? picture : null) };
+    const dressed = new LivingQuarters(engine);
+    dressed.build();
+    expect(dressed.coffeeMachine.cup.object3d.getObjectByName('CupWall').material.map).toBe(picture);
   });
 
   it("makes the machine usable: it is the room's CoffeeMachine, raycastable, its screen lit by what it is doing", () => {

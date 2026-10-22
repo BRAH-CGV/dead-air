@@ -18,6 +18,10 @@ import { Interactable } from './Interactable.js';
 // across the room in its emissive colour; the PowerGrid scales its
 // emissiveIntensity, so a power cut still darkens it.
 //
+// The cup (`cup`, a CoffeeCup) stands on the drip tray while one brews and
+// while it waits to be drunk, filling as it brews, the coffee pouring into
+// it until it is done; otherwise it is gone.
+//
 // onBrew / onBrewed / onDrink are hooks for the scene's sounds. The prompt
 // is a data field, so InteractionSystem re-shows it when it changes under
 // the crosshair.
@@ -61,16 +65,20 @@ export class CoffeeMachine extends Interactable {
   /**
    * @param {object} [opts]
    * @param {import('three').MeshStandardMaterial|null} [opts.screen]  Its status screen.
+   * @param {{ object3d: import('three').Object3D, setFill(t: number): void, setPouring?(on: boolean): void }|null} [opts.cup]  Its cup.
    */
-  constructor({ screen = null } = {}) {
+  constructor({ screen = null, cup = null } = {}) {
     super();
     this.screen = screen;
+    this.cup = cup;
     this.reset();
   }
 
   onUpdate(dt) {
-    if (this.state !== 'brewing' || (this.brewLeft -= dt) > 0) return;
-    this.brewLeft = 0;
+    if (this.state !== 'brewing') return;
+    this.brewLeft = Math.max(0, this.brewLeft - dt);
+    this.cup?.setFill(1 - this.brewLeft / COFFEE.brewSeconds);
+    if (this.brewLeft > 0) return;
     this._set('brewed');
     this.onBrewed?.();
   }
@@ -103,5 +111,10 @@ export class CoffeeMachine extends Interactable {
       : state === 'brewed' ? BREWED
       : EMPTY;
     this.screen?.emissive.setHex(COFFEE.screen[state]);
+    if (this.cup) {
+      this.cup.object3d.visible = state === 'brewing' || state === 'brewed';
+      this.cup.setFill(state === 'brewed' ? 1 : 0);
+      this.cup.setPouring?.(state === 'brewing');
+    }
   }
 }
