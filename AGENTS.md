@@ -85,6 +85,7 @@ src/
 │   ├── BuggyCargo.js    # The buggy's boot: takes the drive box in the morning, before the send-off
 │   ├── BuggySendOff.js  # The send-off cutscene: lid shuts, eagle view, buggy drives out the gate, fade
 │   ├── GlobeSound.js    # The desk globe spun: one real spin from its top with every push, the last one let go
+│   ├── Footsteps.js     # The player's feet: steps, a jump's push-off, landings; an outdoor thump under them outside
 │   ├── DreamWind.js     # The wind rushing past as the run-away dream drags you back, louder the faster
 │   ├── DreamMusic.js    # The spooky music under both dreams: creeps in, pauses with the game, fades as the dream ends
 │   ├── BuggySound.js    # The buggy driving off: the rover's hum, its whine climbing with the speed, and the sand under its tyres (the window's sand, processed)
@@ -135,6 +136,7 @@ src/
 │   ├── BedTransition.js # The bed animation's steps: lie down, asleep (darkened view, demon's stretches), open, sit up, stand (pure)
 │   ├── TutorialSteps.js # Night 0's steps: what each says, points at and waits for (pure)
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
+│   ├── FootstepLogic.js # When the feet sound: a step a stride, the push-off, the landing (pure)
 │   ├── RoverHum.js      # The buggy's electric hum, synthesised as a seamless loop (pure)
 │   ├── Sandstorm.js     # One long dust storm a night: wind sound, fog, sky, moonlight, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
@@ -682,6 +684,10 @@ The computer on the bedroom desk (#114): its monitor shows three screens of an o
 ### Storm outages
 
 `StormOutage` (on `GameplaySystems`) rolls `STORM_OUTAGE.chance` (50 %) as each storm comes up (`sandstorm.stormId`), so a storm is never a sure thing (#107). One that misses blows through with the lights steady. One that hits takes the power out once, at a random point through it (`STORM_OUTAGE.at`, 25–75 % of the way, read off `sandstorm.stormProgress`). The lamps flicker for `flickerSeconds` (2.2 s) — `PowerGrid.brownout`, a flicker that only ever gutters and dims, never flares like the UFO's surge — with the flickering-light buzz, then `cutPower` (`GeneratorSound.switchOff`: the wind-down plays, `grid.setOn(false)`). It is an ordinary shut-down: nothing tripped or broken, so the generator's panel only needs its switches flicked back up, and the power stays on for the rest of that storm. A grid already off or tripped when the moment comes is waited for; the shift ending or a new night steadies the lamps.
+
+### Footsteps
+
+`Footsteps` (on the player, added by `BaseScene` beside the pickup system) plays the player's own feet. `FootstepLogic` (pure) says when, from the controller's `grounded`, `groundSpeed`, `vertVel` and `crouched`: a step every `stride` (1.9 m; 1.2 m crouched, at half weight), the first half a stride after setting off; a softer push-off as a jump leaves the ground (walking off a ledge makes none); a landing after at least `minAir` (0.2 s) in the air, heavier the harder the fall. The sounds are `sfx:steps`, one recording cut by hand (`STEP_SOUNDS`): three interior steps and two outdoor thumps. Indoors, an interior step, never the same twice running; outside (`_isOutside`, off the camera), an outdoor thump leads — the sand's crunch, at `thump` 0.11 — with the interior step under it at `outsideShare` (0.3). Each a touch apart in level and pitch, the interior steps low-passed at 3 kHz to take off the hiss that hangs on after each thud — 1.2 kHz in the EVA suit, muffled, heard from inside the helmet (the player's `EVASuit`, found when first wanted); the outdoor thumps keep their crunch, unfiltered and only lightly muffled in the suit (5 kHz, and outside the suit is always on). All well under the file's own level (an indoor step 0.045: the recording peaks over full scale). Indoors, what the feet are on changes it (`surfaceUnder`, `BaseScene._surfaceUnder`: a ray straight down from the player's body, `FOOT_REACH` 1.2 m, to the prop it hits, asked as each foot comes down): a prop with `surface = 'wood'` (the office's computer desk and its wing solids, the bedroom desk, the side table) plays one of two wood thuds (`sfx:steps-wood`, cut from a CC0 trapdoor recording and normalised to the interior steps, so at the same 0.045); `surface = 'bed'` (the bunk) an interior step at 0.6 of it, low-passed at 400 Hz, through the mattress; anything else the floor's. A new wooden prop needs only `go.surface = 'wood'`. Not while the controller is off; not in the dreams.
 
 ### Input system
 

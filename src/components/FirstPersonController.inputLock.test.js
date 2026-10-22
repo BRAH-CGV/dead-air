@@ -69,4 +69,12 @@ describe('FirstPersonController input lock (#58)', () => {
     expect(ctrl.yaw).not.toBe(0);
     expect(ctrl.pitch).not.toBe(0);
   });
+
+  it('says how fast the feet are going over the ground (for the footsteps)', () => {
+    const ctrl = makeController();
+    expect(ctrl.groundSpeed).toBe(0);
+    ctrl._vel.x = 3;
+    ctrl._vel.z = 4;
+    expect(ctrl.groundSpeed).toBe(5);
+  });
 });

@@ -198,6 +198,11 @@ export class FirstPersonController extends Component {
     this.camera?.rotation.set(pitch, yaw, 0);
   }
 
+  /** m/s over the ground: the horizontal velocity (for the footsteps). */
+  get groundSpeed() {
+    return Math.hypot(this._vel.x, this._vel.z);
+  }
+
   _clampMouseDelta(delta) {
     if (!Number.isFinite(delta)) return 0;
     return Math.max(-this.maxMouseDelta, Math.min(this.maxMouseDelta, delta));

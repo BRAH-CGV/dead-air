@@ -923,6 +923,28 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | The desk globe spun (`GlobeSound`) |
 | **Modifications** | Renamed; trimmed to start on the push, its last 20 ms faded out; otherwise as recorded |
 
+### Footsteps
+
+"Heavy_step" (https://freesound.org/people/Hair_fire22/sounds/668818/) by Hair_fire22, from Freesound, used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. "Step on dead leaf.aif" (https://freesound.org/people/nextmaking/sounds/86015/) by nextmaking, from Freesound, used under Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/): transformed and credited.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps.mp3` |
+| **Manifest key** | `sfx:steps` |
+| **Used for** | The player's footsteps (`Footsteps`): the heavy steps indoors, the leaf steps layered under them outside |
+| **Modifications** | Cut into steps and joined into one file; low-passed and played well under their level in game |
+
+### Footsteps on wood
+
+"Wood Thud Underfoot.wav" (https://freesound.org/people/spookymodem/sounds/202106/) by spookymodem, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps-wood.mp3` |
+| **Manifest key** | `sfx:steps-wood` |
+| **Used for** | The player's footsteps on a desk or a table (`Footsteps`) |
+| **Modifications** | Two of its thuds cut out and joined, faded at their ends, raised 8.2 dB to the interior steps' level, converted to mp3 |
+
 ### Ragno in the vents
 
 "metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.

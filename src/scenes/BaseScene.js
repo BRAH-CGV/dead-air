@@ -102,6 +102,7 @@ import { EventBanner } from '../ui/EventBanner.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
 import { BuggySound } from '../components/BuggySound.js';
+import { Footsteps } from '../components/Footsteps.js';
 import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
 import { colonyMap } from '../ui/colonyMap.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
@@ -922,6 +923,12 @@ export class BaseScene extends Scene {
     this.engine.player.addComponent(this.pickupSystem);
     this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
     this.pickupSystem.terminal = this.terminal;
+
+    // The player's footsteps: an outdoor thump under them out of the shells.
+    this.engine.player.addComponent(new Footsteps({
+      isOutside: () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
+      surfaceUnder: () => this._surfaceUnder(),
+    }));
 
     // The night baseline for every drive and box: a retry reverts to it.
     this.driveSnapshot = new DriveSnapshot({
@@ -1886,6 +1893,21 @@ export class BaseScene extends Scene {
    *  roof), not Room.containsPoint, which stops at the walls' centre lines:
    *  neighbouring parts' shells touch, so a doorway is never a sliver of
    *  "outside" — the UFO took players walking through one. */
+  /** What the player stands on, for their footsteps: a prop's `surface`
+   *  ('wood', 'bed') straight below their body, or 'floor'. */
+  _surfaceUnder() {
+    const { world, player, _bodyToGO } = this.engine;
+    const body = player?.rigidBody;
+    if (!world?.castRay || !body) return 'floor';
+    const p = body.translation();
+    this._footRay ??= new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    this._footRay.origin.x = p.x; this._footRay.origin.y = p.y; this._footRay.origin.z = p.z;
+    const hit = world.castRay(this._footRay, FOOT_REACH, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined, undefined, body);
+    const go = hit ? _bodyToGO?.get(hit.collider.parent()?.handle) : null;
+    return go?.surface ?? 'floor';
+  }
+
   _isOutside(p) {
     this._insideBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
     return !this._insideBoxes.some(box => box.containsPoint(p));
@@ -3175,6 +3197,9 @@ const _box = new THREE.Box3();
 
 const _airlockEar = new THREE.Vector3();
 const _staminaEye = new THREE.Vector3();
+/** Metres down from the player's body centre a foot can reach: the standing
+ *  capsule's half height and a little. */
+const FOOT_REACH = 1.2;
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {

@@ -1,3 +1,4 @@
+import { Footsteps, STEP_SOUNDS } from '../components/Footsteps.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as THREE from 'three';
 
@@ -113,6 +114,25 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.stamina.value).toBe(1);
     expect(machine.cups).toBe(COFFEE.cups);
     expect(machine.state).toBe('ready');
+  });
+
+  it('the player has footsteps, that know when they are outside', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(false);                  // the camera is in the office
+    engine.camera.position.set(200, 1.24, 200);
+    engine.camera.updateMatrixWorld();
+    expect(feet.isOutside()).toBe(true);
+    // …that know what is under them…
+    expect(scene.rooms.LivingQuarters.root.find('Desk').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('SideTable').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('Bunk').surface).toBe('bed');
+    expect(scene.rooms.MainOffice.root.find('ComputerDesk').surface).toBe('wood');
+    expect(feet.surfaceUnder()).toBe('floor');
+    // …and that are muffled in the suit, put on the player after them.
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    scene.suit.putOn();
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.suitLowpass);
   });
 
   it('a coffee is slurped as it is drunk, not as it brews', () => {

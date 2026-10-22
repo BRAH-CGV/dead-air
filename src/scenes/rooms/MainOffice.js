@@ -285,6 +285,7 @@ export class MainOffice extends Room {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
     this.computerScreen = desk ? screenSurface(desk.object3d, COMPUTER_SCREEN) : null;
+    if (desk) desk.surface = 'wood';   // what a foot on it sounds of (Footsteps)
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);
@@ -514,7 +515,7 @@ export class MainOffice extends Room {
 
       const { square, filler } = deskWingSolids(side, DESK);
       const [hx, hz] = square.halfExtents, turn = square.rotationY / 2;
-      this._addSolid(`DeskWingSolid_${label}`, [
+      const wing = this._addSolid(`DeskWingSolid_${label}`, [
         RAPIER.ColliderDesc.cuboid(hx, DESK.top / 2, hz)
           .setTranslation(square.centre[0], DESK.top / 2, square.centre[1])
           .setRotation({ x: 0, y: Math.sin(turn), z: 0, w: Math.cos(turn) }),
@@ -523,6 +524,7 @@ export class MainOffice extends Room {
           ...filler.map(([x, z]) => [x, DESK.top, z]),
         ].flat())),
       ]);
+      wing.surface = 'wood';
     }
   }
 
