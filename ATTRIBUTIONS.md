@@ -304,15 +304,12 @@ No attribution required; credited anyway.
 | **Used for** | The office's signal lamp |
 | **Modifications** | `scripts/prep-bulb.mjs`: the glass's transmission dropped, one colour atlas for glass and base, the maker's stamp painted off the glass, simplified to half its triangles and its textures to 512 px; scaled to 1.5 at load (manifest `scale`) |
 
-### Coffee machine — ⚠ no redistribution of the file
+### Coffee machine
 
 "Coffee Machine Ascaso Dream" (https://free3d.io/model/Coffee-machine-Ascaso-Dream/d655706f)
-from free3D.io, uploader not named on the page. Free for personal and
-commercial visualization under free3D.io's Terms of Use, which also say
-"Redistribution or resale of the files is not allowed".
-
-⚠ The game ships the model as a file (`coffee-machine.glb` in `dist/`),
-which may count as redistribution. Check the Terms of Use before release.
+from free3D.io, uploader not named on the page. Used under free3D.io's Terms
+of Use (https://free3d.io/terms.html), which allow modifying a model and
+sharing or redistributing it with credit to its creator.
 
 | | |
 |---|---|
