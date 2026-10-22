@@ -11,6 +11,7 @@ import { DreamWalk } from '../components/DreamWalk.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, STEP_SOUNDS, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
 import { DreamWind } from '../components/DreamWind.js';
 
 // Imports and builds against the whole base scene module: as slow as
@@ -65,6 +66,16 @@ describe('DreamScene (#101)', () => {
     const all = go => [go, ...(go.children ?? []).flatMap(all)];
     for (const go of engine._rootObjects) for (const g of all(go)) { const m = g.getComponent?.(DreamMusic); if (m) found.push(m); }
     expect(found).toHaveLength(1);
+  });
+
+  it('footsteps outside, the sand\'s crunch, never muffled (no suit in a dream)', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(true);
+    expect(feet.cutoff('exterior')).toBe(STEP_SOUNDS.thumpLowpass);
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    expect(feet.level).toBe(DREAM_FOOTSTEPS);              // quieter than at the base
+    expect(DREAM_FOOTSTEPS).toBeLessThan(1);
   });
 
   it('wakes back into the base scene', () => {

@@ -20,7 +20,7 @@ function seeded(seed) {
   return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
 }
 
-function build({ outside = false, suit = null, surface = 'floor' } = {}) {
+function build({ outside = false, suit = null, surface = 'floor', level } = {}) {
   const controller = { grounded: true, groundSpeed: 0, vertVel: 0, crouched: false, enabled: true };
   const voices = Array.from({ length: STEP_SOUNDS.voices }, fakeSound);
   const woodVoices = Array.from({ length: STEP_SOUNDS.woodVoices }, fakeSound);
@@ -31,7 +31,7 @@ function build({ outside = false, suit = null, surface = 'floor' } = {}) {
   const under = { surface };
   const go = new GameObject('Player');
   const feet = go.addComponent(new Footsteps({
-    controller, isOutside: () => outside, surfaceUnder: () => under.surface, suit, voices, woodVoices, random: seeded(5),
+    controller, isOutside: () => outside, surfaceUnder: () => under.surface, suit, voices, woodVoices, random: seeded(5), level,
   }));
   feet.onStart();
   return { feet, controller, plays, under };
@@ -129,6 +129,17 @@ describe('Footsteps', () => {
     controller.vertVel = 0;
     tick(feet, 1 / 60);
     expect(plays.map(p => p.pool)).toEqual(['wood', 'steps']);
+  });
+
+  it('a level for the whole of it: every step turned down together', () => {
+    const full = build({ outside: true });
+    full.controller.groundSpeed = 5;
+    tick(full.feet, 3);
+    const half = build({ outside: true, level: 0.5 });
+    half.controller.groundSpeed = 5;
+    tick(half.feet, 3);
+    expect(half.plays.length).toBe(full.plays.length);
+    half.plays.forEach((p, i) => expect(p.volume).toBeCloseTo(full.plays[i].volume * 0.5, 6));
   });
 
   it('jumping and landing make themselves heard', () => {

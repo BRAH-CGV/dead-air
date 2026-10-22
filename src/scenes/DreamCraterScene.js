@@ -16,6 +16,7 @@ import { BaseScene } from './BaseScene.js';
 import { wakeInto } from './dreamWake.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
 import { AMBIENCE } from '../components/Ambience.js';
 
 // ─────────────────────────────────────────────
@@ -96,6 +97,8 @@ export class DreamCraterScene extends Scene {
     // The wind outside, throughout, a little under the base's calm night.
     root.addComponent(new DreamMusic({ key: AMBIENCE.outside, volume: DREAM_CRATER.wind }));
     this._spawnPlayer();
+    // Footsteps: always outside, the sand's crunch, and no suit to muffle them.
+    engine.player?.addComponent(new Footsteps({ isOutside: () => true, suit: { worn: false }, level: DREAM_FOOTSTEPS }));
     this._addDustEyes();
     this._addSurvival();
 

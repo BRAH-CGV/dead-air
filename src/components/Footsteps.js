@@ -61,6 +61,9 @@ export const STEP_SOUNDS = {
   voices: 4,
 };
 
+/** The whole of the footsteps' level in the dreams: quieter than at the base. */
+export const DREAM_FOOTSTEPS = 0.3;
+
 export class Footsteps extends Component {
   /**
    * @param {object} opts
@@ -75,12 +78,15 @@ export class Footsteps extends Component {
    * @param {THREE.Audio[]|null} [opts.voices]  Built from STEP_SOUNDS.key when left out.
    * @param {THREE.Audio[]|null} [opts.woodVoices]  Built from STEP_SOUNDS.woodKey when left out.
    * @param {() => number} [opts.random]
+   * @param {number} [opts.level=1]  The whole of it, on top of STEP_SOUNDS
+   *        (the dreams: DREAM_FOOTSTEPS).
    */
   constructor({
     controller = null, isOutside = () => false, surfaceUnder = () => 'floor', suit = null,
-    voices, woodVoices, random = Math.random,
+    voices, woodVoices, random = Math.random, level = 1,
   } = {}) {
     super();
+    this.level = level;
     this.controller = controller;
     this.isOutside = isOutside;
     this.surfaceUnder = surfaceUnder;
@@ -159,7 +165,7 @@ export class Footsteps extends Component {
     if (v.isPlaying) v.stop();
     v.offset = clips[i][0];
     v.duration = clips[i][1];
-    v.setVolume(level * (STEP_SOUNDS.jitter + (1 - STEP_SOUNDS.jitter) * this.random()));
+    v.setVolume(this.level * level * (STEP_SOUNDS.jitter + (1 - STEP_SOUNDS.jitter) * this.random()));
     v.setDetune(STEP_SOUNDS.detune * (this.random() * 2 - 1));
     v.play();
   }
