@@ -75,7 +75,7 @@ src/
 │   ├── ClipVoice.js     # One of a set of clips, at random, from a point in the world (ImpactSound, SnapSocket)
 │   ├── MonitorSpeaker.js # The security monitor's small speaker: what the camera on screen hears, thin and fuzzy
 │   ├── WindowSand.js    # A storm's sand on the office window: louder the nearer the glass
-│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop; the glass only on the player's own view (a cutscene's camera fades it)
+│   ├── SuitVisor.js     # EVA helmet glass shader overlay + mask breathing loop; both only on the player's own view (a cutscene's camera fades them), the breathing stopped while paused
 │   ├── PlayerBody.js             # Player heights + eye heights, from the feet (pure, tested)
 │   ├── GeneratorSound.js # Generator start-up / hum / wind-down; faint from indoors
 │   ├── EVASuit.js       # On the player: worn or not, with change listeners
@@ -84,6 +84,7 @@ src/
 │   ├── BedRest.js       # Getting into and out of the bunk on the camera and the darkened view (BedTransition); darkness exposed for sound
 │   ├── BuggyCargo.js    # The buggy's boot: takes the drive box in the morning, before the send-off
 │   ├── BuggySendOff.js  # The send-off cutscene: lid shuts, eagle view, buggy drives out the gate, fade
+│   ├── BuggySound.js    # The buggy driving off: the rover's hum, its whine climbing with the speed, and the sand under its tyres (the window's sand, processed)
 │   ├── StaminaDrain.js  # Ticks Stamina through the shift (faster outside, or staring at the dust eyes); a tired player sees the base dim
 │   ├── CoffeeMachine.js # Interactable: brew a cup, wait, drink it; a couple of cups a night (COFFEE)
 │   ├── CoffeeSound.js   # The machine's start click and its running while a cup brews, on its state
@@ -131,6 +132,7 @@ src/
 │   ├── BedTransition.js # The bed animation's steps: lie down, asleep (darkened view, demon's stretches), open, sit up, stand (pure)
 │   ├── TutorialSteps.js # Night 0's steps: what each says, points at and waits for (pure)
 │   ├── Growl.js         # The dust eyes' growl, synthesised (no file)
+│   ├── RoverHum.js      # The buggy's electric hum, synthesised as a seamless loop (pure)
 │   ├── Sandstorm.js     # One long dust storm a night: wind sound, fog, sky, moonlight, dust
 │   ├── UfoThreat.js     # Once a night: radar blob → surge → arrival → judgement → teleport
 │   ├── EvilSignal.js    # The red signal: instant scan, 30 s dish lock, the drive turns red
@@ -607,7 +609,7 @@ Every morning, once the night's drive box is in the buggy's boot and the quota i
 - **`onDark`**. `engine.viewCamera = null`. Hands the player back as `BedRest` does. Moves the buggy to y −50 (never `visible = false`; the rule for zoned objects); the boot rides on it, and both bodies and the seated box follow. `engine.shadows?.invalidate()`. `gate.setOpen(0)`. `controller.dispatch()`. `logic.finish()`.
 - **Every night start** (`controller.onNightStart`). Restores the buggy's pose, bodies and wheels. Shuts the lid and the gate. Resets the logic. If it was mid-cutscene, drops `viewCamera` and unlocks.
 - **Shadows.** `engine.shadows?.watch(buggy.object3d, [moonLight])` once.
-- **Exposed for a sound owner:** `get active`, `get driving`, `logic`, `curve`. No sound files are added; the state is exposed for the sound owner to follow.
+- **Sound** (`BuggySound`, on `GameplaySystems`, built by `_addBuggySendOff`; levels in `BUGGY_SOUND`). A rover, not a car: no engine note or gears, an electric hum (`synthRoverHum`, made at load, no file: a 46 Hz drone and its harmonics, two faint whine tones above, low-passed rumble; a seamless 2 s loop). It wakes as the lid shuts at `idle` (40 %) of `volume` (0.32), and driving off swells to full with the speed while its playback rate climbs 0.85 → 1.25, the whine rising as an electric motor's does. Beside it, faint, the sand under the tyres: the office window's `sfx:window-sand`, looped click-free (`loopable`), slowed (rate 0.55 → 0.8 with the speed, so heavier, coarser grit) and filtered to tyres on dust (`sandFilter`: high-pass 150 Hz clear of the hum, low-pass 1.1 kHz taking the hiss off, +4 dB round the crunch at 450 Hz): none standing, up to `sand` (0.22) at top speed. A synthesised crackle was tried first and sounded wrong. Both fade out with the screen (`wantsFade`) and stop once the buggy has gone; paused, they pause with the game. Not placed in the world: the eagle view follows the buggy, but the ears stay on the player. `get active`, `get driving`, `logic` and `curve` are there for more to follow.
 
 ### The bedroom PC
 

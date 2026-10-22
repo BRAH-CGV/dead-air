@@ -30,6 +30,7 @@ function fakeSound(buffer = fakeBuffer()) {
     volume: 1,
     play: vi.fn(() => { sound.isPlaying = true; }),
     stop: vi.fn(() => { sound.isPlaying = false; }),
+    pause: vi.fn(() => { sound.isPlaying = false; }),
     setVolume: vi.fn(v => { sound.volume = v; }),
     disconnect: vi.fn(),
   };
@@ -156,8 +157,8 @@ describe('SuitVisor', () => {
     run(visor, sound, 0.5);
     expect(visor.overlay.visible).toBe(false);
     expect(refraction.intensity).toBe(0);
-    // …but the suit is still on: the player still breathes in it.
-    expect(sound.isPlaying).toBe(true);
+    // …and the breathing with it: the eagle view is no place to hear it.
+    expect(sound.isPlaying).toBe(false);
 
     // Handed back (under a fade to black): the helmet was never off, so the
     // glass is there on the first frame.
@@ -166,6 +167,29 @@ describe('SuitVisor', () => {
     expect(visor.overlay.visible).toBe(true);
     expect(visor.uniforms.uOpacity.value).toBe(1);
     expect(refraction.intensity).toBe(1);
+    // The suit is still on: breathing again.
+    expect(sound.isPlaying).toBe(true);
+  });
+
+  it('the breathing fades out with the glass as the view leaves the head, not cut', () => {
+    const { engine, suit, visor, sound } = buildPlayer({ fadeSeconds: 0.5 });
+    suit.putOn();
+    run(visor, sound, 1);
+    engine.viewCamera = new THREE.PerspectiveCamera();
+    run(visor, sound, 0.25);
+    expect(sound.isPlaying).toBe(true);
+    expect(sound.volume).toBeLessThan(visor.volume);
+    expect(sound.volume).toBeGreaterThan(0);
+  });
+
+  it('paused (the pause menu), the breathing stops with the game, and starts again after', () => {
+    const { suit, visor, sound } = buildPlayer();
+    suit.putOn();
+    run(visor, sound, 1);
+    visor._onPause(true);
+    expect(sound.isPlaying).toBe(false);
+    visor._onPause(false);
+    expect(sound.isPlaying).toBe(true);
   });
 
   it('stays off when the view moves away with the suit off', () => {

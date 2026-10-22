@@ -101,6 +101,7 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { EventBanner } from '../ui/EventBanner.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
+import { BuggySound } from '../components/BuggySound.js';
 import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
 import { colonyMap } from '../ui/colonyMap.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
@@ -2071,6 +2072,8 @@ export class BaseScene extends Scene {
     }));
 
     if (this.buggyCargo) this.buggyCargo.sendOff = this.buggySendOff;
+    // The rover's hum as it drives off.
+    this._sceneRoot.find('GameplaySystems').addComponent(new BuggySound({ sendOff: this.buggySendOff }));
 
     // It drives under the moon, so its shadow is redrawn as it goes.
     engine.shadows?.watch(buggy.object3d, [this.moonLight]);
