@@ -46,7 +46,8 @@ import { GlobeSpin } from '../../components/GlobeSpin.js';
 import { deskWingOutline } from './DeskWing.js';
 import { SignalAlertLight, BULB } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
-import { PRELOAD } from '../../assets/manifest.js';
+import { ASSETS, PRELOAD } from '../../assets/manifest.js';
+import { readFileSync } from 'node:fs';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -478,6 +479,27 @@ describe('MainOffice', () => {
     expect(() => use.onInteract({})).not.toThrow();
     expect(room.root.find('CoffeeMachine')).toBeNull();
     expect(room.root.descendants().some(go => go.getComponent(CoffeeMachine))).toBe(false);
+  });
+
+  it('builds the food dispenser as a nutrient processor on its collider: hopper, process window, meal bay, its plates', () => {
+    const go = room.root.find('VendingMachine');
+    expect(go._originalSize).toEqual([0.7, 1.9, 0.9]);
+    expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);
+    for (const part of ['steel', 'hopper', 'window', 'tray', 'bayLight', 'pipes', 'labels']) {
+      expect(go.object3d.getObjectByName(`Dispenser_${part}`), part).toBeDefined();
+    }
+    const pipes = new THREE.Box3().setFromObject(go.object3d.getObjectByName('Dispenser_pipes'));
+    expect(pipes.max.y).toBeCloseTo(room.height, 2);                     // the conduit meets the ceiling
+
+    const entry = ASSETS['tex:dispenser-labels'];
+    expect(entry).toMatchObject({ type: 'texture', colorSpace: 'srgb' });
+    expect(PRELOAD).toContain('tex:dispenser-labels');
+    expect(() => readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url))).not.toThrow();
+    const atlas = new THREE.Texture();
+    engine.assets = { get: key => (key === 'tex:dispenser-labels' ? atlas : null) };
+    const dressed = new MainOffice(engine);
+    dressed.build();
+    expect(dressed.root.find('VendingMachine').object3d.getObjectByName('Dispenser_labels').material.map).toBe(atlas);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {

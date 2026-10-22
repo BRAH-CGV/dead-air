@@ -359,6 +359,13 @@ const PLACED = {
     scale: 0.00396,
     origin: 'floor',
   },
+  // The food dispenser's plates (scripts/make-dispenser-labels.mjs): four
+  // 8:1 strips, its name, the meal bay's, the hopper's and a caution.
+  'tex:dispenser-labels': {
+    type: 'texture',
+    url: 'assets/textures/dispenser-labels.png',
+    colorSpace: 'srgb',
+  },
   // The coffee's mug: its picture all the way round, the cat on the front
   // (scripts/make-mug-picture.mjs). Stretched to a power of two; the mug's
   // mapping stretches it back.
