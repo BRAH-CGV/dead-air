@@ -2122,7 +2122,7 @@ export class BaseScene extends Scene {
     pc.screenView = this.screenView ?? null;
     pc.screen = surface;
     this.pcPicture = new ScreenCanvas({
-      surface, layout, lift: 0.002,
+      surface, layout, lift: 0.002, corner: 0.014,   // the laptop screen's rounded corners
       painter: (ctx, w, h) => pc.paintScreen(ctx, w, h),
       seen: () => this._screenSeen(surface, quarters),
       focused: () => !!this.screenView?.holds(surface),

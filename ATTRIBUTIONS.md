@@ -291,6 +291,19 @@ by felixawani is licensed under Creative Commons Attribution
 | **Used for** | The bedroom's desk |
 | **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
 
+### Bedroom laptop
+
+"Classic Laptop" (https://polyhaven.com/a/classic_laptop) by Arrangemonk from
+Poly Haven, released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/laptop.glb` |
+| **Manifest key** | `model:laptop` |
+| **Used for** | The bedroom PC |
+| **Modifications** | Scaled to 0.5 at load (manifest `scale`); the maker's badge on the lid painted out of every map (`scripts/debrand-laptop.mjs`) |
+
 ### Storage rack
 
 "Worn Metal Rack" (https://polyhaven.com/a/worn_metal_rack) from Poly Haven,

@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
+import { LAPTOP, LAPTOP_SCREEN } from './LivingQuarters.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -347,18 +348,46 @@ describe('LivingQuarters', () => {
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 
-  it('marks the computer\'s screen (#161): the monitor model\'s face, turned to the chair', () => {
+  it('marks the computer\'s screen (#161): the laptop\'s face, turned to the chair', () => {
     const [tl, tr, , bl] = room.pcScreen.worldCorners();
     expect(room.pcScreen.object).toBe(room.root.find('BedroomPCModel').object3d);
-    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
-    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.224, 3);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.183, 3);
     expect(tl.y).toBeGreaterThan(bl.y);
     // Facing the chair, which is at −x.
     const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
     expect(normal.x).toBeCloseTo(-1);
   });
 
-  it('puts the computer on the desk (#114): a monitor facing the chair, the BedroomPC on it', () => {
+  it('reads the laptop\'s screen and size off laptop.glb, at its manifest scale', () => {
+    const entry = ASSETS['model:laptop'];
+    const glb = readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const s = entry.scale;
+    // Every primitive's bounds, moved by its node and scaled: metres in the model's root.
+    const parts = json.nodes.flatMap(node => json.meshes[node.mesh].primitives.map(prim => {
+      const { min, max } = json.accessors[prim.attributes.POSITION];
+      const t = node.translation ?? [0, 0, 0];
+      return {
+        material: json.materials[prim.material].name,
+        min: min.map((v, i) => (v + t[i]) * s),
+        max: max.map((v, i) => (v + t[i]) * s),
+      };
+    }));
+    const screen = parts.find(p => p.material === 'classic_laptop_screen');
+    const [tl, tr, br, bl] = LAPTOP_SCREEN;
+    expect(tl).toEqual([expect.closeTo(screen.min[0], 4), expect.closeTo(screen.max[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(tr).toEqual([expect.closeTo(screen.max[0], 4), expect.closeTo(screen.max[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(br).toEqual([expect.closeTo(screen.max[0], 4), expect.closeTo(screen.min[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(bl).toEqual([expect.closeTo(screen.min[0], 4), expect.closeTo(screen.min[1], 4), expect.closeTo(screen.max[2], 4)]);
+
+    // LAPTOP is the whole model's width, height and depth.
+    const min = [0, 1, 2].map(i => Math.min(...parts.map(p => p.min[i])));
+    const max = [0, 1, 2].map(i => Math.max(...parts.map(p => p.max[i])));
+    LAPTOP.forEach((size, i) => expect(size).toBeCloseTo(max[i] - min[i], 3));
+  });
+
+  it('puts the computer on the desk (#114): a laptop facing the chair, the BedroomPC on it', () => {
     const go = room.root.find('BedroomPC');
     expect(go).toBeTruthy();
     expect(room.pc).toBeInstanceOf(BedroomPC);
@@ -376,10 +405,11 @@ describe('LivingQuarters', () => {
     const lamp = room.root.find('DeskLamp').object3d.position;
     expect(overlaps(pc, { x0: lamp.x - 0.12, x1: lamp.x + 0.12, z0: lamp.z - 0.12, z1: lamp.z + 0.12 })).toBe(false);
 
-    // The placeholder screen is the security monitor's model, drawn only,
-    // its screen (+z) turned to the chair.
+    // The laptop, drawn only, its screen (+z) turned to the chair; the box
+    // round it is the laptop's size.
     const model = room.root.find('BedroomPCModel');
-    expect(model.physicsAssetKey).toBe('model:camera-monitor');
+    expect(model.physicsAssetKey).toBe('model:laptop');
+    expect(go._originalSize).toEqual([LAPTOP[2], LAPTOP[1], LAPTOP[0]]);
     expect(model.rigidBody).toBeFalsy();
     expect(model.object3d.position.y).toBeCloseTo(0.79);
     const chair = room.root.find('DeskChair').object3d.position;

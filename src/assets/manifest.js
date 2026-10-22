@@ -330,6 +330,15 @@ const PLACED = {
     origin: 'floor',
     physics: 'static',
   },
+  // The bedroom PC: Poly Haven's classic laptop, its lid upright, its
+  // screen facing +z. Poly Haven has it at 0.65 m wide, twice a real
+  // period laptop; 0.5 takes it to 0.33 × 0.24 m, the lid 0.27 m tall.
+  // Its origin is on the floor already.
+  'model:laptop': {
+    type: 'model',
+    url: 'assets/models/laptop.glb',
+    scale: 0.5,
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {

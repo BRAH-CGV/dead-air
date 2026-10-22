@@ -5,7 +5,19 @@ import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
 import { screenSurface } from '../../components/ScreenView.js';
-import { CAMERA_MONITOR_SCREEN } from './MainOffice.js';
+
+/** The bedroom PC (laptop.glb at its manifest scale): width, height (the
+ *  lid's top), depth, in metres. */
+export const LAPTOP = [0.326, 0.2714, 0.243];
+
+/** Its screen (#161): the lid's flat classic_laptop_screen face, 6 mm back
+ *  from the bezel, 0.224 × 0.183 m and facing +z, [tl, tr, br, bl] in the
+ *  model's own metres. The face's corners are rounded a little; this is
+ *  the rectangle round them. */
+export const LAPTOP_SCREEN = [
+  [-0.11204, 0.25644, -0.10337], [0.11216, 0.25644, -0.10337],
+  [0.11216, 0.07316, -0.10337], [-0.11204, 0.07316, -0.10337],
+];
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -42,8 +54,8 @@ import { CAMERA_MONITOR_SCREEN } from './MainOffice.js';
 // back half (z < −0.5): from there forward the metre inside the wall is
 // clear, so the doorway works anywhere in the front half.
 //
-// The computer (#114) stands on the desk's far half, its screen turned to
-// the chair: a placeholder monitor with the BedroomPC on it. BaseScene
+// The computer (#114) is a laptop on the desk's far half, its screen turned
+// to the chair, with the BedroomPC on it. BaseScene
 // hands it the panel, the run and the map.
 // ─────────────────────────────────────────────
 
@@ -60,10 +72,10 @@ export class LivingQuarters extends Room {
   /** On the CoffeeMachine, from buildProps(). @type {CoffeeMachine|null} */
   coffeeMachine = null;
 
-  /** On the desk's monitor, from buildProps(). @type {BedroomPC|null} */
+  /** On the desk's laptop, from buildProps(). @type {BedroomPC|null} */
   pc = null;
 
-  /** The monitor's screen, for ScreenView and its picture (#161). From
+  /** The laptop's screen, for ScreenView and its picture (#161). From
    *  buildProps(). */
   pcScreen = null;
 
@@ -177,8 +189,9 @@ export class LivingQuarters extends Room {
       this._spawnProp('model:shelf', { name: `OfficeShelf_${i + 1}`, position: [x, 0, inZ - 0.2], rotationY: Math.PI / 2 });
     });
 
-    // The computer on the desk's far half, beyond the lamp.
-    this._buildComputer([0.03, 2.75]);
+    // The computer on the desk's far half, beyond the lamp, near the edge
+    // the chair is at: a laptop is used up close.
+    this._buildComputer([-0.25, 2.75]);
   }
 
   /** The coffee: a tall drinks machine, its back to the wall at `[x, z]`
@@ -216,24 +229,23 @@ export class LivingQuarters extends Room {
     this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen: glass }));
   }
 
-  /** The computer (#114): a monitor standing on the desk top at `[x, z]`,
-   *  its screen turned to the chair (−x). A placeholder, like the office's
-   *  security monitor, whose model it borrows: a box the model's size is
-   *  the collider the interact ray lands on, and carries the BedroomPC; the
+  /** The computer (#114): a laptop open on the desk top at `[x, z]`, its
+   *  screen turned to the chair (−x). A box the laptop's size is the
+   *  collider the interact ray lands on, and carries the BedroomPC; the
    *  model is drawn only. A quarter turn, so the box stays square to the
    *  room, its width along z. */
   _buildComputer([x, z]) {
-    const [w, h, d] = [0.6, 0.379, 0.331];   // camera-monitor.glb
+    const [w, h, d] = LAPTOP;
     const top = 0.79;                        // simple-desk.glb's top
     const yaw = -Math.PI / 2;
     const go = this._addGroup('BedroomPC');
     const position = [x, top + h / 2, z];
     go.object3d.position.set(...position);
     this._attachFixedBox(go, position, [d, h, w]);
-    const model = this._spawnProp('model:camera-monitor', {
+    const model = this._spawnProp('model:laptop', {
       name: 'BedroomPCModel', position: [x, top, z], rotationY: yaw, physics: 'none',
     });
-    this.pcScreen = model ? screenSurface(model.object3d, CAMERA_MONITOR_SCREEN) : null;
+    this.pcScreen = model ? screenSurface(model.object3d, LAPTOP_SCREEN) : null;
     this.pc = go.addComponent(new BedroomPC());
   }
 
