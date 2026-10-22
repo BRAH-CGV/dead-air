@@ -1471,6 +1471,15 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
     for (const e of figure.eyes) expect(e.scale.x).toBe(1);
   }
 
+  it('passing out at a screen takes the player straight off it, to see it coming (#161)', () => {
+    const exit = vi.fn();
+    demon.terminal = { state: 'radar', exit };
+    stamina.value = 0;
+    run(0.05);
+    expect(demon.deathPhase).toBe('passOut');
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
+
   it('at empty the player passes out: frozen, the lids slam shut, the view drops and tips', () => {
     stamina.value = 0;
     run(0.05);

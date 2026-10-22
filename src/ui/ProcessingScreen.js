@@ -19,6 +19,12 @@
 import { FirstPersonController } from '../components/FirstPersonController.js';
 import { decode as decodeAudio, compute as computeSpectrogram, render as renderSpectrogram, renderBlend, renderToImageData, blendFromImageData } from './Spectrogram.js';
 import { TuningGame, TARGET_ZONE_WIDTH } from '../gameplay/TuningGame.js';
+import { paintDom } from './paintDom.js';
+
+/** The console's layout on its screen, CSS pixels (#161): a fixed column,
+ *  laid out at this size, painted onto the screen and laid onto it for the
+ *  mouse. The console's screen is 1.2 wide to 1 tall. */
+export const SCREEN_LAYOUT = [1032, 860];
 
 export class ProcessingScreen {
   /** @type {import('../gameplay/SignalRegistry.js').SignalRegistry|null} */
@@ -26,6 +32,20 @@ export class ProcessingScreen {
 
   /** Engine reference for input locking. Set by the scene that owns it. */
   _engine = null;
+
+  /** Leans the view in to the console's screen and draws this on it
+   *  (#161). Without one the screen goes over the whole view. Both set by
+   *  the scene. @type {import('../components/ScreenView.js').ScreenView|null} */
+  view = null;
+  /** The console's screen, for `view`. */
+  screen = null;
+
+  /** Between open() and close(). */
+  isOpen = false;
+
+  /** Which drive the spectrogram was last worked out for (_driveKey), so
+   *  the idle screen only works it out again when that changes. */
+  _shownKey = null;
 
   /** The actions currently rendered, so refreshActions can re-evaluate. */
   _actions = [];
@@ -115,6 +135,9 @@ export class ProcessingScreen {
     this._renderMediaButtons(drive);
     this._renderActions(actions);
     this.root.style.display = 'flex';
+    this.isOpen = true;
+    this._shownKey = this._driveKey(drive);
+    if (this.view && this.screen) this.view.open(this.screen, this.root);
     this._lockInput(true);
     this._installKeyHandler();
     // Show the tuning game as disabled until processing starts.
@@ -126,12 +149,16 @@ export class ProcessingScreen {
   /** Close the screen and restore input. */
   close() {
     if (!this.root) return;
-    this.root.style.display = 'none';
+    this.isOpen = false;
+    // On the screen, it stays up while the view leans back out.
+    const root = this.root;
+    if (this.view && this.screen) this.view.close(() => { root.style.display = 'none'; });
+    else root.style.display = 'none';
     this._stopScanline();
     this._stopProgressTracking();
     this._stopTuningGame();
     this._stopBlend();
-    this._clearSpectrogram();
+    // The spectrogram stays: the console's screen goes on showing it (paint).
     this._clearMediaButtons();
     this._clearActions();
     this._lockInput(false);
@@ -139,6 +166,29 @@ export class ProcessingScreen {
     this._drive = null;
     this._actions = [];
     if (this._audio) { this._audio.pause(); this._audio.currentTime = 0; }
+  }
+
+  /**
+   * The console's screen (ScreenCanvas, #161): its own DOM painted into a
+   * 2D canvas of `w` × `h` — the same leaned in to it or not. Away from it,
+   * the spectrogram is kept to the drive in the reader, worked out again
+   * only when that changes.
+   * @param {object|null} drive  The drive in the console's reader.
+   */
+  paint(ctx, w, h, drive) {
+    if (!this.isOpen) {
+      const key = this._driveKey(drive);
+      if (key !== this._shownKey) {
+        this._shownKey = key;
+        this._updateSpectrogram(drive);
+      }
+    }
+    if (this.root) paintDom(this.root, ctx, w, h);
+  }
+
+  /** What the spectrogram depends on, as a key. */
+  _driveKey(drive) {
+    return drive ? `${drive.saved ? 1 : 0}|${drive.signalName ?? ''}|${drive.signalLevel ?? 1}` : '';
   }
 
   /** Re-render the controls with updated enabled/label state. Call after
@@ -216,6 +266,8 @@ export class ProcessingScreen {
       if (token.cancelled) return;
       this._spectrogramResult = result;
       renderSpectrogram(this._spectrogram, result, this._vizOpts());
+      // A run under way: show it as far as it got.
+      if (drive?.isProcessing) this._resumeBlend(drive);
     } catch (err) {
       // Decoding or rendering failed — leave the canvas blank.
       console.error('[ProcessingScreen] spectrogram error:', err);
@@ -537,6 +589,10 @@ export class ProcessingScreen {
 
   _updateProgress(drive) {
     const pct = (drive.processingProgress * 100).toFixed(0);
+    // Every frame of a run: only a new percent is worth a DOM change (and
+    // with it a fresh read of the screen's picture, paintDom).
+    if (pct === this._progressShown) return;
+    this._progressShown = pct;
     if (this._progressFill) this._progressFill.style.width = `${pct}%`;
     if (this._progressLabel) this._progressLabel.textContent = `Processing… ${pct}%`;
   }
@@ -652,6 +708,7 @@ export class ProcessingScreen {
     const targetUrl = this.signalRegistry?.getAudioUrl(drive.signalName, targetLevel) ?? '';
     if (!targetUrl) return;
 
+    this._blendPreparing = true;
     try {
       if (!this._audioContext) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -660,16 +717,36 @@ export class ProcessingScreen {
       const audioBuffer = await decodeAudio(targetUrl, this._audioContext);
       if (!this._spectrogram) return;  // screen closed during load
       const newResult = await computeSpectrogram(audioBuffer);
-      this._setupBlend(oldResult, newResult);
+      this._setupBlend(oldResult, newResult, `${drive.signalName}|${drive.signalLevel ?? 1}`);
     } catch {
       // Target audio failed to load — blend won't run; completion will
       // fall back to a direct spectrogram refresh.
+    } finally {
+      this._blendPreparing = false;
     }
   }
 
+  /** A run under way when the picture is worked out — the console reopened
+   *  midway, or its screen redrawn for the drive in the reader: the blend
+   *  again, shown as far as the run got, so the progress stays on the
+   *  picture and the run's ticks go on filling it in. The reveal order is
+   *  the signal's own (_setupBlend), so it is the picture that was left. */
+  async _resumeBlend(drive) {
+    if (this._blendNewData || this._blendPreparing) return;
+    await this.prepareBlend(drive);
+    if (!this._spectrogram || !this._blendOldData || !this._blendNewData) return;
+    blendFromImageData(
+      this._spectrogram, this._blendOldData, this._blendNewData,
+      drive.processingProgress, this._blendRevealOrder, this._blendRevealed,
+      this._blendOutBuf, this._blendOutImage,
+    );
+  }
+
   /** Set up the blend state. Pre-renders both spectrograms to ImageData
-   *  once so the per-frame blend is just a column copy — no pixel math. */
-  _setupBlend(oldResult, newResult) {
+   *  once so the per-frame blend is just a column copy — no pixel math.
+   *  `seed` (the signal and its level) fixes the reveal order, so a run
+   *  picked back up reveals the same columns it had. */
+  _setupBlend(oldResult, newResult, seed = '') {
     this._blendOldResult = oldResult;
     this._blendNewResult = newResult;
     this._blendComplete = false;
@@ -721,10 +798,11 @@ export class ProcessingScreen {
     const total = oldResult.frames;
     const order = Array.from({ length: total }, (_, i) => i);
     const chunkSize = Math.max(1, Math.ceil(total / 40));
+    const random = seededRandom(seed);
     for (let start = 0; start < total; start += chunkSize) {
       const end = Math.min(start + chunkSize, total);
       for (let i = end - 1; i > start; i--) {
-        const j = start + Math.floor(Math.random() * (i - start + 1));
+        const j = start + Math.floor(random() * (i - start + 1));
         [order[i], order[j]] = [order[j], order[i]];
       }
     }
@@ -747,4 +825,16 @@ export class ProcessingScreen {
     this._blendOutBuf = null;
     this._blendOutImage = null;
   }
+}
+
+/** A repeatable random sequence from a string (mulberry32 on its hash). */
+function seededRandom(seed) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return () => {
+    h = (h + 0x6D2B79F5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }

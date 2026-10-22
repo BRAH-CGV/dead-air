@@ -13,6 +13,7 @@ import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { screenSurface } from '../../components/ScreenView.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
 
 // ── Drive boxes on the shelf ──
@@ -121,9 +122,28 @@ function insidePolygon(x, z, pts) {
   return inside;
 }
 
+/** The computer's screen, read off retro-computer.glb (#161): the corners
+ *  of the face its "HELLO WORLD" texture is drawn on, [tl, tr, br, bl] as
+ *  seen from the seat, in the model's own units (0.016 m each at the desk's
+ *  spawn scale). It is flat, 0.35 × 0.20 m, its top tipped back about 33°:
+ *  the monitor's sloping face. The texture's corners are rounded; this is
+ *  the rectangle round them. */
+const COMPUTER_SCREEN = [
+  [-10.97, 62.54, -20.45], [10.97, 62.54, -20.45],
+  [10.97, 52.25, -13.86], [-10.97, 52.25, -13.86],
+];
+
 /** The security-camera monitor on the left wing (camera-monitor.glb):
  *  width, height, depth. */
 const CAMERA_MONITOR = [0.6, 0.379, 0.331];
+
+/** Its screen (#161): the model's CameraMonitorScreen, a flat 0.55 × 0.32 m
+ *  face at its front, [tl, tr, br, bl] in the model's own metres. The
+ *  bedroom PC wears the same model (LivingQuarters). */
+export const CAMERA_MONITOR_SCREEN = [
+  [-0.275, 0.360, 0.144], [0.275, 0.360, 0.144],
+  [0.275, 0.037, 0.144], [-0.275, 0.037, 0.144],
+];
 
 export class MainOffice extends Room {
   /** Hung by buildProps(). @type {WallClock|null} */
@@ -145,6 +165,14 @@ export class MainOffice extends Room {
   /** The security-camera monitor on the desk's left wing. The scene hangs
    *  the CameraTerminal on it. @type {GameObject|null} */
   cameraMonitor = null;
+
+  /** The computer's screen, for ScreenView: the radar is drawn on it.
+   *  Marked by buildProps(). */
+  computerScreen = null;
+
+  /** The camera monitor's screen: the security feed is drawn on it, and
+   *  ScreenView leans in to it. Marked by buildProps(). */
+  cameraScreen = null;
 
   /** The drive reader slot on the desk. @type {import('../../core/GameObject.js').GameObject|null} */
   driveReader = null;
@@ -255,6 +283,7 @@ export class MainOffice extends Room {
     const desk = this._spawnProp('model:retro-computer', {
       name: 'ComputerDesk', position: [0, 0, -2.55], rotationY: 0, scale: 0.016,
     });
+    this.computerScreen = desk ? screenSurface(desk.object3d, COMPUTER_SCREEN) : null;
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);
@@ -502,8 +531,8 @@ export class MainOffice extends Room {
    *  straight out of its front edge, toward the front of the room. A box
    *  the size of the model is the collider the interact ray lands on;
    *  BaseScene attaches the CameraTerminal and its Interactable to it, as it
-   *  does the computer's. The model is drawn only. Its screen is dark glass,
-   *  as if switched off, until it is given something to show. */
+   *  does the computer's. The model is drawn only. Its screen is marked
+   *  (cameraScreen): BaseScene lays the security feed over it. */
   _buildCameraMonitor() {
     const [w, h, d] = CAMERA_MONITOR;
     const [cx, cz] = deskWingOutline(-1, DESK).centre;
@@ -513,6 +542,7 @@ export class MainOffice extends Room {
       name: 'CameraMonitorModel', position: [cx, DESK.top, cz], rotationY: yaw, physics: 'none',
     });
     this.cameraMonitor = go;
+    this.cameraScreen = model ? screenSurface(model.object3d, CAMERA_MONITOR_SCREEN) : null;
   }
 
   /** A digital clock where the desk top meets the right wing, turned to

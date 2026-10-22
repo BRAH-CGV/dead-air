@@ -13,6 +13,8 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { ScreenView } from '../components/ScreenView.js';
+import { ScreenCanvas } from '../components/ScreenCanvas.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
@@ -635,6 +637,107 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.driveManager).toBe(scene.driveManager);
     expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
+  });
+
+  it('leans in to the computer\'s and the console\'s screens, one view for both (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.getComponent(ScreenView)).toBe(scene.screenView);
+    expect(scene.terminal.screenView).toBe(scene.screenView);
+    expect(scene.terminal.screen).toBe(scene.rooms.MainOffice.computerScreen);
+    expect(scene.processingScreen.view).toBe(scene.screenView);
+    expect(scene.processingScreen.screen).toBe(scene.rooms.ServerRoom.consoleScreen);
+  });
+
+  it('the computer and the console show their pictures on their own screens, always (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const pictures = gameplay.components.filter(c => c instanceof ScreenCanvas);
+    expect(pictures).toContain(scene.computerPicture);
+    expect(pictures).toContain(scene.consolePicture);
+    expect(scene.computerPicture.mesh.parent).toBe(scene.rooms.MainOffice.computerScreen.object);
+    expect(scene.consolePicture.mesh.parent).toBe(scene.rooms.ServerRoom.consoleScreen.object);
+
+    const ctx = {};
+    const paint = vi.spyOn(scene.terminal, 'paintScreen').mockImplementation(() => {});
+    scene.computerPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+    const drive = {};
+    scene.rooms.ServerRoom.driveSlot._insertedDrive = drive;
+    const console_ = vi.spyOn(scene.processingScreen, 'paint').mockImplementation(() => {});
+    scene.consolePicture.painter(ctx, 4, 3);
+    expect(console_).toHaveBeenCalledWith(ctx, 4, 3, drive);
+  });
+
+  it('a screen\'s picture is painted sharp and every frame while the view is on it', () => {
+    const holds = vi.spyOn(scene.screenView, 'holds').mockReturnValue(true);
+    expect(scene.computerPicture.focused()).toBe(true);
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.computerScreen);
+    scene.consolePicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.ServerRoom.consoleScreen);
+    scene.cameraPicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.cameraScreen);
+  });
+
+  it('the camera\'s overlay is a picture too, laid over the feed rather than on a quad of its own', () => {
+    expect(scene.cameraPicture.mesh).toBeNull();
+    expect(scene.cameraPicture.layout[1]).toBe(720);
+    expect(scene.cameraPicture.layout[0] / 720).toBeCloseTo(0.55 / 0.323, 2);
+  });
+
+  it('the bedroom PC shows its panel on its own monitor, and leans in to it (#161)', () => {
+    const quarters = scene.rooms.LivingQuarters;
+    expect(quarters.pc.screenView).toBe(scene.screenView);
+    expect(quarters.pc.screen).toBe(quarters.pcScreen);
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(scene.pcPicture);
+    expect(scene.pcPicture.mesh.parent).toBe(quarters.pcScreen.object);
+    const ctx = {};
+    const paint = vi.spyOn(quarters.pc, 'paintScreen').mockImplementation(() => {});
+    scene.pcPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+  });
+
+  it('a kill at the bedroom PC takes the player straight off it', () => {
+    const pc = scene.rooms.LivingQuarters.pc;
+    scene.gameController.startNight(1);
+    pc.onInteract();
+    expect(pc.open).toBe(true);
+    scene.sleepDemon.terminal.exit();
+    expect(pc.open).toBe(false);
+    expect(scene.screenView.active).toBe(false);
+  });
+
+  it('using the computer hands the frame to the screen view', () => {
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    desk.getComponent(Interactable).onInteract({});
+    expect(scene.screenView.active).toBe(true);
+    expect(engine.viewCamera).toBe(scene.screenView._camera);
+  });
+
+  it('the screens\' exit takes the player off the computer at once, no lean back', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.sleepDemon.terminal.exit();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('a retry takes the player off whichever screen they were at', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.processingScreen.isOpen = true;   // no DOM here to open it with
+    const close = vi.spyOn(scene.processingScreen, 'close');
+    scene.gameController.fail('taken');
+    scene.gameController.retryNight();
+    expect(close).toHaveBeenCalled();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('hands Ragno the way off the screens, for his lunge', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.ragno.hooks.leaveScreens();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
   });
 
   it('runs the game controller as a component under SceneRoot, so it ticks', () => {

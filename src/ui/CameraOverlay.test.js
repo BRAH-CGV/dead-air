@@ -48,7 +48,7 @@ describe('CameraOverlay', () => {
     expect(root.classList.contains('is-connecting')).toBe(false);
   });
 
-  it('has no static of its own: the switch is drawn on the GPU (CameraSignalPass)', () => {
+  it('has no static of its own: the switch is drawn on the GPU (FeedDisplay)', () => {
     expect(overlay.setLive).toBeUndefined();
     expect(overlay.tick).toBeUndefined();
   });
@@ -155,5 +155,24 @@ describe('CameraOverlay', () => {
       bare.show(); bare.setCamera({ index: 0, count: 1, label: 'X' });
       bare.setConnecting(true); bare.setFlash(true); bare.setHint(''); bare.setMap({ rooms: [], cameras: [] }); bare.hide();
     }).not.toThrow();
+  });
+});
+
+// The overlay is laid out at the monitor's own size and painted onto it
+// (#161), so the map is sized as a share of the monitor — never of the
+// browser window — and kept to a corner of it.
+describe('the map\'s size on the monitor (index.html)', () => {
+  it('is a fixed share of the monitor\'s width, small enough to leave the picture clear', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+    const rule = html.match(/#cctv-map\s*\{([^}]*)\}/)[1];
+    const width = rule.match(/width:\s*([^;]+);/)[1].trim();
+    expect(width).toMatch(/^\d+(\.\d+)?%$/);
+    expect(parseFloat(width)).toBeLessThanOrEqual(30);
+  });
+
+  it('its camera buttons are small squares', () => {
+    expect(CAMERA_SQUARE).toBeLessThanOrEqual(20);
   });
 });

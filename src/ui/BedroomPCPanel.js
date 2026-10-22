@@ -59,10 +59,15 @@ export class BedroomPCPanel {
    * @param {{night: number, index: number}[]} data.findings
    */
   show(data) {
+    this.render(data);
+    this.root?.classList.add('is-open');
+  }
+
+  /** Draw the screens for `data` without opening the panel: the PC's
+   *  screen in the world shows them whether or not anyone is at it (#161). */
+  render(data) {
     this._data = data;
-    if (!this.root) return;
-    this._render();
-    this.root.classList.add('is-open');
+    if (this.root) this._render();
   }
 
   hide() {

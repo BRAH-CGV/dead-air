@@ -369,6 +369,57 @@
         letter-spacing: 0.06em;
       }
 
+      /* ── On a screen (#161) ───────────────────────────────
+         The radar, the processing console and the camera's overlay are
+         what their screens in the world show: laid out here, for good, at
+         a fixed size (BaseScene._hostOnScreen), and painted onto the
+         screen from this layout (paintDom), leaned in to or not. So they
+         are never seen on the page: always displayed (the layout is what
+         is painted), never visible. Leaned in, ScreenView lays one onto
+         its screen with a matrix3d and .is-focused lets it take the mouse,
+         so clicks, hovers and drags land where they are painted. */
+      #radar-overlay.on-screen,
+      #processing-screen.on-screen,
+      #cctv.on-screen,
+      #bedroom-pc.on-screen {
+        inset: auto;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        opacity: 0 !important;
+        pointer-events: none;
+      }
+      #radar-overlay.on-screen,
+      #processing-screen.on-screen,
+      #bedroom-pc.on-screen { display: flex !important; }
+      #cctv.on-screen { display: block !important; background: none; }
+      #radar-overlay.on-screen.is-focused,
+      #processing-screen.on-screen.is-focused,
+      #cctv.on-screen.is-focused { pointer-events: auto; }
+      /* Leaned in to a screen (ScreenView): nothing to aim at or [E]. */
+      body.screen-on :is(#crosshair, #prompt) { visibility: hidden !important; }
+      /* The screen's own colour, painted edge to edge. The camera's overlay
+         has none: it goes over the feed. */
+      #radar-overlay.on-screen { background: #05080d; }
+      #processing-screen.on-screen { background: #04060b; }
+      #bedroom-pc.on-screen { background: #07130c; z-index: auto; }
+      /* The PC's panel fills its monitor, sized to be read on it. */
+      #bedroom-pc.on-screen .pc-screen {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        padding: 30px 40px 24px;
+        gap: 18px;
+        border: 0;
+        border-radius: 0;
+        font-size: 24px;
+      }
+      #bedroom-pc.on-screen .pc-body { min-height: 0; flex: 1; }
+      #bedroom-pc.on-screen .pc-map { width: min(470px, 100%); }
+      #bedroom-pc.on-screen :is(.pc-note, .pc-hint) { font-size: 18px; }
+
       /* ── Processing screen (ServerRoom console) ────────── */
       #processing-screen {
         position: fixed;
@@ -929,7 +980,9 @@
         position: absolute;
         left: 22px;
         bottom: 44px;
-        width: min(540px, 46vw);
+        /* A share of the monitor (the overlay is laid out at its size), so
+           the map is the same on any window, in the corner of the picture. */
+        width: 28%;
         background: rgba(6, 12, 10, 0.72);
         border: 1px solid rgba(160, 220, 180, 0.45);
         z-index: 1;
@@ -960,7 +1013,7 @@
            off its wall and the square agree. */
         box-sizing: border-box;
         padding: 0;
-        font: bold 14px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font: bold 11px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
         color: #dfe9e2;
         background: #2a3530;
         border: 2px solid #9fb8a8;
@@ -975,7 +1028,7 @@
 
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #nap-hint, #event-banner, #tutorial) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #nap-hint, #event-banner, #tutorial):not(.on-screen) {
         visibility: hidden !important;
       }
 
@@ -1080,7 +1133,7 @@
         pointer-events: none;
       }
       #bedroom-pc.is-open { display: flex; }
-      body:not([data-app="playing"]) #bedroom-pc { visibility: hidden !important; }
+      body:not([data-app="playing"]) #bedroom-pc:not(.on-screen) { visibility: hidden !important; }
       .pc-screen {
         box-sizing: border-box;
         display: flex;
@@ -1299,7 +1352,7 @@
       <div id="processing-title">Signal Processing</div>
       <div id="processing-preview">
         <canvas id="processing-spectrogram" width="480" height="360"></canvas>
-        <div id="processing-scanline"></div>
+        <div id="processing-scanline" data-paint-live></div>
       </div>
       <div id="tuning-game">
         <canvas id="tuning-canvas" width="480" height="60"></canvas>

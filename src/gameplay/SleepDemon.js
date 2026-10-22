@@ -251,7 +251,8 @@ export class SleepDemon extends Component {
    * @param {import('./Stamina.js').Stamina} opts.stamina
    * @param {import('../core/GameObject.js').GameObject} opts.figure  Built hidden and owned by the scene.
    * @param {THREE.PerspectiveCamera|null} [opts.camera]  The player's eye.
-   * @param {{ state: string }|null} [opts.terminal]
+   * @param {{ state: string, exit?: () => void }|null} [opts.terminal]  The
+   *        screens: the kill takes the player off whichever is up (exit).
    * @param {(from: THREE.Vector3, dir: THREE.Vector3, max: number) => number} [opts.rayHit]
    *        metres to the first solid thing (sightRay); Infinity: nothing in the way
    * @param {() => boolean} [opts.isFrozen]  The debug fly camera is on.
@@ -354,7 +355,11 @@ export class SleepDemon extends Component {
       lookAngle: () => this.lookAngle(),
       place: spot => this._place(spot),
       hide: () => this._fadeAway(),
-      onKill: () => this._death.start(),
+      onKill: () => {
+        // Off any screen at once: the view is the player's own to fall.
+        this.terminal?.exit?.();
+        this._death.start();
+      },
       approach: (step, unseen) => this._approach(step, unseen),
       playerDrift: () => this._away,
       gap: () => this._gap(),

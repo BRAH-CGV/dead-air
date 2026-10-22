@@ -137,4 +137,10 @@ describe('BedroomPCPanel', () => {
     expect(() => { headless.show(DATA); headless.setScreen('findings'); headless.step(1); headless.hide(); }).not.toThrow();
     expect(headless.visible).toBe(false);
   });
+
+  it('render() draws the screens without opening the panel: its screen in the world shows them (#161)', () => {
+    panel.render(DATA);
+    expect(root.querySelector('.pc-screen')).not.toBeNull();
+    expect(panel.visible).toBe(false);
+  });
 });

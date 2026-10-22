@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BedroomPC } from './BedroomPC.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
 
+vi.mock('../ui/paintDom.js', () => ({ paintDom: vi.fn() }));
+import { paintDom } from '../ui/paintDom.js';
+
 const MAP = { base: { x: 100, y: 100 }, neighbours: [], route: [], hub: null };
 
 function setup() {
@@ -163,5 +166,49 @@ describe('BedroomPC (#114)', () => {
   it('works with no panel or engine (a headless room)', () => {
     const bare = new BedroomPC();
     expect(() => { bare.onInteract(); bare.onUpdate(1 / 60); bare.close(); bare.onDestroy(); }).not.toThrow();
+  });
+
+  describe('on its own screen (#161)', () => {
+    let view, surface;
+    beforeEach(() => {
+      view = { open: vi.fn(), close: vi.fn() };
+      surface = {};
+      pc.panel.root = {};
+      pc.panel.render = vi.fn();
+      pc.screenView = view;
+      pc.screen = surface;
+      paintDom.mockClear();
+    });
+
+    it('leans in to its screen, the panel on it', () => {
+      pc.onInteract();
+      expect(view.open).toHaveBeenCalledWith(surface, pc.panel.root);
+    });
+
+    it('keeps the panel up while leaning back out, and puts it away once out', () => {
+      pc.onInteract();
+      pc.close();
+      expect(view.close).toHaveBeenCalledTimes(1);
+      expect(pc.panel.hide).not.toHaveBeenCalled();
+      view.close.mock.calls[0][0]();
+      expect(pc.panel.hide).toHaveBeenCalled();
+      expect(engine.playerController.inputLocked).toBe(false);   // free at once
+    });
+
+    it('its screen shows the panel, drawn for tonight, whether or not anyone is at it', () => {
+      const ctx = {};
+      pc.paintScreen(ctx, 1226, 720);
+      expect(pc.panel.render).toHaveBeenCalledWith({ array: 'ARRAY K-17', map: MAP, findings: [] });
+      expect(paintDom).toHaveBeenCalledWith(pc.panel.root, ctx, 1226, 720);
+    });
+
+    it('draws the panel again only when what it shows changes', () => {
+      pc.paintScreen({}, 1226, 720);
+      pc.paintScreen({}, 1226, 720);
+      expect(pc.panel.render).toHaveBeenCalledTimes(1);
+      pc.controller.nightNumber = 2;
+      pc.paintScreen({}, 1226, 720);
+      expect(pc.panel.render).toHaveBeenCalledTimes(2);
+    });
   });
 });

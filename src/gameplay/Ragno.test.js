@@ -104,7 +104,7 @@ describe('Ragno', () => {
     eye.lookAt(0, 1.24, -10);
     eye.updateMatrixWorld(true);
     hooks = {
-      zoneOf, ufoBusy: vi.fn(() => false), setPlayerLocked: vi.fn(), isFrozen: () => false,
+      zoneOf, ufoBusy: vi.fn(() => false), setPlayerLocked: vi.fn(), leaveScreens: vi.fn(), isFrozen: () => false,
       rayHit: () => Infinity,
     };
     whiteOut = { play: vi.fn() };
@@ -405,6 +405,7 @@ describe('Ragno', () => {
       run(1 / 30);
       expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
       expect(terminal.exit).toHaveBeenCalled();
+      expect(hooks.leaveScreens).toHaveBeenCalled();   // off the computer's too (#161)
       expect(controller.fail).not.toHaveBeenCalled();
       // The view drains to red through the lunge, and the screen comes quickly.
       run(0.3);

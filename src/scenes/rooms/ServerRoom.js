@@ -4,6 +4,7 @@ import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
+import { screenSurface } from '../../components/ScreenView.js';
 
 // ─────────────────────────────────────────────
 // ServerRoom  –  dark rack room, open from night 2
@@ -23,10 +24,23 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // the corridor.
 // ─────────────────────────────────────────────
 
+/** The console's screen, read off radar-terminal.glb (#161): its CRT's face,
+ *  [tl, tr, br, bl] as seen from the aisle, in the model's own metres
+ *  (× 0.478 at its spawn scale). The glass bulges out to z 0.94 in the
+ *  middle; this is the flat rectangle in front of it. */
+const CONSOLE_SCREEN = [
+  [-0.384, 2.227, 0.94], [0.384, 2.227, 0.94],
+  [0.384, 1.588, 0.94], [-0.384, 1.588, 0.94],
+];
+
 export class ServerRoom extends Room {
   /** The server console with the "Process signal" interactable.
    *  @type {import('../../core/GameObject.js').GameObject|null} */
   _serverConsole = null;
+
+  /** The console's screen, for ScreenView: the processing screen is drawn
+   *  on it (#161). Marked by buildProps(). */
+  consoleScreen = null;
 
   /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
   _driveSlot = null;
@@ -150,6 +164,7 @@ export class ServerRoom extends Room {
       name: 'ServerConsole', position: [consoleAt[0], 0, consoleAt[1]], scale: 0.478,
     });
     this._serverConsole = console_;
+    this.consoleScreen = screenSurface(console_.object3d, CONSOLE_SCREEN);
 
     // Drive slot on top of the console. The slot works independently —
     // no DriveManager needed. The console's Interactable checks the slot's

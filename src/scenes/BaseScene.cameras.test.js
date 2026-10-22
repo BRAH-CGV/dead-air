@@ -59,8 +59,14 @@ describe('BaseScene security cameras', () => {
     terminal = scene.cameraTerminal;
   });
 
-  it('without a renderer (headless), the terminal switches at once: no switch pass', () => {
-    expect(terminal.signal).toBeNull();
+  it('the monitor shows its feed on its own screen, always (#161)', () => {
+    expect(terminal.display).toBe(scene.feedDisplay);
+    expect(scene.feedDisplay.zones).toBe(scene.zones);
+    const model = scene.rooms.MainOffice.cameraScreen.object;
+    const picture = model.children.find(o => o.name === 'ScreenPicture');
+    expect(picture.material).toBe(scene.feedDisplay.material);
+    expect(terminal.screen).toBe(scene.rooms.MainOffice.cameraScreen);
+    expect(terminal.screenView).toBe(scene.screenView);
   });
 
   it('builds eight cameras (the last two watch the vents)', () => {
@@ -294,17 +300,44 @@ describe('BaseScene security cameras', () => {
     expect(terminal.powered).toBe(true);
   });
 
-  it('a yard camera draws the yard from indoors; back at the desk it goes again', () => {
+  it('a yard camera\'s picture draws the yard for itself alone: the player\'s frame stays culled', () => {
     expect(scene.zones.isVisible('yard')).toBe(false);
+    const yardThing = scene.zones.objects('yard')[0];
+    const drawn = [];
+    scene.feedDisplay.attach({
+      getRenderTarget: () => null, setRenderTarget: () => {},
+      render: (_scene, lens) => drawn.push({ lens, yard: yardThing.visible }),
+    });
     terminal.enter();
     terminal.feed.select(cams.indexOf(byLabel['YARD — QUARTERS SIDE']));
     terminal._showCamera();
-    expect(engine.viewCamera).toBe(byLabel['YARD — QUARTERS SIDE'].lens);
-    expect(scene.zones.isVisible('yard')).toBe(true);
-    terminal.exit();
-    expect(engine.viewCamera).toBeNull();
     expect(scene.zones.isVisible('yard')).toBe(false);
-    expect(scene.zones.isVisible('interior')).toBe(true);
+    scene.feedDisplay.want();
+    scene.feedDisplay.render();
+    expect(drawn).toEqual([{ lens: byLabel['YARD — QUARTERS SIDE'].lens, yard: true }]);
+    expect(yardThing.visible).toBe(false);
+    expect(engine.viewCamera).not.toBe(byLabel['YARD — QUARTERS SIDE'].lens);
+    terminal.exit();
+    scene.feedDisplay.attach(null);
+  });
+
+  it('the monitor is seen from the office looking at it — not facing away, not from another room', () => {
+    const cam = engine.camera;
+    const [tl, , br] = scene.rooms.MainOffice.cameraScreen.worldCorners();
+    const centre = tl.clone().add(br).multiplyScalar(0.5);
+    const look = (from) => {
+      cam.position.copy(from);
+      cam.lookAt(centre);
+      cam.updateMatrixWorld();
+    };
+    look(new THREE.Vector3(0, 1.24, -1.0));
+    expect(scene._monitorSeen()).toBe(true);
+    cam.rotateY(Math.PI);
+    cam.updateMatrixWorld();
+    expect(scene._monitorSeen()).toBe(false);
+    const quarters = scene.rooms.LivingQuarters.bounds().getCenter(new THREE.Vector3());
+    look(quarters);
+    expect(scene._monitorSeen()).toBe(false);
   });
 
   it('a game over takes the player off the monitor', () => {
@@ -313,7 +346,6 @@ describe('BaseScene security cameras', () => {
     expect(terminal.state).toBe('viewing');
     scene.gameController.fail();
     expect(terminal.state).toBe('idle');
-    expect(engine.viewCamera).toBeNull();
   });
 
   it('dispose hands the frame back to the player’s eyes', () => {

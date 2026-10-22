@@ -63,8 +63,8 @@ export class Engine {
   /** @type {PhysicsDebug} */ physicsDebug;
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
-  /** A camera to draw the frame through instead of the player's — a
-   *  security camera on the monitor (CameraTerminal), or the main menu's
+  /** A camera to draw the frame through instead of the player's — leaning
+   *  in to a screen (ScreenView), the buggy's send-off, or the main menu's
    *  shot (App, the scene's `menuCamera`). The player's camera keeps the
    *  ears (audioListener) and the interaction ray; only the picture moves.
    *  Cleared on every scene load.
@@ -74,9 +74,9 @@ export class Engine {
    *  When set, preRender() redirects the scene render to a target and
    *  postRender() composites.
    *  @type {import('./PostPipeline.js').PostPipeline|import('./RedOut.js').RedOut|null} */ postProcess = null;
-  /** Drawn over the finished frame, in order, after postProcess — each
-   *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
-   *  scene that added them: emptied on every scene load.
+  /** Run after the finished frame, in order, after postProcess — each
+   *  `render()` (the security monitor's picture, FeedDisplay). They belong
+   *  to the scene that added them: emptied on every scene load.
    *  @type {{ render(): void }[]} */ screenPasses = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are

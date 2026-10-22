@@ -142,7 +142,8 @@ describe('BaseScene tutorial (night 0)', () => {
     const [box] = scene.rooms.MainOffice.driveBoxes;
     expect(scene.tutorial.readContext().boxOnDesk).toBe(false);
     const desk = scene.rooms.MainOffice.root.find('ComputerDesk').object3d;
-    const top = desk.localToWorld(new THREE.Vector3(0.3, 0.95, 0));
+    // Desk-local metres: the desk is spawned at its model's scale.
+    const top = desk.localToWorld(new THREE.Vector3(0.3, 0.95, 0).divide(desk.scale));
     box.object3d.parent.worldToLocal(top);
     box.object3d.position.copy(top);
     box.object3d.updateMatrixWorld(true);

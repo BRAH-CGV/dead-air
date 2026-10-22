@@ -87,6 +87,7 @@ function makeEngine() {
       const [x, y, z] = opts.position ?? [0, 0, 0];
       go.object3d.position.set(x, y, z);
       go.object3d.rotation.y = opts.rotationY ?? 0;
+      go.object3d.scale.setScalar(opts.scale ?? 1);
       if (opts.physics !== 'none') {
         go.rigidBody = engine.world.createRigidBody({ type: 'fixed', t: { x, y, z } });
         engine._bodyToGO.set(go.rigidBody.handle, go);
@@ -505,6 +506,39 @@ describe('MainOffice', () => {
     // The model faces +z; a quarter turn clockwise points that at −x.
     const facing = new THREE.Vector3(0, 0, 1).applyEuler(poster.rotation);
     expect(facing.x).toBeCloseTo(-1);
+  });
+
+  it('marks the computer\'s screen: the monitor\'s face, tilted back toward the seat (#161)', () => {
+    const [tl, tr, br, bl] = room.computerScreen.worldCorners();
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.351, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.196, 2);
+    expect(br.distanceTo(bl)).toBeCloseTo(tl.distanceTo(tr), 5);
+    // Over the desk's top, under the monitor's, in its back half.
+    const centre = tl.clone().add(tr).add(br).add(bl).multiplyScalar(0.25);
+    expect(centre.x).toBeCloseTo(0);
+    expect(centre.y).toBeGreaterThan(0.86);
+    expect(centre.y).toBeLessThan(1.0);
+    expect(centre.z).toBeLessThan(-2.55);
+    // It faces the seat, and up: the face slopes back.
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    expect(normal.z).toBeGreaterThan(0.7);
+    expect(normal.y).toBeGreaterThan(0.3);
+    // The right way round from the seat: its right is the seat's right.
+    expect(tr.x).toBeGreaterThan(tl.x);
+  });
+
+  it('marks the camera monitor\'s screen: upright, turned with it to face the room (#161)', () => {
+    const [tl, tr, , bl] = room.cameraScreen.worldCorners();
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.y).toBeGreaterThan(bl.y);
+    expect(tl.y - tr.y).toBeCloseTo(0);
+    // On the left wing's monitor, facing out of its front edge (45° to the room).
+    const model = room.root.find('CameraMonitorModel').object3d;
+    expect(room.cameraScreen.object).toBe(model);
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    const front = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion);
+    expect(normal.dot(front)).toBeCloseTo(1);
   });
 
   it('props are room children only — not also root objects (no double update)', () => {

@@ -4,6 +4,8 @@ import { Bed, BUNK_POSES } from '../../components/Bed.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
+import { screenSurface } from '../../components/ScreenView.js';
+import { CAMERA_MONITOR_SCREEN } from './MainOffice.js';
 
 // ─────────────────────────────────────────────
 // LivingQuarters  –  the bedroom
@@ -60,6 +62,10 @@ export class LivingQuarters extends Room {
 
   /** On the desk's monitor, from buildProps(). @type {BedroomPC|null} */
   pc = null;
+
+  /** The monitor's screen, for ScreenView and its picture (#161). From
+   *  buildProps(). */
+  pcScreen = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -224,9 +230,10 @@ export class LivingQuarters extends Room {
     const position = [x, top + h / 2, z];
     go.object3d.position.set(...position);
     this._attachFixedBox(go, position, [d, h, w]);
-    this._spawnProp('model:camera-monitor', {
+    const model = this._spawnProp('model:camera-monitor', {
       name: 'BedroomPCModel', position: [x, top, z], rotationY: yaw, physics: 'none',
     });
+    this.pcScreen = model ? screenSurface(model.object3d, CAMERA_MONITOR_SCREEN) : null;
     this.pc = go.addComponent(new BedroomPC());
   }
 
