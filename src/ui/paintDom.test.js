@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { paintDom } from './paintDom.js';
 
 // ─────────────────────────────────────────────
@@ -17,7 +17,7 @@ function fakeCtx() {
     save: vi.fn(), restore: vi.fn(), scale: vi.fn(),
     fillRect: vi.fn(), strokeRect: vi.fn(), drawImage: vi.fn(), fillText: vi.fn(),
     beginPath: vi.fn(), roundRect: vi.fn(), fill: vi.fn(), stroke: vi.fn(), arc: vi.fn(),
-    setLineDash: vi.fn(),
+    setLineDash: vi.fn(), rect: vi.fn(), clip: vi.fn(),
     fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', globalAlpha: 1, textBaseline: '', textAlign: '',
   };
 }
@@ -257,5 +257,74 @@ describe('paintDom live elements (data-paint-live)', () => {
     line.style.display = 'none';
     paintDom(root, ctx, 800, 400);
     expect(ctx.roundRect).not.toHaveBeenCalled();
+  });
+});
+
+describe('paintDom: SVG and clipped boxes (the bedroom PC, #161)', () => {
+  let root, ctx, images;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    root = box(document.createElement('div'), 0, 0, 800, 400);
+    document.body.append(root);
+    ctx = fakeCtx();
+    images = [];
+    vi.stubGlobal('Image', class {
+      constructor() { images.push(this); this.complete = false; this.naturalWidth = 0; }
+      set src(v) { this._src = v; }
+      get src() { return this._src; }
+      load() { this.complete = true; this.naturalWidth = 100; this.onload?.(); }
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  function makeSvg() {
+    const svg = box(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), 50, 40, 300, 300);
+    svg.setAttribute('viewBox', '0 0 200 200');
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', '4');
+    circle.style.fill = 'rgb(1, 2, 3)';
+    svg.append(circle);
+    root.append(svg);
+    return svg;
+  }
+
+  it('draws an SVG as a picture of itself, once it has loaded, where the layout put it', () => {
+    makeSvg();
+    paintDom(root, ctx, 800, 400);
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toMatch(/^data:image\/svg\+xml/);
+    expect(ctx.drawImage).not.toHaveBeenCalled();   // not loaded yet
+    images[0].load();
+    paintDom(root, ctx, 800, 400);
+    expect(ctx.drawImage).toHaveBeenCalledWith(images[0], 50, 40, 300, 300);
+  });
+
+  it('carries the page\'s styles into the picture: an SVG\'s colours come from CSS', () => {
+    makeSvg();
+    paintDom(root, ctx, 800, 400);
+    expect(decodeURIComponent(images[0].src)).toContain('fill: rgb(1, 2, 3)');
+  });
+
+  it('makes the picture once, not on every read of the layout', () => {
+    makeSvg();
+    paintDom(root, ctx, 800, 400);
+    root.append(box(document.createElement('div'), 0, 0, 1, 1));   // a change elsewhere
+    paintDom(root, ctx, 800, 400);
+    expect(images).toHaveLength(1);
+  });
+
+  it('clips what is inside a box that hides or scrolls its overflow', () => {
+    const list = box(document.createElement('div'), 10, 20, 200, 100);
+    list.style.overflowY = 'auto';
+    const item = box(document.createElement('div'), 10, 20, 200, 300);
+    item.style.backgroundColor = 'red';
+    list.append(item);
+    root.append(list);
+    paintDom(root, ctx, 800, 400);
+    expect(ctx.rect).toHaveBeenCalledWith(10, 20, 200, 100);
+    expect(ctx.clip).toHaveBeenCalled();
+    expect(ctx.save.mock.calls.length).toBe(ctx.restore.mock.calls.length);
   });
 });

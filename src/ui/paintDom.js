@@ -13,8 +13,11 @@
 //
 // What it draws, which is what the overlays use: background colours and
 // borders (rounded, dashed), text (font, colour, letter spacing, upper
-// case, an ::after string such as REC), canvases and images, and range
-// sliders. Not gradients, shadows or other pseudo-elements. Opacity
+// case, an ::after string such as REC), canvases and images, range
+// sliders, and SVG (the bedroom PC's map) as a picture of itself, the
+// page's CSS for it written into the copy; a box that hides or scrolls its
+// overflow clips what is inside it. Not gradients, shadows or other
+// pseudo-elements. Opacity
 // (CSS animations included) multiplies down the tree; the root's own
 // opacity and visibility are ignored — on a screen it is invisible on the
 // page by design.
@@ -43,6 +46,16 @@ export const READ_EVERY = 250;
 
 /** root → { ops, read, observer, dirty } */
 const pictures = new WeakMap();
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** What an SVG's look comes from in the page's CSS, carried into its
+ *  picture (an image drawn from a copy sees no page styles). */
+const SVG_STYLE = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity',
+  'font-size', 'font-family', 'font-weight', 'letter-spacing'];
+
+/** svg element → { key, img }: its picture, made again only when it changes. */
+const svgPictures = new WeakMap();
 
 /**
  * @param {HTMLElement} root  The overlay.
@@ -122,6 +135,11 @@ function recordElement(el, ops, base, alpha, view, isRoot) {
   const visible = isRoot || cs.visibility !== 'hidden';
   const r = rectOf(el.getBoundingClientRect(), base);
 
+  if (el.namespaceURI === SVG_NS) {
+    if (visible && el.localName === 'svg') ops.push({ k: 'image', el: svgPicture(el, view, r), a, ...r });
+    return;
+  }
+
   if (visible) {
     recordBox(ops, cs, r, a, isRoot);
     const tag = el.tagName;
@@ -132,6 +150,9 @@ function recordElement(el, ops, base, alpha, view, isRoot) {
     }
   }
 
+  // A box that hides or scrolls its overflow shows only what is inside it.
+  const clip = !isRoot && (cs.overflowX !== 'visible' || cs.overflowY !== 'visible');
+  if (clip) ops.push({ k: 'clip', ...r });
   let lastText = null;
   for (const node of el.childNodes) {
     if (node.nodeType === 3) {
@@ -140,7 +161,34 @@ function recordElement(el, ops, base, alpha, view, isRoot) {
       recordElement(node, ops, base, a, view, false);
     }
   }
+  if (clip) ops.push({ k: 'unclip' });
   if (visible && lastText) recordAfter(ops, el, view, lastText, a);
+}
+
+/** An SVG as an image: a copy with the page's styles written onto every
+ *  element, at the size it is laid out. Made again only when that copy
+ *  changes; drawn once it has loaded. */
+function svgPicture(el, view, r) {
+  const copy = el.cloneNode(true);
+  const from = [el, ...el.querySelectorAll('*')];
+  const to = [copy, ...copy.querySelectorAll('*')];
+  for (let i = 0; i < from.length; i++) {
+    const cs = view.getComputedStyle(from[i]);
+    for (const prop of SVG_STYLE) {
+      const value = cs.getPropertyValue(prop);
+      if (value) to[i].style.setProperty(prop, value);
+    }
+  }
+  copy.setAttribute('xmlns', SVG_NS);
+  copy.setAttribute('width', String(r.w));
+  copy.setAttribute('height', String(r.h));
+  const key = new view.XMLSerializer().serializeToString(copy);
+  const known = svgPictures.get(el);
+  if (known?.key === key) return known.img;
+  const img = new view.Image();
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(key)}`;
+  svgPictures.set(el, { key, img });
+  return img;
 }
 
 function rectOf(b, base) {
@@ -220,6 +268,15 @@ function recordAfter(ops, el, view, at, alpha) {
 }
 
 const DRAW = {
+  clip(ctx, op) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(op.x, op.y, op.w, op.h);
+    ctx.clip();
+  },
+  unclip(ctx) {
+    ctx.restore();
+  },
   fill(ctx, op) {
     ctx.globalAlpha = op.a;
     ctx.fillStyle = op.colour;
