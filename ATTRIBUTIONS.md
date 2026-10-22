@@ -308,6 +308,20 @@ which may count as redistribution. Check the Terms of Use before release.
 | **Used for** | The bedroom's coffee machine |
 | **Modifications** | `scripts/prep-coffee-machine.mjs`: transmission and specular extensions dropped, finishes changed, the body dulled to rust, the maker's name painted off the gauge face; scaled to 0.00396 and stood on the floor at load (manifest `scale`, `origin`) |
 
+### Table wood
+
+"Wood Table Worn" (https://polyhaven.com/a/wood_table_worn) by Dimitrios
+Savva (photography) and Rico Cilliers (processing) from Poly Haven, released
+under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/textures/wood-table.jpg`, `public/assets/textures/wood-table-normal.jpg` |
+| **Manifest key** | `tex:wood-table`, `tex:wood-table-normal` |
+| **Used for** | The bedroom's side table and coffee table |
+| **Modifications** | The 1k colour and OpenGL normal maps, re-saved as JPEG at quality 85 and 90 |
+
 ### Bedroom laptop
 
 "Classic Laptop" (https://polyhaven.com/a/classic_laptop) by Arrangemonk from

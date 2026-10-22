@@ -246,6 +246,46 @@ describe('LivingQuarters', () => {
     expect(pointLights(room).length).toBe(2);
   });
 
+  it('the side table is a table: a top on four legs, the size and place the block was', () => {
+    const table = room.root.find('SideTable');
+    expect(table.object3d.position.toArray()).toEqual([-1.45, 0.25, -3.5]);
+    expect(table._originalSize).toEqual([0.7, 0.5, 0.7]);
+    const parts = table.object3d.children.filter(o => o.isMesh);
+    expect(parts).toHaveLength(5);
+    const top = new THREE.Box3().setFromObject(table.object3d);
+    expect(top.max.y).toBeCloseTo(0.5);                                 // the clock still stands at 0.5
+    expect(top.min.y).toBeCloseTo(0);
+    expect(room.root.find('CoffeeTable').object3d.children.filter(o => o.isMesh)).toHaveLength(5);
+  });
+
+  it('both tables are worn wood: its colour and normal maps, the grain at true size along each part', () => {
+    for (const [key, space] of [['tex:wood-table', 'srgb'], ['tex:wood-table-normal', 'linear']]) {
+      expect(ASSETS[key]).toMatchObject({ type: 'texture', colorSpace: space, repeat: [1, 1] });
+      expect(PRELOAD).toContain(key);
+      expect(() => readFileSync(new URL(`../../../public/${ASSETS[key].url}`, import.meta.url))).not.toThrow();
+    }
+
+    const map = new THREE.Texture(), normalMap = new THREE.Texture();
+    engine.assets = { get: key => ({ 'tex:wood-table': map, 'tex:wood-table-normal': normalMap })[key] ?? null };
+    const dressed = new LivingQuarters(engine);
+    dressed.build();
+    for (const name of ['SideTable', 'CoffeeTable']) {
+      for (const part of dressed.root.find(name).object3d.children.filter(o => o.isMesh)) {
+        expect(part.material.map, name).toBe(map);
+        expect(part.material.normalMap, name).toBe(normalMap);
+
+        // u runs along the part's longest side, in repeats of the texture's
+        // 0.55 m (Poly Haven's), so a leg's grain runs down it.
+        part.geometry.computeBoundingBox();
+        const size = part.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+        const uv = part.geometry.getAttribute('uv');
+        let span = 0;
+        for (let i = 0; i < uv.count; i++) for (let j = 0; j < uv.count; j++) span = Math.max(span, Math.abs(uv.getX(i) - uv.getX(j)));
+        expect(span, name).toBeCloseTo(Math.max(...size) / 0.55, 5);
+      }
+    }
+  });
+
   it('a side table by the bunk, with the floor beside the bed left free to sleep from', () => {
     const table = room.root.find('SideTable');
     expect(table.rigidBody.isFixed()).toBe(true);

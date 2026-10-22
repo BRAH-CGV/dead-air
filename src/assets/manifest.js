@@ -358,6 +358,20 @@ const PLACED = {
     url: 'assets/textures/mug-hang-in-there.png',
     colorSpace: 'srgb',
   },
+  // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
+  // (the tables lay their UVs out in metres).
+  'tex:wood-table': {
+    type: 'texture',
+    url: 'assets/textures/wood-table.jpg',
+    colorSpace: 'srgb',
+    repeat: [1, 1],
+  },
+  'tex:wood-table-normal': {
+    type: 'texture',
+    url: 'assets/textures/wood-table-normal.jpg',
+    colorSpace: 'linear',
+    repeat: [1, 1],
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {

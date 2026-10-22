@@ -20,6 +20,24 @@ export const CUP_SPOT = [-0.018, 0.092, 0.012];
  *  pours from. */
 const SPOUT_TIPS = [[-0.0555, 0.2115, 0.0266], [0.0189, 0.2115, 0.0266]];
 
+/** The tables' wood (tex:wood-table) covers this many metres a repeat. */
+const WOOD_TILE = 0.55;
+
+/** A box whose UVs are metres on every face, in repeats of the wood, the
+ *  grain (u) along the face's longer side: a leg's runs down it. */
+function woodBox(w, h, d) {
+  const geometry = new THREE.BoxGeometry(w, h, d);
+  const size = [w, h, d];
+  const pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal'), uv = geometry.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) {
+    const facing = [normal.getX(i), normal.getY(i), normal.getZ(i)].findIndex(n => Math.abs(n) > 0.5);
+    const [a, b] = [0, 1, 2].filter(k => k !== facing);
+    const [along, across] = size[a] >= size[b] ? [a, b] : [b, a];
+    uv.setXY(i, pos.getComponent(i, along) / WOOD_TILE, pos.getComponent(i, across) / WOOD_TILE);
+  }
+  return geometry;
+}
+
 /** Its table: depth out from the wall, height, length along it. */
 const COFFEE_TABLE = [0.65, 0.75, 0.9];
 
@@ -149,8 +167,14 @@ export class LivingQuarters extends Room {
     this.bed = bunk.addComponent(new Bed());
 
     // The side table stands just off the bed's open side, by the pillow.
-    const wood = this._own(new THREE.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.85 }));
-    const table = this._addStaticBox('SideTable', [-1.45, 0.25, -3.5], [0.7, 0.5, 0.7], wood);
+    // Both tables are worn wood: Poly Haven's, its colour and normal maps.
+    const assets = this.engine.assets;
+    const woodMap = assets?.get('tex:wood-table') ?? null;
+    const wood = this._own(new THREE.MeshStandardMaterial({
+      color: woodMap ? 0xffffff : 0x4a3b2e, map: woodMap,
+      normalMap: assets?.get('tex:wood-table-normal') ?? null, roughness: 0.8,
+    }));
+    const table = this._buildTable('SideTable', [-1.45, -3.5], [0.7, 0.5, 0.7], wood);
 
     // A digital clock on the side table, its face (+z) turned to the pillow
     // so a napper watches the minutes race (#113). The scene hands it the
@@ -220,24 +244,8 @@ export class LivingQuarters extends Room {
    *  light (CoffeeMachine colours it), on a copy of its material: the
    *  cached model's is shared. */
   _buildCoffeeMachine([x, z], wood) {
-    const [tw, th, tl] = COFFEE_TABLE;
-    const table = this._addGroup('CoffeeTable');
-    const middle = [x + tw / 2, th / 2, z];
-    table.object3d.position.set(...middle);
-    this._attachFixedBox(table, middle, [tw, th, tl]);
-    const slab = 0.04, leg = 0.05;
-    const part = (size, position) => {
-      const mesh = new THREE.Mesh(this._own(new THREE.BoxGeometry(...size)), wood);
-      mesh.position.set(...position);
-      mesh.castShadow = mesh.receiveShadow = true;
-      table.object3d.add(mesh);
-    };
-    part([tw, slab, tl], [0, th / 2 - slab / 2, 0]);
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        part([leg, th - slab, leg], [sx * (tw - leg) / 2, -slab / 2, sz * (tl - leg) / 2]);
-      }
-    }
+    const [tw, th] = COFFEE_TABLE;
+    this._buildTable('CoffeeTable', [x + tw / 2, z], COFFEE_TABLE, wood);
 
     // The machine's back 4 cm off the wall, turned a quarter so its front
     // (+z) faces into the room and its depth runs along x.
@@ -271,6 +279,30 @@ export class LivingQuarters extends Room {
     cup.object3d.position.set(...CUP_SPOT);
     (model ?? go).addChild(cup);
     this.coffeeMachine = go.addComponent(new CoffeeMachine({ screen, cup }));
+  }
+
+  /** A table: a top on four legs, `size` [width (x), height, depth (z)]
+   *  standing on the floor with its middle at `[x, z]`. A fixed box the
+   *  table's size is its collider, so nothing goes under it. */
+  _buildTable(name, [x, z], [w, h, d], material) {
+    const go = this._addGroup(name);
+    const middle = [x, h / 2, z];
+    go.object3d.position.set(...middle);
+    this._attachFixedBox(go, middle, [w, h, d]);
+    const slab = 0.04, leg = 0.05;
+    const part = (size, position) => {
+      const mesh = new THREE.Mesh(this._own(woodBox(...size)), material);
+      mesh.position.set(...position);
+      mesh.castShadow = mesh.receiveShadow = true;
+      go.object3d.add(mesh);
+    };
+    part([w, slab, d], [0, h / 2 - slab / 2, 0]);
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        part([leg, h - slab, leg], [sx * (w - leg) / 2, -slab / 2, sz * (d - leg) / 2]);
+      }
+    }
+    return go;
   }
 
   /** The computer (#114): a laptop open on the desk top at `[x, z]`, its
