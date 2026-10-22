@@ -43,6 +43,14 @@ export const ANOMALY_WARNING = '⚠ EXTREME ELECTRICAL ANOMALY DETECTED — turn
 /** The desk's prompt while the generator is off. */
 const NO_POWER_LABEL = 'No power — restore it at the generator outside';
 
+/** Base seconds the lock-on phase takes before scanning begins (randomised ±25%). */
+const LOCK_ON_BASE_SECONDS = 3;
+
+/** Randomise a duration within ±25% of its base value. */
+function randomiseDuration(base) {
+  return base * (0.75 + Math.random() * 0.5);
+}
+
 export class ComputerTerminal extends Component {
   // ── State ─────────────────────────────────────────────────
   /** 'idle' | 'radar' | 'scanning' | 'review' */
@@ -78,6 +86,16 @@ export class ComputerTerminal extends Component {
 
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
+
+  /** Accumulated lock-on progress in seconds (0.._lockOnDuration).
+   *  Phase 1 fills this bar; phase 2 (scan) only starts after it completes. */
+  _lockOnProgress = 0;
+
+  /** The randomised lock-on duration for the current attempt. */
+  _lockOnDuration = LOCK_ON_BASE_SECONDS;
+
+  /** The signal currently being locked on (null when not in lock-on). */
+  _lockOnTarget = null;
 
   /** Cursor position in Cartesian unit-circle coords: x -1..+1 (left..right),
    *  y -1..+1 (down..up). The disc's centre (0, 0) is the zenith and its rim
@@ -138,6 +156,17 @@ export class ComputerTerminal extends Component {
   /** Exit the terminal back to IDLE (Q key). */
   exit() {
     if (this.state === 'idle') return;
+    // Exiting during lock-on: auto-complete it so the satellite starts
+    // scanning in the background — the dish was already aimed when the
+    // player pressed Enter, so the visual lock-on is no longer needed.
+    if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
+      if (this.satellite && this._lockOnTarget) {
+        this.satellite.scanProgress = 0;
+        this.satellite.isScanning = true;
+      }
+      this._lockOnTarget = null;
+      this._lockOnProgress = this._lockOnDuration;
+    }
     // Exiting mid-scan: let the satellite keep scanning in the background.
     if (this.state !== 'scanning') this._cleanupState();
     this._enterIdle();
@@ -249,7 +278,6 @@ export class ComputerTerminal extends Component {
     } else {
       this.radar?.hide();
     }
-    this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     // Restore the first-person reticle now that the terminal is closed.
     this.crosshair?.show();
@@ -280,15 +308,18 @@ export class ComputerTerminal extends Component {
   _enterScanning() {
     this.state = 'scanning';
     if (this.satellite && this._hoveredSignal) {
-      // Only reset progress if this is a different target than what we had
-      if (this.satellite.scanTarget !== this._hoveredSignal) {
-        this.satellite.scanProgress = 0;
-      }
+      this._lockOnTarget = this._hoveredSignal;
+      this._lockOnProgress = 0;
+      // Randomise the lock-on duration for this attempt (±25% of base).
+      this._lockOnDuration = randomiseDuration(LOCK_ON_BASE_SECONDS);
+      // Randomise the scan duration for this signal (±25% of base).
+      this._hoveredSignal.scanTime = randomiseDuration(this._hoveredSignal.scanTime);
+      // Satellite does NOT start scanning yet — lock-on must complete first.
       this.satellite.scanTarget = this._hoveredSignal;
-      this.satellite.isScanning = true;
+      this.satellite.isScanning = false;
       this.satellite._scanComplete = false;
     }
-    this.radar?.setInfo('Scanning… keep dish aimed!');
+    this.radar?.setInfo('Locking on… keep dish aimed!');
   }
 
   /** Called after auto-save — clear hover and close the terminal: the
@@ -301,6 +332,8 @@ export class ComputerTerminal extends Component {
 
   /** Clean up any in-progress scan state without transitioning. */
   _cleanupState() {
+    this._lockOnTarget = null;
+    this._lockOnProgress = 0;
     if (this.satellite) {
       this.satellite.isScanning = false;
       this.satellite.scanTarget = null;
@@ -385,10 +418,36 @@ export class ComputerTerminal extends Component {
       return;
     }
 
-    // ── SCANNING: background scan on Satellite, just check for completion ──
+    // ── SCANNING: two phases — lock-on (dish focuses) then scan ──
     if (this.state === 'scanning') {
-      // Scan accumulation happens in Satellite._update (background)
-      // Just check if scan completed — auto-save and close the terminal.
+
+      // ── Phase 1: Lock-on ──
+      if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
+        const sig = this._lockOnTarget;
+        const aimed = this.satellite?.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
+        if (!aimed) {
+          // Lost aim — back to radar, reset lock-on.
+          this._lockOnProgress = 0;
+          this._lockOnTarget = null;
+          this.state = 'radar';
+          this.radar?.setInfo('Lock lost — re-aim the dish!');
+          return;
+        }
+        this._lockOnProgress += dt;
+        this.radar?.setLockOnProgress?.(this._lockOnProgress / this._lockOnDuration);
+        this.radar?.setScanProgress?.(0);
+        if (!this.screen) this._updateRadarDisplay();
+        return;
+      }
+
+      // ── Lock-on complete → transition to Phase 2 ──
+      if (this._lockOnTarget && this._lockOnProgress >= this._lockOnDuration && !this.satellite?.isScanning) {
+        this.satellite.scanProgress = 0;
+        this.satellite.isScanning = true;
+        this.radar?.setInfo('Scanning… keep dish aimed!');
+      }
+
+      // ── Phase 2: Scan (accumulation on Satellite, check completion) ──
       if (this.satellite?._scanComplete) {
         this.saveSignal();
         this._onSignalResolved();
@@ -398,8 +457,11 @@ export class ComputerTerminal extends Component {
       // Update HUD with scan progress
       if (this.satellite?.scanTarget) {
         const progress = this.satellite.scanProgress / this.satellite.scanTarget.scanTime;
-        this.hud?.setScanProgress(progress);
+        this.radar?.setScanProgress?.(progress);
       }
+
+      // Lock-on bar stays full during scan phase
+      this.radar?.setLockOnProgress?.(1);
 
       // If satellite stopped scanning (dish drifted), go back to radar
       if (this.satellite && !this.satellite.isScanning && this.satellite.scanProgress < this.satellite.scanTarget?.scanTime) {
@@ -442,6 +504,14 @@ export class ComputerTerminal extends Component {
       scanProgress = this.satellite.scanProgress / this.satellite.scanTarget.scanTime;
     }
 
+    // Compute lock-on fraction for the X overlay (0..1, or -1 when inactive).
+    let lockOnFraction = -1;
+    if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
+      lockOnFraction = this._lockOnProgress / this._lockOnDuration;
+    } else if (this._lockOnTarget) {
+      lockOnFraction = 1;   // lock-on complete, X stays fully visible
+    }
+
     this.radar.update(
       this.signalManager.signals,
       dishYaw,
@@ -452,6 +522,8 @@ export class ComputerTerminal extends Component {
       scanProgress,
       this.satellite.neighbours ?? [],
       this.satellite.rig ?? null,
+      lockOnFraction,
+      this._lockOnTarget,
     );
 
     // Telemetry readouts — dish pose, cursor pose, dish state.
@@ -468,6 +540,9 @@ export class ComputerTerminal extends Component {
 
     // Scan progress bar on the right.
     this.radar.setScanProgress?.(scanProgress >= 0 ? scanProgress : 0);
+
+    // Lock-on progress bar (left of the scan bar).
+    this.radar.setLockOnProgress?.(lockOnFraction >= 0 ? lockOnFraction : 0);
 
     // Parking the cursor on the UFO's blob reads it out.
     const onThreat = this.radar.threatAt?.(this._cursorX, this._cursorY) ?? false;

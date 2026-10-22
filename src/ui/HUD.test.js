@@ -585,3 +585,47 @@ describe('RadarTelemetry', () => {
     expect(() => overlay.setTelemetry({ dishAz: 1.0 })).not.toThrow();
   });
 });
+
+// ── RadarOverlay lock-on progress bar ─────────────────────
+
+describe('RadarOverlay.setLockOnProgress', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-lockon-progress"><div class="scan-fill"></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('sets the fill height to 0% at progress 0', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(0);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('0%');
+  });
+
+  it('sets the fill height to 50% at progress 0.5', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(0.5);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('50%');
+  });
+
+  it('sets the fill height to 100% at progress 1', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(1);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('100%');
+  });
+
+  it('clamps values outside 0–1', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(-0.5);
+    expect(overlay.root.querySelector('.scan-fill').style.height).toBe('0%');
+    overlay.setLockOnProgress(2);
+    expect(overlay.root.querySelector('.scan-fill').style.height).toBe('100%');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setLockOnProgress(0.5)).not.toThrow();
+  });
+});

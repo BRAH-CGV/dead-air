@@ -68,7 +68,7 @@ export class SignalTarget {
    * @param {number} [opts.visibleSeconds=15]
    * @param {boolean} [opts.evil=false]
    */
-  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 3, name = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15, evil = false }) {
+  constructor({ id, yaw, pitch, tolerance = 12 * (Math.PI / 180), scanTime = 6, name = '', appearAt = 0, fadeSeconds = 3, visibleSeconds = 15, evil = false }) {
     this.id = id;
     this.yaw = yaw;
     this.pitch = pitch;

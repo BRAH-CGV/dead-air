@@ -29,7 +29,6 @@ export class HUD {
     this._clock     = root?.querySelector('#hud-clock')     ?? null;
     this._signals   = root?.querySelector('#hud-signals')   ?? null;
     this._night     = root?.querySelector('#hud-night')     ?? null;
-    this._scanBar   = root?.querySelector('#hud-scan-bar')  ?? null;
     this._prompt    = root?.querySelector('#hud-prompt')    ?? null;
     this._suit      = root?.querySelector('#hud-suit')      ?? null;
     this._stamina     = root?.querySelector('#hud-stamina')      ?? null;
@@ -53,17 +52,6 @@ export class HUD {
 
   setNight(number) {
     if (this._night) this._night.textContent = `Night ${number}`;
-  }
-
-  /** Set scan progress bar fill (0..1). Pass -1 or negative to hide. */
-  setScanProgress(fraction) {
-    if (!this._scanBar) return;
-    if (fraction < 0) {
-      this._scanBar.style.display = 'none';
-    } else {
-      this._scanBar.style.display = 'block';
-      this._scanBar.style.width = `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
-    }
   }
 
   setPrompt(text) {
@@ -305,6 +293,15 @@ export class RadarOverlay {
   /** Update the scan progress bar (0–1).  Called every frame by the terminal. */
   setScanProgress(progress) {
     const bar = this.root?.querySelector('#radar-scan-progress');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
+    const fill = bar.querySelector('.scan-fill');
+    if (fill) fill.style.height = pct + '%';
+  }
+
+  /** Update the lock-on progress bar (0–1).  Called every frame by the terminal. */
+  setLockOnProgress(progress) {
+    const bar = this.root?.querySelector('#radar-lockon-progress');
     if (!bar) return;
     const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
     const fill = bar.querySelector('.scan-fill');
@@ -669,7 +666,7 @@ export class RadarOverlay {
    *  @param {import('../gameobjects/DishRig.js').DishRig|null} [localRig]
    *   The local dish's rig: draws its reach as an amber circle around the
    *   centre, covering the majority of the scannable band */
-  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null) {
+  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null, lockOnFraction = -1, lockOnTarget = null) {
     const ctx = this._ctx;
     if (!ctx) return;
 
@@ -806,6 +803,21 @@ export class RadarOverlay {
 
     // The dish is locked on the evil signal — same glitch, red.
     this._drawEvilGlitch(ctx, s);
+
+    // Lock-on X — fades in over the target signal during phase 1.
+    if (lockOnFraction > 0 && lockOnTarget && !lockOnTarget.resolved) {
+      const pos = this._skyToCanvas(lockOnTarget.yaw, lockOnTarget.pitch);
+      const xSize = 12 * s;
+      const alpha = Math.min(1, lockOnFraction) * 0.9;
+      ctx.beginPath();
+      ctx.moveTo(pos.x - xSize, pos.y - xSize);
+      ctx.lineTo(pos.x + xSize, pos.y + xSize);
+      ctx.moveTo(pos.x + xSize, pos.y - xSize);
+      ctx.lineTo(pos.x - xSize, pos.y + xSize);
+      ctx.strokeStyle = `rgba(0, 255, 200, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 2 * s;
+      ctx.stroke();
+    }
 
     // Dish direction line + dot — same mapping as the blips
     const dish = this._skyToCanvas(dishYaw, dishPitch);

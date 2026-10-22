@@ -7,7 +7,7 @@ import { RadarOverlay } from './HUD.js';
 
 function makeRadar() {
   const root = document.createElement('div');
-  root.innerHTML = '<canvas id="radar-canvas"></canvas><div id="radar-telemetry"></div><div id="radar-scan-progress"></div><div id="radar-info"></div><div id="radar-hint"></div><div id="radar-warning"></div>';
+  root.innerHTML = '<canvas id="radar-canvas"></canvas><div id="radar-telemetry"></div><div id="radar-scan-progress"></div><div id="radar-lockon-progress"></div><div id="radar-info"></div><div id="radar-hint"></div><div id="radar-warning"></div>';
   return new RadarOverlay(root);
 }
 

@@ -66,7 +66,7 @@ function makeHUD() {
   return {
     show: vi.fn(), hide: vi.fn(),
     setTime: vi.fn(), setSignals: vi.fn(), setNight: vi.fn(),
-    setScanProgress: vi.fn(), setPrompt: vi.fn(),
+    setPrompt: vi.fn(),
   };
 }
 
@@ -74,7 +74,7 @@ function makeRadar() {
   return {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
-    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), threatAt: vi.fn(() => false),
+    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), setLockOnProgress: vi.fn(), threatAt: vi.fn(() => false),
   };
 }
 
@@ -245,6 +245,8 @@ describe('ComputerTerminal', () => {
       -1,
       dish.neighbours,
       dish.rig,
+      -1,    // lockOnFraction — not in lock-on
+      null,  // lockOnTarget
     );
   });
 
@@ -457,8 +459,11 @@ describe('ComputerTerminal', () => {
     expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
     term._enterScanning();
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Lock-on phase: satellite is NOT scanning yet — lock-on must complete first.
+    expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBe(sig);
+    expect(term._lockOnTarget).toBe(sig);
+    expect(term._lockOnProgress).toBe(0);
   });
 
   it('scan does not start when dish is not aimed', () => {
@@ -505,8 +510,10 @@ describe('ComputerTerminal', () => {
 
     term._enterScanning();
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Lock-on phase: satellite is NOT scanning yet — lock-on must complete first.
+    expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBe(sig);
+    expect(term._lockOnTarget).toBe(sig);
   });
 
   it('radar info explains a missing lock when no dish of the array is aimed', () => {
@@ -606,6 +613,104 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
   });
 
+  // ── Lock-on phase ──
+
+  it('lock-on accumulates progress while the dish stays aimed', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    expect(term._lockOnTarget).toBe(sig);
+    expect(sat.isScanning).toBe(false);
+
+    // Tick — dish is aimed, lock-on should accumulate.
+    term.onUpdate(0.5);
+    expect(term._lockOnProgress).toBeCloseTo(0.5);
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(0.5 / term._lockOnDuration);
+    expect(radar.setScanProgress).toHaveBeenCalledWith(0);
+    // Satellite still not scanning during lock-on.
+    expect(sat.isScanning).toBe(false);
+  });
+
+  it('lock-on completes and transitions to scan phase', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    // Accumulate past the lock-on threshold.
+    term._lockOnProgress = term._lockOnDuration;
+    term.onUpdate(1 / 60);
+
+    // Satellite should now be scanning.
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanProgress).toBe(0);
+    // Lock-on bar stays full during scan.
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(1);
+  });
+
+  it('lock-on resets and returns to radar when the dish drifts', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    // Partial lock-on progress.
+    term._lockOnProgress = 0.5;
+
+    // Move the dish away — no longer aimed.
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+
+    term.onUpdate(1 / 60);
+
+    expect(term.state).toBe('radar');
+    expect(term._lockOnTarget).toBeNull();
+    expect(term._lockOnProgress).toBe(0);
+    expect(sat.isScanning).toBe(false);
+  });
+
+  it('exit during lock-on auto-completes it so the scan continues in the background', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = 0.5;
+
+    term.exit();
+    expect(term.state).toBe('idle');
+    // Lock-on was auto-completed: satellite is now scanning in the background.
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+    expect(sat.scanProgress).toBe(0);
+    // Lock-on visual state is cleared.
+    expect(term._lockOnTarget).toBeNull();
+  });
+
   // ── SCANNING → AUTO-SAVE ──
 
   it('auto-saves the signal and closes the terminal when scan completes', () => {
@@ -621,7 +726,9 @@ describe('ComputerTerminal', () => {
     term._enterScanning();
 
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
 
     // Simulate scan completion (happens on Satellite._update)
     sat.scanProgress = sig.scanTime;
@@ -640,23 +747,6 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
     expect(sat.scanProgress).toBe(0);
-  });
-
-  it('scan progress bar updates during scanning state', () => {
-    term.enter();
-    const sig = mgr.signals[0];
-    const cur = skyToCursor(sig.yaw, sig.pitch);
-    term._cursorX = cur.x;
-    term._cursorY = cur.y;
-    term._updateHover();
-    term._enterScanning();
-
-    // Manually accumulate progress (as Satellite._update would do)
-    sat.scanProgress += 1.5;
-    const progress = sat.scanProgress / sig.scanTime;
-    expect(progress).toBeCloseTo(0.5);
-    hud.setScanProgress(progress);
-    expect(hud.setScanProgress).toHaveBeenCalledWith(0.5);
   });
 
   it('scan progress preserved when dish drifts (background scanning)', () => {
@@ -743,6 +833,9 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
     term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
     sat.scanProgress = 1.5;
     expect(term.state).toBe('scanning');
 
@@ -918,6 +1011,9 @@ describe('ComputerTerminal', () => {
     sat.dish.object3d.rotation.x = sig.pitch;
     term._updateHover();
     term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
 
     // Exit mid-scan — scan state preserved.
     term.exit();
@@ -948,6 +1044,9 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
     term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
     sat.scanProgress = 1.5;
 
     // Exit — scan keeps going.
@@ -973,6 +1072,9 @@ describe('ComputerTerminal', () => {
     term._cursorY = cur.y;
     term._updateHover();
     term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
     sat.scanProgress = 1.5;
     term.exit();
     expect(sat.isScanning).toBe(true);

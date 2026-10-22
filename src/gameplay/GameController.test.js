@@ -9,7 +9,7 @@ function makeHUD() {
   return {
     show: vi.fn(), hide: vi.fn(),
     setTime: vi.fn(), setSignals: vi.fn(), setNight: vi.fn(),
-    setScanProgress: vi.fn(), setPrompt: vi.fn(),
+    setPrompt: vi.fn(),
   };
 }
 
@@ -265,26 +265,6 @@ describe('GameController', () => {
 
     expect(hud.setTime).toHaveBeenCalled();
     expect(hud.setSignals).toHaveBeenCalled();
-  });
-
-  it('shows scan progress when satellite is scanning', () => {
-    gc.startNight(1);
-    const sig = mgr.signals[0];
-    sat.isScanning = true;
-    sat.scanTarget = sig;
-    sat.scanProgress = 1.5;
-
-    gc.onUpdate(0.016);
-    // scanTime default = 3, so 1.5/3 = 0.5
-    expect(hud.setScanProgress).toHaveBeenCalledWith(0.5);
-  });
-
-  it('hides scan bar when not scanning', () => {
-    gc.startNight(1);
-    sat.isScanning = false;
-
-    gc.onUpdate(0.016);
-    expect(hud.setScanProgress).toHaveBeenCalledWith(-1);
   });
 
   it('onSignalDeleted updates HUD but does not change state', () => {
