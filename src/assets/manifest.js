@@ -671,11 +671,9 @@ const PLACED = {
   // Stamina and the Sleep Demon, from the first minute of night 1: the
   // demon's whispers and knocks, placed on its figure (SleepDemon); the heartbeat, looped,
   // and the yawn of a tired one (FatigueEffects); a
-  // ration dropping from the office dispenser (BaseScene._addStamina).
+  // coffee slurped as it is drunk (BaseScene._addStamina).
   //
-  // The ration is a PLACEHOLDER, for the sound owner to replace: a short
-  // synthesised wav, not final audio. The whispers, the heartbeat and the yawn
-  // are real (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // All real recordings (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
   // public/assets/audio/, named after its key (any format: ration.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
@@ -688,9 +686,15 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/yawn.mp3',
   },
-  'sfx:ration': {
+  'sfx:slurp': {
     type: 'audio',
-    url: 'assets/audio/ration.wav',
+    url: 'assets/audio/slurp.mp3',
+  },
+  // The bedroom's coffee machine running while a cup brews (CoffeeSound):
+  // exactly a brew long, 20 s. Its start click is the camera flash's.
+  'sfx:coffee-machine': {
+    type: 'audio',
+    url: 'assets/audio/coffee-machine.mp3',
   },
   'sfx:whispering': {
     type: 'audio',

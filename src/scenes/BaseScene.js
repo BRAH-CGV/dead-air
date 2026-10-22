@@ -75,6 +75,7 @@ import { SatelliteSound } from '../components/SatelliteSound.js';
 import { FeedDisplay } from '../core/FeedDisplay.js';
 import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
+import { CoffeeSound } from '../components/CoffeeSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -1902,9 +1903,11 @@ export class BaseScene extends Scene {
     const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
-      // The ration's placeholder, as the cup is drunk: see the manifest.
-      // onBrew and onBrewed are free for the machine's own sounds.
-      const sip = this._sound('sfx:ration', 0.8);
+      // The machine at work while a cup brews, and its start click.
+      machine.gameObject.addComponent(new CoffeeSound({ machine }));
+      // A slurp as the cup is drunk (a quiet recording, so lifted).
+      // onBrew and onBrewed are free hooks still.
+      const sip = this._sound('sfx:slurp', 1.6);
       machine.onDrink = () => {
         if (!sip) return;
         if (sip.isPlaying) sip.stop();

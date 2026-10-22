@@ -890,6 +890,28 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
 | **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
 
+### Coffee machine running
+
+"Coffee Machine Motor" (https://freesound.org/people/Dwums96/sounds/338130/) by Dwums96, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/coffee-machine.mp3` |
+| **Manifest key** | `sfx:coffee-machine` |
+| **Used for** | The bedroom's coffee machine while a cup brews (`CoffeeSound`) |
+| **Modifications** | Cut to 20 s, a brew's length |
+
+### Coffee slurp
+
+"Coffee Slurping" (https://freesound.org/people/redcheek/sounds/251984/) by redcheek, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/slurp.mp3` |
+| **Manifest key** | `sfx:slurp` |
+| **Used for** | A coffee drunk at the bedroom's machine (`BaseScene._addStamina`) |
+| **Modifications** | Renamed |
+
 ### Ragno in the vents
 
 "metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.

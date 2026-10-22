@@ -115,9 +115,9 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(machine.state).toBe('ready');
   });
 
-  it('a coffee makes a sound as it is drunk (the ration placeholder), not as it brews', () => {
+  it('a coffee is slurped as it is drunk, not as it brews', () => {
     const sip = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
-    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? sip : null));
+    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:slurp' ? sip : null));
     const other = new BaseScene(makeSceneEngine());
     other.build();
     const machine = other.rooms.LivingQuarters.coffeeMachine;
