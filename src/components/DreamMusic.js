@@ -14,6 +14,9 @@ import { AMBIENCE, loopSeam } from './Ambience.js';
 //
 // Loaded on demand like the Ambience's tracks: the dream starts silent and
 // the music creeps in once its buffer is there.
+//
+// Any loop can go under a dream the same way, given its own `key` and
+// `volume`: the crater has the wind outside the base under it too.
 // ─────────────────────────────────────────────
 
 /** Tuning. */
@@ -52,12 +55,17 @@ export function fadeAndRelease(sound, seconds) {
 export class DreamMusic extends Component {
   /**
    * @param {object} [opts]
-   * @param {THREE.Audio|null} [opts.sound]  Loaded from DREAM_MUSIC.key
-   *        when left out. Null: silent.
+   * @param {THREE.Audio|null} [opts.sound]  Loaded from `key` when left out.
+   *        Null: silent.
+   * @param {string} [opts.key]  The loop: the spooky music unless another
+   *        is given (the crater's wind).
+   * @param {number} [opts.volume]  Its level, of the clip's own.
    */
-  constructor({ sound } = {}) {
+  constructor({ sound, key = DREAM_MUSIC.key, volume = DREAM_MUSIC.volume } = {}) {
     super();
     this.sound = sound;
+    this.key = key;
+    this.volume = volume;
     this._level = 0;
     this._paused = false;
     this._gone = false;
@@ -78,7 +86,7 @@ export class DreamMusic extends Component {
     if (!sound || this._gone) return;
     const real = this._engine?.realDt ?? dt;
     this._level = Math.min(1, this._level + real / DREAM_MUSIC.fadeIn);
-    sound.setVolume(DREAM_MUSIC.volume * this._level);
+    sound.setVolume(this.volume * this._level);
     if (!sound.isPlaying && !this._paused) sound.play();
   }
 
@@ -101,7 +109,7 @@ export class DreamMusic extends Component {
 
   _load(engine) {
     if (!engine?.audioListener || !engine.assets?.load) return;
-    engine.assets.load(DREAM_MUSIC.key).then((buffer) => {
+    engine.assets.load(this.key).then((buffer) => {
       if (this._gone) return;
       const sound = new THREE.Audio(engine.audioListener);
       sound.setBuffer(buffer);
@@ -109,6 +117,6 @@ export class DreamMusic extends Component {
       sound.setLoopStart(loopSeam(buffer));
       sound.setVolume(0);
       this.sound = sound;
-    }).catch(err => console.warn(`[DreamMusic] no ${DREAM_MUSIC.key} — ${err.message}`));
+    }).catch(err => console.warn(`[DreamMusic] no ${this.key} — ${err.message}`));
   }
 }

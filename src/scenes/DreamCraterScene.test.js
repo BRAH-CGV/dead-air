@@ -11,6 +11,7 @@ import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { DreamMusic } from '../components/DreamMusic.js';
+import { AMBIENCE } from '../components/Ambience.js';
 
 // Builds against the whole base scene module: as slow as BaseScene.test.js
 // under a parallel run, so it gets the same budget.
@@ -56,11 +57,14 @@ describe('DreamCraterScene', () => {
     scene.build();
   });
 
-  it('plays the spooky music under the dream', () => {
-    const found = [];
+  it('plays the spooky music under the dream, and the wind outside throughout, a little quieter than the base\'s', () => {
     const all = go => [go, ...(go.children ?? []).flatMap(all)];
-    for (const go of engine._rootObjects) for (const g of all(go)) { const m = g.getComponent?.(DreamMusic); if (m) found.push(m); }
-    expect(found).toHaveLength(1);
+    const loops = [];
+    for (const go of engine._rootObjects) for (const g of all(go)) for (const c of g.components ?? []) if (c instanceof DreamMusic) loops.push(c);
+    expect(loops.map(l => l.key).sort()).toEqual([AMBIENCE.music, AMBIENCE.outside].sort());
+    const wind = loops.find(l => l.key === AMBIENCE.outside);
+    expect(wind.volume).toBeLessThan(AMBIENCE.volumes[AMBIENCE.outside]);
+    expect(wind.volume).toBeGreaterThan(0);
   });
 
   it('wakes back into the base scene', () => {

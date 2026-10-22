@@ -43,6 +43,16 @@ describe('DreamMusic', () => {
     expect(sound.play).toHaveBeenCalledTimes(1);
   });
 
+  it('any loop can go under a dream: its own track and level', () => {
+    const go = new GameObject('Dream');
+    const sound = fakeSound();
+    const loop = go.addComponent(new DreamMusic({ sound, key: AMBIENCE.outside, volume: 0.3 }));
+    loop.onStart();
+    tick(loop, DREAM_MUSIC.fadeIn + 1);
+    expect(loop.key).toBe(AMBIENCE.outside);
+    expect(sound.volume).toBeCloseTo(0.3);
+  });
+
   it('pauses with the game and carries on after', () => {
     const { music, sound } = build();
     tick(music, 1);
