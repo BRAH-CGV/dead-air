@@ -705,7 +705,8 @@ const PLACED = {
   // pace of its steps and heard only indoors; the call, cut into its soft
   // chirps (outside, under the wind) and its loud bursts (the rare screech,
   // pitched down); two attacks for a flinch or the aggro; and the third for
-  // the death screen, its loud part only.
+  // the death screen, its loud part only; and the vents, thuds and creaks cut
+  // into his steps and the layers over them (DUCT_CRAWL).
   'sfx:spider-walking': {
     type: 'audio',
     url: 'assets/audio/spider-walking.mp3',
@@ -725,6 +726,10 @@ const PLACED = {
   'sfx:spider-attack-8': {
     type: 'audio',
     url: 'assets/audio/spider-attack-8.mp3',
+  },
+  'sfx:ragno-vents': {
+    type: 'audio',
+    url: 'assets/audio/ragno-vents.mp3',
   },
 };
 

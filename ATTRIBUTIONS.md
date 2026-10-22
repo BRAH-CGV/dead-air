@@ -890,6 +890,17 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
 | **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
 
+### Ragno in the vents
+
+"metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/ragno-vents.mp3` |
+| **Manifest key** | `sfx:ragno-vents` |
+| **Used for** | Ragno crawling through a duct (`Ragno`, `DuctCrawl`): his steps, and thuds and creaks layered over them |
+| **Modifications** | Snippets of both cut and joined into one mono file; played in pieces (`DUCT_CRAWL`), each pitched a little apart |
+
 
 ## Downloaded but unattributed — TODO
 

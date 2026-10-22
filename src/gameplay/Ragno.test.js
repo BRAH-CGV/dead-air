@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
-import { Ragno } from './Ragno.js';
+import { Ragno, RAGNO_SOUNDS } from './Ragno.js';
+import { DUCT_CRAWL } from './RagnoSounds.js';
 import { approachRoute, climbRoute, NavGraph } from './RagnoPaths.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { GameObject } from '../core/GameObject.js';
@@ -353,6 +354,134 @@ describe('Ragno', () => {
     expect(played.length).toBe(2);
     for (const a of played) expect(a.setDetune).toHaveBeenCalledWith(expect.any(Number));
     expect(attacks[0].setDetune.mock.calls[0][0]).toBeLessThan(0);
+  });
+
+  describe('in the duct', () => {
+    const voice = () => ({ isPlaying: false, context: { state: 'running' }, offset: 0, duration: undefined,
+      play: vi.fn(function () { this.isPlaying = true; }), stop: vi.fn(function () { this.isPlaying = false; }),
+      setVolume: vi.fn(), setDetune: vi.fn(), setRefDistance: vi.fn(), setRolloffFactor: vi.fn() });
+    let voices;
+    beforeEach(() => {
+      voices = Array.from({ length: DUCT_CRAWL.voices }, voice);
+      build(2, { sounds: { duct: voices } });
+    });
+    const intoDuct = () => {
+      ragno.summon({ approach: 'yard', side: 1 });
+      for (let t = 0; t < 600 && ragno.logic.state !== 'duct'; t += 1 / 30) ragno.onUpdate(1 / 30);
+    };
+    const plays = () => voices.flatMap(v => v.play.mock.calls);
+
+    it('going in, the recording plays in pieces: the step first, then the layers over it, on voices of their own', () => {
+      intoDuct();
+      expect(ragno.logic.state).toBe('duct');
+      expect(voices[0].play).toHaveBeenCalled();
+      expect(voices[0].offset).toBe(DUCT_CRAWL.clips.step[0]);
+      expect(voices[0].duration).toBe(DUCT_CRAWL.clips.step[1]);
+      run(3);
+      expect(voices.filter(v => v.play.mock.calls.length > 0).length).toBe(DUCT_CRAWL.voices);
+      expect(voices.some(v => DUCT_CRAWL.clips.layers.some(l => l[0] === v.offset))).toBe(true);
+    });
+
+    it('heard with the player\'s own ears it is louder and carries further than through a camera, which is loud already', () => {
+      const heard = () => {
+        const v = voices.find(x => x.offset === DUCT_CRAWL.clips.step[0] && x.setVolume.mock.calls.length);
+        return { volume: v.setVolume.mock.lastCall[0], ref: v.setRefDistance.mock.lastCall[0], rolloff: v.setRolloffFactor.mock.lastCall[0] };
+      };
+      intoDuct();
+      const ears = heard();
+      voices = Array.from({ length: DUCT_CRAWL.voices }, voice);
+      build(2, { sounds: { duct: voices } });
+      terminal.onAir = { index: 1, camera: fakeCamera(new THREE.Vector3(13, 2.7, -2.8), new THREE.Vector3(13, 0, 2)), live: true, flash: false };
+      intoDuct();
+      const camera = heard();
+      expect(camera.volume).toBeLessThanOrEqual(RAGNO_SOUNDS.duct * DUCT_CRAWL.clips.step[2]);   // as it was
+      expect(camera).toMatchObject({ ref: RAGNO_SOUNDS.ductCamera.refDistance, rolloff: RAGNO_SOUNDS.ductCamera.rolloff });
+      expect(ears.volume).toBeGreaterThan(camera.volume);
+      expect(ears.ref).toBeGreaterThan(camera.ref);
+      expect(ears.rolloff).toBeLessThan(camera.rolloff);
+    });
+
+    it('is heard from where he is in the wall, moving from the vent outside toward the grille', () => {
+      intoDuct();
+      const vent = makeLayout().vents[1];
+      const at = () => ragno._ductAnchor.position.clone();
+      expect(at().distanceTo(vent.intake)).toBeLessThan(0.05);
+      run(2);
+      expect(at().distanceTo(vent.grille)).toBeLessThan(vent.intake.distanceTo(vent.grille) - 0.1);
+    });
+
+    it('a pause cuts what is sounding; played on, the crawl carries on while he is still in there', () => {
+      intoDuct();
+      run(1);
+      ragno._silenceDuct();
+      expect(voices.every(v => !v.isPlaying)).toBe(true);
+      const before = plays().length;
+      run(1);
+      expect(ragno.logic.state).toBe('duct');
+      expect(plays().length).toBeGreaterThan(before);
+    });
+
+    it('coming out, the last sounds ring out rather than being cut off', () => {
+      intoDuct();
+      voices.forEach(v => v.stop.mockClear());
+      for (let t = 0; t < 60 && ragno.logic.state === 'duct'; t += 1 / 30) ragno.onUpdate(1 / 30);
+      run(1);
+      // Only a voice reused for a new sound is stopped, never all of them at once at the end.
+      const playing = voices.filter(v => v.isPlaying).length;
+      expect(playing).toBeGreaterThan(0);
+    });
+
+    it('stops once he is out of the grille and the duct has run its time', () => {
+      intoDuct();
+      for (let t = 0; t < 60 && ragno.logic.state === 'duct'; t += 1 / 30) ragno.onUpdate(1 / 30);
+      expect(ragno.logic.state).not.toBe('duct');
+      run(1);
+      const after = plays().length;
+      run(3);
+      expect(plays().length).toBe(after);
+    });
+  });
+
+  describe('heard inside', () => {
+    it('his screech comes from where he is: full only close, falling off steeply, and not as loud as outside', () => {
+      const attack = { play: vi.fn(), stop: vi.fn(), isPlaying: false, context: { state: 'running' },
+        setVolume: vi.fn(), setDetune: vi.fn(), setRefDistance: vi.fn(), setRolloffFactor: vi.fn() };
+      build(2, { sounds: { attacks: [attack], call: null } });
+      ragno.summon({ approach: 'yard', side: 1 });
+      ragno.logic.indoors = true;
+      ragno._playAttack(1);
+      expect(attack.setRefDistance.mock.lastCall[0]).toBeLessThanOrEqual(1.5);
+      expect(attack.setRolloffFactor.mock.lastCall[0]).toBeGreaterThanOrEqual(1.5);
+      expect(attack.setVolume.mock.lastCall[0]).toBeLessThan(RAGNO_SOUNDS.attack);
+    });
+
+    it('his legs are placed the same way, and quieter', () => {
+      expect(ragno._walk.placed.refDistance).toBeLessThanOrEqual(1.5);
+      expect(ragno._walk.placed.rolloff).toBeGreaterThanOrEqual(1.5);
+      expect(RAGNO_SOUNDS.walk).toBeLessThan(0.7);
+    });
+  });
+
+  describe('heard outside', () => {
+    const call = () => ({ isPlaying: false, context: { state: 'running' }, play: vi.fn(), stop: vi.fn(),
+      setVolume: vi.fn(), setDetune: vi.fn(), setRefDistance: vi.fn(), setRolloffFactor: vi.fn() });
+    let voice;
+    beforeEach(() => {
+      voice = call();
+      build(2, { sounds: { call: voice, attacks: [] } });
+      ragno.summon({ approach: 'yard', side: 1 });
+      ragno._chirps = [{ start: 0, end: 0.3, peak: -30 }];
+    });
+
+    it('a chirp is soft, and through the walls barely there: easy to miss', () => {
+      ragno._chirp(false);
+      expect(voice.setVolume.mock.lastCall[0]).toBeLessThanOrEqual(0.15);   // the eye is in the office
+      eye.position.set(0, 1.6, 30);
+      eye.updateMatrixWorld(true);
+      ragno._chirp(false);
+      expect(voice.setVolume.mock.lastCall[0]).toBeLessThanOrEqual(0.5);
+    });
+
   });
 
   describe('the player outside', () => {
