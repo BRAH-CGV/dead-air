@@ -44,7 +44,7 @@ import { WallClock } from '../../gameobjects/WallClock.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { GlobeSpin } from '../../components/GlobeSpin.js';
 import { deskWingOutline } from './DeskWing.js';
-import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
+import { SignalAlertLight, BULB } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { PRELOAD } from '../../assets/manifest.js';
 
@@ -630,17 +630,30 @@ describe('MainOffice', () => {
     expect(box.max.y).toBeLessThan(2.9);                   // below the ceiling
   });
 
-  it('perches a signal alert lamp above the computer desk, in sight of the room', () => {
+  it('stands the signal lamp on the desk\'s shelf beside the monitor, in sight of the chair', () => {
     const light = room.root.find('SignalAlertLight');
     expect(light).toBeInstanceOf(SignalAlertLight);
     expect(room.signalLight).toBe(light);            // the scene wires it to gameplay
 
+    // On the flat shelf left of the monitor (x −0.42 … −0.30, z −2.93 …
+    // −2.77 at 0.864 m, read off retro-computer.glb): the monitor's own top
+    // slopes, and nothing stands up on a slope.
     const pos = light.object3d.position;
-    expect(Math.abs(pos.x)).toBeLessThan(0.5);       // over the desk…
-    expect(pos.z).toBeGreaterThan(-3.05);            // …which stands at z −2.55
-    expect(pos.z).toBeLessThan(-2.05);
-    expect(pos.y).toBeGreaterThan(1.0);              // clear of the monitor
-    expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
+    expect(pos.y).toBeCloseTo(0.864, 3);
+    expect(pos.x - BULB.socket.plate).toBeGreaterThan(-0.42 - 0.03);
+    expect(pos.x + BULB.socket.plate).toBeLessThan(-0.255);          // clear of the monitor's side
+    expect(pos.z - BULB.socket.plate).toBeGreaterThan(-2.93);
+    expect(pos.z + BULB.socket.plate).toBeLessThan(-2.77);
+  });
+
+  it('dresses the lamp in the bulb model when it is loaded', () => {
+    const instance = new THREE.Group();
+    instance.add(new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshStandardMaterial({ name: 'lightbulb_01_glass' })));
+    engine.assets = { get: () => null, instantiate: key => (key === 'model:bulb' ? instance : null) };
+    const dressed = new MainOffice(engine);
+    dressed.build();
+    expect(dressed.signalLight.bulb.parent).toBe(instance);
+    expect(instance.parent).toBe(dressed.signalLight.object3d);
   });
 
   it('has a drive reader on the desk surface with a DriveSlot component', () => {

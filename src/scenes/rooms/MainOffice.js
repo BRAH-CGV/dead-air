@@ -590,11 +590,15 @@ export class MainOffice extends Room {
     populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
   }
 
-  /** Above the computer desk, where it reads from anywhere in the room. A
-   *  placeholder sphere until a proper warning-lamp model is sourced. */
+  /** A red bulb in a socket on the computer desk's shelf, just left of the
+   *  monitor, where the chair sees it. The monitor's own top slopes, so it
+   *  stands on the flat shelf beside it (0.864 m, read off the model). The
+   *  bulb model when the assets are loaded; a sphere without them. */
   _buildSignalLight() {
-    this.signalLight = this._own(new SignalAlertLight());
-    this.signalLight.object3d.position.set(-0.240, 1.090, -2.820);
+    const assets = this.engine.assets;
+    const model = assets?.instantiate ? assets.instantiate('model:bulb') : null;
+    this.signalLight = this._own(new SignalAlertLight('SignalAlertLight', { model }));
+    this.signalLight.object3d.position.set(-0.36, DESK.top, -2.85);
     this.root.addChild(this.signalLight);
   }
 

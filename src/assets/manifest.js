@@ -339,6 +339,15 @@ const PLACED = {
     url: 'assets/models/laptop.glb',
     scale: 0.5,
   },
+  // The office's signal lamp (SignalAlertLight): Poly Haven's Lightbulb 01,
+  // prepared by scripts/prep-bulb.mjs. In metres, its screw down and its
+  // origin at the glass's foot; half as big again (9 × 15 cm) to read
+  // across the office.
+  'model:bulb': {
+    type: 'model',
+    url: 'assets/models/bulb.glb',
+    scale: 1.5,
+  },
   // The bedroom's coffee machine: free3d.io's Ascaso Dream, prepared by
   // scripts/prep-coffee-machine.mjs. Modelled in its own units; 0.00264
   // would be the real machine (24.5 cm wide, 34.5 cm tall), and it is half

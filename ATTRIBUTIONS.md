@@ -291,6 +291,19 @@ by felixawani is licensed under Creative Commons Attribution
 | **Used for** | The bedroom's desk |
 | **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
 
+### Signal lamp bulb
+
+"Lightbulb 01" (https://polyhaven.com/a/lightbulb_01) by Josh Dean from Poly
+Haven, released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bulb.glb` |
+| **Manifest key** | `model:bulb` |
+| **Used for** | The office's signal lamp |
+| **Modifications** | `scripts/prep-bulb.mjs`: the glass's transmission dropped, one colour atlas for glass and base, the maker's stamp painted off the glass, simplified to half its triangles and its textures to 512 px; scaled to 1.5 at load (manifest `scale`) |
+
 ### Coffee machine — ⚠ no redistribution of the file
 
 "Coffee Machine Ascaso Dream" (https://free3d.io/model/Coffee-machine-Ascaso-Dream/d655706f)
