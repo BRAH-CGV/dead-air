@@ -74,7 +74,7 @@ function makeRadar() {
   return {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
-    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), setLockOnProgress: vi.fn(), threatAt: vi.fn(() => false),
+    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), setLockOnProgress: vi.fn(), setDriveIndicators: vi.fn(), flashIndicator: vi.fn(), threatAt: vi.fn(() => false),
   };
 }
 
@@ -535,6 +535,87 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('radar');
   });
 
+  // ── Dish pull-in ──
+
+  it('pull-in starts when Enter is pressed on a hovered signal', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+
+    term._startDishPullIn(sig);
+    expect(term._pullingIn).toBe(true);
+    expect(term._pullSignal).toBe(sig);
+    expect(term.state).toBe('radar');  // not scanning yet
+  });
+
+  it('cursor moves toward signal centre during pull-in', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    // Start from a different position than the signal.
+    term._cursorX = 0;
+    term._cursorY = 0;
+    term._startDishPullIn(sig);
+
+    // Half-way through the pull-in.
+    term._stepPullIn(0.25);
+    const target = skyToCursor(sig.yaw, sig.pitch);
+    // Cursor should have moved toward the target.
+    expect(term._cursorX).not.toBe(0);
+    // Not there yet.
+    expect(Math.abs(term._cursorX - target.x)).toBeGreaterThan(0.001);
+  });
+
+  it('pull-in completion transitions to scanning (lock-on begins)', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._startDishPullIn(sig);
+
+    // Complete the pull-in.
+    term._stepPullIn(1);
+    expect(term._pullingIn).toBe(false);
+    expect(term.state).toBe('scanning');
+    expect(term._lockOnTarget).toBe(sig);
+  });
+
+  it('WASD is frozen during pull-in', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({ KeyA: true }) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    term._startDishPullIn(sig);
+
+    term.onUpdate(1 / 60);
+    // Cursor should not have moved from WASD — pull-in overrides it.
+    // The pull-in moves the cursor toward the signal, not left.
+    expect(term._pullingIn).toBe(true);
+  });
+
+  it('exit cancels an in-progress pull-in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    term._startDishPullIn(sig);
+    expect(term._pullingIn).toBe(true);
+
+    term.exit();
+    expect(term._pullingIn).toBe(false);
+    expect(term._pullSignal).toBeNull();
+    expect(term.state).toBe('idle');
+  });
+
   // ── The evil signal hook ──
 
   /** A fake engine just wide enough for onUpdate: key states + WASD binds. */
@@ -807,11 +888,11 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('radar');
   });
 
-  it('radar hint tells the player to insert a drive when none is inserted', () => {
+  it('radar always shows the controls hint regardless of drive state', () => {
     driveMgr.driveInserted = false;
     term.enter();
     expect(radar.setHint).toHaveBeenCalledWith(
-      expect.stringContaining('Insert a drive'),
+      expect.stringContaining('WASD'),
     );
   });
 

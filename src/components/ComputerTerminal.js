@@ -1,9 +1,11 @@
+import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { cursorToSky, skyToCursor } from '../gameobjects/DishRig.js';
 import { paintDom } from '../ui/paintDom.js';
+import { SCANNER_ALERT } from './ScannerAlertSound.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -45,6 +47,9 @@ const NO_POWER_LABEL = 'No power — restore it at the generator outside';
 
 /** Base seconds the lock-on phase takes before scanning begins (randomised ±25%). */
 const LOCK_ON_BASE_SECONDS = 3;
+
+/** Seconds the dish takes to slew to the signal centre before lock-on. */
+const PULL_IN_SECONDS = 0.5;
 
 /** Randomise a duration within ±25% of its base value. */
 function randomiseDuration(base) {
@@ -96,6 +101,18 @@ export class ComputerTerminal extends Component {
 
   /** The signal currently being locked on (null when not in lock-on). */
   _lockOnTarget = null;
+
+  /** True while the dish is being pulled to a signal's centre before
+   *  lock-on begins.  WASD and Enter are frozen during this. */
+  _pullingIn = false;
+  /** Seconds remaining on the dish pull-in animation. */
+  _pullTimer = 0;
+  /** Cursor position at pull-in start (lerp origin). */
+  _pullStartCursor = null;
+  /** Cursor position at pull-in end (signal centre). */
+  _pullTargetCursor = null;
+  /** The signal the dish is being pulled toward. */
+  _pullSignal = null;
 
   /** Cursor position in Cartesian unit-circle coords: x -1..+1 (left..right),
    *  y -1..+1 (down..up). The disc's centre (0, 0) is the zenith and its rim
@@ -156,6 +173,9 @@ export class ComputerTerminal extends Component {
   /** Exit the terminal back to IDLE (Q key). */
   exit() {
     if (this.state === 'idle') return;
+    // Cancel any in-progress dish pull-in.
+    this._pullingIn = false;
+    this._pullSignal = null;
     // Exiting during lock-on: auto-complete it so the satellite starts
     // scanning in the background — the dish was already aimed when the
     // player pressed Enter, so the visual lock-on is no longer needed.
@@ -292,17 +312,39 @@ export class ComputerTerminal extends Component {
     this.radar?.show();
     // Lean in to the screen the radar is drawn on.
     if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
-    // Check drive state first — scanning requires a drive in the reader,
-    // and a drive with a signal already on it blocks further scanning.
-    if (this.driveManager && !this.driveManager.driveInserted) {
-      this.radar?.setHint('Insert a drive into the reader on the desk | Q: exit');
-    } else if (this.driveManager?.insertedDriveHasSignal) {
-      this.radar?.setHint('Drive full — delete signal in ServerRoom | Q: exit');
-    } else {
-      this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
-    }
+    this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
     this.radar?.setInfo('');
     this._hoveredSignal = null;
+  }
+
+  // ── Dish pull-in (slew to signal centre before lock-on) ─────────
+
+  /** Start the pull-in animation: the cursor and dish are dragged from
+   *  their current position to the signal's centre on the radar disc.
+   *  When the animation completes, _enterScanning() fires normally. */
+  _startDishPullIn(sig) {
+    this._pullStartCursor = { x: this._cursorX, y: this._cursorY };
+    this._pullTargetCursor = skyToCursor(sig.yaw, sig.pitch);
+    this._pullSignal = sig;
+    this._pullTimer = PULL_IN_SECONDS;
+    this._pullingIn = true;
+  }
+
+  /** Advance the pull-in animation by `dt` seconds.  When the timer
+   *  expires, transitions to scanning (lock-on begins). */
+  _stepPullIn(dt) {
+    if (!this._pullingIn || !this._pullSignal) return;
+    this._pullTimer -= dt;
+    const t = 1 - Math.max(0, this._pullTimer) / PULL_IN_SECONDS;  // 0→1
+    const x = this._pullStartCursor.x + (this._pullTargetCursor.x - this._pullStartCursor.x) * t;
+    const y = this._pullStartCursor.y + (this._pullTargetCursor.y - this._pullStartCursor.y) * t;
+    this.setCursorPosition(x, y);
+    if (this._pullTimer <= 0) {
+      this._pullingIn = false;
+      const sig = this._pullSignal;
+      this._pullSignal = null;
+      if (sig) this._enterScanning();
+    }
   }
 
   _enterScanning() {
@@ -372,9 +414,9 @@ export class ComputerTerminal extends Component {
       const kb = engine.keyBinds;
 
       // WASD moves the cursor — unless the evil signal has the dish held
-      // (EvilSignal.locked) or is pulling the cursor in (EvilSignal.pullingIn):
-      // the cursor, and so the array, stays frozen.
-      if (!this.evilSignal?.locked && !this.evilSignal?.pullingIn) {
+      // (EvilSignal.locked), is pulling the cursor in (EvilSignal.pullingIn),
+      // or the terminal's own dish pull-in is running.
+      if (!this.evilSignal?.locked && !this.evilSignal?.pullingIn && !this._pullingIn) {
         this.moveCursor({
           left:  !!keys[kb.left],
           right: !!keys[kb.right],
@@ -390,21 +432,32 @@ export class ComputerTerminal extends Component {
       // either saves to the drive (red) or pins the dish to it for a while.
       this.evilSignal?.hover(this._hoveredSignal?.evil ? this._hoveredSignal : null);
 
+      // Dish pull-in: slew the cursor and dish to the signal's centre
+      // before lock-on begins.  Runs before hover/Enter so the cursor
+      // arrives and the scanning phase can start on the same frame.
+      if (this._pullingIn) {
+        this._stepPullIn(dt);
+        this._updateHover();
+        this.evilSignal?.hover(this._hoveredSignal?.evil ? this._hoveredSignal : null);
+        if (!this.screen) this._updateRadarDisplay();
+        return;
+      }
+
       // Enter key starts scanning if hovering and a dish of the array is
       // aimed. The evil signal scans itself — Enter ignores it.
       const enterDown = !!engine.input.keys['Enter'] || !!engine.input.keys['NumpadEnter'];
-      if (enterDown && !this._enterHeld && this._hoveredSignal && !this._hoveredSignal.evil && this.satellite) {
+      if (enterDown && !this._enterHeld && !this._pullingIn && this._hoveredSignal && !this._hoveredSignal.evil && this.satellite) {
         // Scanning requires a drive in the reader, and the drive must not
         // already have a signal on it.
         if (this.driveManager && !this.driveManager.driveInserted) {
-          this.radar?.setInfo('No drive inserted — scan blocked');
+          this.radar?.flashIndicator?.('drive');
         } else if (this.driveManager?.insertedDriveHasSignal) {
-          this.radar?.setInfo('Drive full — delete signal first');
+          this.radar?.flashIndicator?.('signal');
         } else {
           const sig = this._hoveredSignal;
           const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
           if (aimed) {
-            this._enterScanning();
+            this._startDishPullIn(sig);
           } else {
             this.radar?.setInfo('No dish aimed — wait for one to settle');
           }
@@ -544,9 +597,50 @@ export class ComputerTerminal extends Component {
     // Lock-on progress bar (left of the scan bar).
     this.radar.setLockOnProgress?.(lockOnFraction >= 0 ? lockOnFraction : 0);
 
+    // Drive indicator lights (left of the progress bars).
+    // setDriveIndicators returns true on each flash phase transition,
+    // so the caller can play a beep in sync with each blink.
+    const flashBeep = this.radar.setDriveIndicators?.(
+      this.driveManager?.driveInserted ?? false,
+      this.driveManager?.insertedDriveHasSignal ?? false,
+    );
+    if (flashBeep) this._playScanBlockedBeep();
+
     // Parking the cursor on the UFO's blob reads it out.
     const onThreat = this.radar.threatAt?.(this._cursorX, this._cursorY) ?? false;
     this.radar.setWarning?.(onThreat ? ANOMALY_WARNING : '');
+  }
+
+  // ── Audio feedback for blocked scans ────────────────────────
+
+  /** Play a short beep pitched up from the scanner-alert asset.
+   *  Called once per flash phase transition so the player hears a beep
+   *  each time the indicator light blinks red. */
+  _playScanBlockedBeep() {
+    if (!this._beepSound) this._beepSound = this._buildBeepSound();
+    const s = this._beepSound;
+    if (!s) return;
+    if (s.isPlaying) s.stop();
+    s.setDetune(500);
+    s.setVolume(0.4);
+    s.play();
+  }
+
+  /** Build a non-positional Audio from the scanner-alert buffer. */
+  _buildBeepSound() {
+    const engine = this.gameObject?.scene?.userData?.engine;
+    if (!engine?.audioListener || !engine.assets?.has?.(SCANNER_ALERT.key)) return null;
+    const audio = new THREE.Audio(engine.audioListener);
+    audio.setBuffer(engine.assets.get(SCANNER_ALERT.key));
+    return audio;
+  }
+
+  onDestroy() {
+    if (this._beepSound) {
+      if (this._beepSound.isPlaying) this._beepSound.stop();
+      try { this._beepSound.disconnect?.(); } catch (_) { /* not connected */ }
+      this._beepSound = null;
+    }
   }
 }
 

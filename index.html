@@ -446,6 +446,37 @@
         transition: height 0.1s linear;
       }
 
+      /* ── Drive indicator lights (left of progress bars) ── */
+      #radar-drive-indicators {
+        position: absolute;
+        right: 180px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        pointer-events: none;
+        user-select: none;
+      }
+      .drive-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .drive-indicator-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #333;
+        border: 1px solid rgba(0, 200, 180, 0.3);
+      }
+      .drive-indicator-label {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #556;
+      }
+
       /* ── On a screen (#161) ───────────────────────────────
          The radar, the processing console and the camera's overlay are
          what their screens in the world show: laid out here, for good, at
@@ -1414,6 +1445,16 @@
       </div>
       <div id="radar-lockon-progress">
         <div class="scan-fill"></div>
+      </div>
+      <div id="radar-drive-indicators">
+        <div class="drive-indicator">
+          <div class="drive-indicator-dot" id="drive-dot"></div>
+          <span class="drive-indicator-label">DRIVE</span>
+        </div>
+        <div class="drive-indicator">
+          <div class="drive-indicator-dot" id="signal-dot"></div>
+          <span class="drive-indicator-label">SIGNAL</span>
+        </div>
       </div>
       <canvas id="radar-canvas"></canvas>
       <div id="radar-warning"></div>

@@ -221,6 +221,11 @@ export class RadarOverlay {
     /** The box fit() was given, [width, height], or null for the window. */
     this._box = null;
     this._resizeHandler = null;
+    // Flash state for error feedback (beep + red blink on an indicator).
+    this._flashWhich = null;  // 'drive' | 'signal' | null
+    this._flashTime = 0;
+    this._flashPhase = 0;
+    this._prevFlashPhase = null;
     this._resize();
     // Resize when the window changes
     if (typeof window !== 'undefined') {
@@ -306,6 +311,85 @@ export class RadarOverlay {
     const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
     const fill = bar.querySelector('.scan-fill');
     if (fill) fill.style.height = pct + '%';
+  }
+
+  /** Update the two drive indicator lights.
+   *  Uses direct inline style writes (not CSS class toggles) because the
+   *  overlay is captured by paintDom each frame, which does not reliably
+   *  pick up class-driven style changes with transitions.
+   *  When a flash is active the targeted dot blinks red instead of its
+   *  normal colour; the flash runs for three on/off cycles then clears.
+   *  Returns true when a new flash phase starts (so the caller can play
+   *  a beep in sync with each blink).
+   *  @param {boolean} driveInserted  Whether a drive is in the reader.
+   *  @param {boolean} hasSignal       Whether the inserted drive has a signal.
+   *  @returns {boolean} True when a flash phase transition occurred. */
+  setDriveIndicators(driveInserted, hasSignal) {
+    const driveDot = this.root?.querySelector('#drive-dot');
+    const signalDot = this.root?.querySelector('#signal-dot');
+
+    // Advance flash animation if one is running.
+    let flashRed = false;
+    let phaseChanged = false;
+    if (this._flashWhich) {
+      this._flashTime += 1 / 60;
+      const phaseDur = 0.075;
+      const totalPhases = 6;  // 3 on + 3 off
+      const phase = Math.floor(this._flashTime / phaseDur);
+      if (phase >= totalPhases) {
+        this._flashWhich = null;
+        this._flashTime = 0;
+        this._flashPhase = 0;
+        this._prevFlashPhase = null;
+      } else {
+        this._flashPhase = phase;
+        flashRed = phase % 2 === 0;
+        if (this._prevFlashPhase === null || phase !== this._prevFlashPhase) {
+          this._prevFlashPhase = phase;
+          phaseChanged = true;
+        }
+      }
+    }
+
+    if (driveDot) {
+      let bg, shadow;
+      if (this._flashWhich === 'drive' && flashRed) {
+        bg = 'rgba(255, 50, 50, 0.9)';
+        shadow = '0 0 6px rgba(255, 50, 50, 0.5)';
+      } else {
+        bg = driveInserted ? 'rgba(0, 255, 200, 0.85)' : '#333';
+        shadow = driveInserted ? '0 0 6px rgba(0, 255, 200, 0.4)' : 'none';
+      }
+      if (driveDot.style.background !== bg) {
+        driveDot.style.background = bg;
+        driveDot.style.boxShadow = shadow;
+      }
+    }
+    if (signalDot) {
+      let bg, shadow;
+      if (this._flashWhich === 'signal' && flashRed) {
+        bg = 'rgba(255, 50, 50, 0.9)';
+        shadow = '0 0 6px rgba(255, 50, 50, 0.5)';
+      } else {
+        bg = hasSignal ? 'rgba(0, 255, 200, 0.85)' : '#333';
+        shadow = hasSignal ? '0 0 6px rgba(0, 255, 200, 0.4)' : 'none';
+      }
+      if (signalDot.style.background !== bg) {
+        signalDot.style.background = bg;
+        signalDot.style.boxShadow = shadow;
+      }
+    }
+
+    return phaseChanged;
+  }
+
+  /** Flash an indicator light red 3 times as error feedback.
+   *  @param {'drive'|'signal'} which  Which dot to flash. */
+  flashIndicator(which) {
+    this._flashWhich = which;
+    this._flashTime = 0;
+    this._flashPhase = 0;
+    this._prevFlashPhase = null;
   }
 
   // Only on a change: the radar is painted onto the computer's screen from

@@ -629,3 +629,94 @@ describe('RadarOverlay.setLockOnProgress', () => {
     expect(() => overlay.setLockOnProgress(0.5)).not.toThrow();
   });
 });
+
+describe('RadarOverlay.setDriveIndicators', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-drive-indicators"><div class="drive-indicator"><div class="drive-indicator-dot" id="drive-dot"></div></div><div class="drive-indicator"><div class="drive-indicator-dot" id="signal-dot"></div></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('drive dot is dark when no drive is inserted', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(false, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('drive dot glows teal when drive is inserted', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('signal dot is dark when drive has no signal', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('signal dot glows green when drive has a signal', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, true);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setDriveIndicators(true, true)).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.flashIndicator', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-drive-indicators"><div class="drive-indicator"><div class="drive-indicator-dot" id="drive-dot"></div></div><div class="drive-indicator"><div class="drive-indicator-dot" id="signal-dot"></div></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('flashes the drive dot red on the first call to setDriveIndicators', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    // First phase (0–0.075 s): red.
+    overlay.setDriveIndicators(false, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('flashes the signal dot red when told to', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('signal');
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('returns true on each flash phase transition', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    // First call: phase 0 starts → transition.
+    expect(overlay.setDriveIndicators(false, false)).toBe(true);
+    // Same frame, same phase → no transition.
+    expect(overlay.setDriveIndicators(false, false)).toBe(false);
+    // Advance into phase 1 → transition.
+    overlay._flashTime = 0.075;
+    expect(overlay.setDriveIndicators(false, false)).toBe(true);
+  });
+
+  it('returns to normal after 3 full on/off cycles (6 phases)', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    const phaseDur = 0.075;
+    // Advance through all 6 phases (3 on + 3 off) to finish the flash.
+    for (let i = 0; i < 6; i++) {
+      overlay._flashTime = (i + 1) * phaseDur;
+      overlay.setDriveIndicators(true, false);
+    }
+    // After 6 phases the flash is cleared; drive dot should be teal.
+    expect(overlay._flashWhich).toBeNull();
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.flashIndicator('drive')).not.toThrow();
+  });
+});
