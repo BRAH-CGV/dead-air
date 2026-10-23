@@ -1262,7 +1262,12 @@ describe('BaseScene occlusion — the building hides what is low behind it from 
 
   it('scenery the window sees but the yard cannot joins the interior zone — drawn only from inside', () => {
     const { occluders: occluder, eyes } = scene.yardView;
-    const behind = instancedIn('interior');
+    // The outdoor scenery the sort put there; the rooms' own furnishings
+    // (the bedroom's shelf clutter) are behind the real walls, not the
+    // occluders' shrunken stand-ins.
+    const rooms = Object.values(scene.rooms).map(room => room.root.object3d);
+    const inRoom = (o) => { for (let p = o; p; p = p.parent) if (rooms.includes(p)) return true; return false; };
+    const behind = instancedIn('interior').filter(mesh => !inRoom(mesh));
     expect(behind.length).toBeGreaterThan(0);
     for (const mesh of behind) {
       for (const sphere of instanceSpheres(mesh)) {

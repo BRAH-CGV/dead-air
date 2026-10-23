@@ -330,6 +330,64 @@ const PLACED = {
     origin: 'floor',
     physics: 'static',
   },
+  // The bedroom PC: Poly Haven's classic laptop, its lid upright, its
+  // screen facing +z. Poly Haven has it at 0.65 m wide, twice a real
+  // period laptop; 0.5 takes it to 0.33 × 0.24 m, the lid 0.27 m tall.
+  // Its origin is on the floor already.
+  'model:laptop': {
+    type: 'model',
+    url: 'assets/models/laptop.glb',
+    scale: 0.5,
+  },
+  // The office's signal lamp (SignalAlertLight): Poly Haven's Lightbulb 01,
+  // prepared by scripts/prep-bulb.mjs. In metres, its screw down and its
+  // origin at the glass's foot; half as big again (9 × 15 cm) to read
+  // across the office.
+  'model:bulb': {
+    type: 'model',
+    url: 'assets/models/bulb.glb',
+    scale: 1.5,
+  },
+  // The bedroom's coffee machine: free3d.io's Ascaso Dream, prepared by
+  // scripts/prep-coffee-machine.mjs. Modelled in its own units; 0.00264
+  // would be the real machine (24.5 cm wide, 34.5 cm tall), and it is half
+  // as big again to read across the bedroom: 0.40 × 0.52 × 0.51 m with the
+  // steam knob and the portafilter's handle. Its front faces +z.
+  'model:coffee-machine': {
+    type: 'model',
+    url: 'assets/models/coffee-machine.glb',
+    scale: 0.00396,
+    origin: 'floor',
+  },
+  // The food dispenser's plates (scripts/make-dispenser-labels.mjs): four
+  // 8:1 strips, its name, the meal bay's, the hopper's and a caution.
+  'tex:dispenser-labels': {
+    type: 'texture',
+    url: 'assets/textures/dispenser-labels.png',
+    colorSpace: 'srgb',
+  },
+  // The coffee's mug: its picture all the way round, the cat on the front
+  // (scripts/make-mug-picture.mjs). Stretched to a power of two; the mug's
+  // mapping stretches it back.
+  'tex:mug-hang-in-there': {
+    type: 'texture',
+    url: 'assets/textures/mug-hang-in-there.png',
+    colorSpace: 'srgb',
+  },
+  // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
+  // (the tables lay their UVs out in metres).
+  'tex:wood-table': {
+    type: 'texture',
+    url: 'assets/textures/wood-table.jpg',
+    colorSpace: 'srgb',
+    repeat: [1, 1],
+  },
+  'tex:wood-table-normal': {
+    type: 'texture',
+    url: 'assets/textures/wood-table-normal.jpg',
+    colorSpace: 'linear',
+    repeat: [1, 1],
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {

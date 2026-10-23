@@ -12,6 +12,9 @@ import { readFileSync } from 'node:fs';
 import { ASSETS, PRELOAD } from '../../assets/manifest.js';
 import { NAP_WATCH } from '../../gameplay/SleepDemon.js';
 import { BedroomPC } from '../../components/BedroomPC.js';
+import { LAPTOP, LAPTOP_SCREEN, COFFEE_MACHINE, CUP_SPOT } from './LivingQuarters.js';
+import { CoffeeCup, CUP } from '../../gameobjects/CoffeeCup.js';
+import { CLUTTER } from '../../gameobjects/ShelfClutter.js';
 
 function childNames(room) {
   return room.root.children.map(c => c.name);
@@ -36,7 +39,7 @@ const MODEL = {
 const RACKS = Object.keys(MODEL).filter(name => MODEL[name] === RACK);
 const SHELVES = Object.keys(MODEL).filter(name => MODEL[name] === SHELF);
 /** Everything standing on the floor: the spawned models and the procedural boxes. */
-const FURNITURE = [...Object.keys(MODEL), 'SideTable', 'CoffeeMachine'];
+const FURNITURE = [...Object.keys(MODEL), 'SideTable', 'CoffeeTable'];   // the coffee machine stands on its table
 
 /** Floor footprint {x0, x1, z0, z1} of a piece of furniture, room-local: a
  *  spawned model's MODEL size turned by its yaw, or a static box's own size. */
@@ -244,6 +247,46 @@ describe('LivingQuarters', () => {
     expect(pointLights(room).length).toBe(2);
   });
 
+  it('the side table is a table: a top on four legs, the size and place the block was', () => {
+    const table = room.root.find('SideTable');
+    expect(table.object3d.position.toArray()).toEqual([-1.45, 0.25, -3.5]);
+    expect(table._originalSize).toEqual([0.7, 0.5, 0.7]);
+    const parts = table.object3d.children.filter(o => o.isMesh);
+    expect(parts).toHaveLength(5);
+    const top = new THREE.Box3().setFromObject(table.object3d);
+    expect(top.max.y).toBeCloseTo(0.5);                                 // the clock still stands at 0.5
+    expect(top.min.y).toBeCloseTo(0);
+    expect(room.root.find('CoffeeTable').object3d.children.filter(o => o.isMesh)).toHaveLength(5);
+  });
+
+  it('both tables are worn wood: its colour and normal maps, the grain at true size along each part', () => {
+    for (const [key, space] of [['tex:wood-table', 'srgb'], ['tex:wood-table-normal', 'linear']]) {
+      expect(ASSETS[key]).toMatchObject({ type: 'texture', colorSpace: space, repeat: [1, 1] });
+      expect(PRELOAD).toContain(key);
+      expect(() => readFileSync(new URL(`../../../public/${ASSETS[key].url}`, import.meta.url))).not.toThrow();
+    }
+
+    const map = new THREE.Texture(), normalMap = new THREE.Texture();
+    engine.assets = { get: key => ({ 'tex:wood-table': map, 'tex:wood-table-normal': normalMap })[key] ?? null };
+    const dressed = new LivingQuarters(engine);
+    dressed.build();
+    for (const name of ['SideTable', 'CoffeeTable']) {
+      for (const part of dressed.root.find(name).object3d.children.filter(o => o.isMesh)) {
+        expect(part.material.map, name).toBe(map);
+        expect(part.material.normalMap, name).toBe(normalMap);
+
+        // u runs along the part's longest side, in repeats of the texture's
+        // 0.55 m (Poly Haven's), so a leg's grain runs down it.
+        part.geometry.computeBoundingBox();
+        const size = part.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+        const uv = part.geometry.getAttribute('uv');
+        let span = 0;
+        for (let i = 0; i < uv.count; i++) for (let j = 0; j < uv.count; j++) span = Math.max(span, Math.abs(uv.getX(i) - uv.getX(j)));
+        expect(span, name).toBeCloseTo(Math.max(...size) / 0.55, 5);
+      }
+    }
+  });
+
   it('a side table by the bunk, with the floor beside the bed left free to sleep from', () => {
     const table = room.root.find('SideTable');
     expect(table.rigidBody.isFixed()).toBe(true);
@@ -318,20 +361,124 @@ describe('LivingQuarters', () => {
     }
   });
 
-  it('the coffee machine: on the left wall between the bunk and the desk, facing into the room', () => {
+  it('the coffee machine: on a table on the left wall between the bunk and the desk, facing into the room', () => {
     const at = name => footprint(room.root.find(name));
-    const machine = at('CoffeeMachine'), bunk = at('Bunk'), chair = at('DeskChair');
+    const table = at('CoffeeTable'), bunk = at('Bunk'), chair = at('DeskChair');
     const inX = room.width / 2 - room.wallThick / 2;
-    expect(machine.x0).toBeCloseTo(-inX);                            // against the left wall
-    expect(machine.z0).toBeGreaterThan(bunk.z1 + 0.25);              // past the foot of the bunk
-    expect(machine.z1).toBeLessThan(chair.z0 - 0.5);                 // and short of the desk's corner
+    expect(table.x0).toBeCloseTo(-inX);                              // against the left wall
+    expect(table.z0).toBeGreaterThan(bunk.z1 + 0.25);                // past the foot of the bunk
+    expect(table.z1).toBeLessThan(chair.z0 - 0.5);                   // and short of the desk's corner
+    expect(room.root.find('CoffeeTable').rigidBody.isFixed()).toBe(true);
 
-    // Its face is on the room side: the status screen stands proud of +x.
+    // The machine stands on the table top, wholly over it, a box its size
+    // the collider the interact ray lands on.
     const go = room.root.find('CoffeeMachine');
-    const use = go.getComponent(Interactable);
-    let screen = null;
-    go.object3d.traverse(o => { if (o.isMesh && o.material === use.screen) screen = o; });
-    expect(screen.position.x).toBeGreaterThan(go._originalSize[0] / 2);
+    const top = room.root.find('CoffeeTable')._originalSize[1];
+    const machine = at('CoffeeMachine');
+    expect(go.object3d.position.y - go._originalSize[1] / 2).toBeCloseTo(top);
+    expect(go._originalSize).toEqual([COFFEE_MACHINE[2], COFFEE_MACHINE[1], COFFEE_MACHINE[0]]);
+    expect(machine.x0).toBeGreaterThanOrEqual(table.x0);
+    expect(machine.x1).toBeLessThanOrEqual(table.x1);
+    expect(machine.z0).toBeGreaterThanOrEqual(table.z0);
+    expect(machine.z1).toBeLessThanOrEqual(table.z1);
+
+    // The model, drawn only, its front (+z) turned into the room (+x).
+    const model = room.root.find('CoffeeMachineModel');
+    expect(model.physicsAssetKey).toBe('model:coffee-machine');
+    expect(model.rigidBody).toBeFalsy();
+    expect(model.object3d.position.y).toBeCloseTo(top);
+    const facing = new THREE.Vector3(0, 0, 1).applyEuler(model.object3d.rotation);
+    expect(facing.x).toBeCloseTo(1);
+  });
+
+  it('reads the coffee machine\'s size off coffee-machine.glb, at its manifest scale', () => {
+    const entry = ASSETS['model:coffee-machine'];
+    const glb = readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const box = new THREE.Box3();
+    for (const node of json.nodes.filter(n => n.mesh !== undefined)) {
+      const matrix = new THREE.Matrix4().compose(
+        new THREE.Vector3(...(node.translation ?? [0, 0, 0])),
+        new THREE.Quaternion(...(node.rotation ?? [0, 0, 0, 1])),
+        new THREE.Vector3(...(node.scale ?? [1, 1, 1])));
+      for (const prim of json.meshes[node.mesh].primitives) {
+        const { min, max } = json.accessors[prim.attributes.POSITION];
+        box.union(new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...max)).applyMatrix4(matrix));
+      }
+    }
+    const size = box.getSize(new THREE.Vector3()).multiplyScalar(entry.scale);
+    expect(entry.origin).toBe('floor');
+    size.toArray().forEach((v, i) => expect(COFFEE_MACHINE[i]).toBeCloseTo(v, 3));
+  });
+
+  it('lights the machine\'s white switch as its status light, on its own copy of the material', () => {
+    const shared = Object.assign(new THREE.MeshStandardMaterial(), { name: 'Plastic_white' });
+    const chrome = Object.assign(new THREE.MeshStandardMaterial(), { name: 'Chrome' });
+    const spawn = engine.spawnModel.getMockImplementation();
+    engine.spawnModel.mockImplementation((key, opts) => {
+      const go = spawn(key, opts);
+      if (key === 'model:coffee-machine') go.object3d.add(new THREE.Mesh(new THREE.BoxGeometry(), shared), new THREE.Mesh(new THREE.BoxGeometry(), chrome));
+      return go;
+    });
+    const lit = new LivingQuarters(engine);
+    lit.build();
+
+    const meshes = [];
+    lit.root.find('CoffeeMachineModel').object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+    const [switchMesh, chromeMesh] = meshes;
+    const use = lit.coffeeMachine;
+    expect(switchMesh.material).toBe(use.screen);
+    expect(use.screen).not.toBe(shared);                           // the cached model's material is untouched
+    expect(shared.emissive.getHex()).toBe(0);
+    expect(chromeMesh.material).toBe(chrome);
+    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
+    expect(use.screen.emissiveIntensity).toBeGreaterThan(0);
+  });
+
+  it('puts the machine\'s cup on its drip tray, under the spouts, gone until a cup brews', () => {
+    const cup = room.coffeeMachine.cup;
+    expect(cup).toBeInstanceOf(CoffeeCup);
+    expect(cup.object3d.parent).toBe(room.root.find('CoffeeMachineModel').object3d);
+    expect(cup.object3d.position.toArray()).toEqual(CUP_SPOT);
+    expect(cup.object3d.visible).toBe(false);
+    // Under the spouts' tips, 0.211 m up the machine (read off
+    // coffee-machine.glb at its manifest scale), with a little to spare.
+    expect(CUP_SPOT[1] + CUP.height).toBeLessThan(0.211 - 0.005);
+    // Centred on the drip tray, which runs x −0.132 … 0.095 and z −0.079 …
+    // 0.103, its grille's top 0.092 m up (read off the .glb the same way),
+    // and clear of the machine's face behind it, at z −0.064.
+    expect(CUP_SPOT[0]).toBeCloseTo((-0.132 + 0.095) / 2, 2);
+    expect(CUP_SPOT[2]).toBeCloseTo((-0.079 + 0.103) / 2, 2);
+    expect(CUP_SPOT[1]).toBeCloseTo(0.092, 3);
+    expect(CUP_SPOT[2] - CUP.radius).toBeGreaterThan(-0.064);
+    expect(CUP_SPOT[0] + CUP.radius + CUP.handle + CUP.handleTube).toBeLessThan(0.095);   // the handle too
+
+    // Poured from the double spout's two tips, x −0.0555 and 0.0189, z 0.0266,
+    // 0.2115 m up (the .glb again): each stream starts at one.
+    const tips = cup.streams.map(stream => stream.position.toArray().map((v, i) => v + CUP_SPOT[i]));
+    expect(tips).toHaveLength(2);
+    [[-0.0555, 0.2115, 0.0266], [0.0189, 0.2115, 0.0266]].forEach((tip, i) => {
+      tip.forEach((v, k) => expect(tips[i][k]).toBeCloseTo(v, 4));
+    });
+    // They fall straight down, so each must be inside the cup's foot, with
+    // the stream's width to spare.
+    for (const stream of cup.streams) {
+      const { x, z } = stream.position;
+      expect(Math.hypot(x, z) + 0.003).toBeLessThan(CUP.footRadius - CUP.wall);
+    }
+  });
+
+  it('dresses the cup in its picture, from the asset cache', () => {
+    const entry = ASSETS['tex:mug-hang-in-there'];
+    expect(entry).toMatchObject({ type: 'texture', colorSpace: 'srgb' });
+    expect(PRELOAD).toContain('tex:mug-hang-in-there');
+    expect(() => readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url))).not.toThrow();
+
+    const picture = new THREE.Texture();
+    engine.assets = { get: key => (key === 'tex:mug-hang-in-there' ? picture : null) };
+    const dressed = new LivingQuarters(engine);
+    dressed.build();
+    expect(dressed.coffeeMachine.cup.object3d.getObjectByName('CupWall').material.map).toBe(picture);
   });
 
   it("makes the machine usable: it is the room's CoffeeMachine, raycastable, its screen lit by what it is doing", () => {
@@ -347,18 +494,46 @@ describe('LivingQuarters', () => {
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 
-  it('marks the computer\'s screen (#161): the monitor model\'s face, turned to the chair', () => {
+  it('marks the computer\'s screen (#161): the laptop\'s face, turned to the chair', () => {
     const [tl, tr, , bl] = room.pcScreen.worldCorners();
     expect(room.pcScreen.object).toBe(room.root.find('BedroomPCModel').object3d);
-    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
-    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.224, 3);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.183, 3);
     expect(tl.y).toBeGreaterThan(bl.y);
     // Facing the chair, which is at −x.
     const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
     expect(normal.x).toBeCloseTo(-1);
   });
 
-  it('puts the computer on the desk (#114): a monitor facing the chair, the BedroomPC on it', () => {
+  it('reads the laptop\'s screen and size off laptop.glb, at its manifest scale', () => {
+    const entry = ASSETS['model:laptop'];
+    const glb = readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const s = entry.scale;
+    // Every primitive's bounds, moved by its node and scaled: metres in the model's root.
+    const parts = json.nodes.flatMap(node => json.meshes[node.mesh].primitives.map(prim => {
+      const { min, max } = json.accessors[prim.attributes.POSITION];
+      const t = node.translation ?? [0, 0, 0];
+      return {
+        material: json.materials[prim.material].name,
+        min: min.map((v, i) => (v + t[i]) * s),
+        max: max.map((v, i) => (v + t[i]) * s),
+      };
+    }));
+    const screen = parts.find(p => p.material === 'classic_laptop_screen');
+    const [tl, tr, br, bl] = LAPTOP_SCREEN;
+    expect(tl).toEqual([expect.closeTo(screen.min[0], 4), expect.closeTo(screen.max[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(tr).toEqual([expect.closeTo(screen.max[0], 4), expect.closeTo(screen.max[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(br).toEqual([expect.closeTo(screen.max[0], 4), expect.closeTo(screen.min[1], 4), expect.closeTo(screen.max[2], 4)]);
+    expect(bl).toEqual([expect.closeTo(screen.min[0], 4), expect.closeTo(screen.min[1], 4), expect.closeTo(screen.max[2], 4)]);
+
+    // LAPTOP is the whole model's width, height and depth.
+    const min = [0, 1, 2].map(i => Math.min(...parts.map(p => p.min[i])));
+    const max = [0, 1, 2].map(i => Math.max(...parts.map(p => p.max[i])));
+    LAPTOP.forEach((size, i) => expect(size).toBeCloseTo(max[i] - min[i], 3));
+  });
+
+  it('puts the computer on the desk (#114): a laptop facing the chair, the BedroomPC on it', () => {
     const go = room.root.find('BedroomPC');
     expect(go).toBeTruthy();
     expect(room.pc).toBeInstanceOf(BedroomPC);
@@ -376,16 +551,38 @@ describe('LivingQuarters', () => {
     const lamp = room.root.find('DeskLamp').object3d.position;
     expect(overlaps(pc, { x0: lamp.x - 0.12, x1: lamp.x + 0.12, z0: lamp.z - 0.12, z1: lamp.z + 0.12 })).toBe(false);
 
-    // The placeholder screen is the security monitor's model, drawn only,
-    // its screen (+z) turned to the chair.
+    // The laptop, drawn only, its screen (+z) turned to the chair; the box
+    // round it is the laptop's size.
     const model = room.root.find('BedroomPCModel');
-    expect(model.physicsAssetKey).toBe('model:camera-monitor');
+    expect(model.physicsAssetKey).toBe('model:laptop');
+    expect(go._originalSize).toEqual([LAPTOP[2], LAPTOP[1], LAPTOP[0]]);
     expect(model.rigidBody).toBeFalsy();
     expect(model.object3d.position.y).toBeCloseTo(0.79);
     const chair = room.root.find('DeskChair').object3d.position;
     const facing = new THREE.Vector3(0, 0, 1).applyEuler(model.object3d.rotation);
     const toChair = new THREE.Vector3(chair.x - model.object3d.position.x, 0, chair.z - model.object3d.position.z).normalize();
     expect(facing.dot(toChair)).toBeGreaterThan(0.95);
+  });
+
+  it('fills every rack and both small shelves with clutter, each thing standing in its own shelf', () => {
+    const group = room.root.find('ShelfClutter');
+    expect(group).toBeTruthy();
+    const meshes = group.object3d.children.filter(o => o.isInstancedMesh);
+    expect(meshes.length).toBeGreaterThan(4);
+    expect(meshes.length).toBeLessThanOrEqual(Object.keys(CLUTTER).length);   // a draw call a kind, at most
+
+    const shelves = [...RACKS, ...SHELVES].map(name => ({ name, print: footprint(room.root.find(name)), count: 0 }));
+    const m = new THREE.Matrix4(), at = new THREE.Vector3();
+    for (const mesh of meshes) {
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        at.setFromMatrixPosition(m);
+        const home = shelves.find(({ print: f }) => at.x > f.x0 && at.x < f.x1 && at.z > f.z0 && at.z < f.z1);
+        expect(home, `${mesh.name} #${i} at ${at.toArray().map(v => v.toFixed(2))}`).toBeDefined();
+        home.count++;
+      }
+    }
+    for (const { name, count } of shelves) expect(count, name).toBeGreaterThan(6);
   });
 
   it('stands the furniture apart, nothing overlapping', () => {

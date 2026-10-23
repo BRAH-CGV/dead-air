@@ -26,7 +26,7 @@ import { paintDom } from '../ui/paintDom.js';
 //   pc.screenView = screenView;        // leans in to its screen (#161)
 //   pc.screen     = rooms.LivingQuarters.pcScreen;
 //
-// On a screen (#161) the panel is what the monitor shows in the world,
+// On a screen (#161) the panel is what the laptop shows in the world,
 // whether or not anyone is at it (paintScreen, for a ScreenCanvas); using
 // it leans the view in, and closing it leans back out.
 //
@@ -67,11 +67,11 @@ export class BedroomPC extends Interactable {
   /** @type {ReturnType<import('../ui/colonyMap.js').colonyMap>|null} */
   map = null;
 
-  /** Leans the view in to the monitor's screen (#161). Without one (tests,
+  /** Leans the view in to the laptop's screen (#161). Without one (tests,
    *  other scenes) the panel goes over the whole view.
    *  @type {import('./ScreenView.js').ScreenView|null} */
   screenView = null;
-  /** The monitor's screen, for screenView. */
+  /** The laptop's screen, for screenView. */
   screen = null;
 
   /** True while the panel is up. */
@@ -156,7 +156,7 @@ export class BedroomPC extends Interactable {
     try { this.click?.disconnect?.(); } catch (_) { /* never connected */ }
   }
 
-  /** The monitor's screen (ScreenCanvas): the panel drawn for tonight,
+  /** The laptop's screen (ScreenCanvas): the panel drawn for tonight,
    *  again only when that changes, then painted from its DOM. */
   paintScreen(ctx, w, h) {
     const data = this._data();

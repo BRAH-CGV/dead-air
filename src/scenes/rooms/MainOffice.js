@@ -13,6 +13,7 @@ import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
+import { buildFoodDispenser, DISPENSER } from '../../gameobjects/FoodDispenser.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { screenSurface } from '../../components/ScreenView.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
@@ -332,38 +333,20 @@ export class MainOffice extends Room {
     this._buildDriveBoxes();
   }
 
-  /** Where food will come from: a machine that turns the grow beds' crop
-   *  into meals (#109). Until that is built it does nothing, and only says
-   *  what it is — stamina comes from the bedroom's coffee machine. Built
-   *  here rather than imported — the downloaded vending machine is a broken
-   *  fragment. The body is the collider the interact ray hits; the face
-   *  details are plain meshes on it. */
+  /** Where food will come from: a nutrient processor that turns the grow
+   *  beds' crop into meals (#109), built beside them (FoodDispenser: a hopper
+   *  for the crop, a lit process window, a meal bay with a tray waiting).
+   *  Until it is wired up it does nothing, and only says what it is —
+   *  stamina comes from the bedroom's coffee machine. One box is its
+   *  collider, the one the interact ray hits; the machine is drawn on it. */
   _buildFoodDispenser() {
-    const body = this._own(new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.55, metalness: 0.4 }));
-    const size = [0.7, 1.9, 0.9];
-    const go = this._addStaticBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, body);
-
-    // Front face is +x, into the room; positions are relative to the body's
-    // centre, 0.95 m up.
-    const front = size[0] / 2;
-    const detail = (geometry, material, position) => {
-      const mesh = new THREE.Mesh(this._own(geometry), material);
-      mesh.position.set(...position);
-      go.object3d.add(mesh);
-      return mesh;
-    };
-    const dark  = this._own(new THREE.MeshStandardMaterial({ color: 0x0c0e10, roughness: 0.9 }));
-    const glass = this._own(new THREE.MeshStandardMaterial({
-      color: 0x0a140e, emissive: 0x6dff9c, emissiveIntensity: 0.9, roughness: 0.3,
-    }));
-    const light = this._own(new THREE.MeshStandardMaterial({
-      color: 0x200808, emissive: 0xff5a3c, emissiveIntensity: 1.4,
-    }));
-
-    detail(new THREE.BoxGeometry(0.02, 0.34, 0.56), glass, [front + 0.01, 0.4, 0]);       // status screen
-    detail(new THREE.BoxGeometry(0.03, 0.08, 0.08), light, [front + 0.015, 0.05, 0.2]);   // dispense button
-    detail(new THREE.BoxGeometry(0.04, 0.22, 0.5), dark, [front + 0.02, -0.35, 0]);       // hatch
-    detail(new THREE.BoxGeometry(0.16, 0.03, 0.56), body, [front + 0.08, -0.47, 0]);      // tray lip
+    const size = DISPENSER.size;
+    const go = this._addTurnedBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, 0);
+    buildFoodDispenser(go.object3d, {
+      own: r => this._own(r),
+      labels: this.engine.assets?.get('tex:dispenser-labels') ?? null,
+      ceiling: this.height,
+    });
 
     // A label under the crosshair, nothing to press yet.
     const label = new Interactable();
@@ -594,11 +577,15 @@ export class MainOffice extends Room {
     populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
   }
 
-  /** Above the computer desk, where it reads from anywhere in the room. A
-   *  placeholder sphere until a proper warning-lamp model is sourced. */
+  /** A red bulb in a socket on the computer desk's shelf, just left of the
+   *  monitor, where the chair sees it. The monitor's own top slopes, so it
+   *  stands on the flat shelf beside it (0.864 m, read off the model). The
+   *  bulb model when the assets are loaded; a sphere without them. */
   _buildSignalLight() {
-    this.signalLight = this._own(new SignalAlertLight());
-    this.signalLight.object3d.position.set(-0.240, 1.090, -2.820);
+    const assets = this.engine.assets;
+    const model = assets?.instantiate ? assets.instantiate('model:bulb') : null;
+    this.signalLight = this._own(new SignalAlertLight('SignalAlertLight', { model }));
+    this.signalLight.object3d.position.set(-0.36, DESK.top, -2.85);
     this.root.addChild(this.signalLight);
   }
 
