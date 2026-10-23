@@ -148,6 +148,12 @@ export class ComputerTerminal extends Component {
     if (this.state !== 'idle' || !this.powered) return;
     // Background scan still running on the satellite — resume the scanning UI.
     if (this.satellite?.isScanning && this.satellite?.scanTarget) {
+      // Drive removed during background scan — reset without saving.
+      if (this._driveRemovedDuringScan()) {
+        this._cleanupState();
+        this._enterRadar();
+        return;
+      }
       this._hoveredSignal = this.satellite.scanTarget;
       this.state = 'scanning';
       this._setInputLocked(true);
@@ -385,6 +391,13 @@ export class ComputerTerminal extends Component {
     }
   }
 
+  /** True when a driveManager is wired and its drive was removed during an
+   *  active lock-on or scan — the signal must NOT be saved; the process
+   *  resets so the player can re-insert and try again. */
+  _driveRemovedDuringScan() {
+    return this.driveManager && !this.driveManager.driveInserted;
+  }
+
   // ──────────────────────────────────────────────────────────
   // Per-frame update
   // ──────────────────────────────────────────────────────────
@@ -395,6 +408,13 @@ export class ComputerTerminal extends Component {
 
     // ── IDLE: handled by the Interactable component (onInteract hook) ──
     if (this.state === 'idle') {
+      // Drive removed during a background scan or lock-on — stop immediately.
+      const backgroundActive = this.satellite?.isScanning || this.satellite?._scanComplete || this._lockOnTarget;
+      if (backgroundActive && this._driveRemovedDuringScan()) {
+        this._cleanupState();
+        if (!this.screen) this._updateRadarDisplay();
+        return;
+      }
       // Background scan completed while the terminal was closed.
       if (this.satellite?._scanComplete) {
         this._hoveredSignal = this.satellite.scanTarget;
@@ -495,6 +515,15 @@ export class ComputerTerminal extends Component {
 
     // ── SCANNING: two phases — lock-on (dish focuses) then scan ──
     if (this.state === 'scanning') {
+
+      // Drive removed during scanning — reset to radar without saving.
+      if (this._driveRemovedDuringScan()) {
+        this._cleanupState();
+        this.state = 'radar';
+        this.radar?.setInfo('Drive removed — insert a drive to scan');
+        if (!this.screen) this._updateRadarDisplay();
+        return;
+      }
 
       // ── Phase 1: Lock-on ──
       if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {

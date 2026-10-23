@@ -903,6 +903,153 @@ describe('ComputerTerminal', () => {
     );
   });
 
+  it('drive removed during lock-on resets to radar without saving', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    expect(term.state).toBe('scanning');
+    expect(term._lockOnTarget).toBe(sig);
+
+    // Simulate drive removal.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Reset to radar — signal NOT saved.
+    expect(term.state).toBe('radar');
+    expect(sig.saved).toBeFalsy();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(term._lockOnTarget).toBeNull();
+  });
+
+  it('drive removed during scan resets to radar without saving', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    expect(term.state).toBe('scanning');
+
+    // Simulate drive removal mid-scan.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Reset to radar — signal NOT saved.
+    expect(term.state).toBe('radar');
+    expect(sig.saved).toBeFalsy();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+  });
+
+  it('drive removed during background scan prevents save on completion', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+
+    // Exit — scan keeps going in background.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Satellite finishes the scan while the terminal is closed.
+    sat.scanProgress = sig.scanTime;
+    sig.scanned = true;
+    sat.isScanning = false;
+    sat._scanComplete = true;
+
+    // Drive removed before the idle handler processes the completion.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Signal NOT saved — drive was gone.
+    expect(sig.saved).toBeFalsy();
+    expect(driveMgr.saveToDrive).not.toHaveBeenCalled();
+    // Satellite state cleaned up.
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat._scanComplete).toBe(false);
+  });
+
+  it('re-entering during background scan with drive removed resets to radar', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Drive removed while terminal is closed.
+    driveMgr.driveInserted = false;
+
+    // Re-enter — should go to radar, not resume scanning.
+    term.enter();
+    expect(term.state).toBe('radar');
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+  });
+
+  it('drive removal stops a background scan immediately', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going in background.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Drive removed.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // One idle-frame tick — the scan must stop right away.
+    term.onUpdate(1 / 60);
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
+    // Signal was NOT saved.
+    expect(sig.saved).toBeFalsy();
+  });
+
   // ── EXIT ──
 
   it('exit from any state returns to idle', () => {
