@@ -75,6 +75,7 @@ function makeRadar() {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
     setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), setLockOnProgress: vi.fn(), setDriveIndicators: vi.fn(), flashIndicator: vi.fn(), threatAt: vi.fn(() => false),
+    setBarColor: vi.fn(),
   };
 }
 
@@ -516,7 +517,7 @@ describe('ComputerTerminal', () => {
     expect(term._lockOnTarget).toBe(sig);
   });
 
-  it('radar info explains a missing lock when no dish of the array is aimed', () => {
+  it('no pull-in starts when no dish of the array is aimed', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -530,8 +531,6 @@ describe('ComputerTerminal', () => {
     // Drive the Enter gate exactly as onUpdate does for a hovering signal.
     const aimed = sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
     expect(aimed).toBe(false);
-    term.radar.setInfo('No dish aimed — wait for one to settle');
-    expect(radar.setInfo).toHaveBeenCalledWith('No dish aimed — wait for one to settle');
     expect(term.state).toBe('radar');
   });
 
@@ -1317,5 +1316,56 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
     expect(sat.scanProgress).toBe(0);
+  });
+});
+
+describe('ComputerTerminal evil bar guard', () => {
+  function makeEngine() {
+    return {
+      input: { keys: {} }, keyBinds: { left: 'KeyA', right: 'KeyD', forward: 'KeyW', back: 'KeyS', jump: 'Space', crouch: 'KeyC' },
+      player: { getComponent: () => ({ inputLocked: false }) },
+      audioListener: null, assets: { has: () => false },
+    };
+  }
+
+  it('_updateRadarDisplay skips bar writes while _evilBarsActive is true', () => {
+    const term = new ComputerTerminal();
+    const radar = makeRadar();
+    const mgr = { signals: [{ id: 1, yaw: 0, pitch: -Math.PI / 4, tolerance: 0.2, resolved: false, opacity: 1, scanTime: 6 }] };
+    const sat = { currentYaw: 0, currentPitch: 0, isScanning: false, scanTarget: null, scanProgress: 0, neighbours: [], rig: null, isRotating: () => false, _scanComplete: false };
+    term.radar = radar;
+    term.signalManager = mgr;
+    term.satellite = sat;
+    term.driveManager = makeDriveManager();
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // Activate the evil bar guard.
+    term._evilBarsActive = true;
+
+    // Drive a full display update.
+    term._updateRadarDisplay();
+
+    // The bars were NOT written — the evil signal owns them.
+    expect(radar.setScanProgress).not.toHaveBeenCalled();
+    expect(radar.setLockOnProgress).not.toHaveBeenCalled();
+  });
+
+  it('_updateRadarDisplay writes bars normally when _evilBarsActive is false', () => {
+    const term = new ComputerTerminal();
+    const radar = makeRadar();
+    const mgr = { signals: [] };
+    const sat = { currentYaw: 0, currentPitch: 0, isScanning: false, scanTarget: null, scanProgress: 0, neighbours: [], rig: null, isRotating: () => false, _scanComplete: false };
+    term.radar = radar;
+    term.signalManager = mgr;
+    term.satellite = sat;
+    term.driveManager = makeDriveManager();
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // Default: no evil bars active.
+    term._updateRadarDisplay();
+
+    // The bars ARE written.
+    expect(radar.setScanProgress).toHaveBeenCalled();
+    expect(radar.setLockOnProgress).toHaveBeenCalled();
   });
 });

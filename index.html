@@ -361,6 +361,26 @@
         letter-spacing: 0.06em;
       }
 
+      /* ── Evil signal "LET ME IN" flashing text ──────────── */
+      #radar-let-me-in {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 10;
+      }
+      .let-me-in-text {
+        position: absolute;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        color: #ff2222;
+        text-shadow: 0 0 6px #ff0000, 0 0 14px #cc0000;
+        opacity: 0;
+        white-space: nowrap;
+        user-select: none;
+        transform: translate(-50%, -50%);
+      }
+
       /* ── Radar telemetry (left-side readouts) ─────────── */
       #radar-telemetry {
         position: absolute;
@@ -1456,6 +1476,7 @@
           <span class="drive-indicator-label">SIGNAL</span>
         </div>
       </div>
+      <div id="radar-let-me-in"></div>
       <canvas id="radar-canvas"></canvas>
       <div id="radar-warning"></div>
       <div id="radar-info"></div>

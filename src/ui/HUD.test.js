@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HUD, RadarOverlay, RadarTelemetry } from './HUD.js';
 import {
   DishRig,
@@ -630,6 +630,35 @@ describe('RadarOverlay.setLockOnProgress', () => {
   });
 });
 
+describe('RadarOverlay.setBarColor', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-scan-progress"><div class="scan-fill"></div></div><div id="radar-lockon-progress"><div class="scan-fill"></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('sets the fill background on both bars', () => {
+    const overlay = makeOverlay();
+    overlay.setBarColor('rgba(255, 40, 40, 0.9)');
+    const fills = overlay.root.querySelectorAll('.scan-fill');
+    expect(fills[0].style.background).toBe('rgba(255, 40, 40, 0.9)');
+    expect(fills[1].style.background).toBe('rgba(255, 40, 40, 0.9)');
+  });
+
+  it('restores the default colour', () => {
+    const overlay = makeOverlay();
+    overlay.setBarColor('rgba(255, 40, 40, 0.9)');
+    overlay.setBarColor('rgba(0, 255, 200, 0.7)');
+    const fills = overlay.root.querySelectorAll('.scan-fill');
+    expect(fills[0].style.background).toBe('rgba(0, 255, 200, 0.7)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setBarColor('red')).not.toThrow();
+  });
+});
+
 describe('RadarOverlay.setDriveIndicators', () => {
   function makeOverlay() {
     const root = document.createElement('div');
@@ -718,5 +747,62 @@ describe('RadarOverlay.flashIndicator', () => {
   it('does not throw when the element is missing', () => {
     const overlay = new RadarOverlay(null);
     expect(() => overlay.flashIndicator('drive')).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.startLetMeIn / stopLetMeIn', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-let-me-in"></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('creates text elements inside the container', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    const container = overlay.root.querySelector('#radar-let-me-in');
+    expect(container.querySelectorAll('.let-me-in-text').length).toBe(6);
+    overlay.stopLetMeIn();
+  });
+
+  it('sets the active flag', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    expect(overlay._letMeInActive).toBe(true);
+    overlay.stopLetMeIn();
+    expect(overlay._letMeInActive).toBe(false);
+  });
+
+  it('stopLetMeIn hides all texts', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    // Advance past the first stagger so at least one text is visible.
+    vi.advanceTimersByTime(500);
+    overlay.stopLetMeIn();
+    for (const item of overlay._letMeInItems) {
+      expect(item.el.style.opacity).toBe('0');
+      expect(item.visible).toBe(false);
+    }
+  });
+
+  it('is idempotent — calling start twice does not duplicate elements', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    overlay.startLetMeIn();
+    const container = overlay.root.querySelector('#radar-let-me-in');
+    expect(container.querySelectorAll('.let-me-in-text').length).toBe(6);
+    overlay.stopLetMeIn();
+  });
+
+  it('is null-safe when the container is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.startLetMeIn()).not.toThrow();
+    expect(() => overlay.stopLetMeIn()).not.toThrow();
   });
 });

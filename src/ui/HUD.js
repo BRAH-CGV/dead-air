@@ -226,6 +226,12 @@ export class RadarOverlay {
     this._flashTime = 0;
     this._flashPhase = 0;
     this._prevFlashPhase = null;
+    // "LET ME IN" flashing text (evil signal lock).
+    this._letMeInContainer = root?.querySelector('#radar-let-me-in') ?? null;
+    /** @type {{ el: HTMLElement, baseX: number, baseY: number, timer: number|null, visible: boolean }[]} */
+    this._letMeInItems = [];
+    this._letMeInActive = false;
+    this._letMeInRafId = null;
     this._resize();
     // Resize when the window changes
     if (typeof window !== 'undefined') {
@@ -311,6 +317,16 @@ export class RadarOverlay {
     const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
     const fill = bar.querySelector('.scan-fill');
     if (fill) fill.style.height = pct + '%';
+  }
+
+  /** Change the fill colour of both progress bars at once (direct inline
+   *  style write — paintDom does not reliably pick up class toggles).
+   *  Pass the CSS colour string; pass the default to restore. */
+  setBarColor(color) {
+    for (const id of ['#radar-scan-progress', '#radar-lockon-progress']) {
+      const fill = this.root?.querySelector(`${id} .scan-fill`);
+      if (fill) fill.style.background = color;
+    }
   }
 
   /** Update the two drive indicator lights.
@@ -412,6 +428,89 @@ export class RadarOverlay {
     if (!this._warning) return;
     if (next) this._warning.textContent = next;
     this._warning.classList.toggle('is-shown', !!next);
+  }
+
+  /** Start flashing "LET ME IN" texts at random positions inside the
+   *  radar overlay.  Called by EvilSignal when the lock begins (pull-in
+   *  or engage); the texts appear on the in-world computer screen via
+   *  paintDom.  Idempotent — calling while already active is a no-op. */
+  startLetMeIn() {
+    if (this._letMeInActive) return;
+    this._letMeInActive = true;
+    if (!this._letMeInContainer) return;
+
+    const TEXT_COUNT = 6;
+    const FLASH_MIN = 80, FLASH_MAX = 250;
+    const PAUSE_MIN = 50, PAUSE_MAX = 300;
+    const SIZE_MIN = 16, SIZE_MAX = 48;
+    const VIBRATE_PX = 4;
+
+    // Create the text elements if they don't exist yet.
+    if (this._letMeInItems.length === 0) {
+      for (let i = 0; i < TEXT_COUNT; i++) {
+        const el = document.createElement('span');
+        el.className = 'let-me-in-text';
+        el.textContent = 'LET ME IN';
+        this._letMeInContainer.appendChild(el);
+        this._letMeInItems.push({ el, baseX: 0, baseY: 0, timer: null, visible: false });
+      }
+    }
+
+    const scheduleFlash = (item, delayMs = 0) => {
+      item.timer = setTimeout(() => {
+        if (!this._letMeInActive) return;
+        item.baseX = 8 + Math.random() * 84;
+        item.baseY = 8 + Math.random() * 84;
+        const size = SIZE_MIN + Math.random() * (SIZE_MAX - SIZE_MIN);
+        item.el.style.left = `${item.baseX}%`;
+        item.el.style.top = `${item.baseY}%`;
+        item.el.style.fontSize = `${size}px`;
+        item.el.style.opacity = '1';
+        item.visible = true;
+
+        const dur = FLASH_MIN + Math.random() * (FLASH_MAX - FLASH_MIN);
+        item.timer = setTimeout(() => {
+          item.el.style.opacity = '0';
+          item.visible = false;
+          const pause = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
+          scheduleFlash(item, pause);
+        }, dur);
+      }, delayMs);
+    };
+
+    // Stagger the first flash for each text.
+    for (const item of this._letMeInItems) {
+      scheduleFlash(item, Math.random() * 400);
+    }
+
+    // Vibration loop — jitters every visible text each frame.
+    const vibrate = () => {
+      if (!this._letMeInActive) return;
+      for (const item of this._letMeInItems) {
+        if (!item.visible) continue;
+        const jx = (Math.random() - 0.5) * 2 * VIBRATE_PX;
+        const jy = (Math.random() - 0.5) * 2 * VIBRATE_PX;
+        item.el.style.left = `${item.baseX + jx * 0.3}%`;
+        item.el.style.top = `${item.baseY + jy * 0.3}%`;
+      }
+      this._letMeInRafId = requestAnimationFrame(vibrate);
+    };
+    this._letMeInRafId = requestAnimationFrame(vibrate);
+  }
+
+  /** Stop the flashing "LET ME IN" texts and hide them. */
+  stopLetMeIn() {
+    this._letMeInActive = false;
+    for (const item of this._letMeInItems) {
+      clearTimeout(item.timer);
+      item.timer = null;
+      item.el.style.opacity = '0';
+      item.visible = false;
+    }
+    if (this._letMeInRafId !== null) {
+      cancelAnimationFrame(this._letMeInRafId);
+      this._letMeInRafId = null;
+    }
   }
 
   /** Is the cursor (unit-circle coords, as the terminal keeps it) over the

@@ -24,7 +24,7 @@ function makeDrive() {
       this.saved = saved;
       this.corrupted = saved && corrupted;
     },
-    setEjected() { this.setSaved(false); },
+    setEjected() { this.saved = false; this.corrupted = false; },
   };
 }
 
@@ -43,11 +43,12 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   };
   const signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: ['signal-1.png'] });
   signalManager.startNight(night);
-  const radar = { setInfo: vi.fn() };
+  const radar = { setInfo: vi.fn(), setLockOnProgress: vi.fn(), setScanProgress: vi.fn(), setBarColor: vi.fn(), startLetMeIn: vi.fn(), stopLetMeIn: vi.fn() };
   const terminal = {
     radar, exit: vi.fn(),
     get cursorPosition() { return { x: 0, y: 0 }; },
     setCursorPosition: vi.fn(),
+    _evilBarsActive: false,
   };
   const drives = drive ? [drive] : [];
   const driveManager = {
@@ -151,12 +152,10 @@ describe('EvilSignal hover — the dish hold', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
     expect(sig.scanned).toBe(true);
     expect(evil.locked).toBe(true);
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
 
     evil.onUpdate(2);
     expect(evil.locked).toBe(true);
     expect(satellite.aimAll).toHaveBeenCalledWith(sig.yaw, sig.pitch);
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('3'));
 
     evil.onUpdate(EVIL.lockWithDriveSeconds - 2 + 0.1);
     expect(evil.locked).toBe(false);
@@ -170,7 +169,7 @@ describe('EvilSignal hover — the dish hold', () => {
 
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil.locked).toBe(false);
     expect(sig.deleted).toBe(true);  // the signal is gone
     expect(sig.resolved).toBe(true);  // so the radar skips it
@@ -209,7 +208,7 @@ describe('EvilSignal hover — the dish hold', () => {
     expect(radar.evilLock.yaw).toBe(sig.yaw);
     expect(radar.evilLock.pitch).toBe(sig.pitch);
 
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil.locked).toBe(false);
     expect(radar.evilLock).toBeNull();
   });
@@ -241,7 +240,6 @@ describe('EvilSignal hover — the red save', () => {
     expect(drive.saved).toBe(true);
     expect(drive.corrupted).toBe(true);
     expect(evil.locked).toBe(true);  // but the lock still runs
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
 
     // The lock runs for the full duration.
     evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
@@ -264,7 +262,6 @@ describe('EvilSignal hover — the red save', () => {
     expect(drive.saved).toBe(true);
     expect(drive.corrupted).toBe(true);  // now red
     expect(evil.locked).toBe(true);  // but the lock still runs
-    expect(radar.setInfo).toHaveBeenCalledWith(expect.stringContaining('5'));
 
     // The lock runs for the full duration.
     evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
@@ -417,7 +414,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 
     evil.hover(sig1);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil.locked).toBe(false);
     expect(sig1.deleted).toBe(true);
     expect(evil._respawnTimer).toBe(EVIL.respawnDelaySeconds);
@@ -458,7 +455,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
     evil.summon();
     evil.hover(evilSig(signalManager));
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil._respawnTimer).not.toBeNull();
 
     controller.startNight(2);
@@ -947,5 +944,105 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
 
     controller.startNight(2);
     expect(sparks.dispose).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal progress bars', () => {
+  it('pull-in fills both bars to 100% and turns them red', () => {
+    const { evil, signalManager, radar, terminal } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // starts pull-in
+    expect(terminal._evilBarsActive).toBe(true);
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(1);
+    expect(radar.setScanProgress).toHaveBeenCalledWith(1);
+    expect(radar.setBarColor).toHaveBeenCalledWith('rgba(255, 40, 40, 0.9)');
+  });
+
+  it('lock release resets bars to 0% and restores default colour', () => {
+    const { evil, signalManager, radar, terminal } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage → lock
+    expect(evil.locked).toBe(true);
+
+    radar.setBarColor.mockClear();
+    radar.setLockOnProgress.mockClear();
+    radar.setScanProgress.mockClear();
+
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);  // lock expires
+    expect(terminal._evilBarsActive).toBe(false);
+    expect(radar.setBarColor).toHaveBeenCalledWith('rgba(0, 255, 200, 0.7)');
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(0);
+    expect(radar.setScanProgress).toHaveBeenCalledWith(0);
+  });
+
+  it('night reset clears the bars even mid-lock', () => {
+    const { evil, controller, signalManager, radar, terminal } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → lock
+    expect(evil.locked).toBe(true);
+
+    radar.setBarColor.mockClear();
+    radar.setLockOnProgress.mockClear();
+    radar.setScanProgress.mockClear();
+
+    controller.startNight(2);  // new night — resets
+    expect(terminal._evilBarsActive).toBe(false);
+    expect(radar.setBarColor).toHaveBeenCalledWith('rgba(0, 255, 200, 0.7)');
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(0);
+    expect(radar.setScanProgress).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('EvilSignal "LET ME IN" flashing text', () => {
+  it('starts on pull-in', () => {
+    const { evil, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);  // starts pull-in
+    expect(radar.startLetMeIn).toHaveBeenCalled();
+  });
+
+  it('stops when the lock is released', () => {
+    const { evil, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // engage → lock
+    expect(evil.locked).toBe(true);
+
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);  // lock expires
+    expect(radar.stopLetMeIn).toHaveBeenCalled();
+  });
+
+  it('stops on night reset', () => {
+    const { evil, controller, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // lock
+    controller.startNight(2);  // reset
+    expect(radar.stopLetMeIn).toHaveBeenCalled();
+  });
+
+  it('stops when a drive is infected', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, radar } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // engage → lock, drive infected
+    expect(radar.stopLetMeIn).toHaveBeenCalled();
   });
 });

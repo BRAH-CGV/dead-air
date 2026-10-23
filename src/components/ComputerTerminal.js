@@ -121,6 +121,11 @@ export class ComputerTerminal extends Component {
   _cursorX = _parkCursor.x;
   _cursorY = _parkCursor.y;
 
+  /** True while the evil signal owns the progress bars (pull-in + lock).
+   *  _updateRadarDisplay() skips writing setLockOnProgress / setScanProgress
+   *  so the evil signal's 100%-red values are not overwritten each frame. */
+  _evilBarsActive = false;
+
   /** Edge-trigger for the interact key (prevent re-entry while held). */
   _interactHeld = false;
   /** Edge-trigger for Enter key (scan initiation). */
@@ -160,7 +165,6 @@ export class ComputerTerminal extends Component {
       this.crosshair?.hide();
       this.radar?.show();
       if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
-      this.radar?.setInfo('Scanning… keep dish aimed!');
       return;
     }
     this._enterRadar();
@@ -316,7 +320,6 @@ export class ComputerTerminal extends Component {
     // Lean in to the screen the radar is drawn on.
     if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
     this.radar?.setHint('WASD: move cursor | Enter: scan (when a dish is aimed) | Q: exit');
-    this.radar?.setInfo('');
     this._hoveredSignal = null;
   }
 
@@ -364,7 +367,6 @@ export class ComputerTerminal extends Component {
       this.satellite.isScanning = false;
       this.satellite._scanComplete = false;
     }
-    this.radar?.setInfo('Locking on… keep dish aimed!');
   }
 
   /** Called after auto-save — clear hover and close the terminal: the
@@ -500,8 +502,6 @@ export class ComputerTerminal extends Component {
           const aimed = this.satellite.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
           if (aimed) {
             this._startDishPullIn(sig);
-          } else {
-            this.radar?.setInfo('No dish aimed — wait for one to settle');
           }
         }
       }
@@ -520,7 +520,6 @@ export class ComputerTerminal extends Component {
       if (this._driveRemovedDuringScan()) {
         this._cleanupState();
         this.state = 'radar';
-        this.radar?.setInfo('Drive removed — insert a drive to scan');
         if (!this.screen) this._updateRadarDisplay();
         return;
       }
@@ -534,7 +533,6 @@ export class ComputerTerminal extends Component {
           this._lockOnProgress = 0;
           this._lockOnTarget = null;
           this.state = 'radar';
-          this.radar?.setInfo('Lock lost — re-aim the dish!');
           return;
         }
         this._lockOnProgress += dt;
@@ -548,7 +546,6 @@ export class ComputerTerminal extends Component {
       if (this._lockOnTarget && this._lockOnProgress >= this._lockOnDuration && !this.satellite?.isScanning) {
         this.satellite.scanProgress = 0;
         this.satellite.isScanning = true;
-        this.radar?.setInfo('Scanning… keep dish aimed!');
       }
 
       // ── Phase 2: Scan (accumulation on Satellite, check completion) ──
@@ -570,7 +567,6 @@ export class ComputerTerminal extends Component {
       // If satellite stopped scanning (dish drifted), go back to radar
       if (this.satellite && !this.satellite.isScanning && this.satellite.scanProgress < this.satellite.scanTarget?.scanTime) {
         this.state = 'radar';
-        this.radar?.setInfo('Signal lost — re-aim the dish!');
       }
 
       if (!this.screen) this._updateRadarDisplay();
@@ -647,11 +643,14 @@ export class ComputerTerminal extends Component {
       cursorR,
     });
 
-    // Scan progress bar on the right.
-    this.radar.setScanProgress?.(scanProgress >= 0 ? scanProgress : 0);
+    // Scan progress bar on the right — skipped while the evil signal
+    // owns the bars (pull-in + lock); EvilSignal writes them directly.
+    if (!this._evilBarsActive) {
+      this.radar.setScanProgress?.(scanProgress >= 0 ? scanProgress : 0);
 
-    // Lock-on progress bar (left of the scan bar).
-    this.radar.setLockOnProgress?.(lockOnFraction >= 0 ? lockOnFraction : 0);
+      // Lock-on progress bar (left of the scan bar).
+      this.radar.setLockOnProgress?.(lockOnFraction >= 0 ? lockOnFraction : 0);
+    }
 
     // Drive indicator lights (left of the progress bars).
     // setDriveIndicators returns true on each flash phase transition,
