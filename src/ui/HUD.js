@@ -226,6 +226,10 @@ export class RadarOverlay {
     this._flashTime = 0;
     this._flashPhase = 0;
     this._prevFlashPhase = null;
+    // Continuous blink on the DRIVE dot (evil signal waiting for a drive).
+    this._continuousBlink = false;
+    this._continuousBlinkTime = 0;
+    this._prevContinuousPhase = null;
     // "LET ME IN" flashing text (evil signal lock).
     this._letMeInContainer = root?.querySelector('#radar-let-me-in') ?? null;
     /** @type {{ el: HTMLElement, baseX: number, baseY: number, timer: number|null, visible: boolean }[]} */
@@ -369,7 +373,21 @@ export class RadarOverlay {
 
     if (driveDot) {
       let bg, shadow;
-      if (this._flashWhich === 'drive' && flashRed) {
+      if (this._continuousBlink) {
+        // Continuous red blink: overrides the normal drive state while the
+        // evil signal lock waits for a drive to be inserted. Faster than
+        // the one-shot scan-block flash, with a beep on every phase edge.
+        this._continuousBlinkTime += 1 / 60;
+        const phaseDur = 0.06;
+        const phase = Math.floor(this._continuousBlinkTime / phaseDur);
+        const on = phase % 2 === 0;
+        if (this._prevContinuousPhase === null || phase !== this._prevContinuousPhase) {
+          this._prevContinuousPhase = phase;
+          phaseChanged = true;
+        }
+        bg = on ? 'rgba(255, 50, 50, 0.9)' : '#333';
+        shadow = on ? '0 0 6px rgba(255, 50, 50, 0.5)' : 'none';
+      } else if (this._flashWhich === 'drive' && flashRed) {
         bg = 'rgba(255, 50, 50, 0.9)';
         shadow = '0 0 6px rgba(255, 50, 50, 0.5)';
       } else {
@@ -406,6 +424,23 @@ export class RadarOverlay {
     this._flashTime = 0;
     this._flashPhase = 0;
     this._prevFlashPhase = null;
+  }
+
+  /** Start a continuous red blink on the DRIVE indicator dot. Called by
+   *  EvilSignal while the dish lock waits for a drive to be inserted.
+   *  Idempotent — calling while already blinking is a no-op. */
+  startContinuousBlink() {
+    if (this._continuousBlink) return;
+    this._continuousBlink = true;
+    this._continuousBlinkTime = 0;
+    this._prevContinuousPhase = null;
+  }
+
+  /** Stop the continuous red blink on the DRIVE indicator dot. Called when
+   *  a drive is infected, the lock ends, or the night resets. */
+  stopContinuousBlink() {
+    this._continuousBlink = false;
+    this._continuousBlinkTime = 0;
   }
 
   // Only on a change: the radar is painted onto the computer's screen from

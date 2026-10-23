@@ -483,6 +483,10 @@ export class EvilSignal extends Component {
     // Infect any drive inserted during the lock phase.
     this._infectDrive();
 
+    // The DRIVE indicator dot on the radar blinks red continuously while
+    // the lock waits for a drive; once one is infected the blink stops.
+    if (!this._driveInfected) this.terminal?.radar?.startContinuousBlink?.();
+
     // The radar shows the same glitchy effect as the UFO, centered on the
     // locked signal, while the dish is held.
     if (this.terminal?.radar) {
@@ -572,6 +576,8 @@ export class EvilSignal extends Component {
     // The "LET ME IN" flashing text has done its job — the drive is
     // corrupted and the DELETE warning takes over as the visual cue.
     this.terminal?.radar?.stopLetMeIn?.();
+    // The DRIVE indicator dot stops its continuous blink — drive corrupted.
+    this.terminal?.radar?.stopContinuousBlink?.();
     // Sparks: fly out of the corrupted drive at an increasing rate. A
     // second infection while the first window still runs must not leak
     // the first system.
@@ -598,6 +604,8 @@ export class EvilSignal extends Component {
       this.terminal.radar?.setScanProgress?.(0);
       this.terminal.radar?.stopLetMeIn?.();
     }
+    // The DRIVE indicator dot stops its continuous blink — the lock is over.
+    this.terminal?.radar?.stopContinuousBlink?.();
     // No drive was used: the signal will respawn later so the player must
     // deal with it again. With a drive, the consequence is on the drive —
     // no respawn. Check before marking deleted (which makes resolved true).
@@ -687,6 +695,8 @@ export class EvilSignal extends Component {
     // Reset the shared doom light.
     if (this.doomLight) this.doomLight.intensity = 0;
     this._doomLightFadeRemaining = null;
+    // The DRIVE indicator dot stops its continuous blink — night reset.
+    this.terminal?.radar?.stopContinuousBlink?.();
     if (this._caught) {
       this._caught = false;
       this.hooks?.setPlayerLocked?.(false);

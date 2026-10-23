@@ -43,7 +43,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   };
   const signalManager = new SignalManager({ signalsPerNight: 5, payloadPool: ['signal-1.png'] });
   signalManager.startNight(night);
-  const radar = { setInfo: vi.fn(), setLockOnProgress: vi.fn(), setScanProgress: vi.fn(), setBarColor: vi.fn(), startLetMeIn: vi.fn(), stopLetMeIn: vi.fn() };
+  const radar = { setInfo: vi.fn(), setLockOnProgress: vi.fn(), setScanProgress: vi.fn(), setBarColor: vi.fn(), startLetMeIn: vi.fn(), stopLetMeIn: vi.fn(), startContinuousBlink: vi.fn(), stopContinuousBlink: vi.fn() };
   const terminal = {
     radar, exit: vi.fn(),
     get cursorPosition() { return { x: 0, y: 0 }; },
@@ -1044,5 +1044,58 @@ describe('EvilSignal "LET ME IN" flashing text', () => {
     evil.hover(sig);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // engage → lock, drive infected
     expect(radar.stopLetMeIn).toHaveBeenCalled();
+  });
+});
+
+describe('EvilSignal radar DRIVE dot continuous blink', () => {
+  it('starts continuous blink while locked and waiting for a drive', () => {
+    const { evil, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage
+    evil.onUpdate(0.1);                        // locked block runs (no drive)
+    expect(evil.locked).toBe(true);
+    expect(radar.startContinuousBlink).toHaveBeenCalled();
+  });
+
+  it('stops continuous blink when a drive is infected', () => {
+    const drive = makeDrive();
+    const { evil, signalManager, radar } = makeRig({ drive });
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // engage → lock, drive infected
+    expect(radar.stopContinuousBlink).toHaveBeenCalled();
+  });
+
+  it('stops continuous blink when the lock expires', () => {
+    const { evil, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage
+    evil.onUpdate(0.1);                        // locked block runs (no drive)
+    expect(radar.startContinuousBlink).toHaveBeenCalled();
+
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);  // lock expires
+    expect(radar.stopContinuousBlink).toHaveBeenCalled();
+  });
+
+  it('stops continuous blink on night reset', () => {
+    const { evil, controller, signalManager, radar } = makeRig();
+    evil.summon();
+    const sig = evilSig(signalManager);
+
+    evil.hover(sig);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage
+    evil.onUpdate(0.1);                        // locked block runs
+    expect(radar.startContinuousBlink).toHaveBeenCalled();
+
+    controller.startNight(2);  // reset
+    expect(radar.stopContinuousBlink).toHaveBeenCalled();
   });
 });

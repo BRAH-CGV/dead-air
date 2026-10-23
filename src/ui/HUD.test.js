@@ -806,3 +806,52 @@ describe('RadarOverlay.startLetMeIn / stopLetMeIn', () => {
     expect(() => overlay.stopLetMeIn()).not.toThrow();
   });
 });
+
+describe('RadarOverlay.startContinuousBlink / stopContinuousBlink', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="drive-dot"></div><div id="signal-dot"></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('overrides the drive dot red while the continuous blink is active', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    // Drive not inserted, no signal — but the blink should override.
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#drive-dot');
+    // After one call the timer is near zero; the first phase is ON (red).
+    expect(dot.style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('stops overriding after stopContinuousBlink', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    overlay.stopContinuousBlink();
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#drive-dot');
+    expect(dot.style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('does not affect the signal dot', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#signal-dot');
+    expect(dot.style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('is null-safe', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.startContinuousBlink()).not.toThrow();
+    expect(() => overlay.stopContinuousBlink()).not.toThrow();
+  });
+
+  it('returns true on phase transitions so the terminal plays the beep', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    // First call: phase 0 just started → transition detected.
+    const beep = overlay.setDriveIndicators(false, false);
+    expect(beep).toBe(true);
+  });
+});
