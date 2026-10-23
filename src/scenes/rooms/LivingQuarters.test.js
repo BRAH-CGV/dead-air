@@ -127,7 +127,7 @@ describe('LivingQuarters', () => {
   });
 
   it('has no vending machine and no stand-in boxes left', () => {
-    expect(room.root.find('VendingMachine')).toBeNull();
+    expect(room.root.find('BeanProcessor')).toBeNull();
     expect(room.root.descendants().filter(go => go.placeholderFor)).toEqual([]);
   });
 
@@ -431,7 +431,7 @@ describe('LivingQuarters', () => {
     expect(use.screen).not.toBe(shared);                           // the cached model's material is untouched
     expect(shared.emissive.getHex()).toBe(0);
     expect(chromeMesh.material).toBe(chrome);
-    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
+    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.empty);   // no ground coffee yet
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);
   });
 
@@ -487,10 +487,10 @@ describe('LivingQuarters', () => {
     expect(use).toBeInstanceOf(CoffeeMachine);
     expect(use).toBe(room.coffeeMachine);
     expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);
-    expect(use.promptLabel).toMatch(/^\[E\] Brew a coffee/);
+    expect(use.promptLabel).toMatch(/ground coffee/i);           // nothing to brew with yet (#168)
     expect(() => use.onInteract({})).not.toThrow();              // no stamina wired: nothing to brew for
-    expect(use.state).toBe('ready');
-    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.ready);
+    expect(use.state).toBe('empty');
+    expect(use.screen.emissive.getHex()).toBe(COFFEE.screen.empty);
     expect(use.screen.emissiveIntensity).toBeGreaterThan(0);     // a glow the power grid collects
   });
 

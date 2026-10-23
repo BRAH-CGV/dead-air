@@ -15,6 +15,8 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
+import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
+import { CoffeeItems } from '../components/CoffeeItems.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -98,22 +100,80 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(ceiling.intensity).toBe(0);
   });
 
-  it("hands the bedroom's coffee machine the same stamina, with a full rack again each night", () => {
+  /** Carry what is in hand to `object` and let it go there. */
+  const dropAt = (item, object) => {
+    item.place(object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0.6, 0, 0)));
+    scene.pickupSystem.dropHeld();
+  };
+
+  /** Pick a ripe bush, let the beans go by the office's processor, [E] to
+   *  process them, pick up the bag: a bag of ground coffee in hand. */
+  const groundCoffee = () => {
+    const { coffeeBushes, beanProcessor } = scene.rooms.MainOffice;
+    const i = scene.coffee.bushes.indexOf('ripe');
+    const rack = coffeeBushes.gameObject.object3d;
+    rack.updateMatrixWorld(true);
+    coffeeBushes.onInteract({ point: rack.localToWorld(coffeeBushes.bushes[i].clone().setX(0.35)) });
+    const pile = scene.coffeeItems.held('beans');
+    expect(pile).toBeTruthy();                            // the beans in hand
+    dropAt(pile, beanProcessor.gameObject.object3d);
+    beanProcessor.onUpdate(0.016);
+    expect(pile.inPlay).toBe(false);                      // taken in
+    beanProcessor.onInteract({});
+    beanProcessor.onUpdate(COFFEE_HARVEST.processSeconds + 0.1);
+    const bag = scene.coffeeItems.bags.find(b => b.inPlay);
+    scene.pickupSystem.pickUp(bag.pickupable);
+    return bag;
+  };
+
+  it('one night\'s coffee for the rack, the processor and the bedroom machine: two ripe bushes, fresh each night (#168)', () => {
+    expect(scene.coffee).toBeInstanceOf(CoffeeHarvest);
+    expect(scene.coffeeItems).toBeInstanceOf(CoffeeItems);
+    const { coffeeBushes, beanProcessor } = scene.rooms.MainOffice;
+    expect(coffeeBushes.harvest).toBe(scene.coffee);
+    expect(coffeeBushes.items).toBe(scene.coffeeItems);
+    expect(beanProcessor.harvest).toBe(scene.coffee);
+    expect(beanProcessor.items).toBe(scene.coffeeItems);
+    expect(scene.coffee.bushes.length).toBe(coffeeBushes.bushes.length);
+    expect(scene.coffee.ripeLeft).toBe(COFFEE_HARVEST.ripePerNight);
+    // The goods are the office's, carried like its drives.
+    for (const it of [...scene.coffeeItems.beans, ...scene.coffeeItems.bags]) {
+      expect(it.parent).toBe(scene.rooms.MainOffice.root);
+      expect(it.inPlay).toBe(false);
+    }
+
+    const bag = groundCoffee();
+    expect(scene.coffeeItems.held('bag')).toBe(bag);
+    expect(scene.coffee.ripeLeft).toBe(1);
+
+    gameplay.getComponent(StaminaDrain).onStart();
+    scene.nights.advance();
+    expect(scene.coffee.ripeLeft).toBe(COFFEE_HARVEST.ripePerNight);
+    expect(bag.inPlay).toBe(false);                       // put away, out of the hands
+    expect(scene.pickupSystem.heldPickupable).toBeNull();
+  });
+
+  it("hands the bedroom's coffee machine the same stamina and the coffee carried to it", () => {
     const machine = scene.rooms.LivingQuarters.coffeeMachine;
     expect(machine).toBeInstanceOf(CoffeeMachine);
     expect(machine.stamina).toBe(scene.stamina);
+    expect(machine.items).toBe(scene.coffeeItems);
     scene.stamina.value = 0.2;
+    machine.onInteract({});
+    expect(machine.state).toBe('empty');                  // nothing to brew with yet
+    const bag = groundCoffee();
+    dropAt(bag, machine.gameObject.object3d);
+    machine.onUpdate(0.016);
+    expect(bag.inPlay).toBe(false);                       // the bag went in
     machine.onInteract({});
     machine.onUpdate(COFFEE.brewSeconds + 0.1);
     machine.onInteract({});
     expect(scene.stamina.value).toBeCloseTo(0.2 + COFFEE.amount);
-    expect(machine.cups).toBe(COFFEE.cups - 1);
 
     gameplay.getComponent(StaminaDrain).onStart();
     scene.nights.advance();
     expect(scene.stamina.value).toBe(1);
-    expect(machine.cups).toBe(COFFEE.cups);
-    expect(machine.state).toBe('ready');
+    expect(machine.state).toBe('empty');
   });
 
   it('the player has footsteps, that know when they are outside', () => {
@@ -141,6 +201,8 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     const other = new BaseScene(makeSceneEngine());
     other.build();
     const machine = other.rooms.LivingQuarters.coffeeMachine;
+    machine.loaded = true;                                // a bag of ground coffee in it
+    machine.onUpdate(0.016);
     machine.onInteract({});
     expect(sip.play).not.toHaveBeenCalled();
     machine.onUpdate(COFFEE.brewSeconds + 0.1);

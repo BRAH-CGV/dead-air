@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
 
 // ─────────────────────────────────────────────
@@ -8,11 +9,14 @@ import { Interactable } from './Interactable.js';
 // round you. [E] again drinks it, and gives back `amount` stamina. A brewed
 // cup waits for the player, so they can walk off and come back to it.
 //
-// Only `cups` a night: a cup is used as it starts brewing, and once they are
-// gone it is "Out of coffee tonight" until the next night (or a retry) calls
-// reset(). Refills are a choice, not a cooldown to wait out (#105).
+// A cup takes a bag of ground coffee (#168): the grow rack's ripe beans,
+// ground at the office's bean processor and carried here like a drive (a
+// CoffeeBag; CoffeeItems, `items`). A bag let go near it (within `reach`,
+// on the table or the floor round it) is taken in and it is 'ready'; [E]
+// then brews. Without one it is 'empty'. There is no count of cups left: the ripe
+// bushes are that. Refills are a choice, not a cooldown to wait out (#105).
 //
-//   ready ──[E]──▶ brewing ──brewSeconds──▶ brewed ──[E]──▶ ready | empty
+//   empty ⇄ ready ──[E]──▶ brewing ──brewSeconds──▶ brewed ──[E]──▶ ready | empty
 //
 // The status screen (`screen`, a MeshStandardMaterial) shows the state
 // across the room in its emissive colour; the PowerGrid scales its
@@ -28,12 +32,15 @@ import { Interactable } from './Interactable.js';
 // ─────────────────────────────────────────────
 
 export const COFFEE = Object.freeze({
-  /** Cups a night. */
-  cups: 2,
   /** Seconds a cup takes to brew. */
   brewSeconds: 20,
   /** Stamina a cup gives back. */
   amount: 0.35,
+  /** Metres from the machine's middle, across the floor, a bag let go is
+   *  taken in from; and how far below and above it. */
+  reach: 1,
+  below: 1.6,
+  above: 0.8,
   /** The status screen's colour in each state. */
   screen: Object.freeze({
     ready: 0x6dff9c,
@@ -43,18 +50,26 @@ export const COFFEE = Object.freeze({
   }),
 });
 
-const BREWING = 'Brewing…';
+/** While it brews, the seconds left (rounded up). */
+const brewing = left => `Brewing… (${Math.ceil(left)} s)`;
 const BREWED = '[E] Drink the coffee';
-const EMPTY = 'Out of coffee tonight';
+const READY = '[E] Brew a coffee';
+const EMPTY = 'Needs ground coffee';
+const DROP = '[E] Drop the coffee in';
+
+const _p = new THREE.Vector3(), _me = new THREE.Vector3();
 
 export class CoffeeMachine extends Interactable {
   promptLabel = '';
   /** Set by the scene. @type {{restore(amount: number): void}|null} */
   stamina = null;
-  /** 'ready' | 'brewing' | 'brewed' | 'empty' */
-  state = 'ready';
-  /** Cups left tonight. */
-  cups = COFFEE.cups;
+  /** The coffee carried about, set by the scene.
+   *  @type {{ held(kind: string): object|null, loose(kind: string): object[], take(item: object, opts?: object): void }|null} */
+  items = null;
+  /** A bag of ground coffee taken in, waiting to be brewed. */
+  loaded = false;
+  /** 'empty' | 'ready' | 'brewing' | 'brewed' */
+  state = 'empty';
   /** Seconds left on the brew. */
   brewLeft = 0;
   /** Called as a brew starts, as it is done, and as a cup is drunk. */
@@ -75,10 +90,21 @@ export class CoffeeMachine extends Interactable {
   }
 
   onUpdate(dt) {
+    if (this.state === 'ready' || this.state === 'empty') {
+      if (!this.loaded) this._catch();
+      const state = this._idle();
+      if (state !== this.state) this._set(state);
+      else if (state === 'empty') this._label();
+      return;
+    }
     if (this.state !== 'brewing') return;
     this.brewLeft = Math.max(0, this.brewLeft - dt);
     this.cup?.setFill(1 - this.brewLeft / COFFEE.brewSeconds);
-    if (this.brewLeft > 0) return;
+    if (this.brewLeft > 0) {
+      const label = brewing(this.brewLeft);
+      if (label !== this.promptLabel) this.promptLabel = label;
+      return;
+    }
     this._set('brewed');
     this.onBrewed?.();
   }
@@ -86,30 +112,59 @@ export class CoffeeMachine extends Interactable {
   onInteract() {
     if (!this.stamina) return;
     if (this.state === 'ready') {
-      this.cups--;
+      if (!this.loaded) return this._set('empty');
+      this.loaded = false;
       this.brewLeft = COFFEE.brewSeconds;
       this._set('brewing');
       this.onBrew?.();
     } else if (this.state === 'brewed') {
       this.stamina.restore(COFFEE.amount);
-      this._set(this.cups > 0 ? 'ready' : 'empty');
+      this._set(this._idle());
       this.onDrink?.();
     }
   }
 
-  /** A new or retried night: a full rack and nothing brewing. */
+  /** A new or retried night: nothing brewing, nothing in it. */
   reset() {
-    this.cups = COFFEE.cups;
     this.brewLeft = 0;
-    this._set('ready');
+    this.loaded = false;
+    this._set(this._idle());
+  }
+
+  /** Waiting for the player: ready with a bag taken in, else empty. */
+  _idle() {
+    return this.loaded ? 'ready' : 'empty';
+  }
+
+  /** A bag let go near it goes in. */
+  _catch() {
+    const object = this.gameObject?.object3d;
+    if (!this.items || !object) return;
+    object.getWorldPosition(_me);
+    for (const bag of this.items.loose('bag')) {
+      const t = bag.rigidBody?.translation?.();
+      if (t) _p.set(t.x, t.y, t.z);
+      else bag.object3d.getWorldPosition(_p);
+      const dy = _p.y - _me.y;
+      if (Math.hypot(_p.x - _me.x, _p.z - _me.z) > COFFEE.reach || dy < -COFFEE.below || dy > COFFEE.above) continue;
+      this.items.take(bag, { press: false });
+      this.loaded = true;
+      return;
+    }
+  }
+
+  /** Empty: what it says, by whether a bag is in hand. */
+  _label() {
+    const label = this.items?.held('bag') ? DROP : EMPTY;
+    if (label !== this.promptLabel) this.promptLabel = label;
   }
 
   _set(state) {
     this.state = state;
-    this.promptLabel = state === 'ready' ? `[E] Brew a coffee (${this.cups} ${this.cups === 1 ? 'cup' : 'cups'} left)`
-      : state === 'brewing' ? BREWING
+    this.promptLabel = state === 'ready' ? READY
+      : state === 'brewing' ? brewing(this.brewLeft)
       : state === 'brewed' ? BREWED
-      : EMPTY;
+      : this.items?.held('bag') ? DROP : EMPTY;
     this.screen?.emissive.setHex(COFFEE.screen[state]);
     if (this.cup) {
       this.cup.object3d.visible = state === 'brewing' || state === 'brewed';

@@ -90,6 +90,9 @@ import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { Stamina } from '../gameplay/Stamina.js';
+import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
+import { CoffeeItems } from '../components/CoffeeItems.js';
+import { CoffeeBeans, CoffeeBag } from '../gameobjects/CoffeeGoods.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
@@ -383,6 +386,7 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addCameraTerminal();
     this._addScreenPictures();
+    this._addCoffee();
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
@@ -1918,7 +1922,7 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   /** Stamina drains through the shift — faster outside, and faster still
    *  while the player stares at the dust eyes — and the bedroom's coffee
-   *  machine tops it up, a couple of cups a night. The drain ticks on
+   *  machine tops it up, a cup for each ripe bush picked (_addCoffee). The drain ticks on
    *  GameplaySystems after the controller, and before the demon and the
    *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
@@ -1926,6 +1930,7 @@ export class BaseScene extends Scene {
     const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
+      machine.items = this.coffeeItems;
       // The machine at work while a cup brews, and its start click.
       machine.gameObject.addComponent(new CoffeeSound({ machine }));
       // A slurp as the cup is drunk (a quiet recording, so lifted).
@@ -1947,10 +1952,38 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       grid:         this.power,
-      onNightStart: () => machine?.reset(),
+      onNightStart: () => { this.coffee.newNight(); this.coffeeItems.reset(); machine?.reset(); },
       isOutside:    () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
       isStaring:    () => !!this.dustEyes?.staredAt,
     }));
+  }
+
+  /** The night's coffee (#168): a CoffeeHarvest over the office rack's
+   *  bushes, two ripe a night (a new one on each night start, from the
+   *  stamina drain's), and the piles of beans and bags of ground coffee
+   *  carried from the rack to the processor and on to the bedroom's coffee
+   *  machine (CoffeeItems, as many of each as there are ripe bushes, built
+   *  once and parked between uses). The goods are the office's, like its
+   *  drives. Rooms don't know about gameplay, so it is wired here, and in
+   *  _addStamina for the machine. */
+  _addCoffee() {
+    const office = this.rooms.MainOffice;
+    const { coffeeBushes, beanProcessor } = office;
+    const own = r => office._own(r);
+    const make = (Kind, name) => Array.from({ length: COFFEE_HARVEST.ripePerNight }, (_, i) => {
+      const item = new Kind(`${name}_${i + 1}`, { own });
+      office.root.addChild(item);
+      return item;
+    });
+    this.coffee = new CoffeeHarvest({ bushes: coffeeBushes?.bushes.length ?? 0 });
+    this.coffeeItems = this._sceneRoot.find('GameplaySystems').addComponent(new CoffeeItems({
+      beans: make(CoffeeBeans, 'CoffeeBeans'),
+      bags: make(CoffeeBag, 'CoffeeBag'),
+      pickup: this.pickupSystem,
+      engine: this.engine,
+    }));
+    coffeeBushes?.bind(this.coffee, this.coffeeItems);
+    beanProcessor?.bind(this.coffee, this.coffeeItems);
   }
 
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
