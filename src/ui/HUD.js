@@ -144,6 +144,11 @@ export class RadarTelemetry {
     /** key → { valueEl, format, last } */
     this._rows = new Map();
     if (!root) return;
+    // Clear any leftover blocks from a previous construction on the same
+    // container — scene rebuilds create a fresh RadarTelemetry but the
+    // #radar-telemetry div persists in index.html, so without this the
+    // DISH / CURSOR blocks would double up.
+    root.innerHTML = '';
     for (const block of blocks) this._addBlock(block);
   }
 
@@ -201,6 +206,13 @@ export class RadarTelemetry {
 
   show() { if (this._root) this._root.style.display = ''; }
   hide() { if (this._root) this._root.style.display = 'none'; }
+
+  /** Remove all block elements from the container. Called by RadarOverlay
+   *  dispose() so a scene rebuild starts with a clean panel. */
+  dispose() {
+    if (this._root) this._root.innerHTML = '';
+    this._rows.clear();
+  }
 }
 
 // ── RadarOverlay ───────────────────────────────────────────
@@ -292,6 +304,11 @@ export class RadarOverlay {
    *  backdrop — alive after every rebuild. */
   dispose() {
     this.hide();
+    // Tear down any active effects so their timers / RAF handles don't
+    // outlive the overlay.
+    this.stopLetMeIn();
+    this.stopContinuousBlink();
+    this._telemetry.dispose();
     if (this._resizeHandler && typeof window !== 'undefined') {
       window.removeEventListener('resize', this._resizeHandler);
     }

@@ -584,6 +584,30 @@ describe('RadarTelemetry', () => {
     // Null-root telemetry is created; setTelemetry should not throw
     expect(() => overlay.setTelemetry({ dishAz: 1.0 })).not.toThrow();
   });
+
+  it('clears leftover blocks when constructed on the same container twice', () => {
+    const root = makeRoot();
+    const blocks = [{ name: 't', title: 'T', rows: [
+      { key: 'v', label: 'V', format: String },
+    ]}];
+    new RadarTelemetry(root, blocks);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+    // Second construction on the same root must NOT double up.
+    new RadarTelemetry(root, blocks);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+  });
+
+  it('dispose() clears the container and the row registry', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [{ name: 't', title: 'T', rows: [
+      { key: 'v', label: 'V', format: String },
+    ]}]);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+    tm.dispose();
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(0);
+    // After dispose, updates are silently ignored (row registry cleared).
+    expect(() => tm.update({ v: 'x' })).not.toThrow();
+  });
 });
 
 // ── RadarOverlay lock-on progress bar ─────────────────────

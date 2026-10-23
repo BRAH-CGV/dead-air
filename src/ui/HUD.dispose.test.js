@@ -24,4 +24,15 @@ describe('RadarOverlay.dispose', () => {
     overlay.dispose();
     expect(overlay._backdrop).toBe(null);
   });
+
+  it('clears the telemetry panel so a rebuild does not double the blocks', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-telemetry"></div>';
+    const overlay = new RadarOverlay(root);
+    const telemetryRoot = root.querySelector('#radar-telemetry');
+    // DEFAULT_BLOCKS creates two blocks (DISH, CURSOR).
+    expect(telemetryRoot.querySelectorAll('.telemetry-block')).toHaveLength(2);
+    overlay.dispose();
+    expect(telemetryRoot.querySelectorAll('.telemetry-block')).toHaveLength(0);
+  });
 });
