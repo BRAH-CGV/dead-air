@@ -29,6 +29,8 @@ vi.mock('@dimforge/rapier3d', () => {
 });
 
 import { Room } from './Room.js';
+import { GameObject } from '../../core/GameObject.js';
+import { Component } from '../../core/Component.js';
 
 let nextHandle = 1;
 
@@ -508,6 +510,27 @@ describe('Room hooks and teardown', () => {
     expect(room.root.children.length).toBe(0);
     expect(engine.world.bodies.len()).toBe(0);
     expect(room.doors.length).toBe(0);
+  });
+
+  it('dispose runs onDestroy on every component in the room, once, before it is detached', () => {
+    // Detaching first left the engine's destroy pass nothing to reach: a
+    // room component's sound (the coffee machine's brew) played on into
+    // the next scene after Restart night.
+    const room = new Room(engine, BASE);
+    room.build();
+    const machine = new GameObject('Machine');
+    const part = new GameObject('Part');
+    machine.addChild(part);
+    room.root.addChild(machine);
+    const onDestroy = vi.fn();
+    const deep = vi.fn();
+    machine.addComponent(Object.assign(new Component(), { onDestroy }));
+    part.addComponent(Object.assign(new Component(), { onDestroy: deep }));
+    for (const opts of [{ removeBodies: false }]) room.dispose(opts);
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(deep).toHaveBeenCalledTimes(1);
+    room.dispose();                                    // already gone: nothing again
+    expect(onDestroy).toHaveBeenCalledTimes(1);
   });
 
   it('dispose({ removeBodies: false }) frees GPU resources but leaves bodies to the world owner', () => {

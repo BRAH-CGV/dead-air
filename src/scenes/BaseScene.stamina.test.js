@@ -15,6 +15,7 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
+import { CoffeeSound } from '../components/CoffeeSound.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -114,6 +115,24 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.stamina.value).toBe(1);
     expect(machine.cups).toBe(COFFEE.cups);
     expect(machine.state).toBe('ready');
+  });
+
+  it('Restart night mid-brew: tearing the scene down stops the coffee machine\'s sound', () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    const voice = machine.gameObject.getComponent(CoffeeSound);
+    const brew = { isPlaying: false, play: vi.fn(() => { brew.isPlaying = true; }), stop: vi.fn(() => { brew.isPlaying = false; }),
+      pause: vi.fn(() => { brew.isPlaying = false; }), setVolume: vi.fn(), disconnect: vi.fn(), removeFromParent: vi.fn() };
+    voice.brew = brew;
+    voice.click = null;
+    voice.onStart();
+    machine.onInteract({});
+    voice.onUpdate(0.1);
+    expect(brew.isPlaying).toBe(true);
+    // What Engine.loadScene does: the scene's dispose, then destroy whatever is still attached.
+    scene.dispose();
+    for (const go of engine._rootObjects) go.destroy();
+    expect(brew.stop).toHaveBeenCalled();
+    expect(brew.isPlaying).toBe(false);
   });
 
   it('the player has footsteps, that know when they are outside', () => {
