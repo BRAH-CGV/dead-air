@@ -176,16 +176,15 @@ export class ComputerTerminal extends Component {
     // Cancel any in-progress dish pull-in.
     this._pullingIn = false;
     this._pullSignal = null;
-    // Exiting during lock-on: auto-complete it so the satellite starts
-    // scanning in the background — the dish was already aimed when the
-    // player pressed Enter, so the visual lock-on is no longer needed.
+    // Exiting during lock-on: clear the satellite's scan state (it was
+    // set by _enterScanning but lock-on never completed) but keep the
+    // lock-on fields so the bar stays frozen at its current progress
+    // on the visible radar overlay.
     if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
-      if (this.satellite && this._lockOnTarget) {
+      if (this.satellite) {
+        this.satellite.scanTarget = null;
         this.satellite.scanProgress = 0;
-        this.satellite.isScanning = true;
       }
-      this._lockOnTarget = null;
-      this._lockOnProgress = this._lockOnDuration;
     }
     // Exiting mid-scan: let the satellite keep scanning in the background.
     if (this.state !== 'scanning') this._cleanupState();
@@ -294,9 +293,7 @@ export class ComputerTerminal extends Component {
     this.radar?.setWarning?.('');
     // On the screen, the radar stays up while the view leans back out.
     if (this.screenView && this.screen) {
-      this.screenView.close(() => this.radar?.hide());
-    } else {
-      this.radar?.hide();
+      this.screenView.close();
     }
     this.hud?.setPrompt('');
     // Restore the first-person reticle now that the terminal is closed.
@@ -369,6 +366,10 @@ export class ComputerTerminal extends Component {
   _onSignalResolved() {
     this._hoveredSignal = null;
     this._cleanupState();   // scan is done — release the satellite.
+    // Clear the progress bars — exit() returns early so the scanning
+    // handler's display update never runs.
+    this.radar?.setLockOnProgress?.(0);
+    this.radar?.setScanProgress?.(0);
     this.exit();
   }
 
@@ -380,6 +381,7 @@ export class ComputerTerminal extends Component {
       this.satellite.isScanning = false;
       this.satellite.scanTarget = null;
       this.satellite.scanProgress = 0;
+      this.satellite._scanComplete = false;
     }
   }
 
@@ -398,6 +400,26 @@ export class ComputerTerminal extends Component {
         this._hoveredSignal = this.satellite.scanTarget;
         this.saveSignal();
         this._cleanupState();
+        // _cleanupState cleared _scanComplete, so the display condition
+        // below won't trigger — update now to reset the bars to 0.
+        if (!this.screen) this._updateRadarDisplay();
+      }
+      // Background lock-on: keep advancing the lock-on progress while the
+      // terminal is closed — the dish was already aimed when the player
+      // exited, so the lock-on continues on its own.
+      if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
+        this._lockOnProgress += dt;
+        if (this._lockOnProgress >= this._lockOnDuration && this.satellite) {
+          this.satellite.scanTarget = this._lockOnTarget;
+          this.satellite.scanProgress = 0;
+          this.satellite.isScanning = true;
+        }
+      }
+      // Keep the radar display alive while a background scan or lock-on
+      // runs — the overlay stays visible after exit so the player can
+      // watch the progress bars from outside the terminal.
+      if (this.satellite?.isScanning || this.satellite?._scanComplete || this._lockOnTarget) {
+        if (!this.screen) this._updateRadarDisplay();
       }
       return;
     }
@@ -557,12 +579,17 @@ export class ComputerTerminal extends Component {
       scanProgress = this.satellite.scanProgress / this.satellite.scanTarget.scanTime;
     }
 
-    // Compute lock-on fraction for the X overlay (0..1, or -1 when inactive).
+    // Compute lock-on fraction for the X overlay and bar (0..1, or -1 when
+    // inactive).  After exit() auto-completes lock-on, _lockOnTarget is null
+    // but the satellite keeps scanning — the bar must stay full in that case
+    // so _updateRadarDisplay() doesn't wipe the scanning handler's value.
     let lockOnFraction = -1;
     if (this._lockOnTarget && this._lockOnProgress < this._lockOnDuration) {
       lockOnFraction = this._lockOnProgress / this._lockOnDuration;
     } else if (this._lockOnTarget) {
       lockOnFraction = 1;   // lock-on complete, X stays fully visible
+    } else if (this.satellite?.isScanning || this.satellite?._scanComplete) {
+      lockOnFraction = 1;   // background scan running — lock-on was completed
     }
 
     this.radar.update(

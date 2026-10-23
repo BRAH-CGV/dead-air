@@ -770,7 +770,7 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
   });
 
-  it('exit during lock-on auto-completes it so the scan continues in the background', () => {
+  it('exit during lock-on lets it keep progressing in the background', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -784,12 +784,20 @@ describe('ComputerTerminal', () => {
 
     term.exit();
     expect(term.state).toBe('idle');
-    // Lock-on was auto-completed: satellite is now scanning in the background.
+    // Satellite scan state is cleared (lock-on hasn't completed yet).
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    // Lock-on fields are preserved so the bar stays visible.
+    expect(term._lockOnTarget).toBe(sig);
+
+    // Drive lock-on to completion in the background.
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term._lockOnProgress = term._lockOnDuration - 1 / 120;
+    term.onUpdate(1 / 60);
+    // Lock-on completed: satellite now scanning in the background.
     expect(sat.isScanning).toBe(true);
     expect(sat.scanTarget).toBe(sig);
     expect(sat.scanProgress).toBe(0);
-    // Lock-on visual state is cleared.
-    expect(term._lockOnTarget).toBeNull();
   });
 
   // ── SCANNING → AUTO-SAVE ──
@@ -823,7 +831,6 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('idle');
     expect(sig.saved).toBe(true);
     expect(driveMgr.saveToDrive).toHaveBeenCalled();
-    expect(radar.hide).toHaveBeenCalled();
     expect(crosshair.show).toHaveBeenCalled();
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
@@ -903,7 +910,6 @@ describe('ComputerTerminal', () => {
     term.state = 'scanning';  // force a non-idle state
     term.exit();
     expect(term.state).toBe('idle');
-    expect(radar.hide).toHaveBeenCalled();
   });
 
   it('exit during scanning preserves the scan so the satellite keeps going', () => {
@@ -1015,14 +1021,11 @@ describe('ComputerTerminal', () => {
       expect(radar.show).toHaveBeenCalled();
     });
 
-    it('keeps the radar up while leaning back out, and drops it once out', () => {
+    it('leans back out without hiding the radar', () => {
       term.enter();
       term.exit();
       expect(view.close).toHaveBeenCalledTimes(1);
       expect(radar.hide).not.toHaveBeenCalled();
-      const onClosed = view.close.mock.calls[0][0];
-      onClosed();
-      expect(radar.hide).toHaveBeenCalled();
     });
 
     it('draws the radar only when the screen\'s picture is painted, not every frame', () => {
@@ -1072,11 +1075,13 @@ describe('ComputerTerminal', () => {
     });
   });
 
-  it('without a screen, the radar goes over the view as before', () => {
+  it('without a screen, the radar opens and stays visible after close', () => {
     term.enter();
     expect(radar.show).toHaveBeenCalled();
     term.exit();
-    expect(radar.hide).toHaveBeenCalled();
+    expect(term.state).toBe('idle');
+    // Radar stays visible — hide() is never called.
+    expect(radar.hide).not.toHaveBeenCalled();
   });
 
   // ── Background scan continuation ──
