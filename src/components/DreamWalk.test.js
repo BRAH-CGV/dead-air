@@ -50,16 +50,30 @@ describe('DreamWalk (#101)', () => {
     expect(storm).toBeGreaterThan(L.skyBase);
   });
 
-  it('past the pull radius: takes the controls and drags the player back towards the base', () => {
+  it('past the pull radius: takes the legs, not the eyes, and drags the player back towards the base', () => {
     stepTo(walk, position, 0, L.pullRadius + 1);
     expect(walk.state).toBe('pulled');
-    expect(controller.inputLocked).toBe(true);
+    expect(controller.moveLocked).toBe(true);
+    expect(controller.inputLocked).toBe(false);          // free to look round as they fly
     const before = Math.hypot(position.x, position.z);
     walk.onUpdate(DT);
     walk.onUpdate(DT);
     expect(Math.hypot(position.x, position.z)).toBeLessThan(before);
     // Dragged backwards: the way they were looking is kept.
     expect(controller.teleport.mock.calls.at(-1)[1]).toEqual({ yaw: Math.PI, pitch: 0 });
+    // …and wherever they look round to as they go.
+    controller.yaw = 0.4;
+    controller.pitch = -0.2;
+    walk.onUpdate(DT);
+    expect(controller.teleport.mock.calls.at(-1)[1]).toEqual({ yaw: 0.4, pitch: -0.2 });
+  });
+
+  it('says how fast it is dragging them (for the wind)', () => {
+    expect(walk.pullSpeed).toBe(0);
+    stepTo(walk, position, 0, L.pullRadius + 40);
+    walk.onUpdate(DT);
+    walk.onUpdate(DT);
+    expect(walk.pullSpeed).toBeGreaterThan(0);
   });
 
   it('the drag picks up speed the longer it lasts', () => {
@@ -104,6 +118,7 @@ describe('DreamWalk (#101)', () => {
     three.walk.onDestroy();
     expect(three.controller.speedScale).toBe(1);
     expect(three.controller.inputLocked).toBe(false);
+    expect(three.controller.moveLocked).toBe(false);
     expect(three.camera.fov).toBe(75);
   });
 

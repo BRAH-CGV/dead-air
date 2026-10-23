@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { findBursts, loudSpan, synthDuctCrawl, walkRate } from './RagnoSounds.js';
+import { findBursts, loudSpan, DuctCrawl, DUCT_CRAWL, ductEnvelope, walkRate } from './RagnoSounds.js';
 
 const SR = 1000;
+
+function seeded(seed) {
+  let a = seed * 0x9e3779b9;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /** Silence with tones of `amp` between [start, end) seconds. */
 function clip(seconds, parts) {
@@ -47,29 +57,99 @@ describe('loudSpan', () => {
   });
 });
 
-describe('synthDuctCrawl', () => {
-  it('is a run of knocks in a metal duct: mostly quiet, with sharp hits, never clipping', () => {
-    const s = synthDuctCrawl({ sampleRate: 8000, seconds: 3, seed: 3 });
-    expect(s.length).toBe(24000);
-    let peak = 0, quiet = 0;
-    for (const v of s) { peak = Math.max(peak, Math.abs(v)); if (Math.abs(v) < 0.02) quiet++; }
-    expect(peak).toBeLessThanOrEqual(1);
-    expect(peak).toBeGreaterThan(0.3);
-    expect(quiet / s.length).toBeGreaterThan(0.3);
+describe('DuctCrawl', () => {
+  /** Every cue over `seconds`, with the time it came. */
+  function cues(seconds, seed = 4, dt = 1 / 60) {
+    const crawl = new DuctCrawl(seeded(seed));
+    crawl.start();
+    const out = [];
+    for (let t = 0; t < seconds; t += dt) {
+      for (const c of crawl.update(dt)) out.push({ t, clip: c.clip, layer: c.layer, gain: c.gain, detune: c.detune });
+    }
+    return out;
+  }
+
+  it('cuts the recording into one step (the first thud) and the layers after it, in order, none overlapping', () => {
+    const { step, layers } = DUCT_CRAWL.clips;
+    expect(step[0]).toBe(0);
+    let end = step[0] + step[1];
+    for (const [start, length] of layers) {
+      expect(start).toBeGreaterThanOrEqual(end);
+      expect(length).toBeGreaterThan(0.1);
+      end = start + length;
+    }
+    expect(end).toBeLessThanOrEqual(12.84);
+    expect(layers.length).toBeGreaterThanOrEqual(10);
   });
 
-  it('is the same every time for one seed', () => {
-    const a = synthDuctCrawl({ sampleRate: 4000, seconds: 1, seed: 9 });
-    const b = synthDuctCrawl({ sampleRate: 4000, seconds: 1, seed: 9 });
-    expect(Array.from(a)).toEqual(Array.from(b));
+  it('starts with the thud at once, then walks: a footfall every fraction of a second, with now and then a pause', () => {
+    const all = cues(20);
+    const steps = all.filter(c => !c.layer);
+    expect(steps[0].t).toBe(0);
+    expect(steps[0].clip).toBe(DUCT_CRAWL.clips.step);
+    expect(steps.length).toBeGreaterThan(25);
+    const gaps = steps.slice(1).map((c, i) => c.t - steps[i].t);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(DUCT_CRAWL.stepEvery[0] - 0.02);
+    expect(Math.max(...gaps)).toBeGreaterThan(DUCT_CRAWL.stepEvery[1]);   // a pause
+  });
+
+  it('not the same thud every footfall: under half are it, the rest the other knocks and creaks, quieter', () => {
+    const steps = cues(30).filter(c => !c.layer);
+    const thuds = steps.filter(c => c.clip === DUCT_CRAWL.clips.step);
+    expect(thuds.length / steps.length).toBeLessThan(0.55);
+    expect(thuds.length / steps.length).toBeGreaterThan(0.25);
+    const others = steps.filter(c => c.clip !== DUCT_CRAWL.clips.step);
+    expect(new Set(others.map(c => c.clip)).size).toBeGreaterThan(DUCT_CRAWL.clips.layers.length / 2);
+    for (const c of others) expect(c.gain).toBeLessThan(c.clip[2]);
+    // Nor two thuds at quite the same level.
+    expect(new Set(thuds.map(c => c.gain)).size).toBeGreaterThan(thuds.length / 2);
+  });
+
+  it('the step is quieter than its recording: the thud is the loudest thing in the file', () => {
+    expect(DUCT_CRAWL.clips.step[2]).toBeLessThan(0.5);
+  });
+
+  it('layers the creaks and thuds over the steps, sometimes two at once, never the same one twice running', () => {
+    const layers = cues(30).filter(c => c.layer);
+    expect(layers.length).toBeGreaterThan(40);
+    // Footfalls and layers alike: no knock or creak twice running.
+    const pieces = cues(30).filter(c => c.clip !== DUCT_CRAWL.clips.step);
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i].clip).not.toBe(pieces[i - 1].clip);
+    const together = layers.filter((c, i) => i > 0 && c.t === layers[i - 1].t);
+    expect(together.length).toBeGreaterThan(0);
+    expect(new Set(layers.map(c => c.clip)).size).toBeGreaterThan(DUCT_CRAWL.clips.layers.length / 2);
+  });
+
+  it('pitches each sound a little apart, within its spread', () => {
+    const all = cues(20);
+    for (const c of all) {
+      expect(Math.abs(c.detune)).toBeLessThanOrEqual(c.layer ? DUCT_CRAWL.detune.layer : DUCT_CRAWL.detune.step);
+      expect(c.gain).toBeLessThanOrEqual(c.clip[2]);
+      expect(c.gain).toBeGreaterThan(0);
+    }
+    expect(new Set(all.map(c => c.detune)).size).toBeGreaterThan(10);
+  });
+
+  it('is the same crawl from the same seed', () => {
+    expect(cues(5, 9)).toEqual(cues(5, 9));
   });
 });
 
-describe('walkRate', () => {
-  it('plays the walking loop at the pace of his steps: slow when creeping, quick when running', () => {
-    expect(walkRate(0)).toBe(0);
-    expect(walkRate(1.4)).toBeGreaterThan(0.5);
-    expect(walkRate(4.2)).toBeGreaterThan(walkRate(1.4));
-    expect(walkRate(20)).toBeLessThanOrEqual(2);
+describe('ductEnvelope', () => {
+  const o = { fadeIn: 1.2, fadeOut: 1, floor: 0.25 };
+
+  it('climbing in, it swells from faint to full; climbing out, it dies away again — never cut in or out', () => {
+    expect(ductEnvelope(0, 8, o)).toBeCloseTo(0.25);
+    expect(ductEnvelope(0.6, 8, o)).toBeGreaterThan(0.25);
+    expect(ductEnvelope(0.6, 8, o)).toBeLessThan(1);
+    expect(ductEnvelope(4, 8, o)).toBe(1);
+    expect(ductEnvelope(7.5, 8, o)).toBeLessThan(1);
+    expect(ductEnvelope(8, 8, o)).toBeCloseTo(0.25);
+    for (let t = 0; t < 8; t += 0.1) expect(ductEnvelope(t + 0.1, 8, o) - ductEnvelope(t, 8, o)).toBeLessThan(0.15);
+  });
+
+  it('a short run (going back out) still swells and fades, never past full', () => {
+    for (let t = 0; t <= 1.5; t += 0.05) expect(ductEnvelope(t, 1.5, o)).toBeLessThanOrEqual(1);
+    expect(ductEnvelope(0.75, 1.5, o)).toBeGreaterThan(ductEnvelope(0, 1.5, o));
   });
 });

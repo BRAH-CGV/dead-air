@@ -32,6 +32,8 @@ export class GlobeSpin extends Interactable {
   speed = 0;
   /** How far it has turned from where the room put it, radians. */
   angle = 0;
+  /** Pushes so far, at top speed too: what its sound (GlobeSound) follows. */
+  pushes = 0;
 
   /**
    * @param {object} [opts]
@@ -60,6 +62,7 @@ export class GlobeSpin extends Interactable {
   onInteract() {
     this._rest ??= this.gameObject.object3d.quaternion.clone();
     this.speed = Math.min(this.maxSpeed, this.speed + this.kick);
+    this.pushes++;
   }
 
   onUpdate(dt) {

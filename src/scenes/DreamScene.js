@@ -10,6 +10,9 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { Component } from '../core/Component.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
+import { DreamWind } from '../components/DreamWind.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { BaseScene } from './BaseScene.js';
 import { wakeInto } from './dreamWake.js';
@@ -134,7 +137,13 @@ export class DreamScene extends Scene {
     this._addBase();
     this._addBeacon();
     this._spawnPlayer();
+    // Footsteps: always outside, the sand's crunch, and no suit to muffle them.
+    engine.player?.addComponent(new Footsteps({ isOutside: () => true, suit: { worn: false }, level: DREAM_FOOTSTEPS }));
     this._addWalk();
+    // The spooky music, creeping in under the dream.
+    root.addComponent(new DreamMusic());
+    // The wind rushing past as the base drags the dreamer back.
+    root.addComponent(new DreamWind({ walk: this.walk }));
 
     // The dream's look: desaturated with subtle cel-shading.
     this._dreamFilter = new DreamFilter();

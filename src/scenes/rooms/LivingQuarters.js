@@ -166,6 +166,7 @@ export class LivingQuarters extends Room {
       name: 'Bunk', position: [-inX + 0.48, 0, -inZ + 1.03],
     });
     this.bed = bunk.addComponent(new Bed());
+    bunk.surface = 'bed';   // what a foot on it sounds of (Footsteps)
 
     // The side table stands just off the bed's open side, by the pillow.
     // Both tables are worn wood: Poly Haven's, its colour and normal maps.
@@ -176,6 +177,7 @@ export class LivingQuarters extends Room {
       normalMap: assets?.get('tex:wood-table-normal') ?? null, roughness: 0.8,
     }));
     const table = this._buildTable('SideTable', [-1.45, -3.5], [0.7, 0.5, 0.7], wood);
+    table.surface = 'wood';   // what a foot on it sounds of (Footsteps)
 
     // A digital clock on the side table, its face (+z) turned to the pillow
     // so a napper watches the minutes race (#113). The scene hands it the
@@ -222,7 +224,8 @@ export class LivingQuarters extends Room {
     // ── Office ──
     // The desk end-on to the front wall, its drawers toward the chair on its
     // left, facing it.
-    this._spawnProp('model:simple-desk', { name: 'Desk', position: [-0.2, 0, 2.6], rotationY: Math.PI });
+    const desk = this._spawnProp('model:simple-desk', { name: 'Desk', position: [-0.2, 0, 2.6], rotationY: Math.PI });
+    if (desk) desk.surface = 'wood';
     this._spawnProp('model:metal-chair', { name: 'DeskChair', position: [-1.45, 0, 2.67], rotationY: 1.3 });
     this._buildDeskLamp([-0.05, 0.79, 2.2]);
     this._placeSpawn([-1.3, -2.4], [-0.2, 2.6]);
@@ -269,7 +272,8 @@ export class LivingQuarters extends Room {
    *  cached model's is shared. */
   _buildCoffeeMachine([x, z], wood) {
     const [tw, th] = COFFEE_TABLE;
-    this._buildTable('CoffeeTable', [x + tw / 2, z], COFFEE_TABLE, wood);
+    const coffeeTable = this._buildTable('CoffeeTable', [x + tw / 2, z], COFFEE_TABLE, wood);
+    coffeeTable.surface = 'wood';
 
     // The machine's back 4 cm off the wall, turned a quarter so its front
     // (+z) faces into the room and its depth runs along x.

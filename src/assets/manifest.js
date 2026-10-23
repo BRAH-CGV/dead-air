@@ -729,11 +729,9 @@ const PLACED = {
   // Stamina and the Sleep Demon, from the first minute of night 1: the
   // demon's whispers and knocks, placed on its figure (SleepDemon); the heartbeat, looped,
   // and the yawn of a tired one (FatigueEffects); a
-  // ration dropping from the office dispenser (BaseScene._addStamina).
+  // coffee slurped as it is drunk (BaseScene._addStamina).
   //
-  // The ration is a PLACEHOLDER, for the sound owner to replace: a short
-  // synthesised wav, not final audio. The whispers, the heartbeat and the yawn
-  // are real (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // All real recordings (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
   // public/assets/audio/, named after its key (any format: ration.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
@@ -746,9 +744,32 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/yawn.mp3',
   },
-  'sfx:ration': {
+  'sfx:slurp': {
     type: 'audio',
-    url: 'assets/audio/ration.wav',
+    url: 'assets/audio/slurp.mp3',
+  },
+  // The bedroom's coffee machine running while a cup brews (CoffeeSound):
+  // exactly a brew long, 20 s. Its start click is the camera flash's.
+  'sfx:coffee-machine': {
+    type: 'audio',
+    url: 'assets/audio/coffee-machine.mp3',
+  },
+  // The player's footsteps (Footsteps): three interior steps and two outdoor
+  // thumps in one recording, cut by hand (STEP_SOUNDS).
+  'sfx:steps': {
+    type: 'audio',
+    url: 'assets/audio/steps.mp3',
+  },
+  // …and two wood thuds for a desk or a table, levelled to them.
+  'sfx:steps-wood': {
+    type: 'audio',
+    url: 'assets/audio/steps-wood.mp3',
+  },
+  // The desk globe spun (GlobeSound): one real spin, the push and the globe
+  // dying away, played from its top with every push.
+  'sfx:globe-spin': {
+    type: 'audio',
+    url: 'assets/audio/globe-spin.wav',
   },
   'sfx:whispering': {
     type: 'audio',
@@ -763,7 +784,8 @@ const PLACED = {
   // pace of its steps and heard only indoors; the call, cut into its soft
   // chirps (outside, under the wind) and its loud bursts (the rare screech,
   // pitched down); two attacks for a flinch or the aggro; and the third for
-  // the death screen, its loud part only.
+  // the death screen, its loud part only; and the vents, thuds and creaks cut
+  // into his steps and the layers over them (DUCT_CRAWL).
   'sfx:spider-walking': {
     type: 'audio',
     url: 'assets/audio/spider-walking.mp3',
@@ -783,6 +805,10 @@ const PLACED = {
   'sfx:spider-attack-8': {
     type: 'audio',
     url: 'assets/audio/spider-attack-8.mp3',
+  },
+  'sfx:ragno-vents': {
+    type: 'audio',
+    url: 'assets/audio/ragno-vents.mp3',
   },
 };
 

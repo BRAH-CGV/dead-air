@@ -10,9 +10,11 @@
 //   • the death screen's attack has a quiet lead-in and a long tail;
 //     loudSpan() finds the loud part, which is all that plays.
 //
-// There is no recording of him in the vent, so synthDuctCrawl() makes one:
-// a seeded run of knocks and scrapes ringing in a sheet-metal duct, like
-// Growl.js for the dust eyes. A placeholder for the sound owner to replace.
+//   • the vent recording (sfx:ragno-vents) is 12.8 s of thuds and creaks in a
+//     duct. DUCT_CRAWL cuts it by hand: the first thud and the layers after
+//     it. DuctCrawl says when each plays: a skitter of footfalls with now
+//     and then a pause (some the thud, the rest other knocks and creaks),
+//     and more landing over them at random, sometimes two at once.
 // ─────────────────────────────────────────────
 
 const dB = v => 20 * Math.log10(Math.max(v, 1e-9));
@@ -84,53 +86,119 @@ export function walkRate(speed, { clipSpeed = 2.2, min = 0.6, max = 1.8 } = {}) 
   return Math.min(Math.max(speed / clipSpeed, min), max);
 }
 
-/** A small seeded random, so the duct sounds the same every game. */
-function mulberry(seed) {
-  let a = seed | 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+/**
+ * The vent recording, cut: each clip is [start, length, gain] in seconds,
+ * gain a trim on its own level. The step is the first thud, the loudest
+ * thing in the file (10 dB over the rest), so it plays well under it; the
+ * faint layers are lifted halfway toward the loud ones. The 0.13 s blip at
+ * 9.3 s is left out: −38 dB, next to nothing.
+ */
+export const DUCT_CRAWL = {
+  clips: {
+    step: [0, 0.56, 0.35],
+    layers: [
+      [0.98, 0.42, 0.8], [1.55, 0.6, 1.1], [3.36, 0.98, 1], [4.52, 0.62, 1],
+      [5.46, 0.34, 1.05], [5.89, 0.28, 1.5], [7.17, 0.54, 1.4], [8.03, 0.9, 1.6],
+      [10.09, 0.53, 1.4], [10.91, 0.3, 1.65], [11.66, 0.42, 1.2], [12.17, 0.38, 1.2],
+    ],
+  },
+  /** Seconds between steps; now and then (`pauseChance`) a pause instead. */
+  stepEvery: [0.22, 0.42],
+  pauseChance: 0.15,
+  pause: [0.6, 1.1],
+  /** Of the footfalls, the share that are the thud; the rest are one of the
+   *  layers at `footfall` of its level, so the steps don't repeat. Each thud
+   *  is `stepVary` quieter at most, at random. */
+  thudChance: 0.4,
+  footfall: 0.7,
+  stepVary: 0.35,
+  /** Seconds between layers; `doubleChance` of them come two at once. */
+  layerEvery: [0.3, 0.85],
+  doubleChance: 0.35,
+  /** ± cents each is pitched. */
+  detune: { step: 150, layer: 250 },
+  /** Voices to play them on: steps and layers overlap. */
+  voices: 5,
+};
+
+/**
+ * When each piece of the vent recording plays while he is in a duct
+ * (pure: the caller plays them). `start()` as he goes in; `update(dt)`
+ * returns the cues due this frame, each `{ clip, layer, gain, detune }`:
+ * `layer` false for a footfall, whichever clip it is.
+ * The cues are reused: read them before the next update.
+ */
+export class DuctCrawl {
+  constructor(rand = Math.random, opts = DUCT_CRAWL) {
+    this.rand = rand;
+    this.opts = opts;
+    this._cues = [];
+    this._pool = [{}, {}, {}];
+    this._last = -1;
+    this.start();
+  }
+
+  start() {
+    this._step = 0;
+    this._first = true;
+    this._layer = this._between(this.opts.layerEvery) * 0.5;
+  }
+
+  update(dt) {
+    const o = this.opts;
+    this._cues.length = 0;
+    this._step -= dt;
+    if (this._step <= 0) {
+      if (this._first || this.rand() < o.thudChance) this._cue(o.clips.step, false, 1 - o.stepVary * this.rand());
+      else this._cue(this._pickLayer(), false, o.footfall);
+      this._first = false;
+      this._step += this.rand() < o.pauseChance ? this._between(o.pause) : this._between(o.stepEvery);
+    }
+    this._layer -= dt;
+    if (this._layer <= 0) {
+      this._cue(this._pickLayer(), true);
+      if (this.rand() < o.doubleChance) this._cue(this._pickLayer(), true);
+      this._layer += this._between(o.layerEvery);
+    }
+    return this._cues;
+  }
+
+  _between([lo, hi]) {
+    return lo + (hi - lo) * this.rand();
+  }
+
+  /** Any layer but the last one played. */
+  _pickLayer() {
+    const n = this.opts.clips.layers.length;
+    const first = this._last < 0;
+    let i = Math.floor(this.rand() * (first ? n : n - 1));
+    if (!first && i >= this._last) i++;
+    this._last = i;
+    return this.opts.clips.layers[i];
+  }
+
+  _cue(clip, layer, trim = 1) {
+    const c = this._pool[this._cues.length];
+    const spread = layer ? this.opts.detune.layer : this.opts.detune.step;
+    c.clip = clip;
+    c.layer = layer;
+    c.gain = clip[2] * trim;
+    c.detune = Math.round((this.rand() * 2 - 1) * spread);
+    this._cues.push(c);
+  }
 }
 
 /**
- * Something heavy crawling through a sheet-metal duct: irregular knocks
- * (a thud and the panel ringing after it) with short scrapes between,
- * looped by the caller.
- * @returns {Float32Array}
+ * How loud the crawl is, 0 … 1, `t` seconds into a run through the duct of
+ * `total` seconds: from `floor` it swells over `fadeIn` as he climbs in, and
+ * dies back to it over the last `fadeOut` as he climbs out, so the sound is
+ * never cut in or out (smoothstep both ways).
  */
-export function synthDuctCrawl({ sampleRate, seconds = 4, seed = 11 }) {
-  const rand = mulberry(seed);
-  const out = new Float32Array(Math.round(sampleRate * seconds));
-  // The duct's ring: a few panel modes, a low boom and a tinny rattle.
-  const modes = [[92, 0.9, 7], [163, 0.5, 11], [311, 0.35, 16], [587, 0.2, 22]];
-  let t = 0.05;
-  while (t < seconds - 0.3) {
-    const start = Math.round(t * sampleRate);
-    const hit = 0.45 + 0.55 * rand();
-    // Each knock: a burst of noise, then the panel rings and dies away.
-    for (let i = 0; i < sampleRate * 0.5 && start + i < out.length; i++) {
-      const s = i / sampleRate;
-      let v = (rand() * 2 - 1) * Math.exp(-s * 90) * 0.6;
-      for (const [f, a, decay] of modes) v += a * Math.sin(2 * Math.PI * f * s) * Math.exp(-s * decay);
-      out[start + i] += v * hit * 0.42;
-    }
-    // Now and then a scrape: claws dragged along the panel.
-    if (rand() < 0.35) {
-      const from = start + Math.round(sampleRate * 0.12);
-      const len = Math.round(sampleRate * (0.15 + 0.2 * rand()));
-      for (let i = 0; i < len && from + i < out.length; i++) {
-        const env = Math.sin(Math.PI * i / len);
-        out[from + i] += (rand() * 2 - 1) * env * 0.08 * (1 + Math.sin(i / sampleRate * 2 * Math.PI * 40));
-      }
-    }
-    // Uneven steps: a skitter of quick ones, or a pause.
-    t += rand() < 0.3 ? 0.5 + rand() * 0.6 : 0.12 + rand() * 0.2;
-  }
-  let peak = 0;
-  for (const v of out) peak = Math.max(peak, Math.abs(v));
-  if (peak > 0.95) for (let i = 0; i < out.length; i++) out[i] *= 0.95 / peak;
-  return out;
+export function ductEnvelope(t, total, { fadeIn, fadeOut, floor }) {
+  const ease = x => {
+    const k = Math.min(Math.max(x, 0), 1);
+    return k * k * (3 - 2 * k);
+  };
+  const k = Math.min(ease(t / fadeIn), ease((total - t) / fadeOut));
+  return floor + (1 - floor) * k;
 }

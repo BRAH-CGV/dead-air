@@ -15,6 +15,9 @@ import { DreamFilter } from '../core/DreamFilter.js';
 import { BaseScene } from './BaseScene.js';
 import { wakeInto } from './dreamWake.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
+import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
+import { AMBIENCE } from '../components/Ambience.js';
 
 // ─────────────────────────────────────────────
 // DreamCraterScene  –  the dream in the empty crater
@@ -36,6 +39,9 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 export const DREAM_CRATER = {
   /** Seconds the player must survive to wake. */
   surviveSeconds: 60,
+  /** The wind outside's level, of its clip's own: a little under the base's
+   *  calm night (AMBIENCE.volumes, 0.5). */
+  wind: 0.4,
 };
 
 /** Where the player stands: the crater centre. */
@@ -86,7 +92,13 @@ export class DreamCraterScene extends Scene {
     this._addLighting();
     this._addFog();
     this._addDust();
+    // The spooky music, creeping in under the dream.
+    root.addComponent(new DreamMusic());
+    // The wind outside, throughout, a little under the base's calm night.
+    root.addComponent(new DreamMusic({ key: AMBIENCE.outside, volume: DREAM_CRATER.wind }));
     this._spawnPlayer();
+    // Footsteps: always outside, the sand's crunch, and no suit to muffle them.
+    engine.player?.addComponent(new Footsteps({ isOutside: () => true, suit: { worn: false }, level: DREAM_FOOTSTEPS }));
     this._addDustEyes();
     this._addSurvival();
 
