@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { BedroomPC } from './BedroomPC.js';
+import { BedroomPC, PC_CLICK } from './BedroomPC.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
 
 vi.mock('../ui/paintDom.js', () => ({ paintDom: vi.fn() }));
@@ -111,6 +111,47 @@ describe('BedroomPC (#114)', () => {
     expect(pc.panel.step).toHaveBeenLastCalledWith(1);
     press(engine, pc, 'ArrowLeft');
     expect(pc.panel.step).toHaveBeenLastCalledWith(-1);
+  });
+
+  describe('a key click as the screen changes', () => {
+    const SCREENS = ['colony', 'findings', 'forecast'];
+    let click;
+    beforeEach(() => {
+      click = { isPlaying: false, play: vi.fn(function () { this.isPlaying = true; }), stop: vi.fn(function () { this.isPlaying = false; }),
+        setVolume: vi.fn(), setDetune: vi.fn() };
+      pc.click = click;
+      pc.panel.screen = 'colony';
+      pc.panel.setScreen = vi.fn(n => { pc.panel.screen = n; });
+      pc.panel.step = vi.fn(d => { pc.panel.screen = SCREENS[(SCREENS.indexOf(pc.panel.screen) + d + 3) % 3]; });
+      pc.onInteract();
+    });
+
+    it('clicks when a number or an arrow changes the screen', () => {
+      press(engine, pc, 'Digit2');
+      expect(click.play).toHaveBeenCalledTimes(1);
+      press(engine, pc, 'ArrowRight');
+      expect(click.play).toHaveBeenCalledTimes(2);
+    });
+
+    it('not when the screen asked for is the one already up', () => {
+      press(engine, pc, 'Digit1');
+      expect(click.play).not.toHaveBeenCalled();
+    });
+
+    it('quiet, and each press a touch apart in pitch, as real keys are', () => {
+      press(engine, pc, 'Digit2');
+      press(engine, pc, 'Digit3');
+      expect(click.setVolume.mock.lastCall[0]).toBeLessThanOrEqual(0.2);
+      for (const [cents] of click.setDetune.mock.calls) {
+        expect(Math.abs(cents - PC_CLICK.detune)).toBeLessThanOrEqual(PC_CLICK.spread);
+      }
+    });
+
+    it('a click still sounding is started over, not doubled', () => {
+      press(engine, pc, 'Digit2');
+      press(engine, pc, 'Digit3');
+      expect(click.stop).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('reads no keys while it is put away', () => {

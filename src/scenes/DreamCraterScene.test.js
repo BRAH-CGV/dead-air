@@ -10,6 +10,9 @@ import { GameObject } from '../core/GameObject.js';
 import { DreamDustEyes, DREAM_EYES } from '../gameplay/DreamDustEyes.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
+import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, STEP_SOUNDS, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
+import { AMBIENCE } from '../components/Ambience.js';
 
 // Builds against the whole base scene module: as slow as BaseScene.test.js
 // under a parallel run, so it gets the same budget.
@@ -53,6 +56,26 @@ describe('DreamCraterScene', () => {
     engine = makeDreamEngine();
     scene = new DreamCraterScene(engine, { night: 2 });
     scene.build();
+  });
+
+  it('plays the spooky music under the dream, and the wind outside throughout, a little quieter than the base\'s', () => {
+    const all = go => [go, ...(go.children ?? []).flatMap(all)];
+    const loops = [];
+    for (const go of engine._rootObjects) for (const g of all(go)) for (const c of g.components ?? []) if (c instanceof DreamMusic) loops.push(c);
+    expect(loops.map(l => l.key).sort()).toEqual([AMBIENCE.music, AMBIENCE.outside].sort());
+    const wind = loops.find(l => l.key === AMBIENCE.outside);
+    expect(wind.volume).toBeLessThan(AMBIENCE.volumes[AMBIENCE.outside]);
+    expect(wind.volume).toBeGreaterThan(0);
+  });
+
+  it('footsteps outside, the sand\'s crunch, never muffled (no suit in a dream)', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(true);
+    expect(feet.cutoff('exterior')).toBe(STEP_SOUNDS.thumpLowpass);
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    expect(feet.level).toBe(DREAM_FOOTSTEPS);              // quieter than at the base
+    expect(DREAM_FOOTSTEPS).toBeLessThan(1);
   });
 
   it('wakes back into the base scene', () => {

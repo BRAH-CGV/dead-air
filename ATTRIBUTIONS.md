@@ -890,6 +890,72 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
 | **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
 
+### Coffee machine running
+
+"Coffee Machine Motor" (https://freesound.org/people/Dwums96/sounds/338130/) by Dwums96, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/coffee-machine.mp3` |
+| **Manifest key** | `sfx:coffee-machine` |
+| **Used for** | The bedroom's coffee machine while a cup brews (`CoffeeSound`) |
+| **Modifications** | Cut to 20 s, a brew's length |
+
+### Coffee slurp
+
+"Coffee Slurping" (https://freesound.org/people/redcheek/sounds/251984/) by redcheek, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/slurp.mp3` |
+| **Manifest key** | `sfx:slurp` |
+| **Used for** | A coffee drunk at the bedroom's machine (`BaseScene._addStamina`) |
+| **Modifications** | Renamed |
+
+### Globe spinning
+
+"SpinningGlobeSound1" (https://freesound.org/people/TunaBombs/sounds/848502/) by TunaBombs, from Freesound, is used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. Downloaded as `848502__tunabombs__spinningglobesound1.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/globe-spin.wav` |
+| **Manifest key** | `sfx:globe-spin` |
+| **Used for** | The desk globe spun (`GlobeSound`) |
+| **Modifications** | Renamed; trimmed to start on the push, its last 20 ms faded out; otherwise as recorded |
+
+### Footsteps
+
+"Heavy_step" (https://freesound.org/people/Hair_fire22/sounds/668818/) by Hair_fire22, from Freesound, used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. "Step on dead leaf.aif" (https://freesound.org/people/nextmaking/sounds/86015/) by nextmaking, from Freesound, used under Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/): transformed and credited.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps.mp3` |
+| **Manifest key** | `sfx:steps` |
+| **Used for** | The player's footsteps (`Footsteps`): the heavy steps indoors, the leaf steps layered under them outside |
+| **Modifications** | Cut into steps and joined into one file; low-passed and played well under their level in game |
+
+### Footsteps on wood
+
+"Wood Thud Underfoot.wav" (https://freesound.org/people/spookymodem/sounds/202106/) by spookymodem, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps-wood.mp3` |
+| **Manifest key** | `sfx:steps-wood` |
+| **Used for** | The player's footsteps on a desk or a table (`Footsteps`) |
+| **Modifications** | Two of its thuds cut out and joined, faded at their ends, raised 8.2 dB to the interior steps' level, converted to mp3 |
+
+### Ragno in the vents
+
+"metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/ragno-vents.mp3` |
+| **Manifest key** | `sfx:ragno-vents` |
+| **Used for** | Ragno crawling through a duct (`Ragno`, `DuctCrawl`): his steps, and thuds and creaks layered over them |
+| **Modifications** | Snippets of both cut and joined into one mono file; played in pieces (`DUCT_CRAWL`), each pitched a little apart |
+
 
 ## Downloaded but unattributed — TODO
 
