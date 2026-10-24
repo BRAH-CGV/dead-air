@@ -132,7 +132,6 @@ export class GameController extends Component {
       { minSignalLevel: this.quotaDock?.minSignalLevel ?? 1 },
     );
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
-    this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     this.banner?.clear();
 
@@ -365,13 +364,6 @@ export class GameController extends Component {
     this.hud.setSignals(collected, required, {
       minSignalLevel: this.quotaDock?.minSignalLevel ?? 1,
     });
-
-    // Scan bar — driven by satellite state (works even when terminal is closed)
-    if (this.satellite?.isScanning && this.satellite?.scanTarget) {
-      this.hud.setScanProgress(this.satellite.scanProgress / this.satellite.scanTarget.scanTime);
-    } else if (!this.satellite?.isScanning) {
-      this.hud.setScanProgress(-1);
-    }
   }
 
   /** The one place `state` changes, so every change is announced. Iterates
@@ -386,7 +378,6 @@ export class GameController extends Component {
   _endShift(state, prompt) {
     this.nightClock?.pause();
     this.hud?.setPrompt(prompt);
-    this.hud?.setScanProgress(-1);
     // Last: a listener sees the shift fully ended (clock stopped, prompt up).
     this._setState(state);
   }
