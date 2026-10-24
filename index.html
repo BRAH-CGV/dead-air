@@ -1118,10 +1118,11 @@
       #fade .fade-caption.is-shown { opacity: 1; }
 
       /* ── Bedroom PC (BedroomPCPanel.js, #114) ──────────────
-         An old green-phosphor screen held up close: the colony map, the
-         hub's findings, the forecast. It fills the view, the way the desk's
-         terminal does (the Sleep Demon counts it as a screen). Below the
-         menus (150), so a pause covers it; the night runs on behind it. */
+         An old green-phosphor screen held up close: the colony map, and
+         last night's threats with tonight's forecast. It fills the view,
+         the way the desk's terminal does (the Sleep Demon counts it as a
+         screen). Below the menus (150), so a pause covers it; the night
+         runs on behind it. */
       #bedroom-pc {
         position: fixed;
         inset: 0;
@@ -1176,10 +1177,12 @@
       .pc-base { fill: #c8ffd8; }
       .pc-map .pc-base-label { fill: #c8ffd8; font-weight: bold; }
       .pc-note { margin: 8px 0 0; color: #4f8a62; font-size: 11px; }
-      .pc-findings { margin: 0; padding-left: 22px; }
-      .pc-finding { margin-bottom: 8px; }
-      .pc-finding-title { color: #c8ffd8; }
-      .pc-finding-body { color: #6fb886; }
+      .pc-section { margin-bottom: 14px; }
+      .pc-section-title { margin: 0 0 6px; color: #c8ffd8; font-size: inherit; font-weight: bold; letter-spacing: 0.08em; }
+      .pc-list { margin: 0; padding: 0; list-style: none; }
+      .pc-log-entry, .pc-forecast-item { margin-bottom: 4px; color: #8fe3a8; }
+      .pc-log-time { display: inline-block; min-width: 6ch; color: #4f8a62; }
+      .pc-forecast-item::before { content: "› "; color: #4f8a62; }
       .pc-empty { margin: 0; color: #c8ffd8; letter-spacing: 0.06em; }
       .pc-hint {
         padding-top: 8px;
