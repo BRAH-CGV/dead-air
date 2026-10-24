@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager, TUTORIAL_QUOTA, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
+import { SignalManager, TUTORIAL_QUOTA, PROCESSED_QUOTA, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
 import { SHIFT, NIGHT_SECONDS } from './NightClock.js';
 
 const POOL = [
@@ -66,6 +66,29 @@ describe('SignalManager', () => {
 
     mgr.startNight(3);
     expect(mgr.required).toBe(8);   // a full drive box
+  });
+
+  it('asks for 1, 2 and 4 of them processed on nights 1, 2 and 3', () => {
+    const mgr = new SignalManager({ signalsPerNight: 10, signalNames: POOL });
+    for (const [night, processed] of [[1, 1], [2, 2], [3, 4]]) {
+      mgr.startNight(night);
+      expect(mgr.requiredProcessed).toBe(processed);
+      expect(PROCESSED_QUOTA[night]).toBe(processed);
+    }
+  });
+
+  it('asks for none processed on night 0, and the last night\'s past the last', () => {
+    const mgr = new SignalManager({ signalsPerNight: 10, signalNames: POOL });
+    mgr.startNight(0);
+    expect(mgr.requiredProcessed).toBe(0);
+    mgr.startNight(5);
+    expect(mgr.requiredProcessed).toBe(PROCESSED_QUOTA[PROCESSED_QUOTA.length - 1]);
+  });
+
+  it('never asks for more processed than the drives it asks for', () => {
+    const mgr = new SignalManager({ signalsPerNight: 3, signalNames: POOL });
+    mgr.startNight(3);   // would want 4 processed, but only 3 drives
+    expect(mgr.requiredProcessed).toBe(mgr.required);
   });
 
   // Night 0 is the tutorial: one drive is enough to learn the loop.

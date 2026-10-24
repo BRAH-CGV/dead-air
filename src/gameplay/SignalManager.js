@@ -39,6 +39,11 @@ const QUOTA_SCALE = 1.5;
 /** Night 0, the tutorial: one signal, to learn the loop on. */
 export const TUTORIAL_QUOTA = 1;
 
+/** How many of the night's drives must be processed (the ServerRoom's
+ *  processing console), by night: none on the tutorial, then 1, 2, 4.
+ *  Nights past the last keep its number. Never more than `required`. */
+export const PROCESSED_QUOTA = Object.freeze([0, 1, 2, 4]);
+
 /** Signals in a night: at the rate the old five-minute night had them (one
  *  every ~42 s of their window), over the longer night. */
 export const SIGNALS_PER_NIGHT = 10;
@@ -68,6 +73,9 @@ export class SignalManager {
    *  quota is now tracked by the drive box dock via physical drives). */
   required = 0;
 
+  /** How many of the required drives must be processed (PROCESSED_QUOTA). */
+  requiredProcessed = 0;
+
   /** @type {number} */
   signalsPerNight;
 
@@ -90,6 +98,11 @@ export class SignalManager {
     this.required = Math.min(
       this.signalsPerNight,
       nightNumber === 0 ? TUTORIAL_QUOTA : Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),
+    );
+    const last = PROCESSED_QUOTA.length - 1;
+    this.requiredProcessed = Math.min(
+      this.required,
+      PROCESSED_QUOTA[Math.max(0, Math.min(nightNumber, last))],
     );
 
     // Shuffle the pool for non-repeating assignment.

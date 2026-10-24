@@ -34,11 +34,12 @@ describe('GameController', () => {
     banner = makeBanner();
     sat  = makeSatellite();
     // A plain dock stub — the controller only reads collectedCount /
-    // requiredCount and calls isQuotaMet().
+    // requiredCount (and the processed pair) and calls isQuotaMet().
     quotaDock = {
       requiredCount: 3,
       collectedCount: 0,
-      minSignalLevel: 1,
+      requiredProcessed: 0,
+      processedCount: 0,
       isQuotaMet() { return this.collectedCount >= this.requiredCount; },
     };
 
@@ -78,15 +79,23 @@ describe('GameController', () => {
     expect(mgr.signals).toHaveLength(10);
     expect(hud.show).toHaveBeenCalled();
     expect(hud.setNight).toHaveBeenCalledWith(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { minSignalLevel: 1 });  // night 1's quota, synced to the dock
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { processed: 0, processedRequired: 1 });  // night 1's quota, synced to the dock
+  });
+
+  it('startNight hands the dock the night\'s processed quota: 1, 2, 4', () => {
+    for (const [night, processed] of [[1, 1], [2, 2], [3, 4]]) {
+      gc.startNight(night);
+      expect(quotaDock.requiredProcessed).toBe(processed);
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, mgr.required, { processed: 0, processedRequired: processed });
+    }
   });
 
   it('startNight scales required count with night number', () => {
     gc.startNight(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { minSignalLevel: 1 });
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { processed: 0, processedRequired: 1 });
 
     gc.startNight(2);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 6, { minSignalLevel: 1 });
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 6, { processed: 0, processedRequired: 2 });
   });
 
   it('auto-starts night 1 on first update when autoStart is true', () => {
@@ -238,7 +247,7 @@ describe('GameController', () => {
       expect(gc.state).toBe('playing');
       expect(clock.currentTime).toBe(0);
       expect(clock.timeString).toBe('12:00 AM');
-      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 6, { minSignalLevel: 1 });  // night 2's quota
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 6, { processed: 0, processedRequired: 2 });  // night 2's quota
     });
 
     it('sleeping after the last night finishes the run', () => {
@@ -470,7 +479,7 @@ describe('GameController.refreshPrompt', () => {
     const gc = new GameController();
     const hud = makeHUD();
     const banner = makeBanner();
-    const quotaDock = { requiredCount: 1, collectedCount: collected, minSignalLevel: 1, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
+    const quotaDock = { requiredCount: 1, collectedCount: collected, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
     Object.assign(gc, { nightClock: new NightClock(), hud, banner, quotaDock, satellite: makeSatellite(), autoStart: false });
     gc.startNight(1);
     return { gc, hud, banner };
@@ -523,7 +532,6 @@ describe('GameController — one twelve-hour shift', () => {
     quotaDock = {
       requiredCount: 3,
       collectedCount: 0,
-      minSignalLevel: 1,
       isQuotaMet() { return this.collectedCount >= this.requiredCount; },
     };
     Object.assign(gc, { nightClock: clock, hud, quotaDock, satellite: makeSatellite(), autoStart: false });
@@ -593,6 +601,15 @@ describe('GameController — loading the drives into the buggy', () => {
     expect(cargo.requiredCount).toBe(quotaDock.requiredCount);
     nights.setNight(2);
     expect(cargo.requiredCount).toBe(quotaDock.requiredCount);
+  });
+
+  it('asks for as many of them processed in the buggy as at the airlock', () => {
+    gc.signalManager = new SignalManager({ signalsPerNight: 10 });
+    nights.setNight(1);
+    expect(cargo.requiredProcessed).toBe(1);
+    nights.setNight(3);
+    expect(cargo.requiredProcessed).toBe(4);
+    expect(quotaDock.requiredProcessed).toBe(4);
   });
 
   it('in the morning, says to load the box into the buggy, and keeps the bed shut until it is', () => {
