@@ -426,6 +426,16 @@ export class Room {
     if (!this.root) return;
     const { world, _bodyToGO, rigidBodyMap } = this.engine;
 
+    // Every component's onDestroy first, while the tree is whole. The
+    // engine's own destroy pass runs after Scene.dispose() and only walks
+    // what is still attached, so once the children are detached below it
+    // would never reach them: a room's sounds (the coffee machine's brew)
+    // played on into the next scene.
+    if (!this._destroyed) {
+      this._destroyed = true;
+      this.root.destroy();
+    }
+
     for (const go of removeBodies ? this.root.descendants() : []) {
       if (!go.rigidBody) continue;
       _bodyToGO?.delete(go.rigidBody.handle);
