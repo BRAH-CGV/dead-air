@@ -806,14 +806,16 @@ export class BaseScene extends Scene {
 
     // The red signal (the next threat, in early): it scans itself, pins
     // the dish when no drive is in, and corrupts the drive it is saved to
-    // — a red drive never counts towards the quota. Summoned with G until
-    // it gets a night of its own.
+    // — a red drive never counts towards the quota. Twice on night 3, each
+    // at an hour of its own on the night clock (scheduleEvil); the console's
+    // `evil` brings it on any night.
     this.evilSignal = new EvilSignal({
       controller:    this.gameController,
       signalManager: this.signalManager,
       terminal:      this.terminal,
       driveManager:  this.driveManager,
       satellite:     this.satellite,
+      clock:         this.nightClock,
     });
     gameplayGO.addComponent(this.evilSignal);
     this.terminal.evilSignal = this.evilSignal;
@@ -2218,7 +2220,15 @@ export class BaseScene extends Scene {
 
     this.whiteOut = new WhiteOut();
     this.evilSignal.whiteOut = this.whiteOut;
-    this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
+    this.evilSignal.hooks = {
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      // A due appearance waits out the UFO's visit and a nap (both built
+      // after this, so read when asked).
+      busy: () => {
+        const phase = this.ufoThreat?.phase;
+        return (!!phase && phase !== 'waiting' && phase !== 'gone') || !!this.nap?.napping;
+      },
+    };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
     this._pipeline = new PostPipeline();

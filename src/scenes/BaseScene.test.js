@@ -1548,7 +1548,22 @@ describe('BaseScene power and the UFO', () => {
     expect(evil.terminal).toBe(scene.terminal);
     expect(evil.driveManager).toBe(scene.driveManager);
     expect(evil.satellite).toBe(scene.satellite);
+    expect(evil.clock).toBe(scene.nightClock);
     expect(scene.terminal.evilSignal).toBe(evil);
+  });
+
+  it('holds the evil signal back while the UFO visits or the player naps', () => {
+    const { busy } = scene.evilSignal.hooks;
+    scene.ufoThreat.phase = 'waiting';
+    scene.nap.napping = false;
+    expect(busy()).toBe(false);
+    scene.ufoThreat.phase = 'approaching';
+    expect(busy()).toBe(true);
+    scene.ufoThreat.phase = 'gone';
+    expect(busy()).toBe(false);
+    scene.nap.napping = true;
+    expect(busy()).toBe(true);
+    scene.nap.napping = false;
   });
 
   it('in view of the window means anywhere in the main office — no hiding behind the furniture', () => {
