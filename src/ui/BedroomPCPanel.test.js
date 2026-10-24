@@ -11,7 +11,8 @@ const MAP = colonyMap({
 const DATA = {
   array: 'ARRAY K-17 · 12°N 40°E',
   map: MAP,
-  findings: [{ night: 1, index: 1 }, { night: 1, index: 2 }, { night: 2, index: 1 }],
+  log: { night: 1, entries: [{ kind: 'storm', hour: -3.5 }, { kind: 'vents', hour: 1.25 }] },
+  forecast: { night: 2, tonight: true, kinds: ['storm', 'eyes', 'vents'] },
 };
 
 describe('BedroomPCPanel', () => {
@@ -29,12 +30,12 @@ describe('BedroomPCPanel', () => {
     expect(panel.visible).toBe(false);
   });
 
-  it('opens on the Colony screen, under the array\'s name, with three tabs', () => {
+  it('opens on the Colony screen, under the array\'s name, with two tabs: the map and the threats', () => {
     panel.show(DATA);
     expect(panel.visible).toBe(true);
     expect(panel.screen).toBe('colony');
     expect($('.pc-array').textContent).toBe('ARRAY K-17 · 12°N 40°E');
-    expect(PC_SCREENS).toEqual(['colony', 'findings', 'forecast']);
+    expect(PC_SCREENS).toEqual(['colony', 'threats']);
     expect($$('.pc-tab').map(t => t.dataset.screen)).toEqual(PC_SCREENS);
     expect($('.pc-tab.is-active').dataset.screen).toBe('colony');
   });
@@ -65,39 +66,84 @@ describe('BedroomPCPanel', () => {
     expect($('.pc-route')).toBeNull();
   });
 
-  it('the Findings screen: one entry per processed signal, each marked as a placeholder', () => {
-    panel.show(DATA);
-    panel.setScreen('findings');
-    expect($('.pc-tab.is-active').dataset.screen).toBe('findings');
-    const entries = $$('.pc-finding');
-    expect(entries).toHaveLength(3);
-    expect(entries[0].textContent).toMatch(/night 1/i);
-    expect(entries[2].textContent).toMatch(/night 2/i);
-    for (const e of entries) expect(e.textContent).toContain(PC_TEXT.placeholder);
+  describe('the Threats screen', () => {
+    const show = (data = DATA) => { panel.show(data); panel.setScreen('threats'); };
+
+    it("last night's log: when each threat first showed, in 24-hour time", () => {
+      show();
+      expect($('.pc-tab.is-active').dataset.screen).toBe('threats');
+      expect($('.pc-log-title').textContent).toBe(PC_TEXT.logTitle(1));
+      const rows = $$('.pc-log-entry');
+      expect(rows).toHaveLength(2);
+      expect(rows[0].textContent).toContain('20:30');
+      expect(rows[0].textContent).toContain(PC_TEXT.logLabels.storm);
+      expect(rows[1].textContent).toContain('01:15');
+      expect(rows[1].textContent).toContain(PC_TEXT.logLabels.vents);
+    });
+
+    it('a quiet night says so', () => {
+      show({ ...DATA, log: { night: 1, entries: [] } });
+      expect($$('.pc-log-entry')).toHaveLength(0);
+      expect($('.pc-log-empty').textContent).toBe(PC_TEXT.quietNight);
+    });
+
+    it('a night with no record (none played, or before this run) says that instead, with no night named', () => {
+      show({ ...DATA, log: { night: 0, entries: null } });
+      expect($('.pc-log-title').textContent).toBe(PC_TEXT.logTitle(null));
+      expect($('.pc-log-empty').textContent).toBe(PC_TEXT.noLog);
+      show({ ...DATA, log: null });
+      expect($('.pc-log-empty').textContent).toBe(PC_TEXT.noLog);
+    });
+
+    it('a threat with no clock time reads --:--', () => {
+      show({ ...DATA, log: { night: 1, entries: [{ kind: 'eyes', hour: null }] } });
+      expect($('.pc-log-entry').textContent).toContain('--:--');
+    });
+
+    it('the forecast for tonight: one vague line per threat due, no times', () => {
+      show();
+      expect($('.pc-forecast-title').textContent).toBe(PC_TEXT.forecastTitle(2, true));
+      const lines = $$('.pc-forecast-item').map(l => l.textContent);
+      expect(lines).toEqual(['storm', 'eyes', 'vents'].map(k => PC_TEXT.forecastLines[k]));
+      for (const line of lines) expect(line).not.toMatch(/\d:\d\d/);
+    });
+
+    it('in the morning it forecasts the next shift', () => {
+      show({ ...DATA, forecast: { night: 3, tonight: false, kinds: ['aerial'] } });
+      expect($('.pc-forecast-title').textContent).toBe(PC_TEXT.forecastTitle(3, false));
+      expect(PC_TEXT.forecastTitle(3, false)).not.toBe(PC_TEXT.forecastTitle(3, true));
+    });
+
+    it('nothing due reads as such, and after the last shift there is no forecast', () => {
+      show({ ...DATA, forecast: { night: 2, tonight: true, kinds: [] } });
+      expect($('.pc-forecast-empty').textContent).toBe(PC_TEXT.nothingDue);
+      show({ ...DATA, forecast: null });
+      expect($$('.pc-forecast-item')).toHaveLength(0);
+      expect($('.pc-forecast-empty').textContent).toBe(PC_TEXT.noShifts);
+    });
+
+    it('its wording is marked as a placeholder until the story has some', () => {
+      show();
+      expect($('.pc-body').textContent).toContain(PC_TEXT.placeholder);
+    });
+
+    it('has a label and a forecast line for every kind of threat', async () => {
+      const { THREAT_KINDS } = await import('../gameplay/ThreatForecast.js');
+      for (const kind of THREAT_KINDS) {
+        expect(PC_TEXT.logLabels[kind]).toBeTruthy();
+        expect(PC_TEXT.forecastLines[kind]).toBeTruthy();
+      }
+    });
   });
 
-  it('with nothing back from the hub, Findings says so', () => {
-    panel.show({ ...DATA, findings: [] });
-    panel.setScreen('findings');
-    expect($$('.pc-finding')).toHaveLength(0);
-    expect($('.pc-empty').textContent).toBe(PC_TEXT.noFindings);
-  });
-
-  it('the Forecast screen reads "insufficient data"', () => {
-    panel.show(DATA);
-    panel.setScreen('forecast');
-    expect($('.pc-body').textContent).toMatch(/insufficient data/i);
-  });
-
-  it('step() walks the screens either way, round the ends', () => {
+  it('step() walks the two screens either way, round the ends', () => {
     panel.show(DATA);
     panel.step(1);
-    expect(panel.screen).toBe('findings');
-    panel.step(1);
+    expect(panel.screen).toBe('threats');
     panel.step(1);
     expect(panel.screen).toBe('colony');
     panel.step(-1);
-    expect(panel.screen).toBe('forecast');
+    expect(panel.screen).toBe('threats');
   });
 
   it('ignores a screen it does not have', () => {
@@ -108,16 +154,17 @@ describe('BedroomPCPanel', () => {
 
   it('opens again on the screen it was left on', () => {
     panel.show(DATA);
-    panel.setScreen('forecast');
+    panel.setScreen('threats');
     panel.hide();
     panel.show(DATA);
-    expect(panel.screen).toBe('forecast');
+    expect(panel.screen).toBe('threats');
   });
 
   it('says how to switch screens and close it', () => {
     panel.show(DATA);
     expect($('.pc-hint').textContent).toMatch(/\[E\]/);
-    expect($('.pc-hint').textContent).toMatch(/\[1\]/);
+    expect($('.pc-hint').textContent).toMatch(/\[1\] \[2\]/);
+    expect($('.pc-hint').textContent).not.toMatch(/\[3\]/);
   });
 
   it('sets text, never HTML', () => {
@@ -134,7 +181,7 @@ describe('BedroomPCPanel', () => {
 
   it('is a no-op without markup', () => {
     const headless = new BedroomPCPanel(null);
-    expect(() => { headless.show(DATA); headless.setScreen('findings'); headless.step(1); headless.hide(); }).not.toThrow();
+    expect(() => { headless.show(DATA); headless.setScreen('threats'); headless.step(1); headless.hide(); }).not.toThrow();
     expect(headless.visible).toBe(false);
   });
 

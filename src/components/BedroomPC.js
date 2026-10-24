@@ -5,12 +5,12 @@ import { paintDom } from '../ui/paintDom.js';
 // ─────────────────────────────────────────────
 // BedroomPC  –  the computer on the bedroom desk (#114)
 // ─────────────────────────────────────────────
-// [E] opens BedroomPCPanel: the colony map, what the central hub sent back
-// from earlier nights' drives, and an empty forecast. While it's up the
-// player stands still but the night goes on; 1 / 2 / 3 or ← / → switch
-// screens, and a fresh [E], or [Q] as at the terminal, puts it away. It
-// won't open behind a failed night, and a night failed under it (a threat
-// while reading) puts it away.
+// [E] opens BedroomPCPanel: the colony map, and the threats page: last
+// night's log and the forecast for tonight (in the morning, for the next
+// shift). While it's up the player stands still but the night goes on;
+// 1 / 2 or ← / → switch screens, and a fresh [E], or [Q] as at the
+// terminal, puts it away. It won't open behind a failed night, and a night
+// failed under it (a threat while reading) puts it away.
 //
 // `state` is 'reading' while it's up, 'idle' otherwise, the way the desk's
 // screens report theirs: the scene counts it among them (BaseScene._screens),
@@ -21,7 +21,8 @@ import { paintDom } from '../ui/paintDom.js';
 //
 //   pc.controller = gameController;    // the night, and whether it's on
 //   pc.panel      = new BedroomPCPanel();
-//   pc.run        = engine.run;        // the array's name, the hub's results
+//   pc.run        = engine.run;        // the array's name, each night's log
+//   pc.forecast   = threatForecast;    // night → the kinds of threat due
 //   pc.map        = colonyMap({ … });  // where things are on the map
 //   pc.screenView = screenView;        // leans in to its screen (#161)
 //   pc.screen     = rooms.LivingQuarters.pcScreen;
@@ -48,7 +49,7 @@ export const PC_CLICK = {
 };
 
 /** Fresh presses that pick a screen, and those that step through them. */
-const SCREEN_KEYS = Object.freeze({ Digit1: 'colony', Digit2: 'findings', Digit3: 'forecast' });
+const SCREEN_KEYS = Object.freeze({ Digit1: 'colony', Digit2: 'threats' });
 const STEP_KEYS = Object.freeze({ ArrowLeft: -1, ArrowRight: 1 });
 
 /** Controller states it can be used in. */
@@ -66,6 +67,9 @@ export class BedroomPC extends Interactable {
   run = null;
   /** @type {ReturnType<import('../ui/colonyMap.js').colonyMap>|null} */
   map = null;
+  /** night → the kinds of threat due (threatForecast); null for no forecast.
+   *  @type {((night: number) => string[])|null} */
+  forecast = null;
 
   /** Leans the view in to the laptop's screen (#161). Without one (tests,
    *  other scenes) the panel goes over the whole view.
@@ -82,7 +86,7 @@ export class BedroomPC extends Interactable {
   click = undefined;
 
   /** What the panel was last drawn for (paintScreen). */
-  _shown = null;
+  _shown = { drawn: false, array: null, night: 0, morning: false, entries: null };
 
   get state() { return this.open ? 'reading' : 'idle'; }
 
@@ -159,21 +163,41 @@ export class BedroomPC extends Interactable {
   /** The laptop's screen (ScreenCanvas): the panel drawn for tonight,
    *  again only when that changes, then painted from its DOM. */
   paintScreen(ctx, w, h) {
-    const data = this._data();
-    const key = `${data.array}|${this.controller?.nightNumber ?? 1}|${data.findings.length}`;
-    if (key !== this._shown) {
-      this._shown = key;
-      this.panel?.render?.(data);
+    // Compared field by field, so a frame with nothing new allocates nothing.
+    const night = this.controller?.nightNumber ?? 1;
+    const morning = this.controller?.state === 'morning';
+    const array = this.run?.array ?? null;
+    const entries = this.run?.threats(morning ? night : night - 1) ?? null;
+    const shown = this._shown;
+    if (!shown.drawn || shown.array !== array || shown.night !== night
+      || shown.morning !== morning || shown.entries !== entries) {
+      shown.drawn = true;
+      shown.array = array;
+      shown.night = night;
+      shown.morning = morning;
+      shown.entries = entries;
+      this.panel?.render?.(this._data());
     }
     if (this.panel?.root) paintDom(this.panel.root, ctx, w, h);
   }
 
-  /** What the panel shows: the array, the map, the findings so far. */
+  /** What the panel shows. Through the shift: last night's log and
+   *  tonight's forecast. In the morning: the night just survived, and the
+   *  next shift's forecast, none after the last. */
   _data() {
+    const c = this.controller;
+    const night = c?.nightNumber ?? 1;
+    const morning = c?.state === 'morning';
+    const logNight = morning ? night : night - 1;
+    const forecastNight = morning ? night + 1 : night;
+    const over = morning && !!c?.nights?.isLastNight?.();
     return {
       array: this.run?.array ?? null,
       map: this.map,
-      findings: this.run?.findings(this.controller?.nightNumber ?? 1) ?? [],
+      log: logNight >= 0 ? { night: logNight, entries: this.run?.threats(logNight) ?? null } : null,
+      forecast: this.forecast && !over
+        ? { night: forecastNight, tonight: !morning, kinds: this.forecast(forecastNight) }
+        : null,
     };
   }
 
