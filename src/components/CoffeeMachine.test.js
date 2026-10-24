@@ -3,39 +3,41 @@ import * as THREE from 'three';
 import { CoffeeMachine, COFFEE } from './CoffeeMachine.js';
 import { Interactable } from './Interactable.js';
 import { GameObject } from '../core/GameObject.js';
-import { ImpactSound, IMPACT } from './ImpactSound.js';
 
-/** A bag of ground coffee let go at `at` (world). */
-const bagAt = at => {
-  const object3d = new THREE.Object3D();
-  object3d.position.set(...at);
-  return { object3d };
-};
-
-/** Bags of ground coffee carried in (a CoffeeItems stand-in): `grounds` of
- *  them, each let go beside the machine in turn. */
-const supply = (grounds, at = [0.3, 0.9, 0.4]) => ({
-  grounds,
-  taken: [],
-  inHand: false,
-  held(kind) { return kind === 'bag' && this.inHand ? {} : null; },
-  loose(kind) { return kind === 'bag' && this.grounds > 0 ? [bagAt(at)] : []; },
-  take(bag, opts) { this.taken.push([bag, opts]); this.grounds--; },
+/** The dock on top of the machine (a SnapSocket stand-in): a bag sits in
+ *  it until it is taken off. */
+const fakeDock = () => ({
+  bag: null,
+  detached: [],
+  hasAttached() { return !!this.bag; },
+  get firstAttached() { return this.bag; },
+  detach(item, opts) { this.detached.push([item, opts]); this.bag = null; return item; },
 });
 
-function make(opts, grounds = 2) {
+/** The coffee carried about (a CoffeeItems stand-in). */
+const carried = () => ({
+  inHand: false,
+  taken: [],
+  held(kind) { return kind === 'bag' && this.inHand ? {} : null; },
+  take(item, opts) { this.taken.push([item, opts]); },
+});
+
+/** A bag of ground coffee docked on top. */
+const dockBag = m => { m.dock.bag = { name: 'Bag' }; m.onUpdate(0); return m.dock.bag; };
+
+function make(opts, { docked = true } = {}) {
   const go = new GameObject('CoffeeMachine');
-  go.object3d.position.set(0, 1, 0);
   const machine = go.addComponent(new CoffeeMachine(opts));
   machine.stamina = { value: 0.3, restore(a) { this.value = Math.min(1, this.value + a); } };
-  machine.items = supply(grounds);
-  machine.onUpdate(0);                        // the scene's first frame: it sees what is in hand
+  machine.items = carried();
+  machine.dock = fakeDock();
+  if (docked) dockBag(machine);
+  else machine.onUpdate(0);
   return machine;
 }
 
 /** Brew a cup, wait it out, drink it. */
 function brewAndDrink(machine) {
-  machine.onUpdate(0);                        // a bag let go beside it goes in
   machine.onInteract({});
   machine.onUpdate(COFFEE.brewSeconds + 0.1);
   machine.onInteract({});
@@ -85,7 +87,7 @@ describe('CoffeeMachine', () => {
     const m = make();
     brewAndDrink(m);
     expect(m.stamina.value).toBeCloseTo(0.3 + COFFEE.amount);
-    expect(m.state).toBe('ready');
+    expect(m.state).toBe('empty');                // the bag went into that cup
   });
 
   it('a brewed cup waits for the player: walk off and it is still there', () => {
@@ -97,12 +99,18 @@ describe('CoffeeMachine', () => {
     expect(m.stamina.value).toBeCloseTo(0.3 + COFFEE.amount);
   });
 
-  it('takes a bag of ground coffee let go near it, then [E] brews it: a bag a cup, no count of cups left (#168)', () => {
-    const m = make({}, 1);
+  it('a bag docked on top is a cup to brew; [E] takes it off and brews: a bag a cup, no count of cups left (#168)', () => {
+    const m = make();
+    const bag = m.dock.bag;
+    expect(m.loaded).toBe(true);
     expect(m.promptLabel).toBe('[E] Brew a coffee');
-    brewAndDrink(m);
-    expect(m.items.taken).toHaveLength(1);          // the bag went in
-    expect(m.items.taken[0][1]).toEqual({ press: false });   // on its own, not with a press
+    m.onInteract({});
+    expect(m.dock.detached).toEqual([[bag, { playSound: false }]]);   // off the top, quietly
+    expect(m.items.taken).toEqual([[bag, undefined]]);                // put away, the press used up
+    expect(m.loaded).toBe(false);
+    m.onUpdate(COFFEE.brewSeconds + 0.1);
+    m.onInteract({});
+    m.onUpdate(0);
     expect(m.state).toBe('empty');
     expect(m.promptLabel).toBe('Needs ground coffee');
 
@@ -111,14 +119,19 @@ describe('CoffeeMachine', () => {
     m.onInteract({});
     expect(m.stamina.value).toBeCloseTo(0.3 + COFFEE.amount);   // nothing without coffee
 
-    m.items.grounds = 1;                                    // back from the processor
-    m.onUpdate(0.016);
+    dockBag(m);                                             // the next bag set on it
     expect(m.state).toBe('ready');
-    expect(m.promptLabel).toBe('[E] Brew a coffee');
   });
 
-  it('with nothing to brew it says so, briefly and without a dash; with a bag in hand, to drop it in', () => {
-    const m = make({}, 0);
+  it('a bag taken back off the top before brewing leaves it empty again', () => {
+    const m = make();
+    m.dock.bag = null;                                      // picked up again
+    m.onUpdate(0.016);
+    expect(m.state).toBe('empty');
+  });
+
+  it('with nothing to brew it says so, briefly and without a dash; with a bag in hand, to drop it on', () => {
+    const m = make({}, { docked: false });
     expect(m.state).toBe('empty');
     expect(m.promptLabel).toBe('Needs ground coffee');
     m.items.inHand = true;
@@ -130,34 +143,17 @@ describe('CoffeeMachine', () => {
     }
   });
 
-  it('sounds the bag going in, from itself (the bag is gone)', () => {
-    const go = new GameObject('CoffeeMachine');
-    go.object3d.position.set(0, 1, 0);
-    const intake = go.addComponent(new ImpactSound());
-    const handle = vi.spyOn(intake, 'handle').mockImplementation(() => {});
-    const m = go.addComponent(new CoffeeMachine());
-    m.items = supply(1);
-    m.onUpdate(0.016);
-    expect(handle).toHaveBeenCalledWith(IMPACT.seatLevel);
-  });
-
-  it('leaves a bag let go away from it', () => {
-    const go = new GameObject('CoffeeMachine');
-    go.object3d.position.set(0, 1, 0);
-    const m = go.addComponent(new CoffeeMachine());
-    m.items = supply(1, [3, 0.1, 0]);
-    m.onUpdate(0.016);
-    expect(m.state).toBe('empty');
-    expect(m.items.taken).toHaveLength(0);
-  });
-
-  it('a taken bag waits in it; [E] brews it, and it takes the next bag only once that cup is done', () => {
+  it('takes a bag only while it is idle with none on it: never mid-brew or with a cup waiting', () => {
     const m = make();
-    expect(m.state).toBe('ready');
-    expect(m.items.grounds).toBe(1);               // one in, one still loose beside it
+    expect(m.accepts({ coffeeKind: 'bag' })).toBe(false);   // one on it already
     m.onInteract({});
-    m.onUpdate(1);
-    expect(m.items.grounds).toBe(1);               // not while it brews
+    expect(m.accepts({ coffeeKind: 'bag' })).toBe(false);   // brewing
+    m.onUpdate(COFFEE.brewSeconds + 0.1);
+    expect(m.accepts({ coffeeKind: 'bag' })).toBe(false);   // a cup waiting
+    m.onInteract({});
+    m.onUpdate(0);
+    expect(m.accepts({ coffeeKind: 'bag' })).toBe(true);
+    expect(m.accepts({ coffeeKind: 'beans' })).toBe(false); // only ground coffee
   });
 
   it('tells the scene as a brew starts, as it is done and as it is drunk: hooks for its sounds', () => {
@@ -176,19 +172,18 @@ describe('CoffeeMachine', () => {
     expect(m.onDrink).toHaveBeenCalledTimes(1);
   });
 
-  it('reset() leaves nothing brewing: a new or retried night', () => {
+  it('reset() leaves nothing brewing and nothing on it: a new or retried night', () => {
     const m = make();
-    brewAndDrink(m);
     m.onInteract({});
-    m.items.grounds = 0;                       // a new night empties the player's hands
     m.reset();
     expect(m.state).toBe('empty');
     m.onUpdate(COFFEE.brewSeconds + 1);
     expect(m.state).toBe('empty');
-    m.items.grounds = 1;
-    m.reset();
-    m.onUpdate(0);                             // a bag let go beside it again
-    expect(m.state).toBe('ready');
+    const bag = dockBag(m);
+    m.reset();                                 // a bag docked and not brewed: taken off, put away
+    expect(m.dock.bag).toBeNull();
+    expect(m.items.taken.at(-1)).toEqual([bag, { press: false }]);
+    expect(m.state).toBe('empty');
   });
 
   it('shows its cup while one brews and while it waits to be drunk, filling as it brews', () => {
@@ -209,13 +204,11 @@ describe('CoffeeMachine', () => {
     expect(fill()).toBe(1);
 
     m.onInteract({});                             // drunk
+    m.onUpdate(0);
     expect(shown()).toBe(false);
-    brewAndDrink(m);
     expect(m.state).toBe('empty');
-    expect(shown()).toBe(false);
 
-    m.items.grounds = 1;
-    m.reset();
+    dockBag(m);
     m.onInteract({});
     m.reset();                                    // a retry mid-brew takes it away
     expect(shown()).toBe(false);
@@ -240,11 +233,9 @@ describe('CoffeeMachine', () => {
     const m = new CoffeeMachine();
     expect(() => m.onInteract({})).not.toThrow();
     expect(() => m.onUpdate(0.016)).not.toThrow();
+    expect(() => m.reset()).not.toThrow();
     expect(m.state).toBe('empty');
-    m.items = supply(1);
-    m.onUpdate(0.016);
-    m.onInteract({});
-    expect(m.state).toBe('empty');                // no body to find bags round
+    expect(m.loaded).toBe(false);
   });
 
   it('its screen shows the state across the room: green to use, amber brewing, red with no coffee', () => {
@@ -258,11 +249,8 @@ describe('CoffeeMachine', () => {
     expect(lit()).toBe(COFFEE.screen.brewed);
     m.onInteract({});
     m.onUpdate(0);
-    brewAndDrink(m);
     expect(lit()).toBe(COFFEE.screen.empty);
-    m.items.grounds = 1;
-    m.reset();
-    m.onUpdate(0);
+    dockBag(m);
     expect(lit()).toBe(COFFEE.screen.ready);
 
     expect(COFFEE.screen.brewing).not.toBe(COFFEE.screen.ready);

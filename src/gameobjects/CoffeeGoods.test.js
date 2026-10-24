@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
 import { CoffeeBeans, CoffeeBag, COFFEE_BEANS, COFFEE_BAG, BEANS_COLOUR } from './CoffeeGoods.js';
 import { Pickupable } from '../components/Pickupable.js';
@@ -7,7 +7,7 @@ import { makeEngine, rapierModule } from '../test/fakeRapier.js';
 
 function init(item) {
   const engine = makeEngine();
-  engine.RAPIER = rapierModule().default;
+  engine.RAPIER = { ...rapierModule().default, RigidBodyType: { Dynamic: 0, Fixed: 1, KinematicPositionBased: 2 } };
   const scene = new THREE.Scene();
   scene.userData.engine = engine;
   item._init(scene, engine.world);
@@ -75,6 +75,22 @@ describe('CoffeeGoods', () => {
         expect(voice).toBeTruthy();
         expect(voice.clips).toEqual(IMPACT_SOUNDS[kind].clips);
         expect(voice.volume).toBe(IMPACT_SOUNDS[kind].volume);
+      });
+
+      it('docks like a drive: kinematic in a socket, dynamic again out of it; parked, it leaves its socket first', () => {
+        const item = new Kind();
+        const engine = init(item);
+        item.place(new THREE.Vector3(0, 1, 0));
+        item.rigidBody.setBodyType = vi.fn();
+        const { KinematicPositionBased, Dynamic } = engine.RAPIER.RigidBodyType;
+        item.makeKinematic();
+        expect(item.rigidBody.setBodyType).toHaveBeenLastCalledWith(KinematicPositionBased, true);
+        item.makeDynamic();
+        expect(item.rigidBody.setBodyType).toHaveBeenLastCalledWith(Dynamic, true);
+        const socket = { detach: vi.fn() };
+        item._snapOwner = socket;
+        item.park();
+        expect(socket.detach).toHaveBeenCalledWith(item, { playSound: false });
       });
 
       it('hands what it builds to be freed', () => {

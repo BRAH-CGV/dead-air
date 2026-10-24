@@ -119,8 +119,25 @@ class CarriedItem extends GameObject {
     this._still(1);
   }
 
-  /** Out of play: under the floor, hidden, still, disabled. */
+  /** Seated in a socket (SnapSocket, the coffee machine's top): placed by
+   *  it each frame, so kinematic. */
+  makeKinematic() {
+    this._setType('KinematicPositionBased');
+  }
+
+  /** Out of a socket again: falls, and can be knocked. */
+  makeDynamic() {
+    this._setType('Dynamic');
+  }
+
+  _setType(name) {
+    const type = this.scene?.userData?.engine?.RAPIER?.RigidBodyType?.[name];
+    if (type !== undefined) this.rigidBody?.setBodyType?.(type, true);
+  }
+
+  /** Out of play: out of any socket, under the floor, hidden, still, disabled. */
   park() {
+    this._snapOwner?.detach(this, { playSound: false });
     this.inPlay = false;
     this._placeAt = null;
     this.object3d.visible = false;

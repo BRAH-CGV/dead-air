@@ -17,6 +17,8 @@ import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
 import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
 import { CoffeeItems } from '../components/CoffeeItems.js';
+import { SnapSocket } from '../components/SnapSocket.js';
+import { COFFEE_MACHINE } from './rooms/LivingQuarters.js';
 import { ProcessorSound } from '../components/ProcessorSound.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 
@@ -162,7 +164,20 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(grind.harvest).toBe(scene.coffee);
     expect(processor.getComponent(ImpactSound).clips).toEqual(IMPACT_SOUNDS.beans.clips);
     const machine = scene.rooms.LivingQuarters.coffeeMachine.gameObject;
-    expect(machine.getComponent(ImpactSound).clips).toEqual(IMPACT_SOUNDS.bag.clips);
+    expect(machine.getComponent(ImpactSound)).toBeNull();   // the bag docks on it, and sounds itself
+  });
+
+  it('docks a bag dropped by the coffee machine on its top, to be seen there until it is brewed', () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    const dock = machine.dock;
+    expect(dock).toBeInstanceOf(SnapSocket);
+    expect(machine.gameObject.getComponent(SnapSocket)).toBe(dock);
+    expect(dock.candidates).toEqual(scene.coffeeItems.bags);
+    expect(dock.sounds).toBe('item');
+    const top = machine.gameObject.object3d.localToWorld(dock.slots[0].offset.clone());
+    const middle = machine.gameObject.object3d.getWorldPosition(new THREE.Vector3());
+    expect(top.y).toBeGreaterThan(middle.y + COFFEE_MACHINE[1] / 2);        // on top, not in it
+    expect(Math.hypot(top.x - middle.x, top.z - middle.z)).toBeLessThan(0.01);
   });
 
   it("hands the bedroom's coffee machine the same stamina and the coffee carried to it", () => {
@@ -175,9 +190,12 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(machine.state).toBe('empty');                  // nothing to brew with yet
     const bag = groundCoffee();
     dropAt(bag, machine.gameObject.object3d);
+    machine.dock.onUpdate(0.016);
     machine.onUpdate(0.016);
-    expect(bag.inPlay).toBe(false);                       // the bag went in
+    expect(machine.dock.firstAttached).toBe(bag);         // docked on its top
+    expect(bag.inPlay).toBe(true);                        // there to be seen
     machine.onInteract({});
+    expect(bag.inPlay).toBe(false);                       // brewed: put away
     machine.onUpdate(COFFEE.brewSeconds + 0.1);
     machine.onInteract({});
     expect(scene.stamina.value).toBeCloseTo(0.2 + COFFEE.amount);
@@ -213,7 +231,7 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     const other = new BaseScene(makeSceneEngine());
     other.build();
     const machine = other.rooms.LivingQuarters.coffeeMachine;
-    machine.loaded = true;                                // a bag of ground coffee in it
+    machine.dock.attach(other.coffeeItems.bags[0]);      // a bag of ground coffee on it
     machine.onUpdate(0.016);
     machine.onInteract({});
     expect(sip.play).not.toHaveBeenCalled();

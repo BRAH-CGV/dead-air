@@ -1,6 +1,4 @@
-import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
-import { ImpactSound, IMPACT } from './ImpactSound.js';
 
 // ─────────────────────────────────────────────
 // CoffeeMachine  –  the base's one way back to awake
@@ -12,10 +10,13 @@ import { ImpactSound, IMPACT } from './ImpactSound.js';
 //
 // A cup takes a bag of ground coffee (#168): the grow rack's ripe beans,
 // ground at the office's bean processor and carried here like a drive (a
-// CoffeeBag; CoffeeItems, `items`). A bag let go near it (within `reach`,
-// on the table or the floor round it) is taken in and it is 'ready'; [E]
-// then brews. Without one it is 'empty'. There is no count of cups left: the ripe
-// bushes are that. Refills are a choice, not a cooldown to wait out (#105).
+// CoffeeBag; CoffeeItems, `items`). A bag let go near it docks on its top
+// (`dock`, a SnapSocket the scene puts there, which asks accepts()), where
+// it can be seen, and can be picked back off like a drive from its box;
+// while one sits there it is 'ready'. [E] then takes the bag off, puts it
+// away and brews. Without one it is 'empty'. There is no count of cups
+// left: the ripe bushes are that. Refills are a choice, not a cooldown to
+// wait out (#105).
 //
 //   empty ⇄ ready ──[E]──▶ brewing ──brewSeconds──▶ brewed ──[E]──▶ ready | empty
 //
@@ -37,11 +38,6 @@ export const COFFEE = Object.freeze({
   brewSeconds: 20,
   /** Stamina a cup gives back. */
   amount: 0.35,
-  /** Metres from the machine's middle, across the floor, a bag let go is
-   *  taken in from; and how far below and above it. */
-  reach: 1,
-  below: 1.6,
-  above: 0.8,
   /** The status screen's colour in each state. */
   screen: Object.freeze({
     ready: 0x6dff9c,
@@ -58,17 +54,16 @@ const READY = '[E] Brew a coffee';
 const EMPTY = 'Needs ground coffee';
 const DROP = '[E] Drop the coffee in';
 
-const _p = new THREE.Vector3(), _me = new THREE.Vector3();
-
 export class CoffeeMachine extends Interactable {
   promptLabel = '';
   /** Set by the scene. @type {{restore(amount: number): void}|null} */
   stamina = null;
   /** The coffee carried about, set by the scene.
-   *  @type {{ held(kind: string): object|null, loose(kind: string): object[], take(item: object, opts?: object): void }|null} */
+   *  @type {{ held(kind: string): object|null, take(item: object, opts?: object): void }|null} */
   items = null;
-  /** A bag of ground coffee taken in, waiting to be brewed. */
-  loaded = false;
+  /** The dock on its top a bag sits in until it is brewed, set by the scene.
+   *  @type {import('./SnapSocket.js').SnapSocket|null} */
+  dock = null;
   /** 'empty' | 'ready' | 'brewing' | 'brewed' */
   state = 'empty';
   /** Seconds left on the brew. */
@@ -90,9 +85,19 @@ export class CoffeeMachine extends Interactable {
     this.reset();
   }
 
+  /** A bag of ground coffee sits on top, waiting to be brewed. */
+  get loaded() {
+    return !!this.dock?.hasAttached();
+  }
+
+  /** Whether the dock may take `item`: a bag, while nothing is on it,
+   *  brewing or waiting to be drunk. */
+  accepts(item) {
+    return item?.coffeeKind === 'bag' && this.state !== 'brewing' && this.state !== 'brewed' && !this.loaded;
+  }
+
   onUpdate(dt) {
     if (this.state === 'ready' || this.state === 'empty') {
-      if (!this.loaded) this._catch();
       const state = this._idle();
       if (state !== this.state) this._set(state);
       else if (state === 'empty') this._label();
@@ -114,7 +119,7 @@ export class CoffeeMachine extends Interactable {
     if (!this.stamina) return;
     if (this.state === 'ready') {
       if (!this.loaded) return this._set('empty');
-      this.loaded = false;
+      this.items?.take(this._unload({ playSound: false }));
       this.brewLeft = COFFEE.brewSeconds;
       this._set('brewing');
       this.onBrew?.();
@@ -125,35 +130,23 @@ export class CoffeeMachine extends Interactable {
     }
   }
 
-  /** A new or retried night: nothing brewing, nothing in it. */
+  /** A new or retried night: nothing brewing, nothing on it. */
   reset() {
     this.brewLeft = 0;
-    this.loaded = false;
+    if (this.loaded) this.items?.take(this._unload({ playSound: false }), { press: false });
     this._set(this._idle());
+  }
+
+  /** The bag off the dock. */
+  _unload(opts) {
+    const bag = this.dock.firstAttached;
+    this.dock.detach(bag, opts);
+    return bag;
   }
 
   /** Waiting for the player: ready with a bag taken in, else empty. */
   _idle() {
     return this.loaded ? 'ready' : 'empty';
-  }
-
-  /** A bag let go near it goes in. */
-  _catch() {
-    const object = this.gameObject?.object3d;
-    if (!this.items || !object) return;
-    object.getWorldPosition(_me);
-    for (const bag of this.items.loose('bag')) {
-      const t = bag.rigidBody?.translation?.();
-      if (t) _p.set(t.x, t.y, t.z);
-      else bag.object3d.getWorldPosition(_p);
-      const dy = _p.y - _me.y;
-      if (Math.hypot(_p.x - _me.x, _p.z - _me.z) > COFFEE.reach || dy < -COFFEE.below || dy > COFFEE.above) continue;
-      this.items.take(bag, { press: false });
-      this.loaded = true;
-      // The bag is parked away with its own voice: the machine sounds it.
-      this.gameObject.getComponent(ImpactSound)?.handle(IMPACT.seatLevel);
-      return;
-    }
   }
 
   /** Empty: what it says, by whether a bag is in hand. */

@@ -26,7 +26,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice, WINDOW_CORNER_RADIUS, deskStation } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
-import { LivingQuarters } from './rooms/LivingQuarters.js';
+import { LivingQuarters, COFFEE_MACHINE } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
@@ -94,7 +94,7 @@ import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
 import { CoffeeItems } from '../components/CoffeeItems.js';
 import { ProcessorSound } from '../components/ProcessorSound.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
-import { CoffeeBeans, CoffeeBag } from '../gameobjects/CoffeeGoods.js';
+import { CoffeeBeans, CoffeeBag, COFFEE_BAG } from '../gameobjects/CoffeeGoods.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
@@ -206,6 +206,10 @@ const BUGGY_HALF_LENGTH = 2.6;
  *  Room-local equals world (the office root is at the origin); y is half a
  *  box's height. */
 const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
+
+/** Metres from the coffee machine's top a bag let go docks on it from:
+ *  enough for the floor in front of its table. */
+const COFFEE_DOCK_REACH = 1.4;
 
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
@@ -1990,7 +1994,26 @@ export class BaseScene extends Scene {
     // machine takes in (the pile or bag is parked away with its own voice).
     beanProcessor?.gameObject.addComponent(new ProcessorSound({ harvest: this.coffee }));
     beanProcessor?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.beans));
-    this.rooms.LivingQuarters.coffeeMachine?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.bag));
+    this._addCoffeeDock();
+  }
+
+  /** The bedroom coffee machine's top: a bag of ground coffee let go near
+   *  it docks there (a SnapSocket, like the drive boxes' and the airlock's),
+   *  seen and still able to be picked back off, until a cup is brewed from
+   *  it. Near is within `COFFEE_DOCK_REACH` of the top: the table round it
+   *  and the floor in front. The bag sounds its own seating. */
+  _addCoffeeDock() {
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
+    if (!machine) return;
+    const dock = machine.gameObject.addComponent(new SnapSocket({
+      slots: [{ offset: { y: COFFEE_MACHINE[1] / 2 + COFFEE_BAG.size[1] / 2 + 0.005 } }],
+      snapDistance: COFFEE_DOCK_REACH,
+      sounds: 'item',
+      attachedPromptLabel: '[E] Pick up',
+      canAccept: item => machine.accepts(item),
+    }));
+    for (const bag of this.coffeeItems.bags) dock.addCandidate(bag);
+    machine.dock = dock;
   }
 
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
