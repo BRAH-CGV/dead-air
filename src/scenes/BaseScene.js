@@ -2729,6 +2729,29 @@ export class BaseScene extends Scene {
       return best;
     };
     const bed = this.rooms.LivingQuarters.bed;
+    // The coffee lesson's arrows: the ripe bush nearest the player, and a
+    // bag once one is out (the processor that makes it until then).
+    const bushes = office.coffeeBushes;
+    const processorObject = office.beanProcessor?.gameObject.object3d ?? null;
+    const bushMark = new THREE.Object3D();
+    const ripeBush = () => {
+      if (!bushes || !this.coffee || !this.engine.camera) return null;
+      this.engine.camera.getWorldPosition(eye);
+      const rack = bushes.gameObject.object3d;
+      let best = null;
+      let bestDist = Infinity;
+      this.coffee.bushes.forEach((state, i) => {
+        if (state !== 'ripe') return;
+        rack.localToWorld(at.copy(bushes.bushes[i]));
+        const d = at.distanceToSquared(eye);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      if (best === null) return null;
+      rack.localToWorld(bushMark.position.copy(bushes.bushes[best]));
+      bushMark.updateMatrixWorld(true);
+      return bushMark;
+    };
+    const bagOut = () => this.coffeeItems?.loose('bag')[0]?.object3d ?? processorObject;
     this.tutorial = new Tutorial({
       controller:    this.gameController,
       clock:         this.nightClock,
@@ -2750,6 +2773,7 @@ export class BaseScene extends Scene {
       bed,
       flashlight:    this.engine.player?.getComponent(Flashlight) ?? null,
       onDesk:        (p) => office.isOnDesk(p),
+      coffee:        { harvest: this.coffee, items: this.coffeeItems, machine: this.rooms.LivingQuarters.coffeeMachine },
       overlay:       new TutorialOverlay(undefined, {
         keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
       }),
@@ -2766,6 +2790,10 @@ export class BaseScene extends Scene {
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },
         buggy:     { object: this.buggyBoot?.object3d ?? null, lift: 0.6 },
+        bush:      { object: ripeBush, lift: 0.1 },
+        processor: { object: processorObject, lift: 0.5 },
+        bag:       { object: bagOut, lift: 0.15 },
+        coffee:    { object: this.rooms.LivingQuarters.coffeeMachine?.gameObject.object3d ?? null, lift: 0.35 },
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);

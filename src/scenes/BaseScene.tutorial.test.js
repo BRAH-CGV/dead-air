@@ -86,6 +86,22 @@ describe('BaseScene tutorial (night 0)', () => {
     }
   });
 
+  it('teaches the coffee on the real things: the arrow on a ripe bush, the processor, the bag and the machine', () => {
+    const office = scene.rooms.MainOffice;
+    expect(scene.tutorial.coffee).toEqual({
+      harvest: scene.coffee, items: scene.coffeeItems, machine: scene.rooms.LivingQuarters.coffeeMachine,
+    });
+    const { bush, bag, processor, coffee } = scene.tutorial.targets;
+    const at = bush.object().getWorldPosition(new THREE.Vector3());
+    const ripe = scene.coffee.bushes.flatMap((b, i) => (b === 'ripe' ? [i] : []));
+    const rack = office.coffeeBushes.gameObject.object3d;
+    const near = ripe.some(i => rack.localToWorld(office.coffeeBushes.bushes[i].clone()).distanceTo(at) < 1e-6);
+    expect(near).toBe(true);                                         // on a ripe one
+    expect(processor.object).toBe(office.beanProcessor.gameObject.object3d);
+    expect(bag.object()).toBe(processor.object);                     // no bag yet: the processor that makes it
+    expect(coffee.object).toBe(scene.rooms.LivingQuarters.coffeeMachine.gameObject.object3d);
+  });
+
   it("reads the buggy's boot and the send-off, and points at the boot", () => {
     expect(scene.tutorial.cargoDock).toBe(scene.buggyCargo.dock);
     expect(scene.tutorial.sendOff).toBe(scene.buggySendOff ?? null);

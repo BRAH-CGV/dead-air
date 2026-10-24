@@ -10,7 +10,7 @@ const fresh = (over = {}) => ({
   holdingBox: false, boxOnDesk: false, flashlightOn: false,
   driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
   saved: false, boxed: false, quotaMet: false, powerOn: true, suitOn: false,
-  napping: false, morning: false, boxInBuggy: false, dispatched: false, ...over,
+  napping: false, morning: false, boxInBuggy: false, dispatched: false, coffee: 0, ...over,
 });
 
 const ids = () => TUTORIAL_STEPS.map(s => s.id);
@@ -31,13 +31,16 @@ function doneFor(step) {
     drive: { driveIn: true }, computer: { terminalOpen: true }, aim: { onSignal: true },
     scan: { scanned: true }, save: { saved: true }, box: { boxed: true }, dock: { quotaMet: true },
     storm: { powerOn: false }, suit: { suitOn: true }, generator: { powerOn: true },
+    harvest: { coffee: 1 }, process: { coffee: 3 }, bag: { coffee: 5 }, brew: { coffee: 7 }, drink: { coffee: 9 },
   }[step.id] ?? {};
 }
 
 describe('TUTORIAL_STEPS', () => {
   it('teaches the signal game, then the storm, then the nap and the sleep, in that order', () => {
     const order = ['deskBox', 'drive', 'computer', 'aim', 'scan', 'save', 'box', 'dock',
-      'storm', 'flashlight', 'suit', 'generator', 'inside', 'nap', 'wait', 'buggy', 'sleep'];
+      'storm', 'flashlight', 'suit', 'generator', 'inside',
+      'stamina', 'harvest', 'process', 'bag', 'brew', 'drink', 'napTip',
+      'nap', 'wait', 'buggy', 'sleep'];
     const positions = order.map(id => ids().indexOf(id));
     expect(positions.every(p => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -136,7 +139,7 @@ describe('TutorialRunner', () => {
     runner.update(0.01, fresh({ powerOn: true, suitOn: true }));
     expect(runner.step.id).toBe('inside');
     runner.update(0.01, fresh());
-    expect(runner.step.id).toBe('nap');
+    expect(runner.step.id).toBe('stamina');                  // back inside: on to the coffee
   });
 
   it('the dark asks for the flashlight, unless it is already on', () => {
@@ -145,6 +148,44 @@ describe('TutorialRunner', () => {
     expect(runner.step.id).toBe('suit');
     const step = TUTORIAL_STEPS.find(t => t.id === 'flashlight');
     expect(step.text).toContain('[F]');
+  });
+
+  it('before the first nap: stamina, then coffee made step by step, then a nap as the other way back', () => {
+    const stamina = TUTORIAL_STEPS.find(t => t.id === 'stamina');
+    expect(stamina.seconds).toBeGreaterThan(0);
+    expect(stamina.text).toMatch(/stamina/i);
+    expect(stamina.text).toMatch(/coffee/i);
+    const tip = TUTORIAL_STEPS.find(t => t.id === 'napTip');
+    expect(tip.seconds).toBeGreaterThan(0);
+    expect(tip.text).toMatch(/nap/i);
+    expect(ids().indexOf('napTip')).toBe(ids().indexOf('nap') - 1);   // right before the first nap
+    for (const step of TUTORIAL_STEPS) expect(`${step.title} ${step.text}`, step.id).not.toMatch(/cherr|—|–/i);
+  });
+
+  it('the coffee steps move on as the coffee gets made, each pointing at where it is made', () => {
+    const runner = at('harvest');
+    expect(runner.view(fresh()).target).toBe('bush');
+    runner.update(0.01, fresh({ coffee: 1 }));            // beans in hand
+    expect(runner.step.id).toBe('process');
+    expect(runner.view(fresh()).target).toBe('processor');
+    runner.update(0.01, fresh({ coffee: 2 }));            // in the hopper, not yet started
+    expect(runner.step.id).toBe('process');
+    runner.update(0.01, fresh({ coffee: 3 }));            // processing
+    expect(runner.step.id).toBe('bag');
+    expect(runner.view(fresh()).target).toBe('bag');
+    runner.update(0.01, fresh({ coffee: 5 }));            // the bag in hand
+    expect(runner.step.id).toBe('brew');
+    expect(runner.view(fresh()).target).toBe('coffee');
+    runner.update(0.01, fresh({ coffee: 7 }));            // brewing
+    expect(runner.step.id).toBe('drink');
+    runner.update(0.01, fresh({ coffee: 9 }));            // drunk
+    expect(runner.step.id).toBe('napTip');
+  });
+
+  it('a player ahead with the coffee skips the steps already done', () => {
+    const runner = at('harvest');
+    runner.update(0.01, fresh({ coffee: 7 }));
+    expect(runner.step.id).toBe('drink');
   });
 
   it('the nap is until 6 AM, and if woken early the player is sent back to bed', () => {
