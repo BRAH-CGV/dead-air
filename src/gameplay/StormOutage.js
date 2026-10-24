@@ -8,7 +8,9 @@ import { Component } from '../core/Component.js';
 // One that hits chokes the generator once, at a random point through it
 // (STORM_OUTAGE.at, a fraction of the way through — sandstorm.stormProgress);
 // one that misses blows through with the lights steady, so a storm is never
-// a sure thing (#107):
+// a sure thing (#107) — except on STORM_OUTAGE.sureNights (night 2, where
+// the player first has to bring the power back in a storm), whose storms
+// always take it:
 //
 //   steady ──its moment──▶ flickering ──flickerSeconds──▶ cut
 //                             (the lamps gutter and dim —      (cutPower: the
@@ -29,6 +31,10 @@ export const STORM_OUTAGE = {
   /** The share of storms that take the power: about half, so the player
    *  can't count on either. */
   chance: 0.5,
+  /** Nights whose storms always take the power, whatever the roll. Night 2
+   *  makes the player go out to the generator in a storm; night 3 is left
+   *  to chance, since the UFO may already have blown the bulbs. */
+  sureNights: [2],
   /** Where in the storm the power goes: a random fraction of the way
    *  through, between these — in its strong middle. */
   at: [0.25, 0.75],
@@ -60,10 +66,15 @@ export class StormOutage extends Component {
    * @param {() => number} [opts.random]
    * @param {number} [opts.chance]  The share of storms that take the power
    *        (STORM_OUTAGE.chance).
+   * @param {number[]} [opts.sureNights]  Nights whose storms always take it
+   *        (STORM_OUTAGE.sureNights).
    */
-  constructor({ controller, sandstorm, grid, cutPower, sounds = null, random = Math.random, chance = STORM_OUTAGE.chance }) {
+  constructor({
+    controller, sandstorm, grid, cutPower, sounds = null, random = Math.random,
+    chance = STORM_OUTAGE.chance, sureNights = STORM_OUTAGE.sureNights,
+  }) {
     super();
-    Object.assign(this, { controller, sandstorm, grid, cutPower, sounds, random, chance });
+    Object.assign(this, { controller, sandstorm, grid, cutPower, sounds, random, chance, sureNights });
     this._flickering = null;   // seconds into the flicker, or null
     this._stormId = null;      // the storm the moment below belongs to
     this._at = null;           // when in it the power goes; null once it has, or if it won't
@@ -123,7 +134,8 @@ export class StormOutage extends Component {
     if (this.sandstorm.stormId !== this._stormId) {
       this._stormId = this.sandstorm.stormId;
       const [a, b] = STORM_OUTAGE.at;
-      this._at = this.random() < this.chance ? a + this.random() * (b - a) : null;
+      const sure = this.sureNights.includes(this.controller.nightNumber);
+      this._at = sure || this.random() < this.chance ? a + this.random() * (b - a) : null;
     }
     if (this._at === null || progress < this._at) return;
     // Its moment has come — but a dead grid is waited for.
