@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
+import { ImpactSound, IMPACT } from './ImpactSound.js';
 import { NEAR_PROCESSOR, BAG_SPOTS, LID_OPEN } from '../gameobjects/BeanProcessor.js';
 
 // ─────────────────────────────────────────────
@@ -111,6 +112,8 @@ export class CoffeeProcessor extends Interactable {
       if (!_near.containsPoint(object.worldToLocal(_p))) continue;
       this.items.take(pile, { press: false });
       this.harvest.load();
+      // The pile is parked away with its own voice: the machine sounds it.
+      this.gameObject.getComponent(ImpactSound)?.handle(IMPACT.seatLevel);
     }
   }
 

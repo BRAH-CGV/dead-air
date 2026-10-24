@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { CoffeeMachine, COFFEE } from './CoffeeMachine.js';
 import { Interactable } from './Interactable.js';
 import { GameObject } from '../core/GameObject.js';
+import { ImpactSound, IMPACT } from './ImpactSound.js';
 
 /** A bag of ground coffee let go at `at` (world). */
 const bagAt = at => {
@@ -127,6 +128,17 @@ describe('CoffeeMachine', () => {
       expect(label.length).toBeLessThan(25);
       expect(label).not.toMatch(/—|–/);
     }
+  });
+
+  it('sounds the bag going in, from itself (the bag is gone)', () => {
+    const go = new GameObject('CoffeeMachine');
+    go.object3d.position.set(0, 1, 0);
+    const intake = go.addComponent(new ImpactSound());
+    const handle = vi.spyOn(intake, 'handle').mockImplementation(() => {});
+    const m = go.addComponent(new CoffeeMachine());
+    m.items = supply(1);
+    m.onUpdate(0.016);
+    expect(handle).toHaveBeenCalledWith(IMPACT.seatLevel);
   });
 
   it('leaves a bag let go away from it', () => {

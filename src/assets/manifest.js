@@ -754,6 +754,18 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/coffee-machine.mp3',
   },
+  // The office's bean processor processing a pile of beans (ProcessorSound):
+  // an espresso machine's grind, exactly a pile long, 5 s.
+  'sfx:coffee-grinding': {
+    type: 'audio',
+    url: 'assets/audio/coffee-grinding.mp3',
+  },
+  // A pile of coffee beans knocked or handled (ImpactSound, IMPACT_SOUNDS.beans):
+  // beads shaken in a plastic tub, three shakes played as spans of it.
+  'sfx:beans': {
+    type: 'audio',
+    url: 'assets/audio/beans.mp3',
+  },
   // The player's footsteps (Footsteps): three interior steps and two outdoor
   // thumps in one recording, cut by hand (STEP_SOUNDS).
   'sfx:steps': {

@@ -17,6 +17,8 @@ import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
 import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
 import { CoffeeItems } from '../components/CoffeeItems.js';
+import { ProcessorSound } from '../components/ProcessorSound.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -151,6 +153,16 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(scene.coffee.ripeLeft).toBe(COFFEE_HARVEST.ripePerNight);
     expect(bag.inPlay).toBe(false);                       // put away, out of the hands
     expect(scene.pickupSystem.heldPickupable).toBeNull();
+  });
+
+  it('the coffee sounds: the processor grinds and sounds the beans going in, the machine the bag', () => {
+    const processor = scene.rooms.MainOffice.beanProcessor.gameObject;
+    const grind = processor.getComponent(ProcessorSound);
+    expect(grind).toBeTruthy();
+    expect(grind.harvest).toBe(scene.coffee);
+    expect(processor.getComponent(ImpactSound).clips).toEqual(IMPACT_SOUNDS.beans.clips);
+    const machine = scene.rooms.LivingQuarters.coffeeMachine.gameObject;
+    expect(machine.getComponent(ImpactSound).clips).toEqual(IMPACT_SOUNDS.bag.clips);
   });
 
   it("hands the bedroom's coffee machine the same stamina and the coffee carried to it", () => {

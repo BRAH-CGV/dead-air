@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
+import { ImpactSound, IMPACT } from './ImpactSound.js';
 
 // ─────────────────────────────────────────────
 // CoffeeMachine  –  the base's one way back to awake
@@ -149,6 +150,8 @@ export class CoffeeMachine extends Interactable {
       if (Math.hypot(_p.x - _me.x, _p.z - _me.z) > COFFEE.reach || dy < -COFFEE.below || dy > COFFEE.above) continue;
       this.items.take(bag, { press: false });
       this.loaded = true;
+      // The bag is parked away with its own voice: the machine sounds it.
+      this.gameObject.getComponent(ImpactSound)?.handle(IMPACT.seatLevel);
       return;
     }
   }

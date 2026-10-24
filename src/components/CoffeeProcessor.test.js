@@ -4,9 +4,10 @@ import { GameObject } from '../core/GameObject.js';
 import { CoffeeProcessor } from './CoffeeProcessor.js';
 import { CoffeeItems } from './CoffeeItems.js';
 import { Interactable } from './Interactable.js';
+import { ImpactSound, IMPACT } from './ImpactSound.js';
 import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
 import { buildBeanProcessor, BAG_SPOTS, LID_OPEN } from '../gameobjects/BeanProcessor.js';
-import { CoffeeBeans, CoffeeBag } from '../gameobjects/CoffeeGoods.js';
+import { CoffeeBeans, CoffeeBag, COFFEE_BAG } from '../gameobjects/CoffeeGoods.js';
 
 /** The processor in a room moved off the origin, its coffee goods beside it
  *  (no physics: they go where they are placed). */
@@ -66,6 +67,14 @@ describe('CoffeeProcessor', () => {
       t.use.onUpdate(1);
       expect(t.parts.lid.rotation.x).toBeCloseTo(0);   // shut
     }
+  });
+
+  it('sounds the beans going in, from itself (the pile is gone)', () => {
+    const t = make();
+    const intake = t.go.addComponent(new ImpactSound());
+    const handle = vi.spyOn(intake, 'handle').mockImplementation(() => {});
+    drop(t, t.world(0.8, -0.82, 0));
+    expect(handle).toHaveBeenCalledWith(IMPACT.seatLevel);
   });
 
   it('leaves a pile let go away from it', () => {
@@ -128,7 +137,12 @@ describe('CoffeeProcessor', () => {
     use.onUpdate(COFFEE_HARVEST.processSeconds);
     expect(bags[1].inPlay).toBe(true);
     expect(items.waiting).toBe(2);
-    const spots = bags.map(b => b.object3d.getWorldPosition(new THREE.Vector3()));
+    // Where each stands: its feet, half its height under its middle.
+    const spots = bags.map(b => {
+      const at = b.object3d.getWorldPosition(new THREE.Vector3());
+      at.y -= COFFEE_BAG.size[1] / 2;
+      return at;
+    });
     BAG_SPOTS.forEach(([x, y, z], i) => expect(spots[i].distanceTo(world(x, y, z))).toBeLessThan(0.01));
   });
 

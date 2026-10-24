@@ -92,6 +92,8 @@ import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
 import { CoffeeItems } from '../components/CoffeeItems.js';
+import { ProcessorSound } from '../components/ProcessorSound.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { CoffeeBeans, CoffeeBag } from '../gameobjects/CoffeeGoods.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
@@ -1984,6 +1986,11 @@ export class BaseScene extends Scene {
     }));
     coffeeBushes?.bind(this.coffee, this.coffeeItems);
     beanProcessor?.bind(this.coffee, this.coffeeItems);
+    // Their sounds: the grind while a pile is processed, and what each
+    // machine takes in (the pile or bag is parked away with its own voice).
+    beanProcessor?.gameObject.addComponent(new ProcessorSound({ harvest: this.coffee }));
+    beanProcessor?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.beans));
+    this.rooms.LivingQuarters.coffeeMachine?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.bag));
   }
 
   /** The Sleep Demon, in the corner of the player's eye once they tire (see

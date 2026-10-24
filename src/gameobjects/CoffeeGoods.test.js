@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { CoffeeBeans, CoffeeBag, COFFEE_BEANS, COFFEE_BAG, BEANS_COLOUR } from './CoffeeGoods.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { makeEngine, rapierModule } from '../test/fakeRapier.js';
 
 function init(item) {
@@ -34,13 +35,13 @@ describe('CoffeeGoods', () => {
         expect(item.rigidBody.translation().y).toBeLessThan(-10);
       });
 
-      it('place() brings it into the world where it is asked; park() puts it away again', () => {
+      it('place() stands it on the spot asked; park() puts it away again', () => {
         const item = new Kind();
         init(item);
         item.place(new THREE.Vector3(1, 0.8, -2));
         expect(item.inPlay).toBe(true);
         expect(item.object3d.visible).toBe(true);
-        expect(item.rigidBody.translation()).toEqual({ x: 1, y: 0.8, z: -2 });
+        expect(item.rigidBody.translation()).toEqual({ x: 1, y: 0.8 + spec.size[1] / 2, z: -2 });   // its middle, over its feet
         item.park();
         expect(item.inPlay).toBe(false);
         expect(item.object3d.visible).toBe(false);
@@ -52,17 +53,28 @@ describe('CoffeeGoods', () => {
         item.place(new THREE.Vector3(0, 1, 0));
         init(item);
         expect(item.inPlay).toBe(true);
-        expect(item.rigidBody.translation().y).toBe(1);
+        expect(item.rigidBody.translation().y).toBeCloseTo(1 + spec.size[1] / 2);
       });
 
-      it('is about the size it should be, feet at its origin', () => {
+      it('is about the size it should be, centred on its body, so the hand holds it by its middle', () => {
         const item = new Kind();
+        item.object3d.updateMatrixWorld(true);
         const box = new THREE.Box3().setFromObject(item.mesh);
         const size = box.getSize(new THREE.Vector3());
-        expect(box.min.y).toBeGreaterThan(-0.005);
+        const middle = box.getCenter(new THREE.Vector3());
+        expect(Math.abs(middle.x)).toBeLessThan(0.01);
+        expect(Math.abs(middle.y)).toBeLessThan(0.01);
+        expect(Math.abs(middle.z)).toBeLessThan(0.01);
         expect(size.x).toBeLessThanOrEqual(spec.size[0] + 0.01);
         expect(size.y).toBeLessThanOrEqual(spec.size[1] + 0.01);
         expect(size.z).toBeLessThanOrEqual(spec.size[2] + 0.01);
+      });
+
+      it(`sounds as it is knocked and handled: IMPACT_SOUNDS.${kind}`, () => {
+        const voice = new Kind().getComponent(ImpactSound);
+        expect(voice).toBeTruthy();
+        expect(voice.clips).toEqual(IMPACT_SOUNDS[kind].clips);
+        expect(voice.volume).toBe(IMPACT_SOUNDS[kind].volume);
       });
 
       it('hands what it builds to be freed', () => {

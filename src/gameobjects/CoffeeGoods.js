@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { packGroups } from '../core/PhysicsLayers.js';
 
 // ─────────────────────────────────────────────
@@ -16,13 +17,17 @@ import { packGroups } from '../core/PhysicsLayers.js';
 //                carried to the bedroom's coffee machine.
 //
 // Each is a dynamic body (a box round it, the drives' collision groups)
-// that rests where it is put and falls when dropped. There are only ever a
+// that rests where it is put and falls when dropped, and sounds as it is
+// knocked or handled (ImpactSound: IMPACT_SOUNDS.beans, .bag). The body's
+// origin is the item's middle, so the hand (which holds a body by its
+// origin) holds it centred in the view; place() still takes its feet. There are only ever a
 // couple of each in play, so the scene builds them once (CoffeeItems) and
 // they are parked out of play, under the floor, hidden and still, until a
 // bush is picked or a batch ground: place() brings one into the world,
 // park() puts it away. A parked body is disabled, so nothing hits it.
 //
-// Feet at the origin. Each owns its geometry and material: `own` hands them
+// Built with its feet at the mesh's origin, the mesh then lowered by half
+// its height. Each owns its geometry and material: `own` hands them
 // to the room to free. No fog, like everything indoors (they are built after
 // BaseScene strips it from the rooms).
 // ─────────────────────────────────────────────
@@ -54,9 +59,11 @@ class CarriedItem extends GameObject {
     this._size = size;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    mesh.position.y = -size[1] / 2;          // its middle on the body's origin
     this.object3d.add(mesh);
     this.mesh = mesh;
     this.pickupable = this.addComponent(new Pickupable());
+    this.addComponent(new ImpactSound(IMPACT_SOUNDS[kind]));
     this.object3d.visible = false;
   }
 
@@ -75,7 +82,6 @@ class CarriedItem extends GameObject {
     const [w, h, d] = this._size;
     this.collider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2)
-        .setTranslation(0, h / 2, 0)
         .setFriction(0.8)
         .setRestitution(0.05)
         .setDensity(600)
@@ -89,12 +95,13 @@ class CarriedItem extends GameObject {
     else this.park();
   }
 
-  /** Into the world at `at` (world space), upright and still. */
+  /** Into the world, standing on `at` (world space), upright and still. */
   place(at) {
     this.inPlay = true;
     this.object3d.visible = true;
     const parent = this.object3d.parent;
-    const local = new THREE.Vector3(at.x, at.y, at.z);
+    const y = at.y + this._size[1] / 2;
+    const local = new THREE.Vector3(at.x, y, at.z);
     if (parent) {
       parent.updateMatrixWorld(true);
       parent.worldToLocal(local);
@@ -107,7 +114,7 @@ class CarriedItem extends GameObject {
       return;
     }
     body.setEnabled?.(true);
-    body.setTranslation({ x: at.x, y: at.y, z: at.z }, true);
+    body.setTranslation({ x: at.x, y, z: at.z }, true);
     body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
     this._still(1);
   }
