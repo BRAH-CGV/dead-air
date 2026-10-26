@@ -36,6 +36,7 @@ const PROMPT = {
   send:     'Drives loaded — send the buggy off',
   delivered: 'Buggy away — get some sleep (bedroom)',
   failed:   'Night failed. [E] to retry',
+  quotaMissed: 'Quota not met. [E] to retry',
   finished: 'You made it through every shift.',
 };
 
@@ -80,6 +81,9 @@ export class GameController extends Component {
   /** Seconds before a failed night's prompt shows and [E] retries. */
   _retryLock = 0;
   _heldPrompt = null;
+  /** Whether the night failed because 6 AM came with the quota short, not a
+   *  threat. The Night failed screen says so. */
+  quotaMissed = false;
 
   /** @type {Set<(state: string, previous: string) => void>} */
   _stateListeners = new Set();
@@ -98,6 +102,7 @@ export class GameController extends Component {
     this.nightNumber = nightNumber;
     this._shiftPrompt = null;
     this.dispatched = false;
+    this.quotaMissed = false;
     this._setState('playing');
 
     this.nightClock?.reset();
@@ -391,6 +396,9 @@ export class GameController extends Component {
     this._shiftPrompt = this._morningKey();
     this._endShift('morning', PROMPT[this._shiftPrompt]);
   }
-  _gameOver() { this._endShift('gameOver', PROMPT.failed); }
+  _gameOver() {
+    this.quotaMissed = true;
+    this._endShift('gameOver', PROMPT.quotaMissed);
+  }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }

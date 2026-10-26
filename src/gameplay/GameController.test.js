@@ -114,7 +114,22 @@ describe('GameController', () => {
     gc.startNight(1);
     gc.onUpdate(999);  // past 6 AM
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenCalledWith('Night failed. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenCalledWith('Quota not met. [E] to retry');
+    expect(gc.quotaMissed).toBe(true);
+  });
+
+  it('a threat failing the night is not a missed quota', () => {
+    gc.startNight(1);
+    gc.fail('You have been eaten. Press [E] to try again');
+    expect(gc.state).toBe('gameOver');
+    expect(gc.quotaMissed).toBe(false);
+  });
+
+  it('a retry clears the missed quota', () => {
+    gc.startNight(1);
+    gc.onUpdate(999);
+    gc.retryNight();
+    expect(gc.quotaMissed).toBe(false);
   });
 
   it('meeting the quota early keeps the shift running until 6 AM', () => {

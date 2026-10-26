@@ -518,6 +518,13 @@ describe('App', () => {
       expect(document.getElementById('menu-panel').textContent).toContain('Night 1 failed: 2/4 drives, 0/1 processed');
     });
 
+    it('Night failed says the quota was not met, when the shift ended short', async () => {
+      engine.activeScene.gameController.quotaMissed = true;
+      engine.activeScene.gameController.fire('gameOver');
+      await flush();
+      expect(document.getElementById('menu-panel').textContent).toContain('Quota not met: 2/4 drives');
+    });
+
     it('Retry from Night failed rebuilds the same night', async () => {
       engine.activeScene.nights.setNight(3);
       engine.activeScene.gameController.fire('gameOver');

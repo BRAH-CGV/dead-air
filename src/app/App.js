@@ -512,6 +512,7 @@ export class App {
       required: dock?.requiredCount ?? 0,
       processed: dock?.processedCount ?? 0,
       processedRequired: dock?.requiredProcessed ?? 0,
+      quotaMissed: !!this.engine.activeScene?.gameController?.quotaMissed,
     };
     this.flow.nightFailed();
     this.engine.setPaused(true);

@@ -327,12 +327,13 @@ export class MenuView {
     ];
   }
 
-  /** @param {{ night: number, saved: number, required: number, processed?: number, processedRequired?: number }} m */
-  _drawNightFailed({ night = 1, saved = 0, required = 0, processed = 0, processedRequired = 0 }) {
+  /** @param {{ night: number, saved: number, required: number, processed?: number, processedRequired?: number, quotaMissed?: boolean }} m */
+  _drawNightFailed({ night = 1, saved = 0, required = 0, processed = 0, processedRequired = 0, quotaMissed = false }) {
     const processing = processedRequired > 0 ? `, ${processed}/${processedRequired} processed` : '';
+    const why = quotaMissed ? 'Quota not met' : `Night ${night} failed`;
     return [
       h('h2', { class: 'menu-heading is-danger' }, COPY.nightFailedTitle),
-      h('p', { class: 'menu-text' }, `Night ${night} failed: ${saved}/${required} drives${processing}`),
+      h('p', { class: 'menu-text' }, `${why}: ${saved}/${required} drives${processing}`),
       h('nav', { class: 'menu-list' },
         option('retry', 'Retry night'),
         option('quit', 'Main menu'),
