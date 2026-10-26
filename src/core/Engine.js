@@ -125,10 +125,11 @@ export class Engine {
   /** True while a DOM panel has the mouse (the generator's breaker panel):
    *  the pointer lock was let go on purpose, so losing it isn't a pause. */
   uiHasMouse = false;
-  /** The run's record (src/gameplay/RunRecord.js): what each morning's buggy
-   *  took to the hub, for the bedroom PC. Held here because a dream rebuilds
-   *  the scene between nights; BaseScene makes one if there is none, and App
-   *  starts it over on New game, the Tutorial, Continue and Select night. */
+  /** The run's record (src/gameplay/RunRecord.js): the array's name and
+   *  each night's threat log, for the bedroom PC. Held here because a dream
+   *  rebuilds the scene between nights; BaseScene makes one if there is
+   *  none, and App starts it over on New game, the Tutorial, Continue and
+   *  Select night. */
   run = null;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();

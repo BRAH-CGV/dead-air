@@ -3,7 +3,6 @@ import { GameController } from './GameController.js';
 import { NightClock, NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { SignalManager } from './SignalManager.js';
 import { NightManager } from '../systems/NightManager.js';
-import { RunRecord } from './RunRecord.js';
 
 function makeHUD() {
   return {
@@ -656,30 +655,6 @@ describe('GameController — loading the drives into the buggy', () => {
     expect(gc.state).toBe('playing');
     expect(gc.dispatch()).toBe(false);
     expect(gc.dispatched).toBe(false);
-  });
-
-  it("the send-off records the night's processed drives on the run, for the hub", () => {
-    const run = new RunRecord();
-    gc.run = run;
-    nights.setNight(2);
-    toMorning();
-    const drive = (signalLevel) => ({ saved: true, corrupted: false, signalLevel });
-    cargo.depositedBox = { receiver: { attachedItems: [drive(2), drive(2), drive(1)] } };
-    cargo.collectedCount = 3;
-    expect(gc.dispatch()).toBe(true);
-    expect(run.delivered(2)).toBe(2);
-  });
-
-  it('a refused send-off records nothing, and no run is needed', () => {
-    const run = new RunRecord();
-    gc.run = run;
-    toMorning();
-    load(2);
-    expect(gc.dispatch()).toBe(false);
-    expect(run.delivered(1)).toBe(0);
-    gc.run = null;
-    load(3);
-    expect(gc.dispatch()).toBe(true);
   });
 
   it('every night start brings the buggy back: the next morning it is sent again', () => {

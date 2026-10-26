@@ -106,6 +106,8 @@ import { Footsteps } from '../components/Footsteps.js';
 import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
 import { colonyMap } from '../ui/colonyMap.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
+import { ThreatWatch } from '../gameplay/ThreatWatch.js';
+import { threatForecast } from '../gameplay/ThreatForecast.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
@@ -392,6 +394,7 @@ export class BaseScene extends Scene {
     this._addUfo();
     this._addSandstorm();
     this._addRagno();
+    this._addThreatWatch();
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
@@ -791,9 +794,9 @@ export class BaseScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     this.gameController.banner        = this.banner;
-    // What each morning's buggy takes to the hub, for the bedroom PC. On
-    // the engine, so a dream's rebuild between nights keeps it.
-    this.gameController.run           = (this.engine.run ??= new RunRecord());
+    // The run's array name and each night's threat log, for the bedroom PC.
+    // On the engine, so a dream's rebuild between nights keeps it.
+    this.engine.run ??= new RunRecord();
     gameplayGO.addComponent(this.gameController);
 
     // The banner's timing runs on real time (engine.realDt), ticked by a
@@ -2124,15 +2127,16 @@ export class BaseScene extends Scene {
   // The bedroom PC (#114)
   // ──────────────────────────────────────────
   /** The computer on the bedroom desk: the room put it there, this hands
-   *  it the night, its panel (#bedroom-pc), the run record and the colony
-   *  map — the six neighbours where the radar has them, and the buggy's
-   *  route out toward the hub. */
+   *  it the night, its panel (#bedroom-pc), the run record (last night's
+   *  threats), the forecast and the colony map — the six neighbours where
+   *  the radar has them, and the buggy's route out toward the hub. */
   _addBedroomPC() {
     const pc = this.rooms.LivingQuarters?.pc;
     if (!pc) return;
     pc.controller = this.gameController;
     pc.panel = new BedroomPCPanel();
     pc.run = this.engine.run;
+    pc.forecast = threatForecast;
     pc.map = colonyMap({
       neighbours: this.satellite?.neighbours ?? [],
       route: this._buggyRoutePoints(),
@@ -2560,6 +2564,40 @@ export class BaseScene extends Scene {
     this._zoneBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => [part.name, part.bounds()]);
     for (const [name, box] of this._zoneBoxes) if (box.containsPoint(p)) return name;
     return 'outside';
+  }
+
+  /** The night's threat log for the bedroom PC (ThreatWatch): each kind
+   *  noted as it first shows, put on the run record as the shift ends. One
+   *  source a kind, as ThreatForecast names them, each reading the system
+   *  live. After every threat it reads; nothing allocated per frame. */
+  _addThreatWatch() {
+    const eyesOut = () => {
+      for (const slot of this.dustEyes?.slots ?? []) if (slot.phase !== 'off') return true;
+      return false;
+    };
+    const ufoHere = () => {
+      const phase = this.ufoThreat?.phase;
+      return phase === 'approaching' || phase === 'expanding' || phase === 'lethal' || phase === 'caught';
+    };
+    const corrupt = () => {
+      for (const s of this.signalManager?.signals ?? []) if (s.evil && s.appeared) return true;
+      return false;
+    };
+    this.threatWatch = this._sceneRoot.find('GameplaySystems').addComponent(new ThreatWatch());
+    Object.assign(this.threatWatch, {
+      controller: this.gameController,
+      clock:      this.nightClock,
+      run:        this.engine.run,
+      sources: {
+        storm:   () => (this.sandstorm?.level ?? 0) > 0.5,
+        outage:  () => !!this.stormOutage?.flickering,
+        eyes:    eyesOut,
+        prowler: () => { const l = this.ragno?.logic; return !!l && l.state !== 'off' && !l.indoors; },
+        vents:   () => !!this.ragno?.logic?.indoors,
+        aerial:  ufoHere,
+        corrupt,
+      },
+    });
   }
 
   /** Ragno, the camera entity (Ragno.js): his figure under Threats on the

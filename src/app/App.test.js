@@ -1464,7 +1464,7 @@ describe('App intro (New game)', () => {
     function oldRun() {
       engine.run = new RunRecord();
       engine.run.reset({ array: 'ARRAY OLD' });
-      engine.run.deliver(1, 3);
+      engine.run.logThreats(1, [{ kind: 'storm', hour: -2 }]);
       return engine.run;
     }
 
@@ -1474,7 +1474,7 @@ describe('App intro (New game)', () => {
       await begin();
       expect(engine.run).toBe(run);   // the scene under the menu already holds it
       expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
-      expect(run.delivered(1)).toBe(0);
+      expect(run.threats(1)).toBeNull();
     });
 
     it('makes the record where no scene has', async () => {
@@ -1490,7 +1490,7 @@ describe('App intro (New game)', () => {
       lock.grant = false;
       await begin();
       expect(run.array).toBe('ARRAY OLD');
-      expect(run.delivered(1)).toBe(3);
+      expect(run.threats(1)).toEqual([{ kind: 'storm', hour: -2 }]);
     });
 
     it('the Tutorial starts one too', async () => {
@@ -1502,7 +1502,7 @@ describe('App intro (New game)', () => {
       await click('tutorial');
       await begin();
       expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
-      expect(run.delivered(1)).toBe(0);
+      expect(run.threats(1)).toBeNull();
     });
 
     it('Continue starts one with no intro, so no array name', async () => {
@@ -1513,20 +1513,20 @@ describe('App intro (New game)', () => {
       const run = oldRun();
       await click('continue');
       expect(run.array).toBeNull();
-      expect(run.delivered(1)).toBe(0);
+      expect(run.threats(1)).toBeNull();
     });
 
     it('Restart night keeps the run', async () => {
       await click('newGame');
       await begin();
-      engine.run.deliver(1, 2);
+      engine.run.logThreats(1, [{ kind: 'storm', hour: -2 }]);
       const run = engine.run;
       lock.lose();
       await click('restart');
       await click('confirm');
       expect(engine.loadScene).toHaveBeenCalledOnce();
       expect(engine.run).toBe(run);
-      expect(run.delivered(1)).toBe(2);
+      expect(run.threats(1)).toEqual([{ kind: 'storm', hour: -2 }]);
       expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
     });
   });

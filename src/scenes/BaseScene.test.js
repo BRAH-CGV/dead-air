@@ -35,6 +35,7 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { Nap, NAP } from '../gameplay/Nap.js';
 import { BedRest } from '../components/BedRest.js';
 import { BED_TRANSITION } from '../gameplay/BedTransition.js';
+import { threatForecast, THREAT_KINDS } from '../gameplay/ThreatForecast.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -98,15 +99,17 @@ describe('BaseScene', () => {
     expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
   });
 
-  it('wires the bedroom PC (#114): the night, the panel, the run, the map; a screen the demon counts', () => {
+  it('wires the bedroom PC (#114): the night, the panel, the run, the forecast, the map; a screen the demon counts', () => {
     const { pc } = scene.rooms.LivingQuarters;
     expect(pc.controller).toBe(scene.gameController);
     expect(pc.panel).toBeTruthy();
     // One run record, on the engine, so it outlives a dream's rebuild; the
-    // controller writes each morning's delivery to it.
+    // threat watch writes each night's log to it.
     expect(engine.run).toBeTruthy();
     expect(pc.run).toBe(engine.run);
-    expect(scene.gameController.run).toBe(engine.run);
+    expect(scene.threatWatch.run).toBe(engine.run);
+    // Tonight's forecast, read off the threats' own rules.
+    expect(pc.forecast).toBe(threatForecast);
     // The six neighbours and the buggy's way out to the hub.
     expect(pc.map.neighbours).toHaveLength(6);
     expect(pc.map.route.length).toBeGreaterThan(1);
@@ -116,6 +119,31 @@ describe('BaseScene', () => {
     pc.open = true;
     expect(scene.sleepDemon.terminal.state).toBe('reading');
     pc.open = false;
+  });
+
+  it("watches tonight's threats for the PC's log (#114): each kind as it first shows, written as the shift ends", () => {
+    const watch = scene.threatWatch;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(watch);
+    expect(watch.controller).toBe(scene.gameController);
+    expect(watch.clock).toBe(scene.nightClock);
+    expect(Object.keys(watch.sources).sort()).toEqual([...THREAT_KINDS].sort());
+    // All quiet before anything comes.
+    for (const kind of THREAT_KINDS) expect(watch.sources[kind]()).toBe(false);
+    scene.sandstorm.level = 1;
+    expect(watch.sources.storm()).toBe(true);
+    scene.ragno.logic.state = 'approach';
+    expect(watch.sources.prowler()).toBe(true);
+    expect(watch.sources.vents()).toBe(false);
+    scene.ragno.logic.indoors = true;
+    expect(watch.sources.prowler()).toBe(false);
+    expect(watch.sources.vents()).toBe(true);
+    scene.ufoThreat.phase = 'approaching';
+    expect(watch.sources.aerial()).toBe(true);
+    scene.dustEyes.slots[0].phase = 'watch';
+    expect(watch.sources.eyes()).toBe(true);
+    scene.signalManager.signals.push({ evil: true, appeared: true });
+    expect(watch.sources.corrupt()).toBe(true);
   });
 
   it('keeps the run record a rebuild finds on the engine', () => {
