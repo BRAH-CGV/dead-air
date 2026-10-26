@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // vitest (BUG-003). Nothing here constructs a controller, so an empty
 // module is enough to let this file run.
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
+vi.mock('../ui/paintDom.js', () => ({ paintDom: vi.fn() }));
 
 import * as THREE from 'three';
 import { ComputerTerminal, createComputerInteractable } from './ComputerTerminal.js';
@@ -12,6 +13,7 @@ import { SignalManager } from '../gameplay/SignalManager.js';
 import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Satellite, DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { createDefaultNeighbourDishes, skyToCursor } from '../gameobjects/DishRig.js';
+import { paintDom } from '../ui/paintDom.js';
 
 // ── Minimal test doubles ──────────────────────────────────
 
@@ -809,5 +811,87 @@ describe('ComputerTerminal', () => {
     term._updateRadarDisplay();
     term.exit();
     expect(radar.setWarning).toHaveBeenLastCalledWith('');
+  });
+
+  // ── On the screen itself (#161) ──
+
+  describe('with a screen to lean in to', () => {
+    let view, surface;
+    beforeEach(() => {
+      view = { open: vi.fn(), close: vi.fn() };
+      surface = { worldCorners: vi.fn() };
+      radar.root = {};
+      term.screenView = view;
+      term.screen = surface;
+    });
+
+    it('leans in to the screen, the radar\'s DOM on it to take the keys', () => {
+      term.enter();
+      expect(view.open).toHaveBeenCalledWith(surface, radar.root);
+      expect(radar.show).toHaveBeenCalled();
+    });
+
+    it('keeps the radar up while leaning back out, and drops it once out', () => {
+      term.enter();
+      term.exit();
+      expect(view.close).toHaveBeenCalledTimes(1);
+      expect(radar.hide).not.toHaveBeenCalled();
+      const onClosed = view.close.mock.calls[0][0];
+      onClosed();
+      expect(radar.hide).toHaveBeenCalled();
+    });
+
+    it('draws the radar only when the screen\'s picture is painted, not every frame', () => {
+      term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+      term.enter();
+      radar.update.mockClear();
+      for (let i = 0; i < 3; i++) term.onUpdate(1 / 60);
+      expect(radar.update).not.toHaveBeenCalled();
+      term.paintScreen({ fillRect: vi.fn() }, 690, 384);
+      expect(radar.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives the player back at once, without waiting for the lean', () => {
+      term.enter();
+      term.exit();
+      expect(term.state).toBe('idle');
+      expect(crosshair.show).toHaveBeenCalled();
+    });
+  });
+
+  describe('the screen when nobody is at it (paintScreen)', () => {
+    const ctx = () => ({ fillRect: vi.fn(), fillStyle: '' });
+
+    beforeEach(() => { radar.root = {}; paintDom.mockClear(); });
+
+    it('shows the radar as it stands: refreshed, then its own DOM painted', () => {
+      const c = ctx();
+      term.paintScreen(c, 690, 384);
+      expect(radar.update).toHaveBeenCalled();
+      expect(paintDom).toHaveBeenCalledWith(radar.root, c, 690, 384);
+    });
+
+    it('leaned in too, it draws the radar just before painting it', () => {
+      term.enter();
+      radar.update.mockClear();
+      term.paintScreen(ctx(), 690, 384);
+      expect(radar.update).toHaveBeenCalledTimes(1);
+      expect(paintDom).toHaveBeenCalled();
+    });
+
+    it('goes dark without power', () => {
+      term.setPowered(false);
+      const c = ctx();
+      term.paintScreen(c, 690, 384);
+      expect(paintDom).not.toHaveBeenCalled();
+      expect(c.fillRect).toHaveBeenCalledWith(0, 0, 690, 384);
+    });
+  });
+
+  it('without a screen, the radar goes over the view as before', () => {
+    term.enter();
+    expect(radar.show).toHaveBeenCalled();
+    term.exit();
+    expect(radar.hide).toHaveBeenCalled();
   });
 });

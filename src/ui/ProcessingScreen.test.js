@@ -12,7 +12,11 @@ vi.mock('./Spectrogram.js', () => ({
   blendFromImageData: vi.fn(),
 }));
 
+vi.mock('./paintDom.js', () => ({ paintDom: vi.fn() }));
+
 import { ProcessingScreen } from './ProcessingScreen.js';
+import { paintDom } from './paintDom.js';
+import { decode, compute, renderToImageData, blendFromImageData } from './Spectrogram.js';
 
 // ── Minimal DOM helpers ────────────────────────────────────
 // ProcessingScreen queries its constructor argument for child elements.
@@ -175,6 +179,162 @@ describe('ProcessingScreen', () => {
     expect(buttons[0].textContent).toBe('Upgrade Signal');
     expect(buttons[0].disabled).toBe(false);
     expect(buttons[0].dataset.actionId).toBe('upgrade');
+  });
+
+  it('with a screen, leans in to it and lays the console on it (#161)', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const view = { open: vi.fn(), close: vi.fn() };
+    const surface = {};
+    screen.view = view;
+    screen.screen = surface;
+    screen.open(null, []);
+    expect(view.open).toHaveBeenCalledWith(surface, domRoot);
+    expect(domRoot.style.display).toBe('flex');
+  });
+
+  it('with a screen, stays up while the view leans back out, then hides', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const view = { open: vi.fn(), close: vi.fn() };
+    screen.view = view;
+    screen.screen = {};
+    screen.open(null, []);
+    screen.close();
+    expect(view.close).toHaveBeenCalledTimes(1);
+    expect(domRoot.style.display).toBe('flex');
+    view.close.mock.calls[0][0]();
+    expect(domRoot.style.display).toBe('none');
+  });
+
+  it('isOpen follows open() and close()', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    expect(screen.isOpen).toBe(false);
+    screen.open(null, []);
+    expect(screen.isOpen).toBe(true);
+    screen.close();
+    expect(screen.isOpen).toBe(false);
+  });
+
+  describe('the console\'s screen (paint, #161)', () => {
+    const fakeCtx = () => ({});
+
+    it('paints its own DOM: the same picture leaned in to it or not', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const ctx = fakeCtx();
+      paintDom.mockClear();
+      screen.paint(ctx, 460, 384, null);
+      expect(paintDom).toHaveBeenCalledWith(domRoot, ctx, 460, 384);
+    });
+
+    it('works its spectrogram out again only when the drive in the reader changes', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const update = vi.spyOn(screen, '_updateSpectrogram').mockResolvedValue();
+      const drive = { saved: true, signalName: 'Pulsar', signalLevel: 1 };
+      screen.paint(fakeCtx(), 460, 384, drive);
+      screen.paint(fakeCtx(), 460, 384, drive);
+      expect(update).toHaveBeenCalledTimes(1);
+      drive.signalLevel = 2;
+      screen.paint(fakeCtx(), 460, 384, drive);
+      expect(update).toHaveBeenCalledTimes(2);
+      screen.paint(fakeCtx(), 460, 384, null);
+      expect(update).toHaveBeenCalledTimes(3);
+    });
+
+    it('closing keeps the spectrogram on the screen', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      const clear = vi.spyOn(screen, '_clearSpectrogram');
+      screen.open(null, []);
+      clear.mockClear();
+      screen.close();
+      expect(clear).not.toHaveBeenCalled();
+    });
+  });
+
+  it('touches the progress bar only when the whole percent changes: each touch is a fresh read of the screen\'s layout', () => {
+    domRoot = makeDOM();
+    const screen = new ProcessingScreen(domRoot);
+    const observer = new MutationObserver(() => {});
+    observer.observe(domRoot, { subtree: true, childList: true, characterData: true, attributes: true });
+    screen._updateProgress({ processingProgress: 0.401 });
+    observer.takeRecords();
+    screen._updateProgress({ processingProgress: 0.403 });
+    expect(observer.takeRecords()).toHaveLength(0);
+    screen._updateProgress({ processingProgress: 0.41 });
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    observer.disconnect();
+  });
+
+  describe('a processing run left midway (#161)', () => {
+    const flush = () => new Promise(r => setTimeout(r, 0));
+    const midway = () => ({
+      saved: true, signalName: 'Pulsar', signalLevel: 1,
+      processingStarted: true, isProcessing: true, processingProgress: 0.4,
+    });
+
+    beforeEach(() => {
+      vi.stubGlobal('requestAnimationFrame', () => 1);
+      vi.stubGlobal('cancelAnimationFrame', () => {});
+      vi.stubGlobal('AudioContext', class {});
+      // jsdom has no ImageData.
+      vi.stubGlobal('ImageData', class {
+        constructor(a, b, c) {
+          if (typeof a === 'number') { this.width = a; this.height = b; this.data = new Uint8ClampedArray(a * b * 4); }
+          else { this.data = a; this.width = b; this.height = c; }
+        }
+      });
+      decode.mockResolvedValue({});
+      compute.mockResolvedValue({ frames: 1, bins: 1 });
+      renderToImageData.mockReturnValue(new ImageData(1, 1));
+      blendFromImageData.mockClear();
+    });
+
+    it('reopened, the picture shows the run as far as it got, and goes on filling in', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      const drive = midway();
+      screen.open(drive, []);
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData).toHaveBeenCalled();
+      expect(blendFromImageData.mock.calls.at(-1)[3]).toBe(0.4);
+      expect(screen._blendNewData).not.toBeNull();   // the run's ticks blend on from here
+    });
+
+    it('its screen keeps the progress too, painted from across the room', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      screen.paint({}, 460, 384, midway());
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData.mock.calls.at(-1)?.[3]).toBe(0.4);
+    });
+
+    it('a drive not mid-run is shown as it is', async () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      screen.signalRegistry = { getAudioUrl: (name, level) => `${name}-${level}.mp3` };
+      screen.open({ saved: true, signalName: 'Pulsar', signalLevel: 1 }, []);
+      for (let i = 0; i < 5; i++) await flush();
+      expect(blendFromImageData).not.toHaveBeenCalled();
+    });
+
+    it('reveals the same columns each time for the same signal, so picking a run back up matches', () => {
+      domRoot = makeDOM();
+      const screen = new ProcessingScreen(domRoot);
+      renderToImageData.mockReturnValue(new ImageData(200, 1));
+      const result = { frames: 200, bins: 1 };
+      screen._setupBlend(result, result, 'Pulsar|1');
+      const first = [...screen._blendRevealOrder];
+      screen._setupBlend(result, result, 'Pulsar|1');
+      expect(screen._blendRevealOrder).toEqual(first);
+      screen._setupBlend(result, result, 'Quasar|1');
+      expect(screen._blendRevealOrder).not.toEqual(first);
+    });
   });
 
   it('close() hides the overlay and clears controls', () => {

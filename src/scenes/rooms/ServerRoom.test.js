@@ -128,6 +128,18 @@ describe('ServerRoom', () => {
     for (const [i, z] of right.entries()) expect(left[i]).toBeCloseTo(z);
   });
 
+  it('marks the console\'s screen: upright, facing down the aisle (#161)', () => {
+    const [tl, tr, br, bl] = room.consoleScreen.worldCorners();
+    // The CRT's face at the console's 0.478 scale.
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.367, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.305, 2);
+    expect(tl.z).toBeCloseTo(bl.z);                     // upright
+    const console_ = room.root.find('ServerConsole').object3d;
+    expect(tl.z).toBeGreaterThan(console_.position.z);  // on its front
+    expect(tr.x).toBeGreaterThan(tl.x);                 // read from the aisle
+    expect(tl.y).toBeGreaterThan(bl.y);
+  });
+
   it('stands the console in the middle of the aisle at the back of the room, facing down it', () => {
     const console_ = room.root.find('ServerConsole').object3d;
     expect(console_.position.x).toBeCloseTo(0);

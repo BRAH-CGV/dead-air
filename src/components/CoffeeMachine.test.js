@@ -114,6 +114,50 @@ describe('CoffeeMachine', () => {
     expect(m.state).toBe('ready');
   });
 
+  it('shows its cup while one brews and while it waits to be drunk, filling as it brews', () => {
+    const cup = { object3d: new THREE.Object3D(), setFill: vi.fn(), setPouring: vi.fn() };
+    const m = make({ cup });
+    const shown = () => cup.object3d.visible;
+    const fill = () => cup.setFill.mock.lastCall[0];
+    expect(shown()).toBe(false);                 // nothing on the tray to start
+
+    m.onInteract({});
+    expect(shown()).toBe(true);
+    expect(fill()).toBe(0);
+    m.onUpdate(COFFEE.brewSeconds / 2);
+    expect(fill()).toBeCloseTo(0.5);
+    m.onUpdate(COFFEE.brewSeconds);
+    expect(m.state).toBe('brewed');
+    expect(shown()).toBe(true);
+    expect(fill()).toBe(1);
+
+    m.onInteract({});                             // drunk
+    expect(shown()).toBe(false);
+    brewAndDrink(m);
+    expect(m.state).toBe('empty');
+    expect(shown()).toBe(false);
+
+    m.reset();
+    m.onInteract({});
+    m.reset();                                    // a retry mid-brew takes it away
+    expect(shown()).toBe(false);
+  });
+
+  it('pours into the cup while it brews, and stops when it is done', () => {
+    const cup = { object3d: new THREE.Object3D(), setFill: vi.fn(), setPouring: vi.fn() };
+    const m = make({ cup });
+    const pouring = () => cup.setPouring.mock.lastCall[0];
+    expect(pouring()).toBe(false);
+    m.onInteract({});
+    expect(pouring()).toBe(true);
+    m.onUpdate(COFFEE.brewSeconds + 0.1);
+    expect(pouring()).toBe(false);
+    m.onInteract({});
+    m.onInteract({});
+    m.reset();                                    // a retry mid-brew stops it too
+    expect(pouring()).toBe(false);
+  });
+
   it('with no stamina wired it does nothing', () => {
     const m = new CoffeeMachine();
     expect(() => m.onInteract({})).not.toThrow();

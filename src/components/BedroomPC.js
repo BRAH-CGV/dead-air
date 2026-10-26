@@ -1,0 +1,211 @@
+import * as THREE from 'three';
+import { Interactable } from './Interactable.js';
+import { paintDom } from '../ui/paintDom.js';
+
+// ─────────────────────────────────────────────
+// BedroomPC  –  the computer on the bedroom desk (#114)
+// ─────────────────────────────────────────────
+// [E] opens BedroomPCPanel: the colony map, and the threats page: last
+// night's log and the forecast for tonight (in the morning, for the next
+// shift). While it's up the player stands still but the night goes on;
+// 1 / 2 or ← / → switch screens, and a fresh [E], or [Q] as at the
+// terminal, puts it away. It won't open behind a failed night, and a night
+// failed under it (a threat while reading) puts it away.
+//
+// `state` is 'reading' while it's up, 'idle' otherwise, the way the desk's
+// screens report theirs: the scene counts it among them (BaseScene._screens),
+// so the Sleep Demon treats a player at it as a player at the terminal.
+//
+// The room puts it on the desk; the scene hands it the rest, since rooms
+// don't know about gameplay:
+//
+//   pc.controller = gameController;    // the night, and whether it's on
+//   pc.panel      = new BedroomPCPanel();
+//   pc.run        = engine.run;        // the array's name, each night's log
+//   pc.forecast   = threatForecast;    // night → the kinds of threat due
+//   pc.map        = colonyMap({ … });  // where things are on the map
+//   pc.screenView = screenView;        // leans in to its screen (#161)
+//   pc.screen     = rooms.LivingQuarters.pcScreen;
+//
+// On a screen (#161) the panel is what the laptop shows in the world,
+// whether or not anyone is at it (paintScreen, for a ScreenCanvas); using
+// it leans the view in, and closing it leans back out.
+//
+// A key click (PC_CLICK) whenever a press changes the screen: the camera
+// flash's switch click, quiet and pitched up to a small plastic keycap,
+// each press a touch apart, from the laptop. Not when the screen asked for
+// is already up.
+// ─────────────────────────────────────────────
+
+/** The key click. */
+export const PC_CLICK = {
+  key: 'sfx:camera-spotlight',
+  volume: 0.15,
+  /** Cents up, to a small keycap, and how far each press strays from it. */
+  detune: 700,
+  spread: 120,
+  /** Full volume within this of the laptop, metres. */
+  refDistance: 1,
+};
+
+/** Fresh presses that pick a screen, and those that step through them. */
+const SCREEN_KEYS = Object.freeze({ Digit1: 'colony', Digit2: 'threats' });
+const STEP_KEYS = Object.freeze({ ArrowLeft: -1, ArrowRight: 1 });
+
+/** Controller states it can be used in. */
+const USABLE = new Set(['playing', 'morning']);
+
+export class BedroomPC extends Interactable {
+  promptLabel = '[E] Use the computer';
+  interactRange = 2.5;
+
+  /** @type {import('../gameplay/GameController.js').GameController|null} */
+  controller = null;
+  /** @type {import('../ui/BedroomPCPanel.js').BedroomPCPanel|null} */
+  panel = null;
+  /** @type {import('../gameplay/RunRecord.js').RunRecord|null} */
+  run = null;
+  /** @type {ReturnType<import('../ui/colonyMap.js').colonyMap>|null} */
+  map = null;
+  /** night → the kinds of threat due (threatForecast); null for no forecast.
+   *  @type {((night: number) => string[])|null} */
+  forecast = null;
+
+  /** Leans the view in to the laptop's screen (#161). Without one (tests,
+   *  other scenes) the panel goes over the whole view.
+   *  @type {import('./ScreenView.js').ScreenView|null} */
+  screenView = null;
+  /** The laptop's screen, for screenView. */
+  screen = null;
+
+  /** True while the panel is up. */
+  open = false;
+
+  /** The key click: built from PC_CLICK.key the first time it is wanted
+   *  when left undefined; null for none. @type {THREE.Audio|null|undefined} */
+  click = undefined;
+
+  /** What the panel was last drawn for (paintScreen). */
+  _shown = { drawn: false, array: null, night: 0, morning: false, entries: null };
+
+  get state() { return this.open ? 'reading' : 'idle'; }
+
+  onInteract() {
+    if (this.open || !this._usable()) return;
+    this.open = true;
+    this.panel?.show(this._data());
+    if (this.screenView && this.screen) this.screenView.open(this.screen, this.panel?.root ?? null);
+    const engine = this._engine();
+    // The press that opened it has done its job.
+    engine?.consumeAction?.('interact');
+    if (engine?.playerController) engine.playerController.inputLocked = true;
+  }
+
+  /** Put it away and free the player. */
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    // On the screen, the panel stays up while the view leans back out.
+    if (this.screenView && this.screen) this.screenView.close(() => this.panel?.hide());
+    else this.panel?.hide();
+    const engine = this._engine();
+    if (engine?.playerController) engine.playerController.inputLocked = false;
+  }
+
+  onUpdate() {
+    if (!this.open) return;
+    if (!this._usable()) { this.close(); return; }
+    const engine = this._engine();
+    if (!engine) return;
+    const pressed = engine.input.pressed;
+    if (pressed[engine.keyBinds?.interact]) {
+      // Used up, so the system that opens it doesn't open it again.
+      engine.consumeAction?.('interact');
+      this.close();
+      return;
+    }
+    if (pressed.KeyQ) { this.close(); return; }
+    const before = this.panel?.screen;
+    for (const code in SCREEN_KEYS) if (pressed[code]) this.panel?.setScreen(SCREEN_KEYS[code]);
+    for (const code in STEP_KEYS) if (pressed[code]) this.panel?.step(STEP_KEYS[code]);
+    if (this.panel && this.panel.screen !== before) this._click();
+  }
+
+  /** A key's click, started over if one is still sounding. */
+  _click() {
+    if (this.click === undefined) this.click = this._buildClick();
+    const click = this.click;
+    if (!click) return;
+    if (click.isPlaying) click.stop();
+    click.setVolume(PC_CLICK.volume);
+    click.setDetune(PC_CLICK.detune + PC_CLICK.spread * (Math.random() * 2 - 1));
+    click.play();
+  }
+
+  _buildClick() {
+    const engine = this._engine();
+    const object3d = this.gameObject?.object3d;
+    if (!engine?.audioListener || !engine.assets?.has?.(PC_CLICK.key) || !object3d) return null;
+    const audio = new THREE.PositionalAudio(engine.audioListener);
+    audio.setBuffer(engine.assets.get(PC_CLICK.key));
+    audio.setRefDistance(PC_CLICK.refDistance);
+    object3d.add(audio);
+    return audio;
+  }
+
+  onDestroy() {
+    // A rebuild with the panel up must not leave the player locked.
+    this.close();
+    if (this.click?.isPlaying) this.click.stop();
+    try { this.click?.disconnect?.(); } catch (_) { /* never connected */ }
+  }
+
+  /** The laptop's screen (ScreenCanvas): the panel drawn for tonight,
+   *  again only when that changes, then painted from its DOM. */
+  paintScreen(ctx, w, h) {
+    // Compared field by field, so a frame with nothing new allocates nothing.
+    const night = this.controller?.nightNumber ?? 1;
+    const morning = this.controller?.state === 'morning';
+    const array = this.run?.array ?? null;
+    const entries = this.run?.threats(morning ? night : night - 1) ?? null;
+    const shown = this._shown;
+    if (!shown.drawn || shown.array !== array || shown.night !== night
+      || shown.morning !== morning || shown.entries !== entries) {
+      shown.drawn = true;
+      shown.array = array;
+      shown.night = night;
+      shown.morning = morning;
+      shown.entries = entries;
+      this.panel?.render?.(this._data());
+    }
+    if (this.panel?.root) paintDom(this.panel.root, ctx, w, h);
+  }
+
+  /** What the panel shows. Through the shift: last night's log and
+   *  tonight's forecast. In the morning: the night just survived, and the
+   *  next shift's forecast, none after the last. */
+  _data() {
+    const c = this.controller;
+    const night = c?.nightNumber ?? 1;
+    const morning = c?.state === 'morning';
+    const logNight = morning ? night : night - 1;
+    const forecastNight = morning ? night + 1 : night;
+    const over = morning && !!c?.nights?.isLastNight?.();
+    return {
+      array: this.run?.array ?? null,
+      map: this.map,
+      log: logNight >= 0 ? { night: logNight, entries: this.run?.threats(logNight) ?? null } : null,
+      forecast: this.forecast && !over
+        ? { night: forecastNight, tonight: !morning, kinds: this.forecast(forecastNight) }
+        : null,
+    };
+  }
+
+  _usable() {
+    return !this.controller || USABLE.has(this.controller.state);
+  }
+
+  _engine() {
+    return this.gameObject?.scene?.userData?.engine ?? null;
+  }
+}

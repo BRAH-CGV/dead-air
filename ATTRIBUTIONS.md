@@ -291,6 +291,60 @@ by felixawani is licensed under Creative Commons Attribution
 | **Used for** | The bedroom's desk |
 | **Modifications** | Scaled to 0.88 and stood on the floor at load (manifest `scale`, `origin`) |
 
+### Signal lamp bulb
+
+"Lightbulb 01" (https://polyhaven.com/a/lightbulb_01) by Josh Dean from Poly
+Haven, released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/bulb.glb` |
+| **Manifest key** | `model:bulb` |
+| **Used for** | The office's signal lamp |
+| **Modifications** | `scripts/prep-bulb.mjs`: the glass's transmission dropped, one colour atlas for glass and base, the maker's stamp painted off the glass, simplified to half its triangles and its textures to 512 px; scaled to 1.5 at load (manifest `scale`) |
+
+### Coffee machine
+
+"Coffee Machine Ascaso Dream" (https://free3d.io/model/Coffee-machine-Ascaso-Dream/d655706f)
+from free3D.io, uploader not named on the page. Used under free3D.io's Terms
+of Use (https://free3d.io/terms.html), which allow modifying a model and
+sharing or redistributing it with credit to its creator.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/coffee-machine.glb` |
+| **Manifest key** | `model:coffee-machine` |
+| **Used for** | The bedroom's coffee machine |
+| **Modifications** | `scripts/prep-coffee-machine.mjs`: transmission and specular extensions dropped, finishes changed, the body dulled to rust, the maker's name painted off the gauge face; scaled to 0.00396 and stood on the floor at load (manifest `scale`, `origin`) |
+
+### Table wood
+
+"Wood Table Worn" (https://polyhaven.com/a/wood_table_worn) by Dimitrios
+Savva (photography) and Rico Cilliers (processing) from Poly Haven, released
+under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/textures/wood-table.jpg`, `public/assets/textures/wood-table-normal.jpg` |
+| **Manifest key** | `tex:wood-table`, `tex:wood-table-normal` |
+| **Used for** | The bedroom's side table and coffee table |
+| **Modifications** | The 1k colour and OpenGL normal maps, re-saved as JPEG at quality 85 and 90 |
+
+### Bedroom laptop
+
+"Classic Laptop" (https://polyhaven.com/a/classic_laptop) by Arrangemonk from
+Poly Haven, released under CC0 (https://creativecommons.org/publicdomain/zero/1.0/).
+No attribution required; credited anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/models/laptop.glb` |
+| **Manifest key** | `model:laptop` |
+| **Used for** | The bedroom PC |
+| **Modifications** | Scaled to 0.5 at load (manifest `scale`); the maker's badge on the lid painted out of every map (`scripts/debrand-laptop.mjs`) |
+
 ### Storage rack
 
 "Worn Metal Rack" (https://polyhaven.com/a/worn_metal_rack) from Poly Haven,
@@ -342,7 +396,7 @@ by Alexander Korn is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/trash-bin.glb` |
 | **Manifest key** | `model:trash-bin` |
 | **Used for** | Trash bin prop |
-| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32 |
+| **Modifications** | Bin texture recoloured from rust to dark galvanised steel; now lit, metallic 0.8 / roughness 0.32; its trash lowered from the rim to a thin layer on the floor (`scripts/settle-bin-trash.mjs`) |
 
 ### Crate
 
@@ -889,6 +943,72 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Manifest key** | `sfx:spider-attack-2`, `sfx:spider-attack-4`, `sfx:spider-attack-8` |
 | **Used for** | Ragno flinching from a flash or setting off after the player (2 and 4), and catching them (8) (`Ragno`) |
 | **Modifications** | Renamed; of the third, only its loud part plays (`loudSpan`) |
+
+### Coffee machine running
+
+"Coffee Machine Motor" (https://freesound.org/people/Dwums96/sounds/338130/) by Dwums96, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/coffee-machine.mp3` |
+| **Manifest key** | `sfx:coffee-machine` |
+| **Used for** | The bedroom's coffee machine while a cup brews (`CoffeeSound`) |
+| **Modifications** | Cut to 20 s, a brew's length |
+
+### Coffee slurp
+
+"Coffee Slurping" (https://freesound.org/people/redcheek/sounds/251984/) by redcheek, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/slurp.mp3` |
+| **Manifest key** | `sfx:slurp` |
+| **Used for** | A coffee drunk at the bedroom's machine (`BaseScene._addStamina`) |
+| **Modifications** | Renamed |
+
+### Globe spinning
+
+"SpinningGlobeSound1" (https://freesound.org/people/TunaBombs/sounds/848502/) by TunaBombs, from Freesound, is used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. Downloaded as `848502__tunabombs__spinningglobesound1.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/globe-spin.wav` |
+| **Manifest key** | `sfx:globe-spin` |
+| **Used for** | The desk globe spun (`GlobeSound`) |
+| **Modifications** | Renamed; trimmed to start on the push, its last 20 ms faded out; otherwise as recorded |
+
+### Footsteps
+
+"Heavy_step" (https://freesound.org/people/Hair_fire22/sounds/668818/) by Hair_fire22, from Freesound, used under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/): credit required, no commercial use. "Step on dead leaf.aif" (https://freesound.org/people/nextmaking/sounds/86015/) by nextmaking, from Freesound, used under Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/): transformed and credited.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps.mp3` |
+| **Manifest key** | `sfx:steps` |
+| **Used for** | The player's footsteps (`Footsteps`): the heavy steps indoors, the leaf steps layered under them outside |
+| **Modifications** | Cut into steps and joined into one file; low-passed and played well under their level in game |
+
+### Footsteps on wood
+
+"Wood Thud Underfoot.wav" (https://freesound.org/people/spookymodem/sounds/202106/) by spookymodem, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/steps-wood.mp3` |
+| **Manifest key** | `sfx:steps-wood` |
+| **Used for** | The player's footsteps on a desk or a table (`Footsteps`) |
+| **Modifications** | Two of its thuds cut out and joined, faded at their ends, raised 8.2 dB to the interior steps' level, converted to mp3 |
+
+### Ragno in the vents
+
+"metal thing kicking hits thud rattle harder end.flac" (https://freesound.org/people/kyles/sounds/455809/) by kyles and "metal-thud.wav" (https://freesound.org/people/CaptainYulef/sounds/638613/) by CaptainYulef, both from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/ragno-vents.mp3` |
+| **Manifest key** | `sfx:ragno-vents` |
+| **Used for** | Ragno crawling through a duct (`Ragno`, `DuctCrawl`): his steps, and thuds and creaks layered over them |
+| **Modifications** | Snippets of both cut and joined into one mono file; played in pieces (`DUCT_CRAWL`), each pitched a little apart |
 
 
 ## Downloaded but unattributed — TODO

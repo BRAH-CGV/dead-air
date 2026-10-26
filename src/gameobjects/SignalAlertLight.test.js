@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { describe, it, expect } from 'vitest';
-import { SignalAlertLight } from './SignalAlertLight.js';
+import { readFileSync } from 'node:fs';
+import { SignalAlertLight, BULB } from './SignalAlertLight.js';
+import { ASSETS } from '../assets/manifest.js';
 
 // ─────────────────────────────────────────────
 // SignalAlertLight — the red lamp over the computer desk
@@ -236,6 +238,99 @@ describe('SignalAlertLight', () => {
       // on game time every 15× frame outlasted one and it flipped every frame.
       expect(flips).toBeGreaterThan(6);
       expect(flips).toBeLessThanOrEqual(30);
+    });
+  });
+
+  describe('wearing the bulb model', () => {
+    /** A stand-in for bulb.glb: its glass and its base (screw and filament). */
+    const model = () => {
+      const root = new THREE.Group();
+      const glass = new THREE.Mesh(new THREE.SphereGeometry(0.04), new THREE.MeshStandardMaterial({ name: 'lightbulb_01_glass' }));
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.04),
+        new THREE.MeshStandardMaterial({ name: 'lightbulb_01_base', emissiveMap: new THREE.Texture() }));
+      root.add(glass, base);
+      return { root, glass, base };
+    };
+    const filament = light => light.object3d.getObjectByName('AlertFilament');
+
+    it('wears it in place of the sphere, its glass the bulb, on copies of its materials', () => {
+      const m = model();
+      const shared = [m.glass.material, m.base.material];
+      const light = new SignalAlertLight('SignalAlertLight', { model: m.root });
+      expect(bulb(light)).toBe(m.glass);
+      expect(filament(light)).toBe(m.base);
+      expect(light.object3d.getObjectByProperty('type', 'Mesh').geometry).not.toBeInstanceOf(THREE.SphereGeometry);
+      expect(shared).not.toContain(m.glass.material);                    // the cached model's are untouched
+      expect(shared).not.toContain(m.base.material);
+      expect(shared[0].emissive.getHex()).toBe(0);
+
+      // Red glass you can see the filament through; a filament that glows red.
+      expect(m.glass.material.transparent).toBe(true);
+      expect(m.glass.material.opacity).toBeLessThan(1);
+      expect(m.glass.material.depthWrite).toBe(false);
+      expect(m.glass.material.emissive.getHex()).toBe(0xff2211);
+      expect(m.base.material.emissiveMap).toBe(shared[1].emissiveMap);
+      expect(m.base.material.emissive.r).toBeGreaterThan(m.base.material.emissive.b);
+      for (const mesh of [m.glass, m.base]) expect(mesh.castShadow).toBe(false);
+      expect(light.object3d.userData.offGrid).toBe(true);                // the grid leaves its glow to it
+    });
+
+    it('lights the glass and, brighter, the filament: on, off and with no power', () => {
+      const m = model();
+      const light = new SignalAlertLight('SignalAlertLight', { model: m.root });
+      light.signalManager = mgr([sig()]);
+      light._tick(0.1);                                                  // the bright half
+      expect(m.glass.material.emissiveIntensity).toBe(light.onIntensity);
+      expect(m.base.material.emissiveIntensity).toBeGreaterThan(light.onIntensity);
+      light._tick(light.period / 2);                                     // the dim half
+      expect(m.glass.material.emissiveIntensity).toBe(light.offIntensity);
+      expect(m.base.material.emissiveIntensity).toBeLessThan(light.onIntensity);
+      light.powerLevel = 0;
+      light._tick(0.1);
+      expect(m.glass.material.emissiveIntensity).toBe(0);
+      expect(m.base.material.emissiveIntensity).toBe(0);
+    });
+
+    it('stands in a socket on its origin, the bulb screwed into it', () => {
+      const m = model();
+      const light = new SignalAlertLight('SignalAlertLight', { model: m.root });
+      const socket = light.object3d.getObjectByName('AlertSocket');
+      expect(socket).toBeDefined();
+      const box = new THREE.Box3().setFromObject(socket);
+      expect(box.min.y).toBeCloseTo(0, 6);
+      expect(box.max.y).toBeCloseTo(BULB.socket.height, 6);
+      expect(m.root.position.y).toBeCloseTo(BULB.lift, 6);
+    });
+
+    it('fits bulb.glb at its manifest scale: the screw\'s foot inside the socket, the glass above it', () => {
+      const entry = ASSETS['model:bulb'];
+      const glb = readFileSync(new URL(`../../public/${entry.url}`, import.meta.url));
+      const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+      const [mesh] = json.meshes;
+      const bounds = name => {
+        const prim = mesh.primitives.find(p => json.materials[p.material].name === name);
+        const { min, max } = json.accessors[prim.attributes.POSITION];
+        return { min: min[1] * entry.scale + BULB.lift, max: max[1] * entry.scale + BULB.lift };
+      };
+      const screw = bounds('lightbulb_01_base'), glass = bounds('lightbulb_01_glass');
+      expect(screw.min).toBeGreaterThan(0);
+      expect(screw.min).toBeLessThan(BULB.socket.height);
+      expect(glass.min).toBeGreaterThan(BULB.socket.height);
+    });
+
+    it('frees what it made, never the model\'s geometry (the asset cache\'s)', () => {
+      const m = model();
+      const light = new SignalAlertLight('SignalAlertLight', { model: m.root });
+      const freed = [];
+      const watch = r => r.addEventListener('dispose', () => freed.push(r));
+      const socket = light.object3d.getObjectByName('AlertSocket');
+      [m.glass.geometry, m.base.geometry, m.glass.material, m.base.material, socket.geometry, socket.material].forEach(watch);
+      light.dispose();
+      expect(freed).toContain(m.glass.material);
+      expect(freed).toContain(m.base.material);
+      expect(freed).toContain(socket.geometry);
+      expect(freed).not.toContain(m.glass.geometry);
+      expect(freed).not.toContain(m.base.geometry);
     });
   });
 });

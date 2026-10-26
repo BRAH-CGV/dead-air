@@ -3,6 +3,7 @@ import { Interactable } from './Interactable.js';
 import { FirstPersonController } from './FirstPersonController.js';
 import { DISH_SLEW_RATE } from '../gameobjects/Satellite.js';
 import { cursorToSky, skyToCursor } from '../gameobjects/DishRig.js';
+import { paintDom } from '../ui/paintDom.js';
 
 // ─────────────────────────────────────────────
 // ComputerTerminal  –  Component (attach to the retro-computer)
@@ -67,6 +68,13 @@ export class ComputerTerminal extends Component {
   gameController = null;
   /** @type {import('../ui/Crosshair.js').Crosshair|null} */
   crosshair = null;
+  /** Leans the view in to the computer's screen and draws the radar on it
+   *  (#161). Without one (tests, other scenes) the radar goes over the
+   *  whole view. @type {import('./ScreenView.js').ScreenView|null} */
+  screenView = null;
+  /** The computer's screen, for screenView.
+   *  @type {ReturnType<typeof import('./ScreenView.js').screenSurface>|null} */
+  screen = null;
 
   /** @type {number|null} ID of the currently hovered signal */
   _hoveredSignal = null;
@@ -223,7 +231,12 @@ export class ComputerTerminal extends Component {
     this._hoveredSignal = null;
     this._setInputLocked(false);
     this.radar?.setWarning?.('');
-    this.radar?.hide();
+    // On the screen, the radar stays up while the view leans back out.
+    if (this.screenView && this.screen) {
+      this.screenView.close(() => this.radar?.hide());
+    } else {
+      this.radar?.hide();
+    }
     this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     // Restore the first-person reticle now that the terminal is closed.
@@ -237,6 +250,8 @@ export class ComputerTerminal extends Component {
     // overlay has its own cursor.
     this.crosshair?.hide();
     this.radar?.show();
+    // Lean in to the screen the radar is drawn on.
+    if (this.screenView && this.screen) this.screenView.open(this.screen, this.radar?.root ?? null);
     // Check drive state first — scanning requires a drive in the reader,
     // and a drive with a signal already on it blocks further scanning.
     if (this.driveManager && !this.driveManager.driveInserted) {
@@ -343,8 +358,9 @@ export class ComputerTerminal extends Component {
       }
       this._enterHeld = enterDown;
 
-      // Update radar display
-      this._updateRadarDisplay();
+      // On a screen, the radar is drawn as its picture is painted
+      // (paintScreen), not every frame.
+      if (!this.screen) this._updateRadarDisplay();
       return;
     }
 
@@ -370,10 +386,24 @@ export class ComputerTerminal extends Component {
         this.radar?.setInfo('Signal lost — re-aim the dish!');
       }
 
-      this._updateRadarDisplay();
+      if (!this.screen) this._updateRadarDisplay();
       return;
     }
 
+  }
+
+  /** The computer's screen (ScreenCanvas, #161): the radar drawn, then its
+   *  own DOM painted into a 2D canvas — the same leaned in to it or not.
+   *  The radar is drawn here only, as often as the screen is repainted, not
+   *  every frame. Dark without power. */
+  paintScreen(ctx, w, h) {
+    if (!this.powered || !this.radar?.root) {
+      ctx.fillStyle = '#020304';
+      ctx.fillRect(0, 0, w, h);
+      return;
+    }
+    this._updateRadarDisplay();
+    paintDom(this.radar.root, ctx, w, h);
   }
 
   /** Refresh the radar canvas with current state. */

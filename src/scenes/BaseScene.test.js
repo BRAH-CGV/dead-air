@@ -13,6 +13,8 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { makeEngine } from '../test/fakeRapier.js';
 import { GameController } from '../gameplay/GameController.js';
 import { ComputerTerminal } from '../components/ComputerTerminal.js';
+import { ScreenView } from '../components/ScreenView.js';
+import { ScreenCanvas } from '../components/ScreenCanvas.js';
 import { EVASuit } from '../components/EVASuit.js';
 import { SuitVisor } from '../components/SuitVisor.js';
 import { PRELOAD } from '../assets/manifest.js';
@@ -33,6 +35,7 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { Nap, NAP } from '../gameplay/Nap.js';
 import { BedRest } from '../components/BedRest.js';
 import { BED_TRANSITION } from '../gameplay/BedTransition.js';
+import { threatForecast, THREAT_KINDS } from '../gameplay/ThreatForecast.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -94,6 +97,62 @@ describe('BaseScene', () => {
     const names = sceneRoot.children.map(c => c.name);
     expect(names).toEqual(expect.arrayContaining(['Room:MainOffice', 'Room:ServerRoom', 'Room:LivingQuarters', 'Room:Airlock']));
     expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
+  });
+
+  it('wires the bedroom PC (#114): the night, the panel, the run, the forecast, the map; a screen the demon counts', () => {
+    const { pc } = scene.rooms.LivingQuarters;
+    expect(pc.controller).toBe(scene.gameController);
+    expect(pc.panel).toBeTruthy();
+    // One run record, on the engine, so it outlives a dream's rebuild; the
+    // threat watch writes each night's log to it.
+    expect(engine.run).toBeTruthy();
+    expect(pc.run).toBe(engine.run);
+    expect(scene.threatWatch.run).toBe(engine.run);
+    // Tonight's forecast, read off the threats' own rules.
+    expect(pc.forecast).toBe(threatForecast);
+    // The six neighbours and the buggy's way out to the hub.
+    expect(pc.map.neighbours).toHaveLength(6);
+    expect(pc.map.route.length).toBeGreaterThan(1);
+    expect(pc.map.hub).not.toBeNull();
+    // Reading it, the player is at a screen, as at the terminal.
+    expect(scene.sleepDemon.terminal.state).toBe('idle');
+    pc.open = true;
+    expect(scene.sleepDemon.terminal.state).toBe('reading');
+    pc.open = false;
+  });
+
+  it("watches tonight's threats for the PC's log (#114): each kind as it first shows, written as the shift ends", () => {
+    const watch = scene.threatWatch;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(watch);
+    expect(watch.controller).toBe(scene.gameController);
+    expect(watch.clock).toBe(scene.nightClock);
+    expect(Object.keys(watch.sources).sort()).toEqual([...THREAT_KINDS].sort());
+    // All quiet before anything comes.
+    for (const kind of THREAT_KINDS) expect(watch.sources[kind]()).toBe(false);
+    scene.sandstorm.level = 1;
+    expect(watch.sources.storm()).toBe(true);
+    scene.ragno.logic.state = 'approach';
+    expect(watch.sources.prowler()).toBe(true);
+    expect(watch.sources.vents()).toBe(false);
+    scene.ragno.logic.indoors = true;
+    expect(watch.sources.prowler()).toBe(false);
+    expect(watch.sources.vents()).toBe(true);
+    scene.ufoThreat.phase = 'approaching';
+    expect(watch.sources.aerial()).toBe(true);
+    scene.dustEyes.slots[0].phase = 'watch';
+    expect(watch.sources.eyes()).toBe(true);
+    scene.signalManager.signals.push({ evil: true, appeared: true });
+    expect(watch.sources.corrupt()).toBe(true);
+  });
+
+  it('keeps the run record a rebuild finds on the engine', () => {
+    const run = engine.run;
+    engine._rootObjects.length = 0;
+    const again = new BaseScene(engine);
+    again.build();
+    expect(engine.run).toBe(run);
+    expect(again.rooms.LivingQuarters.pc.run).toBe(run);
   });
 
   it('butts the airlock flush on the office front wall, lined up with its front doorway', () => {
@@ -235,12 +294,6 @@ describe('BaseScene', () => {
   it('with no dream scene registered, the bed says so and sleeps on as before', () => {
     engine.sceneRegistry = new Map();
     expect(scene.rooms.LivingQuarters.bed.dream(1)).toBe(false);
-  });
-
-  it('wires the journal: the night from the controller, the paper panel (#79)', () => {
-    const { journal } = scene.rooms.LivingQuarters;
-    expect(journal.controller).toBe(scene.gameController);
-    expect(journal.panel).toBeTruthy();
   });
 
   it('gives the player a RoomTransitionSystem that knows every door and room', () => {
@@ -612,6 +665,107 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.terminal.driveManager).toBe(scene.driveManager);
     expect(scene.terminal.gameController).toBe(scene.gameController);
     expect(scene.terminal.crosshair).toBe(scene.engine.crosshair);
+  });
+
+  it('leans in to the computer\'s and the console\'s screens, one view for both (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.getComponent(ScreenView)).toBe(scene.screenView);
+    expect(scene.terminal.screenView).toBe(scene.screenView);
+    expect(scene.terminal.screen).toBe(scene.rooms.MainOffice.computerScreen);
+    expect(scene.processingScreen.view).toBe(scene.screenView);
+    expect(scene.processingScreen.screen).toBe(scene.rooms.ServerRoom.consoleScreen);
+  });
+
+  it('the computer and the console show their pictures on their own screens, always (#161)', () => {
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    const pictures = gameplay.components.filter(c => c instanceof ScreenCanvas);
+    expect(pictures).toContain(scene.computerPicture);
+    expect(pictures).toContain(scene.consolePicture);
+    expect(scene.computerPicture.mesh.parent).toBe(scene.rooms.MainOffice.computerScreen.object);
+    expect(scene.consolePicture.mesh.parent).toBe(scene.rooms.ServerRoom.consoleScreen.object);
+
+    const ctx = {};
+    const paint = vi.spyOn(scene.terminal, 'paintScreen').mockImplementation(() => {});
+    scene.computerPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+    const drive = {};
+    scene.rooms.ServerRoom.driveSlot._insertedDrive = drive;
+    const console_ = vi.spyOn(scene.processingScreen, 'paint').mockImplementation(() => {});
+    scene.consolePicture.painter(ctx, 4, 3);
+    expect(console_).toHaveBeenCalledWith(ctx, 4, 3, drive);
+  });
+
+  it('a screen\'s picture is painted sharp and every frame while the view is on it', () => {
+    const holds = vi.spyOn(scene.screenView, 'holds').mockReturnValue(true);
+    expect(scene.computerPicture.focused()).toBe(true);
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.computerScreen);
+    scene.consolePicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.ServerRoom.consoleScreen);
+    scene.cameraPicture.focused();
+    expect(holds).toHaveBeenLastCalledWith(scene.rooms.MainOffice.cameraScreen);
+  });
+
+  it('the camera\'s overlay is a picture too, laid over the feed rather than on a quad of its own', () => {
+    expect(scene.cameraPicture.mesh).toBeNull();
+    expect(scene.cameraPicture.layout[1]).toBe(720);
+    expect(scene.cameraPicture.layout[0] / 720).toBeCloseTo(0.55 / 0.323, 2);
+  });
+
+  it('the bedroom PC shows its panel on its own monitor, and leans in to it (#161)', () => {
+    const quarters = scene.rooms.LivingQuarters;
+    expect(quarters.pc.screenView).toBe(scene.screenView);
+    expect(quarters.pc.screen).toBe(quarters.pcScreen);
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(scene.pcPicture);
+    expect(scene.pcPicture.mesh.parent).toBe(quarters.pcScreen.object);
+    const ctx = {};
+    const paint = vi.spyOn(quarters.pc, 'paintScreen').mockImplementation(() => {});
+    scene.pcPicture.painter(ctx, 4, 3);
+    expect(paint).toHaveBeenCalledWith(ctx, 4, 3);
+  });
+
+  it('a kill at the bedroom PC takes the player straight off it', () => {
+    const pc = scene.rooms.LivingQuarters.pc;
+    scene.gameController.startNight(1);
+    pc.onInteract();
+    expect(pc.open).toBe(true);
+    scene.sleepDemon.terminal.exit();
+    expect(pc.open).toBe(false);
+    expect(scene.screenView.active).toBe(false);
+  });
+
+  it('using the computer hands the frame to the screen view', () => {
+    const desk = scene.rooms.MainOffice.root.find('ComputerDesk');
+    desk.getComponent(Interactable).onInteract({});
+    expect(scene.screenView.active).toBe(true);
+    expect(engine.viewCamera).toBe(scene.screenView._camera);
+  });
+
+  it('the screens\' exit takes the player off the computer at once, no lean back', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.sleepDemon.terminal.exit();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('a retry takes the player off whichever screen they were at', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.processingScreen.isOpen = true;   // no DOM here to open it with
+    const close = vi.spyOn(scene.processingScreen, 'close');
+    scene.gameController.fail('taken');
+    scene.gameController.retryNight();
+    expect(close).toHaveBeenCalled();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
+    expect(engine.viewCamera).toBeNull();
+  });
+
+  it('hands Ragno the way off the screens, for his lunge', () => {
+    scene.rooms.MainOffice.root.find('ComputerDesk').getComponent(Interactable).onInteract({});
+    scene.ragno.hooks.leaveScreens();
+    expect(scene.terminal.state).toBe('idle');
+    expect(scene.screenView.active).toBe(false);
   });
 
   it('runs the game controller as a component under SceneRoot, so it ticks', () => {
@@ -1138,7 +1292,12 @@ describe('BaseScene occlusion — the building hides what is low behind it from 
 
   it('scenery the window sees but the yard cannot joins the interior zone — drawn only from inside', () => {
     const { occluders: occluder, eyes } = scene.yardView;
-    const behind = instancedIn('interior');
+    // The outdoor scenery the sort put there; the rooms' own furnishings
+    // (the bedroom's shelf clutter) are behind the real walls, not the
+    // occluders' shrunken stand-ins.
+    const rooms = Object.values(scene.rooms).map(room => room.root.object3d);
+    const inRoom = (o) => { for (let p = o; p; p = p.parent) if (rooms.includes(p)) return true; return false; };
+    const behind = instancedIn('interior').filter(mesh => !inRoom(mesh));
     expect(behind.length).toBeGreaterThan(0);
     for (const mesh of behind) {
       for (const sphere of instanceSpheres(mesh)) {

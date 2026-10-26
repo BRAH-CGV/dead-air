@@ -43,11 +43,13 @@ import { DriveManager } from '../gameplay/DriveManager.js';
 import { GameController } from '../gameplay/GameController.js';
 import { DriveSnapshot } from '../gameplay/DriveSnapshot.js';
 import { ComputerTerminal, createComputerInteractable } from '../components/ComputerTerminal.js';
+import { ScreenView, screenMesh } from '../components/ScreenView.js';
+import { ScreenCanvas } from '../components/ScreenCanvas.js';
+import { paintDom } from '../ui/paintDom.js';
 import { HUD, RadarOverlay } from '../ui/HUD.js';
-import { ProcessingScreen } from '../ui/ProcessingScreen.js';
+import { ProcessingScreen, SCREEN_LAYOUT as PROCESSING_LAYOUT } from '../ui/ProcessingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
-import { JournalPanel } from '../ui/JournalPanel.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -70,9 +72,10 @@ import { PostPipeline } from '../core/PostPipeline.js';
 import { VisorRefraction } from '../core/VisorRefraction.js';
 import { GeneratorSound } from '../components/GeneratorSound.js';
 import { SatelliteSound } from '../components/SatelliteSound.js';
-import { CameraSignalPass } from '../core/CameraSignalPass.js';
+import { FeedDisplay } from '../core/FeedDisplay.js';
 import { MonitorSpeaker } from '../components/MonitorSpeaker.js';
 import { ScannerAlertSound } from '../components/ScannerAlertSound.js';
+import { CoffeeSound } from '../components/CoffeeSound.js';
 import { Sandstorm } from '../gameplay/Sandstorm.js';
 import { DustStorm } from '../gameobjects/DustStorm.js';
 import { DustEye } from '../gameobjects/DustEye.js';
@@ -98,6 +101,13 @@ import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { EventBanner } from '../ui/EventBanner.js';
 import { exitGate, buggyRoute, routeCurve, distanceAlong } from '../gameplay/BuggyDeparture.js';
 import { BuggySendOff } from '../components/BuggySendOff.js';
+import { BuggySound } from '../components/BuggySound.js';
+import { Footsteps } from '../components/Footsteps.js';
+import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
+import { colonyMap } from '../ui/colonyMap.js';
+import { RunRecord } from '../gameplay/RunRecord.js';
+import { ThreatWatch } from '../gameplay/ThreatWatch.js';
+import { threatForecast } from '../gameplay/ThreatForecast.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
@@ -240,6 +250,10 @@ const WINDOW_FLOOD = { from: [0, 2.7, 0.3], to: [0, 0, 2.9], intensity: 60, angl
  *  dish big; the window frames it at any screen shape from 4:3 to 21:9. */
 const MENU_SHOT = { eye: [0.15, 1.35, -1.9], look: 3.5, lead: -6, fov: 60 };
 
+/** The height, CSS px, the radar's and the camera's overlays are laid out
+ *  at on their screens (#161); their widths follow each screen's shape. */
+const SCREEN_LAYOUT_HEIGHT = 720;
+
 /** The security cameras (_addSecurityCameras), in metres. Indoors: in from
  *  the corner's two walls, and down from the ceiling. Outdoors: how far off
  *  the bunker's roof band (the bracket's plate) — they hang halfway up it,
@@ -370,14 +384,17 @@ export class BaseScene extends Scene {
     this._addPower();
     this._addGameplaySystems();
     this._addCameraTerminal();
+    this._addScreenPictures();
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
+    this._addBedroomPC();
     this._addFatigue();
     this._addSleepDemon();
     this._addUfo();
     this._addSandstorm();
     this._addRagno();
+    this._addThreatWatch();
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
@@ -399,15 +416,23 @@ export class BaseScene extends Scene {
   /** Free what the rooms and the scene created. Bodies are left alone:
    *  Engine drops the whole physics world right after this. */
   dispose() {
-    // Off the monitor first: the frame goes back to the player's eyes, and
-    // the zones a camera asked for go back to the airlock's choice.
-    this.cameraTerminal?.exit();
+    // Off every screen first: the frame goes back to the player's eyes.
+    this._leaveScreens();
     this.cameraOverlay?.hide();
-    if (this.cameraSignal) {
+    if (this.feedDisplay) {
       const passes = this.engine.screenPasses;
-      passes?.splice(passes.indexOf(this.cameraSignal) >>> 0, 1);
-      this.cameraSignal.dispose();
-      this.cameraSignal = null;
+      passes?.splice(passes.indexOf(this.feedDisplay) >>> 0, 1);
+      this.feedDisplay.dispose();
+      this.feedDisplay = null;
+    }
+    this._feedQuad?.geometry.dispose();
+    this._feedQuad = null;
+    if (this._visorRefraction) {
+      const passes = this.engine.screenPasses;
+      const at = passes?.indexOf(this._visorRefraction) ?? -1;
+      if (at >= 0) passes.splice(at, 1);
+      this._visorRefraction.dispose();
+      this._visorRefraction = null;
     }
     this.monitorSpeaker?.dispose();
     this.monitorSpeaker = null;
@@ -576,8 +601,7 @@ export class BaseScene extends Scene {
     // metres along the edge from its corner.
     const louvre = (name, at) => ({ edge: edge(name), at, y: 2.2, width: 1.3, height: 0.5 });
     const backWindow = office.openings.find(o => o.side === 'back');
-    const shell = createBunkerShell({
-      engine: this.engine,
+    const spec = {
       outline: Object.values(corners),
       height: ob.max.y,
       roofProps: [
@@ -600,10 +624,14 @@ export class BaseScene extends Scene {
         width: backWindow.width, height: backWindow.height,
         radius: WINDOW_CORNER_RADIUS,
       }],
-    });
+    };
+    const shell = createBunkerShell({ engine: this.engine, ...spec });
     this._sceneRoot.addChild(shell);
     for (const resource of shell.resources) this._own(resource);
     this.bunker = shell;
+    /** What it was built from: the dream's base is the same shell
+     *  (DreamScene's BASE_SHELL, pinned to this by BaseScene.bunker.test.js). */
+    this.bunkerSpec = spec;
 
     // The office's back wall is the one stretch of the rooms' own shell left
     // in view outside: in the slopes' weathered concrete, laid out as theirs,
@@ -751,6 +779,14 @@ export class BaseScene extends Scene {
     const gameplayGO = new GameObject('GameplaySystems').makeGroup();
     this._sceneRoot.addChild(gameplayGO);
 
+    // Using the computer, or the server room's console, leans the view in
+    // to its screen and draws the overlay on it (#161). One view for both:
+    // only one screen is used at a time.
+    this.screenView = new ScreenView({ engine: this.engine });
+    gameplayGO.addComponent(this.screenView);
+    this.terminal.screenView = this.screenView;
+    this.terminal.screen = this.rooms.MainOffice.computerScreen;
+
     this.gameController = new GameController();
     this.gameController.nightClock    = this.nightClock;
     this.gameController.signalManager = this.signalManager;
@@ -758,6 +794,9 @@ export class BaseScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     this.gameController.banner        = this.banner;
+    // The run's array name and each night's threat log, for the bedroom PC.
+    // On the engine, so a dream's rebuild between nights keeps it.
+    this.engine.run ??= new RunRecord();
     gameplayGO.addComponent(this.gameController);
 
     // The banner's timing runs on real time (engine.realDt), ticked by a
@@ -806,6 +845,8 @@ export class BaseScene extends Scene {
     // registry (for audio URL lookup from the drive's signal name).
     this.processingScreen.signalRegistry = this.signalRegistry;
     this.processingScreen.setEngine(this.engine);
+    this.processingScreen.view = this.screenView;
+    this.processingScreen.screen = this.rooms.ServerRoom?.consoleScreen ?? null;
     if (this.rooms.ServerRoom) {
       this.rooms.ServerRoom.processingScreen = this.processingScreen;
     }
@@ -886,6 +927,12 @@ export class BaseScene extends Scene {
     this.pickupSystem.interactionSystem = this.engine.player.getComponent(InteractionSystem);
     this.pickupSystem.terminal = this.terminal;
 
+    // The player's footsteps: an outdoor thump under them out of the shells.
+    this.engine.player.addComponent(new Footsteps({
+      isOutside: () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
+      surfaceUnder: () => this._surfaceUnder(),
+    }));
+
     // The night baseline for every drive and box: a retry reverts to it.
     this.driveSnapshot = new DriveSnapshot({
       drives: office.drives,
@@ -935,12 +982,6 @@ export class BaseScene extends Scene {
       signalLight.addComponent(new ScannerAlertSound());
     }
     this.screenFade = new ScreenFade();
-    // The previous operator's notebook (#79): tonight's entry, on paper.
-    const { journal } = this.rooms.LivingQuarters;
-    if (journal) {
-      journal.controller = this.gameController;
-      journal.panel = new JournalPanel();
-    }
     const { bed } = this.rooms.LivingQuarters;
     if (bed) {
       bed.controller = this.gameController;
@@ -955,6 +996,7 @@ export class BaseScene extends Scene {
     // back at the spawn, facing the window, suit off (the airlock cycles
     // back with it). A new night after sleeping leaves you where you woke.
     this._offRetry = this.gameController.onNightStart((_night, { retry }) => {
+      this._leaveScreens();
       if (retry) this._respawn();
     });
 
@@ -1209,6 +1251,8 @@ export class BaseScene extends Scene {
       // know about them or they survive a scene reload.
       this._ownResourcesOf(field);
     }
+    // The beacons' glow is a texture, which _ownResourcesOf leaves alone.
+    this._own(towers.glowTexture);
 
     // Steerable dish tower. spawnModel registers it as a root object;
     // parented under Outside it's reached through SceneRoot instead, and
@@ -1490,14 +1534,22 @@ export class BaseScene extends Scene {
     const monitor = this.rooms.MainOffice.cameraMonitor;
     this.cameraOverlay = new CameraOverlay();
     this.cameraOverlay.setMap(this.cameraMap);
-    // The switch, drawn over the frame: the old picture frozen and degraded
-    // while the new camera loads. Needs the renderer; headless (tests) the
-    // terminal switches at once.
+    // The monitor's own picture (#161): the camera on it, drawn into a
+    // small target after each frame and shown on its screen, always. The
+    // switch between cameras is the screen's shader. The zones the yard
+    // cameras need are handed over once built (_buildOcclusion), and drawn
+    // for the picture alone.
+    const screen = this.rooms.MainOffice.cameraScreen;
+    const [tl, tr, , bl] = screen?.local ?? [];
+    this.feedDisplay = new FeedDisplay({
+      scene: this.engine.scene,
+      aspect: screen ? tl.distanceTo(tr) / tl.distanceTo(bl) : 16 / 9,
+    });
+    this._feedQuad = screen ? screenMesh(screen, this.feedDisplay.material, { lift: 0.002 }) : null;
     const { renderer, screenPasses } = this.engine;
     if (renderer && screenPasses) {
-      this.cameraSignal = new CameraSignalPass();
-      this.cameraSignal.attach(renderer);
-      screenPasses.push(this.cameraSignal);
+      this.feedDisplay.attach(renderer);
+      screenPasses.push(this.feedDisplay);
     }
     // The monitor's speaker: everything the camera on screen hears
     // (_listenFrom), and the flash's clicks, thin and fuzzy through it. The
@@ -1506,7 +1558,9 @@ export class BaseScene extends Scene {
     this.monitorSpeaker = new MonitorSpeaker(this.engine.audioListener);
     const speaker = this.monitorSpeaker;
     this.cameraTerminal = new CameraTerminal({
-      signal:    this.cameraSignal ?? null,
+      display:    this.feedDisplay,
+      screenView: this.screenView ?? null,
+      screen:     screen ?? null,
       cameras:   this.securityCameras,
       flash:     this.cameraFlash,
       overlay:   this.cameraOverlay,
@@ -1518,8 +1572,7 @@ export class BaseScene extends Scene {
         spotlightOff: speaker.route(this._sound('sfx:camera-spotlight-off')),
       },
       hooks: {
-        setViewZones: zones => this.portal?.setViewZones(zones),
-        isReady:      zone => this.zones?.isReady(zone) ?? true,
+        seen:         () => this._monitorSeen(),
         listenFrom:   (lens, level) => this._listenFrom(lens, level),
         // The mouse goes to the page, for the map — as for the breaker panel.
         // Taken off the monitor by the shift ending (a game over, the
@@ -1549,6 +1602,59 @@ export class BaseScene extends Scene {
     this._offCameraPause = this.engine.onPauseChange?.((paused) => {
       if (paused) this.cameraTerminal.silence();
     });
+  }
+
+  /** What the screens show (#161): each overlay's own DOM — the radar,
+   *  the processing console, the camera's label and map — painted onto its
+   *  screen, the same whether the player is leaned in to it or across the
+   *  room. Each overlay is laid out once at a fixed size, invisible on the
+   *  page (`.on-screen`); leaned in, ScreenView lays it onto the screen to
+   *  take the mouse. The camera monitor's overlay goes over its feed, in
+   *  the feed's own shader (FeedDisplay). */
+  _addScreenPictures() {
+    const gameplay = this._sceneRoot.find('GameplaySystems');
+    if (!gameplay) return;
+    const office = this.rooms.MainOffice, server = this.rooms.ServerRoom;
+    const layoutFor = (surface) => {
+      const [tl, tr, , bl] = surface.local;
+      return [Math.round(SCREEN_LAYOUT_HEIGHT * tl.distanceTo(tr) / tl.distanceTo(bl)), SCREEN_LAYOUT_HEIGHT];
+    };
+    const picture = (surface, room, root, layout, painter, opts = {}) => {
+      if (!surface) return null;
+      this._hostOnScreen(root, layout);
+      const screen = new ScreenCanvas({
+        surface, layout, painter, ...opts,
+        seen: () => this._screenSeen(surface, room),
+        focused: () => !!this.screenView?.holds(surface),
+      });
+      gameplay.addComponent(screen);
+      return screen;
+    };
+
+    // Lifts are in each model's own units: ~2.4 mm off the glass.
+    const radarLayout = office.computerScreen ? layoutFor(office.computerScreen) : null;
+    if (radarLayout) this.radarOverlay.fit(...radarLayout);
+    this.computerPicture = picture(office.computerScreen, office, this.radarOverlay.root, radarLayout,
+      (ctx, w, h) => this.terminal.paintScreen(ctx, w, h), { corner: 0.15, lift: 0.15 });
+    this.consolePicture = picture(server?.consoleScreen, server, this.processingScreen.root, PROCESSING_LAYOUT,
+      (ctx, w, h) => this.processingScreen.paint(ctx, w, h, server.driveSlot?.insertedDrive ?? null),
+      { corner: 0.06, lift: 0.005 });
+    // The camera's overlay: a texture alone, over the feed in its shader.
+    const camera = office.cameraScreen;
+    const overlay = this.cameraOverlay?.root ?? null;
+    this.cameraPicture = picture(camera, office, overlay, camera ? layoutFor(camera) : null,
+      (ctx, w, h) => { if (overlay) paintDom(overlay, ctx, w, h); },
+      { quad: false, colorSpace: THREE.NoColorSpace });
+    if (this.cameraPicture?.texture) this.feedDisplay?.setOverlay(this.cameraPicture.texture);
+  }
+
+  /** An overlay laid out at `layout` CSS px for its screen, for good:
+   *  invisible on the page, painted onto the screen (index.html). */
+  _hostOnScreen(root, layout) {
+    if (!root || !layout) return;
+    root.classList.add('on-screen');
+    root.style.width = `${layout[0]}px`;
+    root.style.height = `${layout[1]}px`;
   }
 
   // ──────────────────────────────────────────
@@ -1745,6 +1851,40 @@ export class BaseScene extends Scene {
     return this.rooms.LivingQuarters?.spawn ?? { position: PLAYER_SPAWN, yaw: 0 };
   }
 
+  /** Off any screen at once (the computer, the console, the cameras, the
+   *  bedroom PC), with no lean back (#161): a kill or a new night wants the
+   *  player's own view now. */
+  _leaveScreens() {
+    if (this.terminal?.state !== 'idle') this.terminal?.exit();
+    if (this.processingScreen?.isOpen) this.processingScreen.close();
+    this.rooms.LivingQuarters?.pc?.close();
+    this.cameraTerminal?.exit();
+    this.screenView?.cut();
+  }
+
+  /** The security monitor can be seen (_screenSeen): only then is its
+   *  picture worth drawing from across the room. */
+  _monitorSeen() {
+    return this._screenSeen(this.rooms.MainOffice.cameraScreen, this.rooms.MainOffice);
+  }
+
+  /** A screen can be seen from where the frame is drawn: from inside its
+   *  room, with its middle in view. */
+  _screenSeen(surface, room) {
+    const camera = this.engine.renderCamera ?? this.engine.camera;
+    if (!surface || !room || !camera) return false;
+    const t = (this._seenScratch ??= { eye: new THREE.Vector3(), centre: new THREE.Vector3(), m: new THREE.Matrix4(), frustum: new THREE.Frustum(), shells: new Map() });
+    camera.getWorldPosition(t.eye);
+    let shell = t.shells.get(room);
+    if (!shell) t.shells.set(room, (shell = room.bounds()));
+    if (!shell.containsPoint(t.eye)) return false;
+    const [tl, , br] = surface.worldCorners();
+    t.centre.addVectors(tl, br).multiplyScalar(0.5);
+    camera.updateMatrixWorld();
+    t.frustum.setFromProjectionMatrix(t.m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    return t.frustum.containsPoint(t.centre);
+  }
+
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
   _setPlayerLocked(locked) {
     const ctrl = this.engine.player?.getComponent(FirstPersonController);
@@ -1756,6 +1896,21 @@ export class BaseScene extends Scene {
    *  roof), not Room.containsPoint, which stops at the walls' centre lines:
    *  neighbouring parts' shells touch, so a doorway is never a sliver of
    *  "outside" — the UFO took players walking through one. */
+  /** What the player stands on, for their footsteps: a prop's `surface`
+   *  ('wood', 'bed') straight below their body, or 'floor'. */
+  _surfaceUnder() {
+    const { world, player, _bodyToGO } = this.engine;
+    const body = player?.rigidBody;
+    if (!world?.castRay || !body) return 'floor';
+    const p = body.translation();
+    this._footRay ??= new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    this._footRay.origin.x = p.x; this._footRay.origin.y = p.y; this._footRay.origin.z = p.z;
+    const hit = world.castRay(this._footRay, FOOT_REACH, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined, undefined, body);
+    const go = hit ? _bodyToGO?.get(hit.collider.parent()?.handle) : null;
+    return go?.surface ?? 'floor';
+  }
+
   _isOutside(p) {
     this._insideBoxes ??= [...Object.values(this.rooms), ...Object.values(this.corridors)].map(part => part.bounds());
     return !this._insideBoxes.some(box => box.containsPoint(p));
@@ -1774,9 +1929,11 @@ export class BaseScene extends Scene {
     const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
-      // The ration's placeholder, as the cup is drunk: see the manifest.
-      // onBrew and onBrewed are free for the machine's own sounds.
-      const sip = this._sound('sfx:ration', 0.8);
+      // The machine at work while a cup brews, and its start click.
+      machine.gameObject.addComponent(new CoffeeSound({ machine }));
+      // A slurp as the cup is drunk (a quiet recording, so lifted).
+      // onBrew and onBrewed are free hooks still.
+      const sip = this._sound('sfx:slurp', 1.6);
       machine.onDrink = () => {
         if (!sip) return;
         if (sip.isPlaying) sip.stop();
@@ -1806,12 +1963,17 @@ export class BaseScene extends Scene {
    *  itself: a pitch-black shade no light shows, and it casts none — a solid
    *  shadow under a faint figure gave it away — so moving it never redraws
    *  the frozen shadow maps. */
-  /** The screens at the desk that fill the view: the terminal's radar or
-   *  review and the security monitor. Whichever is up is the state; 'idle'
-   *  while neither is. Read every frame, so it allocates nothing. */
+  /** The screens that fill the view: the terminal's radar or review, the
+   *  security monitor and the bedroom PC. Whichever is up is the state;
+   *  'idle' while none is. Read every frame, so it allocates nothing. */
   _screens() {
-    const screens = [this.terminal, this.cameraTerminal].filter(Boolean);
+    const screens = [this.terminal, this.cameraTerminal, this.rooms.LivingQuarters?.pc].filter(Boolean);
+    const scene = this;
     return {
+      /** Off whichever is up, at once: the Sleep Demon's kill. */
+      exit() {
+        scene._leaveScreens();
+      },
       get state() {
         for (let i = 0; i < screens.length; i++) {
           if (screens[i].state !== 'idle') return screens[i].state;
@@ -1911,15 +2073,7 @@ export class BaseScene extends Scene {
     const buggy = this._outside.find('Buggy');
     if (!buggy) return;
 
-    // Build the route.
-    const startYaw = buggy.object3d.rotation.y;
-    const forward = { x: Math.sin(startYaw), z: Math.cos(startYaw) };
-    const points = buggyRoute({
-      start: { x: buggy.object3d.position.x, z: buggy.object3d.position.z },
-      forward,
-      gate: this.exitGate,
-      rect: this.fence.rect,
-    });
+    const points = this._buggyRoutePoints(buggy);
     const curve = routeCurve(points, (x, z) => terrainHeightAt(x, z) + 1.237);
     const length = curve.getLength();
     const gateAt = distanceAlong(curve, new THREE.Vector3(this.exitGate.at, 0, this.fence.rect.maxZ));
@@ -1943,6 +2097,8 @@ export class BaseScene extends Scene {
     }));
 
     if (this.buggyCargo) this.buggyCargo.sendOff = this.buggySendOff;
+    // The rover's hum as it drives off.
+    this._sceneRoot.find('GameplaySystems').addComponent(new BuggySound({ sendOff: this.buggySendOff }));
 
     // It drives under the moon, so its shadow is redrawn as it goes.
     engine.shadows?.watch(buggy.object3d, [this.moonLight]);
@@ -1950,6 +2106,60 @@ export class BaseScene extends Scene {
     this._offBuggyNight = this.gameController.onNightStart(() => {
       this.buggySendOff.resetForNight();
     });
+  }
+
+  /** The buggy's way out, in world metres from its parking spot: straight
+   *  at the gate, through it and down the lane (buggyRoute). The send-off
+   *  drives it; the bedroom PC's map draws it. Empty with no gate. */
+  _buggyRoutePoints(buggy = this._outside?.find('Buggy')) {
+    if (!this.exitGate || !buggy) return [];
+    const startYaw = buggy.object3d.rotation.y;
+    const forward = { x: Math.sin(startYaw), z: Math.cos(startYaw) };
+    return buggyRoute({
+      start: { x: buggy.object3d.position.x, z: buggy.object3d.position.z },
+      forward,
+      gate: this.exitGate,
+      rect: this.fence.rect,
+    });
+  }
+
+  // ──────────────────────────────────────────
+  // The bedroom PC (#114)
+  // ──────────────────────────────────────────
+  /** The computer on the bedroom desk: the room put it there, this hands
+   *  it the night, its panel (#bedroom-pc), the run record (last night's
+   *  threats), the forecast and the colony map — the six neighbours where
+   *  the radar has them, and the buggy's route out toward the hub. */
+  _addBedroomPC() {
+    const pc = this.rooms.LivingQuarters?.pc;
+    if (!pc) return;
+    pc.controller = this.gameController;
+    pc.panel = new BedroomPCPanel();
+    pc.run = this.engine.run;
+    pc.forecast = threatForecast;
+    pc.map = colonyMap({
+      neighbours: this.satellite?.neighbours ?? [],
+      route: this._buggyRoutePoints(),
+    });
+
+    // On its own monitor (#161): the panel is what the screen shows, leaned
+    // in to or not, as for the office's screens (_addScreenPictures).
+    const quarters = this.rooms.LivingQuarters;
+    const surface = quarters.pcScreen;
+    const gameplay = this._sceneRoot.find('GameplaySystems');
+    if (!surface || !gameplay) return;
+    const [tl, tr, , bl] = surface.local;
+    const layout = [Math.round(SCREEN_LAYOUT_HEIGHT * tl.distanceTo(tr) / tl.distanceTo(bl)), SCREEN_LAYOUT_HEIGHT];
+    this._hostOnScreen(pc.panel.root, layout);
+    pc.screenView = this.screenView ?? null;
+    pc.screen = surface;
+    this.pcPicture = new ScreenCanvas({
+      surface, layout, lift: 0.002, corner: 0.014,   // the laptop screen's rounded corners
+      painter: (ctx, w, h) => pc.paintScreen(ctx, w, h),
+      seen: () => this._screenSeen(surface, quarters),
+      focused: () => !!this.screenView?.holds(surface),
+    });
+    gameplay.addComponent(this.pcPicture);
   }
 
   // ──────────────────────────────────────────
@@ -2015,11 +2225,17 @@ export class BaseScene extends Scene {
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
-    this._visorRefraction ??= new VisorRefraction();
     this._pipeline = new PostPipeline();
     this._pipeline.attach(this.engine);
-    this._pipeline.add('visorRefraction', this._visorRefraction);
     this._pipeline.add('redOut', this._redOut);
+    // The helmet's warp bends the finished frame, so it is a screen pass,
+    // not a pipeline one: the scene under the glass is drawn as it always is.
+    this._visorRefraction ??= new VisorRefraction();
+    const { renderer, screenPasses } = this.engine;
+    if (renderer && screenPasses) {
+      this._visorRefraction.attach(renderer);
+      screenPasses.push(this._visorRefraction);
+    }
     this.engine.postProcess = this._pipeline;
     this.evilSignal.redOut = this._redOut;
     this.ufoThreat = new UfoThreat({
@@ -2350,6 +2566,40 @@ export class BaseScene extends Scene {
     return 'outside';
   }
 
+  /** The night's threat log for the bedroom PC (ThreatWatch): each kind
+   *  noted as it first shows, put on the run record as the shift ends. One
+   *  source a kind, as ThreatForecast names them, each reading the system
+   *  live. After every threat it reads; nothing allocated per frame. */
+  _addThreatWatch() {
+    const eyesOut = () => {
+      for (const slot of this.dustEyes?.slots ?? []) if (slot.phase !== 'off') return true;
+      return false;
+    };
+    const ufoHere = () => {
+      const phase = this.ufoThreat?.phase;
+      return phase === 'approaching' || phase === 'expanding' || phase === 'lethal' || phase === 'caught';
+    };
+    const corrupt = () => {
+      for (const s of this.signalManager?.signals ?? []) if (s.evil && s.appeared) return true;
+      return false;
+    };
+    this.threatWatch = this._sceneRoot.find('GameplaySystems').addComponent(new ThreatWatch());
+    Object.assign(this.threatWatch, {
+      controller: this.gameController,
+      clock:      this.nightClock,
+      run:        this.engine.run,
+      sources: {
+        storm:   () => (this.sandstorm?.level ?? 0) > 0.5,
+        outage:  () => !!this.stormOutage?.flickering,
+        eyes:    eyesOut,
+        prowler: () => { const l = this.ragno?.logic; return !!l && l.state !== 'off' && !l.indoors; },
+        vents:   () => !!this.ragno?.logic?.indoors,
+        aerial:  ufoHere,
+        corrupt,
+      },
+    });
+  }
+
   /** Ragno, the camera entity (Ragno.js): his figure under Threats on the
    *  scene root, built hidden so its shaders compile behind the loading
    *  screen, and the component that runs him on GameplaySystems. After the
@@ -2387,6 +2637,7 @@ export class BaseScene extends Scene {
         zoneOf:          p => this._zoneOf(p),
         ufoBusy,
         setPlayerLocked: locked => this._setPlayerLocked(locked),
+        leaveScreens:    () => this._leaveScreens(),
         isFrozen:        () => !!engine.debugCamera?.active,
         rayHit:          ragnoRay(engine.world, engine.player?.rigidBody ?? null),
       },
@@ -2605,6 +2856,8 @@ export class BaseScene extends Scene {
     zones.add('unseen', sorted.unseen);
     zones.hide('unseen');
     this.zones = zones;
+    // The yard cameras' picture draws the yard for itself alone (FeedDisplay).
+    if (this.feedDisplay) this.feedDisplay.zones = zones;
 
     this.portal = new AirlockPortal({ airlock: this.rooms.Airlock, zones });
     this._sceneRoot.addComponent(this.portal);
@@ -2982,6 +3235,9 @@ const _box = new THREE.Box3();
 
 const _airlockEar = new THREE.Vector3();
 const _staminaEye = new THREE.Vector3();
+/** Metres down from the player's body centre a foot can reach: the standing
+ *  capsule's half height and a little. */
+const FOOT_REACH = 1.2;
 
 /** Which zone a thing belongs in, from who can see it — null for both. */
 function zoneFor(seenInside, seenOutside) {

@@ -1,3 +1,4 @@
+import { Footsteps, STEP_SOUNDS } from '../components/Footsteps.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as THREE from 'three';
 
@@ -14,6 +15,7 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
+import { CoffeeSound } from '../components/CoffeeSound.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -115,9 +117,46 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(machine.state).toBe('ready');
   });
 
-  it('a coffee makes a sound as it is drunk (the ration placeholder), not as it brews', () => {
+  it('Restart night mid-brew: tearing the scene down stops the coffee machine\'s sound', () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    const voice = machine.gameObject.getComponent(CoffeeSound);
+    const brew = { isPlaying: false, play: vi.fn(() => { brew.isPlaying = true; }), stop: vi.fn(() => { brew.isPlaying = false; }),
+      pause: vi.fn(() => { brew.isPlaying = false; }), setVolume: vi.fn(), disconnect: vi.fn(), removeFromParent: vi.fn() };
+    voice.brew = brew;
+    voice.click = null;
+    voice.onStart();
+    machine.onInteract({});
+    voice.onUpdate(0.1);
+    expect(brew.isPlaying).toBe(true);
+    // What Engine.loadScene does: the scene's dispose, then destroy whatever is still attached.
+    scene.dispose();
+    for (const go of engine._rootObjects) go.destroy();
+    expect(brew.stop).toHaveBeenCalled();
+    expect(brew.isPlaying).toBe(false);
+  });
+
+  it('the player has footsteps, that know when they are outside', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(false);                  // the camera is in the office
+    engine.camera.position.set(200, 1.24, 200);
+    engine.camera.updateMatrixWorld();
+    expect(feet.isOutside()).toBe(true);
+    // …that know what is under them…
+    expect(scene.rooms.LivingQuarters.root.find('Desk').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('SideTable').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('Bunk').surface).toBe('bed');
+    expect(scene.rooms.MainOffice.root.find('ComputerDesk').surface).toBe('wood');
+    expect(feet.surfaceUnder()).toBe('floor');
+    // …and that are muffled in the suit, put on the player after them.
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    scene.suit.putOn();
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.suitLowpass);
+  });
+
+  it('a coffee is slurped as it is drunk, not as it brews', () => {
     const sip = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
-    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? sip : null));
+    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:slurp' ? sip : null));
     const other = new BaseScene(makeSceneEngine());
     other.build();
     const machine = other.rooms.LivingQuarters.coffeeMachine;

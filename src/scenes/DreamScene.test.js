@@ -4,12 +4,15 @@ import * as THREE from 'three';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../test/fakeRapier.js')).rapierModule());
 
-import { DreamScene } from './DreamScene.js';
+import { DreamScene, BASE_SHELL } from './DreamScene.js';
 import { BaseScene } from './BaseScene.js';
 import { GameObject } from '../core/GameObject.js';
 import { DreamWalk } from '../components/DreamWalk.js';
 import { DreamFilter } from '../core/DreamFilter.js';
 import { makeEngine } from '../test/fakeRapier.js';
+import { DreamMusic } from '../components/DreamMusic.js';
+import { Footsteps, STEP_SOUNDS, DREAM_FOOTSTEPS } from '../components/Footsteps.js';
+import { DreamWind } from '../components/DreamWind.js';
 
 // Imports and builds against the whole base scene module: as slow as
 // BaseScene.test.js under a parallel run, so it gets the same budget.
@@ -51,6 +54,30 @@ describe('DreamScene (#101)', () => {
     scene.build();
   });
 
+  it('has the wind rush past as the base drags the dreamer back', () => {
+    const all = go => [go, ...(go.children ?? []).flatMap(all)];
+    const winds = engine._rootObjects.flatMap(all).map(g => g.getComponent?.(DreamWind)).filter(Boolean);
+    expect(winds).toHaveLength(1);
+    expect(winds[0].walk).toBe(scene.walk);
+  });
+
+  it('plays the spooky music under the dream', () => {
+    const found = [];
+    const all = go => [go, ...(go.children ?? []).flatMap(all)];
+    for (const go of engine._rootObjects) for (const g of all(go)) { const m = g.getComponent?.(DreamMusic); if (m) found.push(m); }
+    expect(found).toHaveLength(1);
+  });
+
+  it('footsteps outside, the sand\'s crunch, never muffled (no suit in a dream)', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(true);
+    expect(feet.cutoff('exterior')).toBe(STEP_SOUNDS.thumpLowpass);
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    expect(feet.level).toBe(DREAM_FOOTSTEPS);              // quieter than at the base
+    expect(DREAM_FOOTSTEPS).toBeLessThan(1);
+  });
+
   it('wakes back into the base scene', () => {
     expect(DreamScene.returnTo).toBe(BaseScene);
   });
@@ -69,21 +96,102 @@ describe('DreamScene (#101)', () => {
     expect(scene.moonLight?.isDirectionalLight).toBe(true);
   });
 
-  it('builds the base as a dark block with a lit window, and a collider', () => {
-    const base = scene.base;
-    expect(base.collider).toBeTruthy();
-    const glows = [];
-    base.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
-    expect(glows.length).toBe(1);
+  describe('the base: the real one, not a block (meeting notes)', () => {
+    /** The shell's edges left without a slope: the window wall and the hatch. */
+    const flatEdges = () => scene.base.faces.edges.filter(e => e.flat);
+    const boxOf = (o) => { o.updateWorldMatrix(true, true); return new THREE.Box3().setFromObject(o); };
+
+    it("is the bunker shell, built from the base scene's own outline", () => {
+      expect(scene.base.object3d.getObjectByName('BunkerSkin')).toBeTruthy();
+      expect(scene.base.object3d.getObjectByName('BunkerEmbrasure')).toBeTruthy();
+      expect(scene.base.faces.edges.length).toBe(BASE_SHELL.outline.length);
+    });
+
+    it('closes the two walls the shell leaves to the rooms, floor to roof', () => {
+      const walls = [];
+      scene.base.object3d.traverse(o => { if (o.name === 'DreamWall') walls.push(o); });
+      expect(flatEdges().length).toBe(2);
+      expect(walls.length).toBe(2);
+      for (const e of flatEdges()) {
+        const covers = walls.map(boxOf).some(b =>
+          [e.a, e.b].every(p => b.distanceToPoint(new THREE.Vector3(p.x, 1, p.z)) < 0.05)
+          && b.min.y <= 0.01 && b.max.y >= BASE_SHELL.height - 0.01);
+        expect(covers).toBe(true);
+      }
+    });
+
+    it("is solid all round: the slopes' hulls and a collider for each closed wall", () => {
+      expect(scene.base.colliders.length).toBe(scene.base.faces.hulls.length + flatEdges().length);
+    });
+
+    it('has one warm window, in the window wall, inside its embrasure', () => {
+      const glows = [];
+      scene.base.object3d.traverse(o => { if (o.isMesh && o.material.emissive?.getHex()) glows.push(o); });
+      expect(glows.length).toBe(1);
+      const { edge, at, sill, height } = BASE_SHELL.embrasures[0];
+      const e = scene.base.faces.edges[edge];
+      const box = boxOf(glows[0]);
+      const centre = box.getCenter(new THREE.Vector3());
+      const along = (centre.x - e.a.x) * e.dir[0] + (centre.z - e.a.z) * e.dir[1];
+      const out = (centre.x - e.a.x) * e.normal[0] + (centre.z - e.a.z) * e.normal[1];
+      expect(along).toBeCloseTo(at, 1);
+      expect(out).toBeGreaterThan(0);
+      expect(out).toBeLessThan(0.08);   // behind the steel collar's lip
+      expect(box.min.y).toBeGreaterThanOrEqual(sill - 0.01);
+      expect(box.max.y).toBeLessThanOrEqual(sill + height + 0.01);
+    });
+
+    it("fades into the dream's fog, as the block did", () => {
+      const unfogged = [];
+      scene.base.object3d.traverse(o => { if (o.isMesh && o.material.fog === false) unfogged.push(o.name); });
+      expect(unfogged).toEqual([]);
+    });
+
+    it('frees what the shell made when the dream goes', () => {
+      const spies = scene.base.resources.map(r => vi.spyOn(r, 'dispose'));
+      expect(spies.length).toBeGreaterThan(0);
+      scene.dispose();
+      for (const spy of spies) expect(spy).toHaveBeenCalled();
+    });
+
+    it('keeps the rocks off it', () => {
+      const xs = BASE_SHELL.outline.map(p => p.x), zs = BASE_SHELL.outline.map(p => p.z);
+      const m = new THREE.Matrix4(), p = new THREE.Vector3();
+      let inside = 0;
+      scene.rocks.object3d.traverse(o => {
+        if (!o.isInstancedMesh) return;
+        for (let i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, m);
+          p.setFromMatrixPosition(m);
+          if (p.x > Math.min(...xs) && p.x < Math.max(...xs) && p.z > Math.min(...zs) && p.z < Math.max(...zs)) inside++;
+        }
+      });
+      expect(inside).toBe(0);
+    });
   });
 
-  it('stands the player outside the base, facing away from it', () => {
+  it('stands the player just outside the hatch, facing straight out of it', () => {
     const p = engine.player.object3d.position;
-    expect(Math.hypot(p.x, p.z)).toBeGreaterThan(5);
+    const hatch = scene.base.faces.edges.find(e => e.flat && !BASE_SHELL.embrasures.some(w => w.edge === e.i));
+    const mid = { x: (hatch.a.x + hatch.b.x) / 2, z: (hatch.a.z + hatch.b.z) / 2 };
+    const out = (p.x - mid.x) * hatch.normal[0] + (p.z - mid.z) * hatch.normal[1];
+    const aside = (p.x - mid.x) * hatch.dir[0] + (p.z - mid.z) * hatch.dir[1];
+    expect(out).toBeGreaterThan(2);
+    expect(out).toBeLessThan(5);
+    expect(Math.abs(aside)).toBeLessThan(0.1);
     const yaw = engine.playerController.yaw;
     const forward = new THREE.Vector2(-Math.sin(yaw), -Math.cos(yaw));
-    const away = new THREE.Vector2(p.x, p.z).normalize();
-    expect(forward.dot(away)).toBeGreaterThan(0.95);
+    expect(forward.dot(new THREE.Vector2(...hatch.normal))).toBeGreaterThan(0.99);
+  });
+
+  it("measures the walk from the base's walls: its footprint covers the whole outline", () => {
+    const { x, z, halfX, halfZ } = scene.walk.base;
+    for (const p of BASE_SHELL.outline) {
+      expect(Math.abs(p.x - x)).toBeLessThanOrEqual(halfX + 1e-9);
+      expect(Math.abs(p.z - z)).toBeLessThanOrEqual(halfZ + 1e-9);
+    }
+    expect(BASE_SHELL.outline.some(p => Math.abs(Math.abs(p.x - x) - halfX) < 1e-9)).toBe(true);
+    expect(BASE_SHELL.outline.some(p => Math.abs(Math.abs(p.z - z) - halfZ) < 1e-9)).toBe(true);
   });
 
   it('runs a DreamWalk at its level, round the base, on the scene fog and sky', () => {

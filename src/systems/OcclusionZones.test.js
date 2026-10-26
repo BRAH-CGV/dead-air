@@ -163,3 +163,45 @@ describe('OcclusionZones', () => {
     expect(zones.names()).toEqual([]);
   });
 });
+
+describe('drawFor: hidden zones drawn for one render only (#161)', () => {
+  it('shows the hidden zones while draw() runs, and hides them again after', () => {
+    const { zones, buggy } = setup();
+    zones.hide('yard');
+    let seen;
+    zones.drawFor(['yard'], () => { seen = buggy.visible; });
+    expect(seen).toBe(true);
+    expect(buggy.visible).toBe(false);
+    expect(zones.isVisible('yard')).toBe(false);
+  });
+
+  it('is not a change: no listener hears it (so no shadow redraw)', () => {
+    const { zones } = setup();
+    zones.hide('yard');
+    const listener = vi.fn();
+    zones.onChange(listener);
+    zones.drawFor(['yard'], () => {});
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('leaves a zone already shown as it was', () => {
+    const { zones, desk } = setup();
+    zones.drawFor(['interior'], () => {});
+    expect(desk.visible).toBe(true);
+  });
+
+  it('hides them again even if draw() throws', () => {
+    const { zones, buggy } = setup();
+    zones.hide('yard');
+    expect(() => zones.drawFor(['yard'], () => { throw new Error('lost context'); })).toThrow();
+    expect(buggy.visible).toBe(false);
+  });
+
+  it('takes no zones, or ones it has never heard of', () => {
+    const { zones } = setup();
+    const draw = vi.fn();
+    zones.drawFor(null, draw);
+    zones.drawFor(['nowhere'], draw);
+    expect(draw).toHaveBeenCalledTimes(2);
+  });
+});

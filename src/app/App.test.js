@@ -5,6 +5,7 @@ import { MenuView } from '../ui/menu/MenuView.js';
 import { SETTINGS_KEY } from './SettingsStore.js';
 import { PROGRESS_KEY } from './App.js';
 import { withKeys, setInteractKey } from '../ui/promptKeys.js';
+import { RunRecord } from '../gameplay/RunRecord.js';
 
 // ── Fakes: no WebGL, no Rapier, no real pointer lock ──
 
@@ -72,6 +73,7 @@ function makeEngine() {
     keyBinds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
+      holdFurther: 'ArrowUp', holdCloser: 'ArrowDown',
     },
     revealed: Promise.resolve(),
     levelEditor: { enabled: false },
@@ -1382,8 +1384,8 @@ describe('App intro (New game)', () => {
   /** What App drives on IntroPlayer. */
   function makeIntro() {
     const fake = {
-      playing: false, atEnd: false, onBegin: null,
-      play: vi.fn(() => { fake.playing = true; fake.atEnd = false; }),
+      playing: false, atEnd: false, onBegin: null, array: null,
+      play: vi.fn(() => { fake.playing = true; fake.atEnd = false; fake.array = 'ARRAY K-17 · 12°N 40°E'; }),
       stop: vi.fn(() => { fake.playing = false; }),
       advance: vi.fn(() => { if (!fake.atEnd) fake.atEnd = true; else fake.onBegin?.(); }),
       setHint: vi.fn(),
@@ -1462,6 +1464,78 @@ describe('App intro (New game)', () => {
     await click('newGame');
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', repeat: true, bubbles: true, cancelable: true }));
     expect(intro.advance).not.toHaveBeenCalled();
+  });
+
+  describe("a new run, named for the intro's array", () => {
+    /** A record left over from an earlier run. */
+    function oldRun() {
+      engine.run = new RunRecord();
+      engine.run.reset({ array: 'ARRAY OLD' });
+      engine.run.logThreats(1, [{ kind: 'storm', hour: -2 }]);
+      return engine.run;
+    }
+
+    it("New game's end card starts the run over, under the array the intro named", async () => {
+      const run = oldRun();
+      await click('newGame');
+      await begin();
+      expect(engine.run).toBe(run);   // the scene under the menu already holds it
+      expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
+      expect(run.threats(1)).toBeNull();
+    });
+
+    it('makes the record where no scene has', async () => {
+      await click('newGame');
+      await begin();
+      expect(engine.run).toBeInstanceOf(RunRecord);
+      expect(engine.run.array).toBe('ARRAY K-17 · 12°N 40°E');
+    });
+
+    it('a refused lock leaves the old run alone', async () => {
+      const run = oldRun();
+      await click('newGame');
+      lock.grant = false;
+      await begin();
+      expect(run.array).toBe('ARRAY OLD');
+      expect(run.threats(1)).toEqual([{ kind: 'storm', hour: -2 }]);
+    });
+
+    it('the Tutorial starts one too', async () => {
+      app.dispose();
+      engine.activeScene.nights.minNight = 0;
+      app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+      await app.start();
+      const run = oldRun();
+      await click('tutorial');
+      await begin();
+      expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
+      expect(run.threats(1)).toBeNull();
+    });
+
+    it('Continue starts one with no intro, so no array name', async () => {
+      storage.setItem(PROGRESS_KEY, JSON.stringify({ night: 2 }));
+      app.dispose();
+      app = new App(engine, { pointerLock: lock, view: makeDom(), fade: makeFade(), storage, dev: false, intro });
+      await app.start();
+      const run = oldRun();
+      await click('continue');
+      expect(run.array).toBeNull();
+      expect(run.threats(1)).toBeNull();
+    });
+
+    it('Restart night keeps the run', async () => {
+      await click('newGame');
+      await begin();
+      engine.run.logThreats(1, [{ kind: 'storm', hour: -2 }]);
+      const run = engine.run;
+      lock.lose();
+      await click('restart');
+      await click('confirm');
+      expect(engine.loadScene).toHaveBeenCalledOnce();
+      expect(engine.run).toBe(run);
+      expect(run.threats(1)).toEqual([{ kind: 'storm', hour: -2 }]);
+      expect(run.array).toBe('ARRAY K-17 · 12°N 40°E');
+    });
   });
 
   describe('the Tutorial plays it too', () => {

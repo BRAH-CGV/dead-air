@@ -19,8 +19,8 @@ import { Component } from '../core/Component.js';
 // With a cargo bay wired (the buggy's boot, a second DriveBoxDock), the
 // morning has one job first: carry the night's drive box out to the buggy,
 // load it (`delivered`: the boot holds a box with the night's quota in it)
-// and send the buggy off (`dispatch()`). The bed stays shut (canSleep) until
-// it has gone. Every night start brings it back.
+// and send the buggy off (`dispatch()`). The bed stays shut (canSleep)
+// until it has gone. Every night start brings it back.
 //
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //

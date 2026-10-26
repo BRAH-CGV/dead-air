@@ -5,7 +5,7 @@ import { dreamLevel } from '../gameplay/dream.js';
 
 const DT = 1 / 60;
 
-function setup(level = 1) {
+function setup(level = 1, base = { x: 0, z: 0 }) {
   const position = new THREE.Vector3(0, 1, 6);
   const camera = new THREE.PerspectiveCamera(75);
   const controller = {
@@ -15,7 +15,7 @@ function setup(level = 1) {
   };
   const walk = new DreamWalk({
     level,
-    base: { x: 0, z: 0 },
+    base,
     controller,
     camera,
     sky: { setStorm: vi.fn() },
@@ -50,16 +50,30 @@ describe('DreamWalk (#101)', () => {
     expect(storm).toBeGreaterThan(L.skyBase);
   });
 
-  it('past the pull radius: takes the controls and drags the player back towards the base', () => {
+  it('past the pull radius: takes the legs, not the eyes, and drags the player back towards the base', () => {
     stepTo(walk, position, 0, L.pullRadius + 1);
     expect(walk.state).toBe('pulled');
-    expect(controller.inputLocked).toBe(true);
+    expect(controller.moveLocked).toBe(true);
+    expect(controller.inputLocked).toBe(false);          // free to look round as they fly
     const before = Math.hypot(position.x, position.z);
     walk.onUpdate(DT);
     walk.onUpdate(DT);
     expect(Math.hypot(position.x, position.z)).toBeLessThan(before);
     // Dragged backwards: the way they were looking is kept.
     expect(controller.teleport.mock.calls.at(-1)[1]).toEqual({ yaw: Math.PI, pitch: 0 });
+    // …and wherever they look round to as they go.
+    controller.yaw = 0.4;
+    controller.pitch = -0.2;
+    walk.onUpdate(DT);
+    expect(controller.teleport.mock.calls.at(-1)[1]).toEqual({ yaw: 0.4, pitch: -0.2 });
+  });
+
+  it('says how fast it is dragging them (for the wind)', () => {
+    expect(walk.pullSpeed).toBe(0);
+    stepTo(walk, position, 0, L.pullRadius + 40);
+    walk.onUpdate(DT);
+    walk.onUpdate(DT);
+    expect(walk.pullSpeed).toBeGreaterThan(0);
   });
 
   it('the drag picks up speed the longer it lasts', () => {
@@ -104,7 +118,43 @@ describe('DreamWalk (#101)', () => {
     three.walk.onDestroy();
     expect(three.controller.speedScale).toBe(1);
     expect(three.controller.inputLocked).toBe(false);
+    expect(three.controller.moveLocked).toBe(false);
     expect(three.camera.fov).toBe(75);
+  });
+
+  describe('a base with a footprint: measured from its walls, not its middle', () => {
+    const BASE = { x: 0, z: 2, halfX: 16, halfZ: 6 };
+
+    it('walks at full speed beside a long wall, however far that is from the middle', () => {
+      const s = setup(3, BASE);
+      // 15 m from the middle along the long side, but only 3 m from the east end.
+      stepTo(s.walk, s.position, BASE.halfX + 3, 2);
+      expect(s.controller.speedScale).toBe(1);
+      expect(s.walk.fog.density).toBeCloseTo(s.L.fogBase);
+    });
+
+    it('slows and pulls by the distance from the nearest wall', () => {
+      const s = setup(1, BASE);
+      stepTo(s.walk, s.position, 0, 2 + BASE.halfZ + (s.L.slowStart + s.L.pullRadius) / 2);
+      expect(s.controller.speedScale).toBeLessThan(1);
+      stepTo(s.walk, s.position, 0, 2 + BASE.halfZ + s.L.pullRadius + 1);
+      expect(s.walk.state).toBe('pulled');
+    });
+
+    it('drags the player straight back to the nearest wall, and wakes them clear of it', () => {
+      const s = setup(1, BASE);
+      stepTo(s.walk, s.position, BASE.halfX + s.L.pullRadius + 1, 4);
+      let nearest = Infinity;
+      for (let i = 0; i < 60 * 120 && s.walk.state === 'pulled'; i++) {
+        s.walk.onUpdate(DT);
+        expect(s.position.z).toBeCloseTo(4, 6);   // straight back, along x
+        nearest = Math.min(nearest, s.position.x - BASE.halfX);
+      }
+      expect(s.walk.state).toBe('awake');
+      // Never into the base: it lets go a few metres out from the wall.
+      expect(nearest).toBeGreaterThan(5);
+      expect(nearest).toBeLessThan(10);
+    });
   });
 
   describe('no endless crawl (playtest)', () => {

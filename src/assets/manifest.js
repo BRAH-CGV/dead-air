@@ -330,6 +330,64 @@ const PLACED = {
     origin: 'floor',
     physics: 'static',
   },
+  // The bedroom PC: Poly Haven's classic laptop, its lid upright, its
+  // screen facing +z. Poly Haven has it at 0.65 m wide, twice a real
+  // period laptop; 0.5 takes it to 0.33 × 0.24 m, the lid 0.27 m tall.
+  // Its origin is on the floor already.
+  'model:laptop': {
+    type: 'model',
+    url: 'assets/models/laptop.glb',
+    scale: 0.5,
+  },
+  // The office's signal lamp (SignalAlertLight): Poly Haven's Lightbulb 01,
+  // prepared by scripts/prep-bulb.mjs. In metres, its screw down and its
+  // origin at the glass's foot; half as big again (9 × 15 cm) to read
+  // across the office.
+  'model:bulb': {
+    type: 'model',
+    url: 'assets/models/bulb.glb',
+    scale: 1.5,
+  },
+  // The bedroom's coffee machine: free3d.io's Ascaso Dream, prepared by
+  // scripts/prep-coffee-machine.mjs. Modelled in its own units; 0.00264
+  // would be the real machine (24.5 cm wide, 34.5 cm tall), and it is half
+  // as big again to read across the bedroom: 0.40 × 0.52 × 0.51 m with the
+  // steam knob and the portafilter's handle. Its front faces +z.
+  'model:coffee-machine': {
+    type: 'model',
+    url: 'assets/models/coffee-machine.glb',
+    scale: 0.00396,
+    origin: 'floor',
+  },
+  // The food dispenser's plates (scripts/make-dispenser-labels.mjs): four
+  // 8:1 strips, its name, the meal bay's, the hopper's and a caution.
+  'tex:dispenser-labels': {
+    type: 'texture',
+    url: 'assets/textures/dispenser-labels.png',
+    colorSpace: 'srgb',
+  },
+  // The coffee's mug: its picture all the way round, the cat on the front
+  // (scripts/make-mug-picture.mjs). Stretched to a power of two; the mug's
+  // mapping stretches it back.
+  'tex:mug-hang-in-there': {
+    type: 'texture',
+    url: 'assets/textures/mug-hang-in-there.png',
+    colorSpace: 'srgb',
+  },
+  // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
+  // (the tables lay their UVs out in metres).
+  'tex:wood-table': {
+    type: 'texture',
+    url: 'assets/textures/wood-table.jpg',
+    colorSpace: 'srgb',
+    repeat: [1, 1],
+  },
+  'tex:wood-table-normal': {
+    type: 'texture',
+    url: 'assets/textures/wood-table-normal.jpg',
+    colorSpace: 'linear',
+    repeat: [1, 1],
+  },
   // The bedroom's storage racks: Poly Haven's worn metal rack, in metres
   // already (0.92 × 0.6 m, 1.9 m tall), origin on the floor.
   'model:bigger-shelf': {
@@ -671,11 +729,9 @@ const PLACED = {
   // Stamina and the Sleep Demon, from the first minute of night 1: the
   // demon's whispers and knocks, placed on its figure (SleepDemon); the heartbeat, looped,
   // and the yawn of a tired one (FatigueEffects); a
-  // ration dropping from the office dispenser (BaseScene._addStamina).
+  // coffee slurped as it is drunk (BaseScene._addStamina).
   //
-  // The ration is a PLACEHOLDER, for the sound owner to replace: a short
-  // synthesised wav, not final audio. The whispers, the heartbeat and the yawn
-  // are real (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
+  // All real recordings (see ATTRIBUTIONS.md). Swapping one in means dropping the file into
   // public/assets/audio/, named after its key (any format: ration.mp3 is
   // fine), and changing its `url` below. The key stays, so nothing else
   // moves. Volumes and the state each one follows: AGENTS.md, "Note for the
@@ -688,9 +744,32 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/yawn.mp3',
   },
-  'sfx:ration': {
+  'sfx:slurp': {
     type: 'audio',
-    url: 'assets/audio/ration.wav',
+    url: 'assets/audio/slurp.mp3',
+  },
+  // The bedroom's coffee machine running while a cup brews (CoffeeSound):
+  // exactly a brew long, 20 s. Its start click is the camera flash's.
+  'sfx:coffee-machine': {
+    type: 'audio',
+    url: 'assets/audio/coffee-machine.mp3',
+  },
+  // The player's footsteps (Footsteps): three interior steps and two outdoor
+  // thumps in one recording, cut by hand (STEP_SOUNDS).
+  'sfx:steps': {
+    type: 'audio',
+    url: 'assets/audio/steps.mp3',
+  },
+  // …and two wood thuds for a desk or a table, levelled to them.
+  'sfx:steps-wood': {
+    type: 'audio',
+    url: 'assets/audio/steps-wood.mp3',
+  },
+  // The desk globe spun (GlobeSound): one real spin, the push and the globe
+  // dying away, played from its top with every push.
+  'sfx:globe-spin': {
+    type: 'audio',
+    url: 'assets/audio/globe-spin.wav',
   },
   'sfx:whispering': {
     type: 'audio',
@@ -705,7 +784,8 @@ const PLACED = {
   // pace of its steps and heard only indoors; the call, cut into its soft
   // chirps (outside, under the wind) and its loud bursts (the rare screech,
   // pitched down); two attacks for a flinch or the aggro; and the third for
-  // the death screen, its loud part only.
+  // the death screen, its loud part only; and the vents, thuds and creaks cut
+  // into his steps and the layers over them (DUCT_CRAWL).
   'sfx:spider-walking': {
     type: 'audio',
     url: 'assets/audio/spider-walking.mp3',
@@ -725,6 +805,10 @@ const PLACED = {
   'sfx:spider-attack-8': {
     type: 'audio',
     url: 'assets/audio/spider-attack-8.mp3',
+  },
+  'sfx:ragno-vents': {
+    type: 'audio',
+    url: 'assets/audio/ragno-vents.mp3',
   },
 };
 

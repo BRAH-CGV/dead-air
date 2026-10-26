@@ -44,9 +44,10 @@ import { WallClock } from '../../gameobjects/WallClock.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { GlobeSpin } from '../../components/GlobeSpin.js';
 import { deskWingOutline } from './DeskWing.js';
-import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
+import { SignalAlertLight, BULB } from '../../gameobjects/SignalAlertLight.js';
 import { Drive } from '../../gameobjects/Drive.js';
-import { PRELOAD } from '../../assets/manifest.js';
+import { ASSETS, PRELOAD } from '../../assets/manifest.js';
+import { readFileSync } from 'node:fs';
 
 let nextHandle = 1;
 class FakeWorld {
@@ -87,6 +88,7 @@ function makeEngine() {
       const [x, y, z] = opts.position ?? [0, 0, 0];
       go.object3d.position.set(x, y, z);
       go.object3d.rotation.y = opts.rotationY ?? 0;
+      go.object3d.scale.setScalar(opts.scale ?? 1);
       if (opts.physics !== 'none') {
         go.rigidBody = engine.world.createRigidBody({ type: 'fixed', t: { x, y, z } });
         engine._bodyToGO.set(go.rigidBody.handle, go);
@@ -470,6 +472,31 @@ describe('MainOffice', () => {
     expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
   });
 
+  it('keeps only a little trash in the bin, on its floor, inside its wall', () => {
+    // trash-bin.glb: the bin (Trashbin) and its trash (Trash) in one frame,
+    // z up, the bin 0 … 2 high, its inside wall 1.0 round its axis.
+    const glb = readFileSync(new URL(`../../../public/${ASSETS['model:trash-bin'].url}`, import.meta.url));
+    const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+    const bounds = name => {
+      const prim = json.meshes.flatMap(m => m.primitives).find(p => json.materials[p.material].name === name);
+      return json.accessors[prim.attributes.POSITION];
+    };
+    const bin = bounds('Trashbin'), trash = bounds('Trash');
+    const height = bin.max[2] - bin.min[2];
+    expect(trash.min[2]).toBeGreaterThan(bin.min[2]);                     // on the floor, not through it
+    expect(trash.max[2]).toBeLessThan(bin.min[2] + height * 0.1);        // a bit at the bottom
+    for (const v of [...trash.min.slice(0, 2), ...trash.max.slice(0, 2)]) expect(Math.abs(v)).toBeLessThan(1.0);
+
+    // Lit, so the bin's own shade darkens it, and dull: an unlit layer
+    // shone at full brightness at the bottom of a dark bin.
+    const material = json.materials.find(m => m.name === 'Trash');
+    expect(material.extensions?.KHR_materials_unlit).toBeUndefined();
+    expect(json.extensionsUsed ?? []).not.toContain('KHR_materials_unlit');
+    const [r, g, b] = material.pbrMetallicRoughness.baseColorFactor ?? [1, 1, 1];
+    expect(Math.max(r, g, b)).toBeLessThanOrEqual(0.6);
+    expect(material.pbrMetallicRoughness.roughnessFactor ?? 1).toBeGreaterThan(0.8);
+  });
+
   it('keeps the food dispenser, idle until the grow beds feed it (#109); the coffee is in the bedroom', () => {
     const use = room.root.find('VendingMachine').getComponent(Interactable);
     expect(use.promptLabel).toMatch(/food dispenser/i);
@@ -477,6 +504,27 @@ describe('MainOffice', () => {
     expect(() => use.onInteract({})).not.toThrow();
     expect(room.root.find('CoffeeMachine')).toBeNull();
     expect(room.root.descendants().some(go => go.getComponent(CoffeeMachine))).toBe(false);
+  });
+
+  it('builds the food dispenser as a nutrient processor on its collider: hopper, process window, meal bay, its plates', () => {
+    const go = room.root.find('VendingMachine');
+    expect(go._originalSize).toEqual([0.7, 1.9, 0.9]);
+    expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);
+    for (const part of ['steel', 'hopper', 'window', 'tray', 'bayLight', 'pipes', 'labels']) {
+      expect(go.object3d.getObjectByName(`Dispenser_${part}`), part).toBeDefined();
+    }
+    const pipes = new THREE.Box3().setFromObject(go.object3d.getObjectByName('Dispenser_pipes'));
+    expect(pipes.max.y).toBeCloseTo(room.height, 2);                     // the conduit meets the ceiling
+
+    const entry = ASSETS['tex:dispenser-labels'];
+    expect(entry).toMatchObject({ type: 'texture', colorSpace: 'srgb' });
+    expect(PRELOAD).toContain('tex:dispenser-labels');
+    expect(() => readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url))).not.toThrow();
+    const atlas = new THREE.Texture();
+    engine.assets = { get: key => (key === 'tex:dispenser-labels' ? atlas : null) };
+    const dressed = new MainOffice(engine);
+    dressed.build();
+    expect(dressed.root.find('VendingMachine').object3d.getObjectByName('Dispenser_labels').material.map).toBe(atlas);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
@@ -505,6 +553,39 @@ describe('MainOffice', () => {
     // The model faces +z; a quarter turn clockwise points that at −x.
     const facing = new THREE.Vector3(0, 0, 1).applyEuler(poster.rotation);
     expect(facing.x).toBeCloseTo(-1);
+  });
+
+  it('marks the computer\'s screen: the monitor\'s face, tilted back toward the seat (#161)', () => {
+    const [tl, tr, br, bl] = room.computerScreen.worldCorners();
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.351, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.196, 2);
+    expect(br.distanceTo(bl)).toBeCloseTo(tl.distanceTo(tr), 5);
+    // Over the desk's top, under the monitor's, in its back half.
+    const centre = tl.clone().add(tr).add(br).add(bl).multiplyScalar(0.25);
+    expect(centre.x).toBeCloseTo(0);
+    expect(centre.y).toBeGreaterThan(0.86);
+    expect(centre.y).toBeLessThan(1.0);
+    expect(centre.z).toBeLessThan(-2.55);
+    // It faces the seat, and up: the face slopes back.
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    expect(normal.z).toBeGreaterThan(0.7);
+    expect(normal.y).toBeGreaterThan(0.3);
+    // The right way round from the seat: its right is the seat's right.
+    expect(tr.x).toBeGreaterThan(tl.x);
+  });
+
+  it('marks the camera monitor\'s screen: upright, turned with it to face the room (#161)', () => {
+    const [tl, tr, , bl] = room.cameraScreen.worldCorners();
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.55, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.323, 2);
+    expect(tl.y).toBeGreaterThan(bl.y);
+    expect(tl.y - tr.y).toBeCloseTo(0);
+    // On the left wing's monitor, facing out of its front edge (45° to the room).
+    const model = room.root.find('CameraMonitorModel').object3d;
+    expect(room.cameraScreen.object).toBe(model);
+    const normal = new THREE.Vector3().crossVectors(tr.clone().sub(tl), tl.clone().sub(bl)).normalize();
+    const front = new THREE.Vector3(0, 0, 1).applyQuaternion(model.quaternion);
+    expect(normal.dot(front)).toBeCloseTo(1);
   });
 
   it('props are room children only — not also root objects (no double update)', () => {
@@ -596,17 +677,30 @@ describe('MainOffice', () => {
     expect(box.max.y).toBeLessThan(2.9);                   // below the ceiling
   });
 
-  it('perches a signal alert lamp above the computer desk, in sight of the room', () => {
+  it('stands the signal lamp on the desk\'s shelf beside the monitor, in sight of the chair', () => {
     const light = room.root.find('SignalAlertLight');
     expect(light).toBeInstanceOf(SignalAlertLight);
     expect(room.signalLight).toBe(light);            // the scene wires it to gameplay
 
+    // On the flat shelf left of the monitor (x −0.42 … −0.30, z −2.93 …
+    // −2.77 at 0.864 m, read off retro-computer.glb): the monitor's own top
+    // slopes, and nothing stands up on a slope.
     const pos = light.object3d.position;
-    expect(Math.abs(pos.x)).toBeLessThan(0.5);       // over the desk…
-    expect(pos.z).toBeGreaterThan(-3.05);            // …which stands at z −2.55
-    expect(pos.z).toBeLessThan(-2.05);
-    expect(pos.y).toBeGreaterThan(1.0);              // clear of the monitor
-    expect(pos.y).toBeLessThan(2.2);                 // below the ceiling
+    expect(pos.y).toBeCloseTo(0.864, 3);
+    expect(pos.x - BULB.socket.plate).toBeGreaterThan(-0.42 - 0.03);
+    expect(pos.x + BULB.socket.plate).toBeLessThan(-0.255);          // clear of the monitor's side
+    expect(pos.z - BULB.socket.plate).toBeGreaterThan(-2.93);
+    expect(pos.z + BULB.socket.plate).toBeLessThan(-2.77);
+  });
+
+  it('dresses the lamp in the bulb model when it is loaded', () => {
+    const instance = new THREE.Group();
+    instance.add(new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshStandardMaterial({ name: 'lightbulb_01_glass' })));
+    engine.assets = { get: () => null, instantiate: key => (key === 'model:bulb' ? instance : null) };
+    const dressed = new MainOffice(engine);
+    dressed.build();
+    expect(dressed.signalLight.bulb.parent).toBe(instance);
+    expect(instance.parent).toBe(dressed.signalLight.object3d);
   });
 
   it('has a drive reader on the desk surface with a DriveSlot component', () => {
@@ -747,6 +841,29 @@ describe('MainOffice placement', () => {
     room.dispose();
     expect(geom).toBe(true);
     expect(mat).toBe(true);
+  });
+
+  it('dispose frees the drives it stocks the boxes with', () => {
+    // Each drive builds its own geometry and material. Left unowned, every
+    // rebuild from the menu kept 32 of each on the GPU.
+    const room = new MainOffice(makeEngine());
+    room.build();
+    expect(room.drives.length).toBeGreaterThan(0);
+    const freed = new Set();
+    for (const drive of room.drives) {
+      drive.object3d.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry.addEventListener('dispose', () => freed.add(o.geometry));
+        o.material.addEventListener('dispose', () => freed.add(o.material));
+      });
+    }
+    const meshes = room.drives.flatMap(d => d.object3d.children.filter(o => o.isMesh));
+    expect(meshes.length).toBeGreaterThan(0);
+    room.dispose();
+    for (const mesh of meshes) {
+      expect(freed.has(mesh.geometry)).toBe(true);
+      expect(freed.has(mesh.material)).toBe(true);
+    }
   });
 });
 
