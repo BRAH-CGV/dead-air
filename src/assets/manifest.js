@@ -376,8 +376,8 @@ const PLACED = {
   },
   // The carried props' atlases (scripts/make-prop-textures.mjs), a
   // rectangle a face (src/gameobjects/propAtlases.js): the drive's casing,
-  // the drive box in greys (its colour tints it), the coffee bag and the
-  // airlock's box dock.
+  // the drive box in greys (its colour tints it), the coffee bag, the drive
+  // readers and the airlock's box dock.
   'tex:drive': {
     type: 'texture',
     url: 'assets/textures/drive.png',
@@ -392,6 +392,16 @@ const PLACED = {
     type: 'texture',
     url: 'assets/textures/coffee-bag.png',
     colorSpace: 'srgb',
+  },
+  'tex:drive-reader': {
+    type: 'texture',
+    url: 'assets/textures/drive-reader.png',
+    colorSpace: 'srgb',
+  },
+  // Their relief: a normal map, made from a height map of the same shapes.
+  'tex:drive-reader-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-reader-normal.png',
   },
   'tex:box-dock': {
     type: 'texture',

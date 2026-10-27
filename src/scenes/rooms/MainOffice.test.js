@@ -41,6 +41,7 @@ import { CoffeeProcessor } from '../../components/CoffeeProcessor.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
+import { READER_SLOT } from '../../gameobjects/DriveReader.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
@@ -797,12 +798,14 @@ describe('MainOffice', () => {
     }
   });
 
-  it('DriveSlot component is configured with a snap offset for the reader surface', () => {
+  it('DriveSlot seats a drive half into the reader\'s front slot, pins first', () => {
     const reader = room.driveReader;
     const slot = reader.getComponent(DriveSlot);
     expect(slot).not.toBeNull();
-    // The snap offset lifts the drive above the reader surface.
-    expect(slot.snapOffset.y).toBeGreaterThan(0);
+    expect(slot.slots[0].offset).toMatchObject(READER_SLOT.offset);
+    // Turned half round: the drive's pins (+z) lead into the reader (−z).
+    const pins = new THREE.Vector3(0, 0, 1).applyQuaternion(slot.slots[0].rotation);
+    expect(pins.z).toBeCloseTo(-1);
   });
 
   it('leaves global lights (ambient, moon) to the scene', () => {

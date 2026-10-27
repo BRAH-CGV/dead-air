@@ -9,6 +9,7 @@ import { DigitalClock } from '../../gameobjects/DigitalClock.js';
 import { GlobeSpin } from '../../components/GlobeSpin.js';
 import { GlobeSound } from '../../components/GlobeSound.js';
 import { SignalAlertLight } from '../../gameobjects/SignalAlertLight.js';
+import { READER_SIZE, READER_SLOT, readerMaterial, skinReader } from '../../gameobjects/DriveReader.js';
 import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
@@ -364,27 +365,23 @@ export class MainOffice extends Room {
   _buildDriveStation() {
     // Reader: a small dark box on the desk's right pillar, whose top is at
     // y = 0.86 m; the reader is 3 cm tall, so its centre sits at
-    // 0.86 + 0.015 = 0.875.
-    const readerSize = [0.12, 0.03, 0.15];
+    // 0.86 + 0.015 = 0.875. Its slot faces the chair (+z).
+    const readerSize = READER_SIZE;
     const readerPos  = [0.650, 0.875, -2.260];
-    const readerMat  = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a, roughness: 0.7, metalness: 0.4,
-      emissive: 0x003311, emissiveIntensity: 0.3,
-    }));
-    this.driveReader = this._addStaticBox('DriveReader', readerPos, readerSize, readerMat);
+    this.driveReader = this._addStaticBox('DriveReader', readerPos, readerSize, this._own(readerMaterial()));
+    skinReader(this.driveReader.object3d.children[0], this.engine?.assets);
 
     // Tooltip on hover (no interact action — just a label)
     const readerTooltip = new Interactable();
     readerTooltip.promptLabel = 'Drive reader';
     this.driveReader.addComponent(readerTooltip);
 
-    // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
-    // The slot is configured with a snap offset that places the drive on
-    // top of the reader (half reader height + half drive height).
-    const driveHeight = 0.02; // Drive._size[1] default
+    // Attach a DriveSlot component — it auto-snaps nearby unheld drives
+    // into the reader's front slot (READER_SLOT), half in.
     this.driveReader.addComponent(new DriveSlot({
       snapDistance: 0.25,
-      snapOffset: { y: readerSize[1] / 2 + driveHeight / 2 },
+      snapOffset: READER_SLOT.offset,
+      snapRotation: READER_SLOT.rotation,
     }));
   }
 
