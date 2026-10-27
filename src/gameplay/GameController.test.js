@@ -105,7 +105,7 @@ describe('GameController', () => {
     gc.startNight(1);
     gc.onUpdate(999);  // past 6 AM
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenCalledWith('Night failed. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenCalledWith('Night failed.');
   });
 
   it('meeting the quota early keeps the shift running until 6 AM', () => {
@@ -408,9 +408,9 @@ describe('GameController', () => {
 
   it('fail() ends a playing shift as a game over with its own prompt', () => {
     gc.startNight(1);
-    gc.fail('You were taken. [E] to retry');
+    gc.fail('You were taken.');
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken.');
     gc.retryNight();
     expect(gc.state).toBe('playing');
   });
@@ -418,15 +418,15 @@ describe('GameController', () => {
   it('fail() can hold the retry back: no prompt and no [E] until it is shown', () => {
     const engine = attachEngine();
     gc.startNight(1);
-    gc.fail('You have been eaten. Press [E] to try again', { retryAfter: 2 });
+    gc.fail('You have been eaten.', { retryAfter: 2 });
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     engine.input.pressed.KeyE = true;   // mashed straight away
     gc.onUpdate(0.5);
     expect(gc.state).toBe('gameOver');
     engine.input.pressed.KeyE = false;
     gc.onUpdate(1.6);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten.');
     engine.input.pressed.KeyE = true;
     gc.onUpdate(0.016);
     expect(gc.state).toBe('playing');

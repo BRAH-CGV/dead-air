@@ -35,7 +35,7 @@ const PROMPT = {
   deliver:  'Load the drive box into the buggy outside',
   send:     'Drives loaded — send the buggy off',
   delivered: 'Buggy away — get some sleep (bedroom)',
-  failed:   'Night failed. [E] to retry',
+  failed:   'Night failed.',
   finished: 'You made it through every shift.',
 };
 

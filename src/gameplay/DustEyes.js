@@ -203,7 +203,7 @@ export const DUST_EYES_SOUNDS = {
   bite:   'sfx:monster-bite',
 };
 
-const CAUGHT_PROMPT = 'You have been eaten. Press [E] to try again';
+const CAUGHT_PROMPT = 'You have been eaten.';
 /** The death screen: black at once, slowly turning red; the prompt — and
  *  the retry — once it has. */
 const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2200 };

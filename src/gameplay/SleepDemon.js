@@ -113,7 +113,7 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // start, the shift ending under it, or onDestroy.
 // ─────────────────────────────────────────────
 
-export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
+export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting.';
 
 /** The name it ducks the ambience under (Ambience.setDuck). */
 export const SLEEP_DEMON_DUCK = 'sleep-demon';
