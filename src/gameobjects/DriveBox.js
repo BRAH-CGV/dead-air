@@ -4,6 +4,7 @@ import { Pickupable } from '../components/Pickupable.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { SnapSocket } from '../components/SnapSocket.js';
 import { packGroups } from '../core/PhysicsLayers.js';
+import { BOX_ATLAS, mapBoxFaces, cachedTexture } from './propAtlases.js';
 
 // Low, slightly rectangular magazine: about half the old height, z ≈ 0.8×x,
 // long side across the lid so the rows of seated drives run along it.
@@ -28,6 +29,11 @@ const SLOT_ROTATION = new THREE.Quaternion()
  * slightly inside. The sockets use the generic SnapSocket system; this class
  * only supplies the visual, dynamic body and drive-specific policy. The box
  * itself seats kinematically in the airlock's dock (DriveBoxDock).
+ *
+ * Its own material wears `tex:drive-box` (scripts/make-prop-textures.mjs)
+ * once _init finds it loaded: rims, ribs, corner guards, a label plate and a
+ * handle, all in greys, so the box's colour tints it and each box keeps its
+ * own. A material handed in (opts.material) is left as it is.
  */
 export class DriveBox extends GameObject {
   /** Marker used by generic snap receivers to accept only drive boxes. */
@@ -117,6 +123,7 @@ export class DriveBox extends GameObject {
 
   _init(scene, world) {
     super._init(scene, world);
+    if (this._ownsMaterial) this._applySkin(cachedTexture(scene, 'tex:drive-box'));
 
     const RAPIER = scene.userData.engine?.RAPIER;
     if (!RAPIER) return;
@@ -206,9 +213,16 @@ export class DriveBox extends GameObject {
     this.colliders = [];
   }
 
+  /** Put the texture on (the asset cache owns it; dispose() never frees it). */
+  _applySkin(texture) {
+    if (!texture || this._material.map === texture) return;
+    this._material.map = texture;
+    this._material.needsUpdate = true;
+  }
+
   _buildVisual() {
     this._mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(...this.size),
+      mapBoxFaces(new THREE.BoxGeometry(...this.size), BOX_ATLAS.faces, BOX_ATLAS.size),
       this._material,
     );
     this._mesh.name = 'DriveBoxMesh';

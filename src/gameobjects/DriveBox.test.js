@@ -66,6 +66,25 @@ describe('DriveBox', () => {
     expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
   });
 
+  it('wears tex:drive-box once _init finds it loaded, keeping its own colour', () => {
+    const box = new DriveBox('Box', { color: 0x884422 });
+    const { scene, world, engine } = makeSceneContext();
+    const tex = new THREE.Texture();
+    engine.assets = { has: k => k === 'tex:drive-box', get: () => tex };
+    box._init(scene, world);
+    expect(box._material.map).toBe(tex);
+    expect(box._material.color.getHex()).toBe(0x884422);
+  });
+
+  it('leaves a material it was handed alone', () => {
+    const material = new THREE.MeshStandardMaterial();
+    const box = new DriveBox('Box', { material });
+    const { scene, world, engine } = makeSceneContext();
+    engine.assets = { has: () => true, get: () => new THREE.Texture() };
+    box._init(scene, world);
+    expect(material.map).toBeNull();
+  });
+
   it('marks itself as a drive box for snap receivers', () => {
     const box = new DriveBox('ExampleDriveBox');
     expect(box.isDriveBox).toBe(true);

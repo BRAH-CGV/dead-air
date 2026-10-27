@@ -374,6 +374,24 @@ const PLACED = {
     url: 'assets/textures/mug-hang-in-there.png',
     colorSpace: 'srgb',
   },
+  // The carried props' atlases (scripts/make-prop-textures.mjs), a
+  // rectangle a face (src/gameobjects/propAtlases.js): the drive's casing,
+  // the drive box in greys (its colour tints it), the coffee bag.
+  'tex:drive': {
+    type: 'texture',
+    url: 'assets/textures/drive.png',
+    colorSpace: 'srgb',
+  },
+  'tex:drive-box': {
+    type: 'texture',
+    url: 'assets/textures/drive-box.png',
+    colorSpace: 'srgb',
+  },
+  'tex:coffee-bag': {
+    type: 'texture',
+    url: 'assets/textures/coffee-bag.png',
+    colorSpace: 'srgb',
+  },
   // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
   // (the tables lay their UVs out in metres).
   'tex:wood-table': {
