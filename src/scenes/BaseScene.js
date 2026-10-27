@@ -204,6 +204,10 @@ const BUGGY_HALF_LENGTH = 2.6;
  *  box's height. */
 const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
 
+/** Metres round the generator kept free of grass. The tallest blade
+ *  (1.45 m), tipped its furthest, reaches about 1 m from its root. */
+const GRASS_GENERATOR_CLEARANCE = 1;
+
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
 const TREE_FENCE_CLEARANCE = 3;
@@ -1179,6 +1183,19 @@ export class BaseScene extends Scene {
     const endFront = Math.min(...[this.rooms.ServerRoom, this.rooms.LivingQuarters].map(r => r.bounds().max.z));
     const fenceRect = yardRect({ halfX: footprint.halfX, halfZ: endFront });
 
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it. Placed before the grass, which is kept off it.
+    const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
+    const [insetX, insetZ] = GENERATOR_CORNER_INSET;
+    const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
+
     const rocks = createMarsRocks({ footprint });
     const belt = createMarsVegetation({
       footprint,
@@ -1196,6 +1213,8 @@ export class BaseScene extends Scene {
         ...[-1, 1].map(side => this._poleView(side)),
         ...[-1, 1].map(side => this._yardWalk(side, fenceRect)),
       ],
+      // Blades grew up through the generator's casing.
+      grassClearOf: this._footprintOf(this.generator, GRASS_GENERATOR_CLEARANCE),
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
     // what is left to look at in the distance — and standing one at the end of
@@ -1294,19 +1313,17 @@ export class BaseScene extends Scene {
     const buggy = this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
     this.buggyCargo = this._addBuggyCargo(buggy);
 
-    // The generator, in the far corner of the fenced yard, on the side away
-    // from the buggy — a walk out into the storm to cut the power, along the
-    // wire. Read off the fence, so it follows the yard. Its control panel is
-    // on its −z side, facing back across the yard. _addPower() puts its
-    // switch on it.
-    const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
-    const [insetX, insetZ] = GENERATOR_CORNER_INSET;
-    const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this.engine.spawnModel('model:generator', {
-      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
-    });
-    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
+  }
+
+  /** A GameObject's ground-plan rectangle, grown by `margin` metres all
+   *  round, as a one-box list; empty if it has no mesh (tests). */
+  _footprintOf(go, margin = 0) {
+    if (!go) return [];
+    go.object3d.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(go.object3d);
+    if (box.isEmpty()) return [];
+    return [{ minX: box.min.x - margin, maxX: box.max.x + margin, minZ: box.min.z - margin, maxZ: box.max.z + margin }];
   }
 
   /** The camera the main menu is drawn through (`menuCamera`, #115): over

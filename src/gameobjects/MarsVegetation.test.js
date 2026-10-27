@@ -374,6 +374,31 @@ describe('treesClearOf — keeping trees off something the scene built', () => {
   });
 });
 
+describe('grassClearOf — keeping grass off something solid in the yard', () => {
+  const tufts = veg => instances(grassOf(veg)).map(({ position }) => `${position.x.toFixed(3)},${position.z.toFixed(3)}`);
+  const inBox = (key, b) => {
+    const [x, z] = key.split(',').map(Number);
+    return x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
+  };
+
+  it('drops the blades standing in a box, and moves no other blade', () => {
+    const all = tufts(createMarsVegetation({}));
+    const [x, z] = all[0].split(',').map(Number);
+    const box = { minX: x - 3, maxX: x + 3, minZ: z - 3, maxZ: z + 3 };
+
+    const kept = tufts(createMarsVegetation({ grassClearOf: [box] }));
+    expect(kept.length).toBeLessThan(all.length);
+    expect(kept.some(k => inBox(k, box))).toBe(false);
+    expect(kept).toEqual(all.filter(k => !inBox(k, box)));
+  });
+
+  it('leaves the trees alone', () => {
+    const box = { minX: -100, maxX: 100, minZ: -100, maxZ: 100 };
+    const plain = createMarsVegetation({});
+    expect(createMarsVegetation({ grassClearOf: [box] }).trees.length).toBe(plain.trees.length);
+  });
+});
+
 describe('the trees, for anything that needs to keep out of them', () => {
   it('lists every tree it planted — trunk and canopy reach — none in a kept-clear box', () => {
     const box = { minX: -40, maxX: 40, minZ: 10, maxZ: 25 };

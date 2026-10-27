@@ -150,6 +150,10 @@ const UP = new THREE.Vector3(0, 1, 0);
  *        (PerimeterFence.fenceKeepOut). Trees there are dropped after the belt
  *        is laid out, so every other tree stands exactly where it would have.
  *        Grass is left alone: blades through a fence read as overgrowth.
+ * @param {Array<{minX: number, maxX: number, minZ: number, maxZ: number}>} [opts.grassClearOf]
+ *        boxes no blade may stand in — round a solid thing in the yard (the
+ *        generator), so the grass doesn't grow up through it. Dropped after
+ *        planting, like the trees, so the rest of the grass stays put.
  * @returns {GameObject} a group carrying the grass and one mesh per tree part
  */
 export function createMarsVegetation(opts = {}) {
@@ -162,6 +166,7 @@ export function createMarsVegetation(opts = {}) {
     lanes: extraLanes = [],
     heightAt    = terrainHeightAt,
     treesClearOf = [],
+    grassClearOf = [],
   } = opts;
 
   const rand  = makeRandom(seed);
@@ -181,9 +186,8 @@ export function createMarsVegetation(opts = {}) {
   const groves    = layOutGroves(rand, yardAt);
   const site      = { zones, yardAt, lanes, clearings, groves, noise, heightAt };
 
-  const blades = plantGrass(site, rand);
-  const trees  = plantTrees(site, rand).filter(({ position: { x, z } }) =>
-    !treesClearOf.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ));
+  const blades = plantGrass(site, rand).filter(({ position: { x, z } }) => !inBox(grassClearOf, x, z));
+  const trees  = plantTrees(site, rand).filter(({ position: { x, z } }) => !inBox(treesClearOf, x, z));
 
   const time = { value: 0 };
   if (blades.length > 0) {
@@ -202,6 +206,11 @@ export function createMarsVegetation(opts = {}) {
    *  keep out of the trees, or see past them (DustEyes). */
   vegetation.trees = trees.map(({ position: { x, z } }) => ({ x, z, reach: TREE_REACH }));
   return vegetation;
+}
+
+/** Whether (x, z) is in any of the boxes. */
+function inBox(boxes, x, z) {
+  return boxes.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ);
 }
 
 /** Advances the grass sway. One uniform shared by every blade. */
