@@ -129,10 +129,14 @@ export class DriveBox extends GameObject {
     if (!RAPIER) return;
 
     const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
     this.object3d.getWorldPosition(worldPos);
+    this.object3d.getWorldQuaternion(worldQuat);
 
+    // Its body starts as it was placed, turned as well as moved.
     this._swapBody(RAPIER, world, RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(worldPos.x, worldPos.y, worldPos.z)
+      .setRotation({ x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w })
       .setLinearDamping(0.8)
       .setAngularDamping(1.2)
       .setGravityScale(1)

@@ -235,7 +235,8 @@ export class Airlock extends Corridor {
     // so a seated box rests exactly on the pedestal top.
     this.quotaSocket = this.quotaDockGO.addComponent(new SnapSocket({
       snapDistance: 0.35,
-      slots: [{ offset: { y: dockSize[1] / 2 + 0.06 } }],
+      // Seated turned half round, so its drives' LEDs face the chamber.
+      slots: [{ offset: { y: dockSize[1] / 2 + 0.06 }, rotation: { y: Math.PI } }],
       attachedPromptLabel: '[E] Take drive box',
       sounds: 'item',   // the box's own knock as it lands in the dock
       canAccept: item => item?.isDriveBox === true,

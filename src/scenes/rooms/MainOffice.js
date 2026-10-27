@@ -399,6 +399,8 @@ export class MainOffice extends Room {
         SHELF_LEVEL_TOPS[spec.level] + box.size[1] / 2,
         SHELF_XZ[1] + spec.slot * (box.size[2] / 2 + DRIVE_BOX_GAP),
       );
+      // Turned half round, so its drives' labels and LEDs face the room.
+      box.object3d.rotation.y = Math.PI;
       this.driveBoxes.push(box);
       this.root.addChild(box);
 

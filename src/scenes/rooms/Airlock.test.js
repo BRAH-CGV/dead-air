@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
 
+import * as THREE from 'three';
 import { Airlock } from './Airlock.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -475,6 +476,12 @@ describe('Airlock', () => {
     // Zero required until the scene syncs it each night
     expect(dock.requiredCount).toBe(0);
     expect(dock.collectedCount).toBe(0);
+  });
+
+  it('seats a box turned half round, its drives\' LEDs to the chamber', () => {
+    const slot = airlock.quotaSocket.slots[0];
+    const x = new THREE.Vector3(1, 0, 0).applyQuaternion(slot.rotation);
+    expect(x.x).toBeCloseTo(-1);
   });
 
   it('the box dock wears tex:box-dock when it is loaded', () => {

@@ -85,6 +85,15 @@ describe('DriveBox', () => {
     expect(material.map).toBeNull();
   });
 
+  it('starts its body turned the way it was placed', () => {
+    const box = new DriveBox();
+    box.object3d.rotation.y = Math.PI;
+    const { scene, world } = makeSceneContext();
+    box._init(scene, world);
+    const r = box.rigidBody.rotation();
+    expect(Math.abs(r.y)).toBeCloseTo(1);
+  });
+
   it('marks itself as a drive box for snap receivers', () => {
     const box = new DriveBox('ExampleDriveBox');
     expect(box.isDriveBox).toBe(true);
