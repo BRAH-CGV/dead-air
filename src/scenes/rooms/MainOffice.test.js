@@ -310,6 +310,32 @@ describe('MainOffice', () => {
     expect(plain.map).toBeNull();
   });
 
+  it('draws the desk from inside too, dark, so the kneehole has a ceiling and walls from a crouch', () => {
+    const withMesh = makeEngine();
+    const deskMaterial = new THREE.MeshStandardMaterial({ name: 'Computer', map: new THREE.Texture(), side: THREE.FrontSide });
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const spawn = withMesh.spawnModel.getMockImplementation();
+    withMesh.spawnModel.mockImplementation((key, opts) => {
+      const go = spawn(key, opts);
+      if (key === 'model:retro-computer') go.object3d.add(new THREE.Mesh(geometry, deskMaterial));
+      return go;
+    });
+    const office = new MainOffice(withMesh);
+    office.build();
+    const [shell] = office.root.find('ComputerDesk').object3d.children;
+    const inside = shell.children.find(c => c.name === 'DeskInside');
+    expect(inside.geometry).toBe(geometry);                    // the same shell
+    expect(inside.material.side).toBe(THREE.BackSide);         // only where the front faces aren't
+    expect(shell.material).toBe(deskMaterial);                 // the desk itself as it was
+    // The geometry is the asset cache's; the lining's own material is the room's.
+    let geometryFreed = false, liningFreed = false;
+    geometry.addEventListener('dispose', () => { geometryFreed = true; });
+    inside.material.addEventListener('dispose', () => { liningFreed = true; });
+    office.dispose();
+    expect(geometryFreed).toBe(false);
+    expect(liningFreed).toBe(true);
+  });
+
   it('leaves the desk itself bare: no joystick, no camera console', () => {
     expect(room.root.find('Joystick')).toBeNull();
     expect(room.root.find('CameraConsole')).toBeNull();

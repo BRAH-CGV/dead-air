@@ -949,7 +949,7 @@ Type `colliders` in the developer console (`` ` `` in game) to overlay every col
 
 - **Author origin on the floor**, at the object's centre. Bounds are measured, not assumed, so the fitted box is lifted to half the model's height. Get the origin wrong and the collider is wrong with it.
 - Bounds and hulls are computed **once at load** and cached, so `spawnModel` stays cheap enough to call in a loop.
-- Only `dynamic` and `kinematic` bodies enter `Engine.rigidBodyMap`. Static props never move, so they skip the per-step snapshot and interpolation entirely.
+- Only `dynamic` and `kinematic` bodies enter `Engine.rigidBodyMap`. Static props never move, so they skip the per-step snapshot and interpolation entirely. A dynamic body whose GameObject has `interpolate = false` is drawn at its latest step, as the player is: `PickupSystem` sets it on what is carried, which otherwise trailed the camera by a part of a step that changed every frame (a jitter on the run).
 - `spawnModel(key, { physics })` overrides the manifest per spawn — one pushable crate among scenery.
 
 ### Worked example: the under-desk gap
@@ -975,6 +975,8 @@ The `shape` above is model-local, so it rides the spawn rotation and the numbers
 A model authored in metres and spawned without an extra `scale` wouldn't need the native-units column — write `shape` sizes directly, as the general rule above says. It only shows up here because this particular download needed rescaling. When the real desk model lands (or `UCX_` proxies get added to this one), re-derive this from its actual geometry — it's fitted to the current stand-in's measured bounds, not to any future replacement.
 
 **The top (#76).** Those three boxes stop at 0.73 m and at the kneehole's back edge, so a drive dropped on the tray's front or its 45° corners fell into the desk. The top is now its own parts, read off the `.glb`'s vertices and flush with what is drawn: the shelf behind the tray and the pillar tops (0.86 m — the drive reader sits on the right one), the keyboard tray and its rims (0.75 m), the keys, the two 45° corners (rotated boxes) and the monitor's two steps. They are written in desk-local metres and converted by `deskBox` / `deskPair` (÷ `DESK_UNIT`, 0.016), and every part is solid to everything. Two rules: **nothing over the well** (the first fix was one slab over the whole top, which held drives up over the open kneehole), and **nothing new below 0.72 m**, so the crouch still fits under the tray. The angled wings each side are solid under all of their top, floor to desk top: a box under the square and a small hull for the wedge beside the desk (`deskWingSolids`, on one body by `MainOffice._addSolid`). Not one hull of the whole wing: Rapier made next to no contacts against the left one, and drives sank through it. Tests in `manifest.test.js` and `MainOffice.test.js` pin all of this.
+
+**Drawn from inside (`MainOffice._lineDesk`).** The manifest draws the desk front faces only (`side: 'front'`), but the model is a shell with no faces under the keyboard tray and none on the kneehole's inner walls, so from a crouch the player saw up through the tray and out through the side panels. Each of its meshes carries a child (`DeskInside`) on the same geometry with a dark `BackSide` material: it fills those gaps with the shell's inside and is hidden behind the front faces everywhere else.
 
 ## Commands
 
