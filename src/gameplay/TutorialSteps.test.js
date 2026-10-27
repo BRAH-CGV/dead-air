@@ -160,7 +160,9 @@ describe('TutorialRunner', () => {
   it('the box step says what processing is for', () => {
     const box = TUTORIAL_STEPS.find(t => t.id === 'box');
     expect(box.text).toMatch(/cyan/i);
-    expect(box.text).toMatch(/night 3/i);
+    expect(box.text).toMatch(/each night's quota/i);
+    expect(box.text).not.toMatch(/night 3/i);
+    expect(box.target).toBe('openBox');
   });
 
   it('the storm step waits for the power to go, the suit and generator steps get it back', () => {

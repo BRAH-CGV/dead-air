@@ -2692,13 +2692,16 @@ export class BaseScene extends Scene {
     const boxes = office.driveBoxes ?? [];
     const eye = new THREE.Vector3();
     const at = new THREE.Vector3();
-    // The drive box nearest the player, for "put it in a box".
-    const nearestBox = () => {
+    // The drive box nearest the player, for "pick up a box"; with
+    // `withRoom`, the nearest with a free slot, for "put it in a box" (the
+    // shelf's boxes start full, so the one the drive came out of).
+    const nearestBox = (withRoom = false) => {
       if (!boxes.length || !this.engine.camera) return null;
       this.engine.camera.getWorldPosition(eye);
       let best = null;
       let bestDist = Infinity;
       for (const box of boxes) {
+        if (withRoom && !box.receiver.attachments.includes(null)) continue;
         const d = box.object3d.getWorldPosition(at).distanceToSquared(eye);
         if (d < bestDist) { bestDist = d; best = box.object3d; }
       }
@@ -2738,7 +2741,8 @@ export class BaseScene extends Scene {
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
         computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
-        box:       { object: nearestBox, lift: 0.1 },
+        box:       { object: () => nearestBox(), lift: 0.1 },
+        openBox:   { object: () => nearestBox(true) ?? nearestBox(), lift: 0.1 },
         desk:      { object: office.boxSpot ?? null, lift: 0.1 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
         serverReader:  { object: server?.driveSlot?.gameObject?.object3d ?? null, lift: 0.05 },

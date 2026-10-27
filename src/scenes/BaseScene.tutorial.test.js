@@ -111,6 +111,17 @@ describe('BaseScene tutorial (night 0)', () => {
     expect(office.isOnDesk(at)).toBe(true);
   });
 
+  it('points "put it back in a box" at a box with room, not the nearest full one', () => {
+    const boxes = scene.rooms.MainOffice.driveBoxes;
+    const { box, openBox } = scene.tutorial.targets;
+    const nearest = box.object();
+    expect(openBox.object()).toBe(nearest);                   // all full: the nearest still
+    const far = boxes.find(b => b.object3d !== nearest);
+    far.receiver.detach(far.receiver.attachments.findIndex(Boolean));
+    expect(openBox.object()).toBe(far.object3d);
+    expect(box.object()).toBe(nearest);
+  });
+
   it("hides while the generator's breaker panel has the mouse, and comes back once it closes", () => {
     scene.nights.setNight(0);
     frames(0.1);
