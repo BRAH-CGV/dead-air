@@ -783,6 +783,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/globe-spin.wav',
   },
+  // The globe turning to cheese (GlobeSound, #169): Mixkit's "Hard pop
+  // click", its leading click cut off and its quiet tail trimmed, mono.
+  'sfx:pop': {
+    type: 'audio',
+    url: 'assets/audio/pop.mp3',
+  },
   'sfx:whispering': {
     type: 'audio',
     url: 'assets/audio/whispering.mp3',
