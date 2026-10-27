@@ -4,7 +4,8 @@ import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
-import { screenSurface } from '../../components/ScreenView.js';
+import { screenSurface, screenMesh } from '../../components/ScreenView.js';
+import { createScreenMaterial } from '../../gameobjects/ScreenGlass.js';
 
 // ─────────────────────────────────────────────
 // ServerRoom  –  dark rack room, open from night 2
@@ -32,6 +33,29 @@ const CONSOLE_SCREEN = [
   [-0.384, 2.227, 0.94], [0.384, 2.227, 0.94],
   [0.384, 1.588, 0.94], [-0.384, 1.588, 0.94],
 ];
+
+/** The delete console's picture, in canvas px: the CRT's shape (#186). */
+const DELETE_SCREEN_SIZE = [600, 500];
+
+/** The delete console's screen: DELETE in the middle, in the processing
+ *  screen's teal, inside a border like its panels'. Painted once; the flow
+ *  of deleting doesn't touch it.
+ *  @param {CanvasRenderingContext2D} ctx */
+export function paintDeleteScreen(ctx, w, h) {
+  ctx.fillStyle = '#04060b';
+  ctx.fillRect(0, 0, w, h);
+  const inset = h * 0.08;
+  ctx.strokeStyle = 'rgba(0, 200, 180, 0.45)';
+  ctx.lineWidth = h * 0.012;
+  ctx.beginPath();
+  ctx.roundRect(inset, inset, w - inset * 2, h - inset * 2, h * 0.02);
+  ctx.stroke();
+  ctx.fillStyle = '#00dcc8';
+  ctx.font = `bold ${Math.round(h * 0.2)}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('DELETE', w / 2, h / 2);
+}
 
 export class ServerRoom extends Room {
   /** The server console with the "Process signal" interactable.
@@ -312,6 +336,28 @@ export class ServerRoom extends Room {
     groupGO.object3d.add(glow);
   }
 
+  /** DELETE on the delete console's CRT (#186), through the same screen
+   *  glass as the processing console's picture. Without a canvas (tests)
+   *  the glass is blank. */
+  _addDeleteScreen(console_) {
+    const [w, h] = DELETE_SCREEN_SIZE;
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    const ctx = canvas?.getContext('2d') ?? null;
+    let picture = null;
+    if (ctx) {
+      canvas.width = w;
+      canvas.height = h;
+      paintDeleteScreen(ctx, w, h);
+      picture = this._own(new THREE.CanvasTexture(canvas));
+      picture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const surface = screenSurface(console_.object3d, CONSOLE_SCREEN);
+    const material = this._own(createScreenMaterial({ picture, aspect: w / h, corner: 0.06 }));
+    const mesh = screenMesh(surface, material, { lift: 0.005 });
+    mesh.name = 'DeleteScreen';
+    this._own(mesh.geometry);
+  }
+
   /** Signal delete console. A radar-terminal model with a standalone
    *  drive slot on its front ledge and an Interactable that deletes the
    *  signal from the inserted drive. */
@@ -321,6 +367,7 @@ export class ServerRoom extends Room {
       name: 'DeleteConsole', position: consolePos, rotationY: -Math.PI / 2, scale: 0.478,
     });
     this._deleteConsole = console_;
+    this._addDeleteScreen(console_);
 
     // Drive slot on the console's front ledge. Standalone static box,
     // not a child of the scaled model, so it keeps its own size.
