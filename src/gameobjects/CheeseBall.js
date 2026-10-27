@@ -126,7 +126,7 @@ export function createCheeseBall({ radius = 0.143, seed = CHEESE.seed } = {}) {
  * every side), and on the lit half Lambert's dotNL at the middle of each of
  * `bands` steps — the same light on average as the room's own materials.
  */
-function toonRamp(bands) {
+export function toonRamp(bands) {
   const n = bands * 2;
   const ramp = new Uint8Array(n);
   for (let i = bands; i < n; i++) ramp[i] = Math.round((((i + 0.5) / n) * 2 - 1) * 255);
