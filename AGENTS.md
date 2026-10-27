@@ -45,6 +45,7 @@ src/
 │   ├── Colliders.js     # Shape parts → Rapier bodies and colliders
 │   ├── PhysicsDebug.js  # Collider wireframe overlay (console: colliders)
 │   ├── DebugCamera.js   # Free-fly noclip camera (console: fly)
+│   ├── MouseSpikes.js   # Drops a touchpad's one-off huge mouse jump; a fast flick passes uncapped (#117)
 │   ├── Fullbright.js    # Unlit debug lighting (console: fullbright)
 │   ├── ShadowScheduler.js # Shadow maps redrawn only when a light/caster moves, or on invalidate()
 │   ├── WarmUp.js        # Boot: compile, upload, draw everything once behind the loading screen; precompile() for a rebuild
