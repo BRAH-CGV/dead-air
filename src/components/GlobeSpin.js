@@ -24,8 +24,8 @@ import { showToonPoof } from '../ui/ToonPoof.js';
 // seconds — and the globe becomes a ball of cheese (CheeseBall) the same
 // size, which pops in and spins on as the globe did, for the rest of the
 // run. It turns in a cartoon cloud (CloudPoof, held upright while the
-// globe spins under it) and, if the globe is in view, a small comic POOF!
-// on the screen over it (ToonPoof). The ball and the cloud are built hidden
+// globe spins under it) and, if the globe is in view, a small burst of
+// comic lines on the screen over it (ToonPoof). The ball and the cloud are built hidden
 // on awake, so their shaders are compiled with the scene rather than on
 // the moment they appear.
 // ─────────────────────────────────────────────
@@ -65,7 +65,7 @@ export class GlobeSpin extends Interactable {
    * @param {number} [opts.cheeseAt=20]  Strain at which it turns to cheese: about 3 s of mashing at 8 presses a second
    * @param {number} [opts.radius=0.143]  The globe's radius, metres: the cheese's
    * @param {number} [opts.popSeconds=0.35]  How long the cheese takes to pop in
-   * @param {(x: number, y: number) => void} [opts.screenPoof]  The on-screen POOF!, at page pixels
+   * @param {(x: number, y: number) => void} [opts.screenPoof]  The on-screen burst, at page pixels
    * @param {() => ({ camera: THREE.Camera, canvas: { getBoundingClientRect(): DOMRect } }|null)} [opts.view]
    *   What the frame is drawn through; left out, the engine's camera and canvas
    */
@@ -166,7 +166,7 @@ export class GlobeSpin extends Interactable {
     this._redrawShadows();
   }
 
-  /** The comic POOF! over the globe, if the globe is in front of the view. */
+  /** The comic burst over the globe, if the globe is in front of the view. */
   _showScreenPoof() {
     const view = this._view ? this._view() : this._engineView();
     if (!view?.camera || !view.canvas) return;
