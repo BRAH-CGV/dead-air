@@ -58,7 +58,7 @@ import { synthGrowl } from './Growl.js';
 //      │                                                    — never onto you)
 //      │                                                         │
 //      │                       caught (catchDistance) ◀──────────┤──▶ gone: the player
-//      │                       eaten: a red screen, [E] retries  │   is indoors with the
+//      │                       eaten: a red screen, Night failed │   is indoors with the
 //      │                                                         │   airlock hatch shut
 //      └──seen through the window (windowStareSeconds)──▶ retreating ──retreatSeconds──▶ gone
 //                       (jaws shut, a growl you can barely hear, backing off into the fog)
@@ -961,7 +961,7 @@ export class DustEyes extends Component {
     slot.phase = 'caught';
     this._caught = true;
     this.sandstorm.held = false;
-    this.controller.fail(CAUGHT_PROMPT, { retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
+    this.controller.fail(CAUGHT_PROMPT, { promptAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
     this.terminal?.exit?.();
     this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
     this._locked = true;

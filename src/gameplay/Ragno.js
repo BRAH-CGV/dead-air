@@ -548,7 +548,7 @@ export class Ragno extends Component {
     }
     if (this._lunge >= LUNGE_SECONDS) {
       this._lunge = -1;
-      this.controller.fail(CAUGHT_PROMPT, { retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
+      this.controller.fail(CAUGHT_PROMPT, { promptAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
       this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
       this.logic.despawn();
       this.figure.show(false);

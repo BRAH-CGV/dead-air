@@ -159,20 +159,16 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');  // unchanged
   });
 
-  it('the interact key retries a failed night, as the prompt promises', () => {
+  it('the interact key does not retry a failed night: the Night failed menu does', () => {
     const engine = attachEngine();
     gc.startNight(2);
     gc.onUpdate(999);
     expect(gc.state).toBe('gameOver');
 
-    gc.onUpdate(0.016);                 // no key: stays failed
-    expect(gc.state).toBe('gameOver');
-
     engine.input.pressed.KeyE = true;   // one-frame press
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(gc.state).toBe('gameOver');
     expect(gc.nightNumber).toBe(2);
-    expect(clock.elapsed).toBe(0);
   });
 
   it('the interact key does not restart a night that is still running', () => {
@@ -415,21 +411,20 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');
   });
 
-  it('fail() can hold the retry back: no prompt and no [E] until it is shown', () => {
-    const engine = attachEngine();
+  it('fail() can hold the prompt back until the death screen has played', () => {
+    attachEngine();
     gc.startNight(1);
-    gc.fail('You have been eaten.', { retryAfter: 2 });
+    gc.fail('You have been eaten.', { promptAfter: 2 });
     expect(gc.state).toBe('gameOver');
     expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
-    engine.input.pressed.KeyE = true;   // mashed straight away
     gc.onUpdate(0.5);
-    expect(gc.state).toBe('gameOver');
-    engine.input.pressed.KeyE = false;
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     gc.onUpdate(1.6);
     expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten.');
-    engine.input.pressed.KeyE = true;
+    const calls = hud.setPrompt.mock.calls.length;
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(hud.setPrompt.mock.calls.length).toBe(calls);     // shown once
+    expect(gc.state).toBe('gameOver');
   });
 
   it('fail() does nothing outside a playing shift', () => {
@@ -449,7 +444,7 @@ describe('GameController', () => {
     expect(fn).toHaveBeenLastCalledWith(1, { retry: true });
   });
 
-  it('the E that retries is used up — nothing else acts on that press', () => {
+  it('dead, E is used up every frame — nothing in the world acts on it, and nothing retries', () => {
     const engine = {
       keyBinds: { interact: 'KeyE' },
       input: { pressed: { KeyE: true } },
@@ -457,10 +452,12 @@ describe('GameController', () => {
     };
     gc.gameObject = { scene: { userData: { engine } } };
     gc.startNight(1);
-    gc.fail('taken');
-    gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    gc.fail('taken', { promptAfter: 1 });
+    gc.onUpdate(0.016);                  // the death screen still playing
+    gc.onUpdate(2);                      // and after it
+    expect(engine.consumeAction).toHaveBeenCalledTimes(2);
     expect(engine.consumeAction).toHaveBeenCalledWith('interact');
+    expect(gc.state).toBe('gameOver');
   });
 });
 

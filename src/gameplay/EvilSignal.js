@@ -432,7 +432,7 @@ export class EvilSignal extends Component {
           this._silenceTimer = null;
           this._driveHopTimer = null;
           this._caught = true;
-          this.controller?.fail('', { retryAfter: 4 });
+          this.controller?.fail('', { promptAfter: 4 });
           this.terminal?.exit?.();
           this.whiteOut?.play(CAUGHT_MESSAGE, CAUGHT_SCREEN);
           this.hooks?.setPlayerLocked?.(true);

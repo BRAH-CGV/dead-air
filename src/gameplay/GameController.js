@@ -8,7 +8,7 @@ import { Component } from '../core/Component.js';
 //
 //   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
 //      │                            └──sleep() on the last night──▶ finished
-//      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      ├──6 AM, quota missed──▶ gameOver ──retryNight()──▶ playing
 //      └──fail() (a threat got the player)──▶ gameOver
 //
 // One twelve-hour shift, 6 PM to 6 AM. Meeting the quota early doesn't end
@@ -77,8 +77,8 @@ export class GameController extends Component {
 
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
-  /** Seconds before a failed night's prompt shows and [E] retries. */
-  _retryLock = 0;
+  /** Seconds before a failed night's prompt shows. */
+  _promptLock = 0;
   _heldPrompt = null;
 
   /** @type {Set<(state: string, previous: string) => void>} */
@@ -146,13 +146,13 @@ export class GameController extends Component {
   /** Something killed the player: end the shift as a game over, with its
    *  own prompt. Only a shift in progress can be failed.
    *  @param {string} [prompt]
-   *  @param {{ retryAfter?: number }} [opts]  Seconds before the prompt shows
-   *         and [E] retries — a death screen that has to play out first. */
-  fail(prompt = PROMPT.failed, { retryAfter = 0 } = {}) {
+   *  @param {{ promptAfter?: number }} [opts]  Seconds before the prompt
+   *         shows — a death screen that has to play out first. */
+  fail(prompt = PROMPT.failed, { promptAfter = 0 } = {}) {
     if (this.state !== 'playing') return;
-    this._endShift('gameOver', retryAfter > 0 ? '' : prompt);
-    this._retryLock = retryAfter;
-    this._heldPrompt = retryAfter > 0 ? prompt : null;
+    this._endShift('gameOver', promptAfter > 0 ? '' : prompt);
+    this._promptLock = promptAfter;
+    this._heldPrompt = promptAfter > 0 ? prompt : null;
   }
 
   /** Follow a NightManager: start the night it is on now, and every night
@@ -257,22 +257,19 @@ export class GameController extends Component {
       return;
     }
 
-    // A death screen still playing: no prompt and no retry until it has.
-    if (this.state === 'gameOver' && this._retryLock > 0) {
-      this._retryLock -= dt;
-      if (this._retryLock > 0) return;
-      if (this._heldPrompt !== null) this.hud?.setPrompt(this._heldPrompt);
-      this._heldPrompt = null;
-      this.scene?.userData?.engine?.consumeAction?.('interact');   // a press held through it doesn't count
-      return;
-    }
-
-    if (this.state === 'gameOver' && this._interactPressed()) {
-      // This press is the retry's alone: left live, the interaction system
-      // would also use whatever the player died looking at (the generator's
-      // switch, which turned the freshly restored power straight off).
+    if (this.state === 'gameOver') {
+      // The night is retried from the Night failed menu (App), never with a
+      // key. Until it comes up, E is used up here: dead, the player can't
+      // work whatever they died looking at (the generator's switch).
       this.scene?.userData?.engine?.consumeAction?.('interact');
-      this.retryNight();
+      // A death screen still playing: its prompt waits until it has.
+      if (this._promptLock > 0) {
+        this._promptLock -= dt;
+        if (this._promptLock <= 0 && this._heldPrompt !== null) {
+          this.hud?.setPrompt(this._heldPrompt);
+          this._heldPrompt = null;
+        }
+      }
       return;
     }
 
@@ -309,13 +306,6 @@ export class GameController extends Component {
   // ──────────────────────────────────────────────────────────
   // Private
   // ──────────────────────────────────────────────────────────
-
-  /** The interact key's one-frame press, if a scene engine is reachable. */
-  _interactPressed() {
-    const engine = this.scene?.userData?.engine;
-    if (!engine) return false;
-    return !!engine.input?.pressed?.[engine.keyBinds?.interact];
-  }
 
   /** The prompt for where the shift stands — the quota met, or not yet —
    *  set only when that changes. When the quota is first met, the banner
