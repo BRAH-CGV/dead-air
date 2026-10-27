@@ -23,6 +23,15 @@ import { Component } from '../core/Component.js';
 // it covers the screen whatever the camera does and needs no second render
 // pass. It hangs off the camera only so it lives in the scene graph; its
 // world transform is never used.
+//
+// Because it covers whatever camera the frame is drawn through, it is only
+// shown while that is the player's own (engine.renderCamera is the player's
+// camera). A cutscene's view (the buggy's send-off) fades the glass and the
+// warp out over fadeSeconds; when the view comes back the glass is there on
+// the first frame — the helmet never came off. The breathing fades with the
+// glass, so the eagle view is silent of it, and it is back with the eyes.
+// Paused (the pause menu) it stops, the audio clock running on, and starts
+// again with the game.
 // ─────────────────────────────────────────────
 
 /** Fog builds fast on an exhale and clears slowly, the way breath on cold
@@ -222,6 +231,12 @@ export class SuitVisor extends Component {
   };
 
   _worn = false;
+  /** 0..1: how far the suit is on, faded over fadeSeconds. Drives the
+   *  breathing; the glass is this times _sight. */
+  _wear = 0;
+  /** 0..1: how much of the frame is seen through the player's eyes. Fades
+   *  out under another camera, snaps back to 1 when the view returns. */
+  _sight = 1;
   _startedAt = 0;
   _envelope = null;
   _off = null;
@@ -284,18 +299,33 @@ export class SuitVisor extends Component {
 
     this._off = this.suit?.onChange(worn => this._setWorn(worn)) ?? null;
     if (this.suit?.worn) this._setWorn(true);
+    this._offPause = engine?.onPauseChange?.(paused => this._onPause(paused)) ?? null;
+  }
+
+  /** Paused: no breathing over the menu. Played on: back if the suit is on. */
+  _onPause(paused) {
+    if (paused) {
+      if (this.sound?.isPlaying) this.sound.stop();
+    } else if (this._worn && this._wear * this._sight > 0) {
+      this._startBreathing();
+    }
   }
 
   onUpdate(dt) {
     if (!this.overlay) return;
     const u = this.uniforms;
 
-    // ── Fade glass (and, below, breath) toward the suit's state ──
-    const target = this._worn ? 1 : 0;
+    // ── Fade the suit (breath and glass) toward its state ──
     const step = dt / this.fadeSeconds;
-    const o = u.uOpacity.value;
-    u.uOpacity.value = target > o ? Math.min(1, o + step) : Math.max(0, o - step);
-    const opacity = u.uOpacity.value;
+    this._wear = this._worn ? Math.min(1, this._wear + step) : Math.max(0, this._wear - step);
+    const wear = this._wear;
+    // The glass only on the player's own view: a cutscene's camera fades it
+    // out, and coming back to the eyes brings it straight back.
+    const engine = this._engine;
+    const eyes = !engine || engine.renderCamera === engine.camera;
+    this._sight = eyes ? 1 : Math.max(0, this._sight - step);
+    const opacity = wear * this._sight;
+    u.uOpacity.value = opacity;
     this.overlay.visible = opacity > 0;
 
     // Drive the barrel distortion in step with the glass fade.
@@ -305,21 +335,23 @@ export class SuitVisor extends Component {
     u.uAspect.value = this._engine?.camera?.aspect ?? u.uAspect.value;
 
     // ── Breathing, and the fog it leaves ──
+    // Heard while the suit is on and the view is the player's own.
     let level = 0;
     const sound = this.sound;
+    const heard = opacity;
     // Silenced (dead): no breathing at all — back once that is over.
     const quiet = this.silenced?.() ?? false;
     if (quiet) {
       if (sound?.isPlaying) sound.stop();
-    } else if (this._worn && sound && !sound.isPlaying && opacity > 0) {
+    } else if (this._worn && sound && !sound.isPlaying && heard > 0) {
       this._startBreathing();
     }
     if (sound?.isPlaying) {
-      if (opacity === 0) {
+      if (heard === 0) {
         sound.stop();
       } else {
-        sound.setVolume(this.volume * opacity);
-        level = this._breathLevel(sound) * opacity;
+        sound.setVolume(this.volume * heard);
+        level = this._breathLevel(sound) * heard;
       }
     }
     const fog = u.uBreath.value;
@@ -331,6 +363,8 @@ export class SuitVisor extends Component {
     this._destroyed = true;
     this._off?.();
     this._off = null;
+    this._offPause?.();
+    this._offPause = null;
 
     if (this.sound?.isPlaying) this.sound.stop();
     // THREE.Audio connects itself to the listener on construction; unhook it
@@ -409,7 +443,7 @@ export class SuitVisor extends Component {
   _startBreathing() {
     const sound = this.sound;
     if (!sound || sound.isPlaying) return;
-    sound.setVolume(this.volume * this.uniforms.uOpacity.value);
+    sound.setVolume(this.volume * this._wear * this._sight);
     sound.play();
     this._startedAt = sound.context.currentTime;
   }

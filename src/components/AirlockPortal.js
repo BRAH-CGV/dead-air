@@ -20,11 +20,9 @@ import { Component } from '../core/Component.js';
 // While the debug fly camera or the level editor is out, everything is
 // drawn — both fly and edit in places the culling assumes nobody can see.
 //
-// A security camera does the same for just what it needs:
-// setViewZones(['yard', 'unseen']) draws those zones on top of the side the
-// player is on, for as long as its picture is on the monitor, and
-// setViewZones(null) puts the airlock's choice back. The camera terminal
-// shows static until they're ready (OcclusionZones.isReady).
+// A security camera's picture of the yard doesn't come through here: it
+// draws the zones it needs for its own render alone
+// (OcclusionZones.drawFor, FeedDisplay), leaving the player's side as is.
 //
 //   root.addComponent(new AirlockPortal({ airlock, zones, engine }));
 // ─────────────────────────────────────────────
@@ -51,8 +49,6 @@ export class AirlockPortal extends Component {
     this.zones = zones;
     this._engine = engine;
     this._off = null;
-    /** Zones a security camera's view wants drawn as well. @type {string[]} */
-    this._view = [];
     /** Every zone this portal shows and hides. */
     this._managed = new Set(Object.values(ZONE));
   }
@@ -80,20 +76,11 @@ export class AirlockPortal extends Component {
     if (this.airlock.readyFor) this.airlock.readyFor = null;
   }
 
-  /** Draw `names` as well as the player's side, for a view from somewhere
-   *  else (a security camera); null or [] for just the side again.
-   *  @param {string[]|null} names */
-  setViewZones(names) {
-    this._view = names ? [...names] : [];
-    for (const name of this._view) this._managed.add(name);
-    this._drawSide(sideOf(this.airlock.state));
-  }
-
-  /** Show the zone on `side` and any a view wants, then hide the rest —
-   *  showing first, so there is never a frame with neither side drawn. */
+  /** Show the zone on `side`, then hide the other — showing first, so
+   *  there is never a frame with neither side drawn. */
   _drawSide(side) {
-    const want = new Set([ZONE[side], ...this._view]);
-    for (const name of want) this.zones.show(name);
-    for (const name of this._managed) if (!want.has(name)) this.zones.hide(name);
+    const want = ZONE[side];
+    this.zones.show(want);
+    for (const name of this._managed) if (name !== want) this.zones.hide(name);
   }
 }

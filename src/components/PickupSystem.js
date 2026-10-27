@@ -15,15 +15,20 @@ import { keyName } from '../app/keyNames.js';
 // relative to the camera — turn round and it turns with you, instead of
 // spinning freely in world space. Holding R (keyBinds.rotateHeld) turns the
 // object with the mouse instead of the view (the controller's lookLocked).
-// The angle is held by setting the body's angular velocity toward the
-// target each physics step, so it still knocks against things.
+// A tap of R (let go within ROTATE_TAP) keeps it turning, hands free, until
+// R is pressed again or the object is dropped: a laptop's touchpad goes dead
+// while a key is held (Windows' palm rejection), so R held + touchpad never
+// turned anything. The angle is held by setting the body's angular velocity
+// toward the target each physics step, so it still knocks against things.
 //
 // The held object is a real physics body — it can bump into things, be pushed
 // by the player walking, and falls when dropped. It is held as far along the
-// view as it was when picked up (within the Pickupable's reach). With a mouse
-// wheel (engine.input.hasWheel, from the first scroll on) the wheel moves it
-// in and out from there. Without one — a laptop's touchpad — it eases to the
-// Pickupable's restHoldDistance (1 m) while nothing is in the way.
+// view as it was when picked up (within the Pickupable's reach). The mouse
+// wheel moves it in and out from there, and so do ↑ / ↓ held (keyBinds
+// holdFurther / holdCloser), for a laptop with no wheel. Until one of them
+// is used (engine.input.hasWheel, from the first scroll on, or _steered) it
+// eases to the Pickupable's restHoldDistance (1 m) while nothing is in the
+// way.
 //
 // Prompt coordination with InteractionSystem:
 //   - While carrying, the carried body is excluded from InteractionSystem's
@@ -51,6 +56,9 @@ const SPRING_DAMPING = 25;
 /** Mouse wheel step size in metres per tick. */
 const SCROLL_STEP = 0.1;
 
+/** How fast (m/s) ↑ / ↓ push a held item away or pull it in. */
+const PUSH_SPEED = 1.5;
+
 /** How fast (m/s) a carried item eases to its rest distance. */
 const SETTLE_SPEED = 1;
 
@@ -72,6 +80,10 @@ const _axisY = new THREE.Vector3(0, 1, 0);
 
 /** Radians the held object turns per pixel of mouse while R is held. */
 const ROTATE_SENSITIVITY = 0.008;
+
+/** An R press let go within this (seconds) is a tap: it keeps the object
+ *  turning until the next press. Held longer, it turns only while held. */
+const ROTATE_TAP = 0.25;
 
 /** How fast the body closes on its target angle: angular velocity is the
  *  remaining angle × this, per second (a ~1/12 s time constant). */
@@ -115,6 +127,21 @@ export class PickupSystem extends Component {
   /** Seconds the held item has been further than SNAP_DISTANCE from the hand. */
   _farTime = 0;
 
+  /** R was down last frame. */
+  _rotateDown = false;
+
+  /** What the current R press does: 'start' turning, or 'stop' a tapped turn. */
+  _rotatePress = null;
+
+  /** Seconds the current R press has been held. */
+  _rotatePressTime = 0;
+
+  /** A tap of R set the object turning; it turns until the next press. */
+  _rotateLatched = false;
+
+  /** ↑ / ↓ have moved the item: no more easing to the rest distance. */
+  _steered = false;
+
   // ──────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────
@@ -126,6 +153,7 @@ export class PickupSystem extends Component {
     const pickupable = this.heldPickupable;
     this.heldPickupable = null;
     pickupable.held = false;
+    this._rotateLatched = false;
     this._setLookLocked(false);
     // Solid again straight away — a dropped ghost would fall through the floor.
     this._setGhost(pickupable.gameObject, false);
@@ -133,6 +161,7 @@ export class PickupSystem extends Component {
 
     // Restore normal physics so the object falls / sits.
     const go = pickupable.gameObject;
+    if (go) go.interpolate = true;
     if (go?.rigidBody) {
       go.rigidBody.setGravityScale(1, true);
       go.rigidBody.setLinearDamping(0.5, true);
@@ -158,9 +187,14 @@ export class PickupSystem extends Component {
     pickupable.held = true;
     this.heldPickupable = pickupable;
     this._farTime = 0;
+    this._rotateLatched = false;
 
     // Make the body dynamic with no gravity and high damping so it floats.
     const go = pickupable.gameObject;
+    // Drawn at the latest physics step, as the camera is: interpolated, it
+    // trailed the camera by a part of a step that changed every frame, a
+    // jitter while running.
+    if (go) go.interpolate = false;
     if (go?.rigidBody) {
       go.rigidBody.setGravityScale(0, true);
       go.rigidBody.setLinearDamping(5.0, true);
@@ -210,8 +244,23 @@ export class PickupSystem extends Component {
       p.holdDistance = Math.max(p.minHoldDistance, Math.min(p.maxHoldDistance, p.holdDistance));
     }
 
+    // ── ↑ / ↓ push it away and pull it in ──
+    // Not while the player is held still (the security monitor steps its
+    // cameras with them) or the terminal is up.
+    const free = !engine.playerController?.inputLocked
+      && !(this.terminal && this.terminal.state !== 'idle');
+    if (this.heldPickupable && free) {
+      const push = (engine.isAction('holdFurther') ? 1 : 0) - (engine.isAction('holdCloser') ? 1 : 0);
+      if (push !== 0) {
+        const p = this.heldPickupable;
+        p.holdDistance = THREE.MathUtils.clamp(
+          p.holdDistance + push * PUSH_SPEED * dt, p.minHoldDistance, p.maxHoldDistance);
+        this._steered = true;
+      }
+    }
+
     // ── R + mouse turns the held object, not the view ──
-    const rotating = !!this.heldPickupable && engine.isAction('rotateHeld');
+    const rotating = this._rotation(engine.isAction('rotateHeld'), dt);
     this._setLookLocked(rotating);
     if (rotating) {
       const { dx = 0, dy = 0 } = engine.input.mouse;
@@ -267,10 +316,10 @@ export class PickupSystem extends Component {
     // Displacement from current to target
     _disp.set(_target.x - t.x, _target.y - t.y, _target.z - t.z);
 
-    // No wheel to move it with: ease the hand to the rest distance, while
-    // the item keeps up with it.
+    // Not yet moved by the wheel or ↑ / ↓: ease the hand to the rest
+    // distance, while the item keeps up with it.
     const held = this.heldPickupable;
-    if (!engine.input?.hasWheel && _disp.length() < SETTLE_LAG) {
+    if (!engine.input?.hasWheel && !this._steered && _disp.length() < SETTLE_LAG) {
       const step = SETTLE_SPEED * _dt;
       const off = held.restHoldDistance - held.holdDistance;
       held.holdDistance += THREE.MathUtils.clamp(off, -step, step);
@@ -335,8 +384,12 @@ export class PickupSystem extends Component {
     // take priority over tooltip Interactables like the drive reader label.
     if (held) {
       this.interactionSystem.promptOverride = this;
-      const rotateKey = keyName(this._getEngine()?.keyBinds?.rotateHeld ?? 'KeyR');
-      this.interactionSystem.prompt?.show(`[E] Drop \u00b7 hold [${rotateKey}] Rotate`);
+      const binds = this._getEngine()?.keyBinds ?? {};
+      const rotate = keyName(binds.rotateHeld ?? 'KeyR');
+      const push = `${keyName(binds.holdFurther ?? 'ArrowUp')}/${keyName(binds.holdCloser ?? 'ArrowDown')}`;
+      this.interactionSystem.prompt?.show(this._rotateLatched
+        ? `[E] Drop \u00b7 [${rotate}] Stop rotating`
+        : `[E] Drop \u00b7 [${rotate}] Rotate \u00b7 [${push}] Push/pull`);
     } else {
       this.interactionSystem.promptOverride = null;
     }
@@ -394,6 +447,24 @@ export class PickupSystem extends Component {
     this._ghostTime = ghost ? SNAP_GHOST_TIME : 0;
     const colliders = go?.colliders ?? (go?.collider ? [go.collider] : []);
     for (const collider of colliders) collider.setEnabled?.(!ghost);
+  }
+
+  /** Whether the held object turns with the mouse this frame, given R.
+   *  Held, it turns while held; tapped, until the next press. */
+  _rotation(down, dt) {
+    if (down && !this._rotateDown) {
+      this._rotatePress = this._rotateLatched ? 'stop' : 'start';
+      this._rotateLatched = false;
+      this._rotatePressTime = 0;
+    }
+    if (down) this._rotatePressTime += dt;
+    else if (this._rotateDown && this._rotatePress === 'start'
+      && this._rotatePressTime < ROTATE_TAP && this.heldPickupable) {
+      this._rotateLatched = true;
+    }
+    this._rotateDown = down;
+    return !!this.heldPickupable
+      && ((down && this._rotatePress === 'start') || this._rotateLatched);
   }
 
   /** Freeze or free the player's view while the held object is turned. */

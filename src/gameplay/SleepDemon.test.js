@@ -531,7 +531,7 @@ describe('SleepDemon', () => {
     run(DEATH_TOTAL + 0.2);
     expect(controller.fail).toHaveBeenCalledWith(SLEEP_DEMON_KILL);
     expect(SLEEP_DEMON_KILL).toMatch(/fell asleep/i);
-    expect(SLEEP_DEMON_KILL).toMatch(/\[E\] to retry/);
+    expect(SLEEP_DEMON_KILL).not.toMatch(/\[E\]/);     // the Night failed menu retries
   });
 
   it('is hidden and harmless outside the shift: the morning, or a failed night', () => {
@@ -1470,6 +1470,15 @@ describe('SleepDemon death: you fall asleep, and he is waiting', () => {
     expect(figure.object3d.visible).toBe(false);
     for (const e of figure.eyes) expect(e.scale.x).toBe(1);
   }
+
+  it('passing out at a screen takes the player straight off it, to see it coming (#161)', () => {
+    const exit = vi.fn();
+    demon.terminal = { state: 'radar', exit };
+    stamina.value = 0;
+    run(0.05);
+    expect(demon.deathPhase).toBe('passOut');
+    expect(exit).toHaveBeenCalledTimes(1);
+  });
 
   it('at empty the player passes out: frozen, the lids slam shut, the view drops and tips', () => {
     stamina.value = 0;

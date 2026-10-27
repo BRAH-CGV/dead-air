@@ -206,6 +206,8 @@ export function createCommTowers(opts = {}) {
 
   towers.object3d.add(masts, arms, lamps);
   towers.addComponent(new BeaconFlash(lamps, glows, sites));
+  // A texture is never freed with the meshes, so the builder frees it by name.
+  towers.glowTexture = glowTexture;
   return towers;
 }
 

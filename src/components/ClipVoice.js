@@ -8,6 +8,7 @@ import * as THREE from 'three';
 // handful of clips for the one event, and play a different one each time.
 //
 //   const inserts = clipSet(['sfx:drive-insert-1', 'sfx:drive-insert-2']);
+//   const shakes  = clipSet([{ key: 'sfx:beans', span: [0.44, 0.5] }]);   // a stretch of one
 //   const voice   = new ClipVoice();
 //   voice.play(gameObject, inserts, 0.8);   // true if a clip was started
 //
@@ -27,11 +28,13 @@ import * as THREE from 'three';
 
 /**
  * A set of clips to pick from: their manifest keys, their buffers once read
- * from the asset cache, and the one last played.
- * @param {string[]} keys
+ * from the asset cache, and the one last played. A key may be given as
+ * `{ key, span: [start, length] }` (seconds): only that stretch of the clip
+ * is played, so one recording can hold several sounds.
+ * @param {(string|{ key: string, span?: number[] })[]} keys
  * @param {AudioBuffer[]} [buffers]  Read by `keys` when left out.
  */
-export const clipSet = (keys, buffers) => ({ keys, buffers, last: -1 });
+export const clipSet = (keys, buffers) => ({ keys, buffers, spans: null, last: -1 });
 
 /**
  * Which of `count` clips to play: any but `last`, the one just played, each
@@ -81,6 +84,9 @@ export class ClipVoice {
     set.last = pickClip(buffers.length, set.last, this.random());
     if (sound.isPlaying) sound.stop();
     sound.setBuffer(buffers[set.last]);
+    const span = set.spans?.[set.last];
+    sound.offset = span ? span[0] : 0;
+    sound.duration = span ? span[1] : undefined;
     sound.setVolume(volume);
     sound.play();
     return true;
@@ -103,7 +109,11 @@ export class ClipVoice {
     if (this.sound !== undefined && set.buffers) return this.sound;
     const engine = gameObject?.scene?.userData?.engine;
     if (!engine) return null;
-    set.buffers ??= readBuffers(engine, set.keys);
+    if (!set.buffers) {
+      const loaded = readClips(engine, set.keys);
+      set.buffers = loaded.map(c => c.buffer);
+      set.spans = loaded.map(c => c.span);
+    }
     if (this.sound === undefined) this.sound = this._build(engine, gameObject);
     return this.sound;
   }
@@ -119,9 +129,13 @@ export class ClipVoice {
   }
 }
 
-/** Clips from the asset cache; any not loaded are left out. */
-function readBuffers(engine, keys) {
+/** Clips from the asset cache, each with its span (or null for the whole
+ *  clip); any not loaded are left out. */
+function readClips(engine, keys) {
   const assets = engine.assets;
   if (!assets?.has) return [];
-  return keys.filter(key => assets.has(key)).map(key => assets.get(key));
+  return keys
+    .map(k => (typeof k === 'string' ? { key: k, span: null } : { key: k.key, span: k.span ?? null }))
+    .filter(c => assets.has(c.key))
+    .map(c => ({ buffer: assets.get(c.key), span: c.span }));
 }

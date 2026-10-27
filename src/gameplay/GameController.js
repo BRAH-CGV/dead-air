@@ -8,7 +8,7 @@ import { Component } from '../core/Component.js';
 //
 //   playing ──6 AM, quota met──▶ morning ──sleep()──▶ playing (next night)
 //      │                            └──sleep() on the last night──▶ finished
-//      ├──6 AM, quota missed──▶ gameOver ──[E] / retryNight()──▶ playing
+//      ├──6 AM, quota missed──▶ gameOver ──retryNight()──▶ playing
 //      └──fail() (a threat got the player)──▶ gameOver
 //
 // One twelve-hour shift, 6 PM to 6 AM. Meeting the quota early doesn't end
@@ -19,8 +19,8 @@ import { Component } from '../core/Component.js';
 // With a cargo bay wired (the buggy's boot, a second DriveBoxDock), the
 // morning has one job first: carry the night's drive box out to the buggy,
 // load it (`delivered`: the boot holds a box with the night's quota in it)
-// and send the buggy off (`dispatch()`). The bed stays shut (canSleep) until
-// it has gone. Every night start brings it back.
+// and send the buggy off (`dispatch()`). The bed stays shut (canSleep)
+// until it has gone. Every night start brings it back.
 //
 // State: 'idle' | 'playing' | 'morning' | 'gameOver' | 'finished'
 //
@@ -35,7 +35,8 @@ const PROMPT = {
   deliver:  'Load the drive box into the buggy outside',
   send:     'Drives loaded — send the buggy off',
   delivered: 'Buggy away — get some sleep (bedroom)',
-  failed:   'Night failed. [E] to retry',
+  failed:   'Night failed.',
+  quotaMissed: 'Quota not met.',
   finished: 'You made it through every shift.',
 };
 
@@ -77,9 +78,12 @@ export class GameController extends Component {
 
   /** Whether to auto-start the first night on first update. */
   autoStart = true;
-  /** Seconds before a failed night's prompt shows and [E] retries. */
-  _retryLock = 0;
+  /** Seconds before a failed night's prompt shows. */
+  _promptLock = 0;
   _heldPrompt = null;
+  /** Whether the night failed because 6 AM came with the quota short, not a
+   *  threat. The Night failed screen says so. */
+  quotaMissed = false;
 
   /** @type {Set<(state: string, previous: string) => void>} */
   _stateListeners = new Set();
@@ -98,6 +102,7 @@ export class GameController extends Component {
     this.nightNumber = nightNumber;
     this._shiftPrompt = null;
     this.dispatched = false;
+    this.quotaMissed = false;
     this._setState('playing');
 
     this.nightClock?.reset();
@@ -106,27 +111,20 @@ export class GameController extends Component {
     // Sync the dock's required count with the signal manager's night
     // requirement. signalManager.required is computed by startNight(),
     // so we sync AFTER it runs.
+    // So is how many of them must be processed (1, 2, 4).
     if (this.quotaDock && this.signalManager) {
       this.quotaDock.requiredCount = this.signalManager.required;
+      this.quotaDock.requiredProcessed = this.signalManager.requiredProcessed ?? 0;
     }
     if (this.cargo) {
       this.cargo.requiredCount = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
-    }
-
-    // Night 3 only counts drives processed to level 2 (cyan).
-    if (this.quotaDock) {
-      this.quotaDock.minSignalLevel = nightNumber >= 3 ? 2 : 1;
+      this.cargo.requiredProcessed = this.quotaDock?.requiredProcessed ?? this.signalManager?.requiredProcessed ?? 0;
     }
 
     this.hud?.show();
     this.hud?.setNight(nightNumber);
-    this.hud?.setSignals(
-      this.quotaDock?.collectedCount ?? 0,
-      this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
-      { minSignalLevel: this.quotaDock?.minSignalLevel ?? 1 },
-    );
+    this._showSignals();
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
-    this.hud?.setScanProgress(-1);
     this.hud?.setPrompt('');
     this.banner?.clear();
 
@@ -146,13 +144,13 @@ export class GameController extends Component {
   /** Something killed the player: end the shift as a game over, with its
    *  own prompt. Only a shift in progress can be failed.
    *  @param {string} [prompt]
-   *  @param {{ retryAfter?: number }} [opts]  Seconds before the prompt shows
-   *         and [E] retries — a death screen that has to play out first. */
-  fail(prompt = PROMPT.failed, { retryAfter = 0 } = {}) {
+   *  @param {{ promptAfter?: number }} [opts]  Seconds before the prompt
+   *         shows — a death screen that has to play out first. */
+  fail(prompt = PROMPT.failed, { promptAfter = 0 } = {}) {
     if (this.state !== 'playing') return;
-    this._endShift('gameOver', retryAfter > 0 ? '' : prompt);
-    this._retryLock = retryAfter;
-    this._heldPrompt = retryAfter > 0 ? prompt : null;
+    this._endShift('gameOver', promptAfter > 0 ? '' : prompt);
+    this._promptLock = promptAfter;
+    this._heldPrompt = promptAfter > 0 ? prompt : null;
   }
 
   /** Follow a NightManager: start the night it is on now, and every night
@@ -257,22 +255,19 @@ export class GameController extends Component {
       return;
     }
 
-    // A death screen still playing: no prompt and no retry until it has.
-    if (this.state === 'gameOver' && this._retryLock > 0) {
-      this._retryLock -= dt;
-      if (this._retryLock > 0) return;
-      if (this._heldPrompt !== null) this.hud?.setPrompt(this._heldPrompt);
-      this._heldPrompt = null;
-      this.scene?.userData?.engine?.consumeAction?.('interact');   // a press held through it doesn't count
-      return;
-    }
-
-    if (this.state === 'gameOver' && this._interactPressed()) {
-      // This press is the retry's alone: left live, the interaction system
-      // would also use whatever the player died looking at (the generator's
-      // switch, which turned the freshly restored power straight off).
+    if (this.state === 'gameOver') {
+      // The night is retried from the Night failed menu (App), never with a
+      // key. Until it comes up, E is used up here: dead, the player can't
+      // work whatever they died looking at (the generator's switch).
       this.scene?.userData?.engine?.consumeAction?.('interact');
-      this.retryNight();
+      // A death screen still playing: its prompt waits until it has.
+      if (this._promptLock > 0) {
+        this._promptLock -= dt;
+        if (this._promptLock <= 0 && this._heldPrompt !== null) {
+          this.hud?.setPrompt(this._heldPrompt);
+          this._heldPrompt = null;
+        }
+      }
       return;
     }
 
@@ -310,13 +305,6 @@ export class GameController extends Component {
   // Private
   // ──────────────────────────────────────────────────────────
 
-  /** The interact key's one-frame press, if a scene engine is reachable. */
-  _interactPressed() {
-    const engine = this.scene?.userData?.engine;
-    if (!engine) return false;
-    return !!engine.input?.pressed?.[engine.keyBinds?.interact];
-  }
-
   /** The prompt for where the shift stands — the quota met, or not yet —
    *  set only when that changes. When the quota is first met, the banner
    *  announces the event; the HUD shows the standing objective. */
@@ -350,21 +338,22 @@ export class GameController extends Component {
     if (!this.hud) return;
     this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
 
-    // Quota progress comes from the drive box dock (saved drives in the
-    // docked box), falling back to the signal manager's required count
-    // for the denominator.
-    const collected = this.quotaDock?.collectedCount ?? 0;
-    const required  = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
-    this.hud.setSignals(collected, required, {
-      minSignalLevel: this.quotaDock?.minSignalLevel ?? 1,
-    });
+    this._showSignals();
+  }
 
-    // Scan bar — driven by satellite state (works even when terminal is closed)
-    if (this.satellite?.isScanning && this.satellite?.scanTarget) {
-      this.hud.setScanProgress(this.satellite.scanProgress / this.satellite.scanTarget.scanTime);
-    } else if (!this.satellite?.isScanning) {
-      this.hud.setScanProgress(-1);
-    }
+  /** The quota on the HUD. Progress comes from the drive box dock (saved
+   *  drives in the docked box, and how many of them are processed),
+   *  falling back to the signal manager's counts for the denominators. */
+  _showSignals() {
+    const dock = this.quotaDock;
+    this.hud?.setSignals(
+      dock?.collectedCount ?? 0,
+      dock?.requiredCount ?? this.signalManager?.required ?? 0,
+      {
+        processed: dock?.processedCount ?? 0,
+        processedRequired: dock?.requiredProcessed ?? this.signalManager?.requiredProcessed ?? 0,
+      },
+    );
   }
 
   /** The one place `state` changes, so every change is announced. Iterates
@@ -379,7 +368,6 @@ export class GameController extends Component {
   _endShift(state, prompt) {
     this.nightClock?.pause();
     this.hud?.setPrompt(prompt);
-    this.hud?.setScanProgress(-1);
     // Last: a listener sees the shift fully ended (clock stopped, prompt up).
     this._setState(state);
   }
@@ -389,6 +377,9 @@ export class GameController extends Component {
     this._shiftPrompt = this._morningKey();
     this._endShift('morning', PROMPT[this._shiftPrompt]);
   }
-  _gameOver() { this._endShift('gameOver', PROMPT.failed); }
+  _gameOver() {
+    this.quotaMissed = true;
+    this._endShift('gameOver', PROMPT.quotaMissed);
+  }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }

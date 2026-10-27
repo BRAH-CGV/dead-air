@@ -518,7 +518,7 @@ describe('DustEyes — how they look and sound', () => {
     // Black at once, turning red; [E] only once the prompt is up.
     const screen = rig.whiteOut.play.mock.lastCall[1];
     expect(screen.fadeMs).toBe(0);
-    expect(rig.controller.fail.mock.lastCall[1].retryAfter).toBeCloseTo(screen.messageDelayMs / 1000);
+    expect(rig.controller.fail.mock.lastCall[1].promptAfter).toBeCloseTo(screen.messageDelayMs / 1000);
   });
 });
 

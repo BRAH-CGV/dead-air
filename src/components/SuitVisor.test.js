@@ -30,22 +30,31 @@ function fakeSound(buffer = fakeBuffer()) {
     volume: 1,
     play: vi.fn(() => { sound.isPlaying = true; }),
     stop: vi.fn(() => { sound.isPlaying = false; }),
+    pause: vi.fn(() => { sound.isPlaying = false; }),
     setVolume: vi.fn(v => { sound.volume = v; }),
     disconnect: vi.fn(),
   };
   return sound;
 }
 
-function buildPlayer({ sound = fakeSound(), fadeSeconds = 0.5, silenced } = {}) {
+function buildPlayer({ sound = fakeSound(), fadeSeconds = 0.5, silenced, refraction } = {}) {
   const camera = new THREE.PerspectiveCamera(75, 16 / 9);
-  const engine = { camera };
+  // The Engine's own rule: a view camera, when set, is what the frame is
+  // drawn through.
+  const engine = { camera, viewCamera: null, get renderCamera() { return this.viewCamera ?? this.camera; } };
   const go = new GameObject('Player');
   go.scene = { userData: { engine } };
   const suit = go.addComponent(new EVASuit());
-  const visor = go.addComponent(new SuitVisor({ suit, sound, fadeSeconds, silenced }));
+  const visor = go.addComponent(new SuitVisor({ suit, sound, fadeSeconds, silenced, refraction }));
   visor.onAwake();
   visor.onStart();
-  return { camera, suit, visor, sound };
+  return { camera, engine, suit, visor, sound };
+}
+
+/** A refraction pass stand-in that remembers the last intensity it was set to. */
+function fakeRefraction() {
+  const pass = { intensity: 0, setIntensity: vi.fn(v => { pass.intensity = v; }) };
+  return pass;
 }
 
 /** Advance `seconds` in 1/60 s frames, moving the audio clock along with it. */
@@ -117,6 +126,81 @@ describe('SuitVisor', () => {
     run(visor, sound, 1);
     expect(opacity()).toBe(0);
     expect(visor.overlay.visible).toBe(false);
+  });
+
+  it('bends the world through the refraction pass in step with the glass', () => {
+    const refraction = fakeRefraction();
+    const { suit, visor, sound } = buildPlayer({ fadeSeconds: 0.5, refraction });
+
+    suit.putOn();
+    run(visor, sound, 0.25);
+    expect(refraction.intensity).toBeCloseTo(visor.uniforms.uOpacity.value);
+    run(visor, sound, 0.5);
+    expect(refraction.intensity).toBe(1);
+  });
+
+  it('is only on the picture seen through the player\'s eyes — the buggy\'s send-off shows no helmet', () => {
+    // The overlay writes clip space, so it covered whatever camera the frame
+    // was drawn through: the eagle view of the buggy driving out wore the
+    // helmet's frame and the visor's warp.
+    const refraction = fakeRefraction();
+    const { engine, suit, visor, sound } = buildPlayer({ fadeSeconds: 0.5, refraction });
+    suit.putOn();
+    run(visor, sound, 1);
+
+    engine.viewCamera = new THREE.PerspectiveCamera();
+    // Fades as the view leaves the head, over the same time as taking it off…
+    run(visor, sound, 0.25);
+    expect(visor.overlay.visible).toBe(true);
+    expect(refraction.intensity).toBeGreaterThan(0.3);
+    expect(refraction.intensity).toBeLessThan(0.7);
+    run(visor, sound, 0.5);
+    expect(visor.overlay.visible).toBe(false);
+    expect(refraction.intensity).toBe(0);
+    // …and the breathing with it: the eagle view is no place to hear it.
+    expect(sound.isPlaying).toBe(false);
+
+    // Handed back (under a fade to black): the helmet was never off, so the
+    // glass is there on the first frame.
+    engine.viewCamera = null;
+    run(visor, sound, 1 / 60);
+    expect(visor.overlay.visible).toBe(true);
+    expect(visor.uniforms.uOpacity.value).toBe(1);
+    expect(refraction.intensity).toBe(1);
+    // The suit is still on: breathing again.
+    expect(sound.isPlaying).toBe(true);
+  });
+
+  it('the breathing fades out with the glass as the view leaves the head, not cut', () => {
+    const { engine, suit, visor, sound } = buildPlayer({ fadeSeconds: 0.5 });
+    suit.putOn();
+    run(visor, sound, 1);
+    engine.viewCamera = new THREE.PerspectiveCamera();
+    run(visor, sound, 0.25);
+    expect(sound.isPlaying).toBe(true);
+    expect(sound.volume).toBeLessThan(visor.volume);
+    expect(sound.volume).toBeGreaterThan(0);
+  });
+
+  it('paused (the pause menu), the breathing stops with the game, and starts again after', () => {
+    const { suit, visor, sound } = buildPlayer();
+    suit.putOn();
+    run(visor, sound, 1);
+    visor._onPause(true);
+    expect(sound.isPlaying).toBe(false);
+    visor._onPause(false);
+    expect(sound.isPlaying).toBe(true);
+  });
+
+  it('stays off when the view moves away with the suit off', () => {
+    const refraction = fakeRefraction();
+    const { engine, visor, sound } = buildPlayer({ refraction });
+    engine.viewCamera = new THREE.PerspectiveCamera();
+    run(visor, sound, 0.5);
+    engine.viewCamera = null;
+    run(visor, sound, 1 / 60);
+    expect(visor.overlay.visible).toBe(false);
+    expect(refraction.intensity).toBe(0);
   });
 
   it('breathes on a loop while the suit is worn, and stops once it is off', () => {

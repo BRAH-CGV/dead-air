@@ -3,7 +3,7 @@ import RAPIER from '@dimforge/rapier3d';
 import { Component } from '../core/Component.js';
 import { RagnoLogic, scheduleVisits, moodFor } from './RagnoLogic.js';
 import { throughWindow } from './DustEyes.js';
-import { findBursts, loudSpan, synthDuctCrawl, walkRate } from './RagnoSounds.js';
+import { findBursts, loudSpan, DuctCrawl, DUCT_CRAWL, ductEnvelope, walkRate } from './RagnoSounds.js';
 import { LoopVoice } from '../components/LoopVoice.js';
 import { CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
@@ -29,7 +29,8 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 //   outside   soft chirps cut from the spider call, low and muffled under the
 //             wind, now and then, carrying far; rarely a loud shriek, pitched
 //             down: one of the call's loud bursts or one of the two attacks
-//   in a duct the duct crawl (synthesised, placed at the vent he went in by)
+//   in a duct the vent recording in pieces (DuctCrawl): his steps, and thuds
+//             and creaks layered over them, placed where he is in the wall
 //   indoors   his legs, looped at the pace of his steps (heard only inside)
 //   flinch    / aggro: one of the two attacks
 //   the kill  the third attack's loud part
@@ -37,16 +38,18 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 
 export const RAGNO_SOUNDS = {
   /** Volumes, of each clip's own level. */
-  chirp: 0.75,
-  screech: 1,
+  chirp: 0.45,
+  screech: 0.7,
   attack: 0.85,
+  /** Indoors, the attacks' share: he's close, and in a room. */
+  attackInside: 0.75,
   death: 1,
-  walk: 0.7,
+  walk: 0.5,
   duct: 0.9,
   /** Night 1's share of the outside sounds: quieter, meant to be half-heard. */
   calm: 0.45,
   /** Indoors, the outside calls come through the walls at this share. */
-  throughWalls: 0.5,
+  throughWalls: 0.3,
   /** Seconds between chirps outside. */
   chirpEvery: [3, 8],
   /** Of the calls, the share that are the shriek. */
@@ -54,13 +57,26 @@ export const RAGNO_SOUNDS = {
   /** Cents the shriek is pitched down. */
   screechDetune: -700,
   /** Hz the outside calls are low-passed at, to sit under the wind. */
-  muffle: 1400,
+  muffle: 1000,
   /** Metres within which a placed sound is at full volume. Outside, his
-   *  calls carry further and fall off gently (`callRolloff`): from 30 m off
-   *  they are still heard across the yard and through the office window. */
+   *  calls are subtle, easy to miss: soft, muffled, and falling off
+   *  sooner than they used to (`callRolloff`), so from across the yard or
+   *  through the office window they are only just there. */
   refDistance: 4,
-  callRefDistance: 10,
-  callRolloff: 0.6,
+  callRefDistance: 6,
+  callRolloff: 0.9,
+  /** In the duct, HRTF-panned like every placed sound, so the wall he is in
+   *  is plain. Through a camera (the ears on its lens, often in his room) it
+   *  is full only close by and falls off steeply; with the player's own ears,
+   *  usually rooms away, it is louder (`gain`) and carries further. */
+  ductCamera: { refDistance: 1.5, rolloff: 1.6, gain: 1 },
+  ductEars: { refDistance: 3.5, rolloff: 0.9, gain: 1.8 },
+  /** The duct's swell as he climbs in and fade as he climbs out
+   *  (ductEnvelope): seconds, and the level it starts and ends at. */
+  ductFade: { fadeIn: 1.2, fadeOut: 1, floor: 0.25 },
+  /** Indoors, his legs and his screech: full only within arm's reach and
+   *  falling off steeply, so the ear finds him in the room. */
+  inside: { refDistance: 1.2, rolloff: 1.8 },
   /** dB: the call's chirps are under this, its loud bursts over it. */
   loudPeak: -22,
   /** Keys. */
@@ -69,11 +85,12 @@ export const RAGNO_SOUNDS = {
     call: 'sfx:spider-call',
     attacks: ['sfx:spider-attack-2', 'sfx:spider-attack-4'],
     death: 'sfx:spider-attack-8',
+    duct: 'sfx:ragno-vents',
   },
 };
 
 /** The prompt when he catches the player, and the screen it is shown on. */
-const CAUGHT_PROMPT = 'Something came out of the vents. Press [E] to try again';
+const CAUGHT_PROMPT = 'Something came out of the vents.';
 const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 900, messageDelayMs: 700 };
 /** Seconds of lunge, in the player's face, before the screen cuts. The view
  *  drains to red through it, as with the evil signal (RedOut). */
@@ -128,7 +145,8 @@ export class Ragno extends Component {
    * @param {THREE.Camera} [o.camera]  The player's eye.
    * @param {object} o.hooks  zoneOf(p) → a room or corridor name, 'outside';
    *        ufoBusy(); setPlayerLocked(locked); isFrozen(); rayHit(from, dir, max)
-   *        → metres to the first solid thing (sightRay).
+   *        → metres to the first solid thing (sightRay); leaveScreens(): off
+   *        the computer's or the console's screen, for the lunge.
    */
   constructor({
     controller, clock, layout, figure, terminal = null, cameras = [], flashlight = null, power,
@@ -159,7 +177,11 @@ export class Ragno extends Component {
     this._lunge = -1;
     this._night = 1;
     this._ray = null;
-    this._walk = new LoopVoice({ key: RAGNO_SOUNDS.keys.walk, placed: { refDistance: RAGNO_SOUNDS.refDistance } });
+    this._crawl = new DuctCrawl(rand);
+    this._ductAnchor = new THREE.Object3D();
+    this._ducting = false;
+    this._ductNext = 0;
+    this._walk = new LoopVoice({ key: RAGNO_SOUNDS.keys.walk, placed: RAGNO_SOUNDS.inside });
   }
 
   /** Out on a hunt (for a nap's alarm, the music). */
@@ -170,19 +192,18 @@ export class Ragno extends Component {
 
   onStart() {
     // His sounds made now, as the scene starts: cutting the 58 s call into
-    // its bursts and making the duct's loop is work no frame should wait on
+    // its bursts is work no frame should wait on
     // (the first sound used to be the kill's, on its lunge).
     this._audio();
     this._off = this.controller.onNightStart?.((night) => this.reset(night)) ?? null;
     this._offState = this.controller.onStateChange?.((state) => {
       if (state !== 'playing') this._end();
     }) ?? null;
-    // Paused, nothing updates but the audio clock runs on: the duct's loop
-    // stops with the game, and starts again with it if he is still in there.
+    // Paused, nothing updates but the audio clock runs on: what is sounding
+    // in the duct is cut, and the crawl picks up again with the game.
     const engine = this.gameObject?.scene?.userData?.engine;
     this._offPause = engine?.onPauseChange?.((paused) => {
-      if (paused) this._stopDuct();
-      else if (this.logic.state === 'duct') this._built?.duct?.play();
+      if (paused) this._silenceDuct();
     }) ?? null;
     this.reset(this.controller.nightNumber || 1);
   }
@@ -193,7 +214,7 @@ export class Ragno extends Component {
     this._offPause?.();
     this._end();
     this._walk.dispose();
-    for (const s of Object.values(this._built ?? {})) {
+    for (const s of [...Object.values(this._built ?? {}), ...(this._built?.duct ?? [])]) {
       if (!s?.isAudio) continue;
       if (s.isPlaying) s.stop();
       try { s.disconnect(); } catch (_) { /* never connected */ }
@@ -496,6 +517,7 @@ export class Ragno extends Component {
     this._locked = true;
     this.hooks.setPlayerLocked?.(true);
     this.terminal?.exit?.();
+    this.hooks.leaveScreens?.();
     this._walk.silence();
     this._lunge = 0;
     const death = this._audio().death;
@@ -526,7 +548,7 @@ export class Ragno extends Component {
     }
     if (this._lunge >= LUNGE_SECONDS) {
       this._lunge = -1;
-      this.controller.fail(CAUGHT_PROMPT, { retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
+      this.controller.fail(CAUGHT_PROMPT, { promptAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
       this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
       this.logic.despawn();
       this.figure.show(false);
@@ -658,19 +680,18 @@ export class Ragno extends Component {
       a.setBuffer(death);
       this._built.death = a;
     }
-    // The duct: synthesised, looped, placed where he is in the wall.
-    const ctx = listener.context;
-    const samples = synthDuctCrawl({ sampleRate: ctx.sampleRate });
-    const ductBuf = ctx.createBuffer(1, samples.length, ctx.sampleRate);
-    ductBuf.copyToChannel(samples, 0);
-    const duct = new THREE.PositionalAudio(listener);
-    duct.setBuffer(ductBuf);
-    duct.setLoop(true);
-    duct.setRefDistance(RAGNO_SOUNDS.refDistance);
-    this._ductAnchor = new THREE.Object3D();
-    this._ductAnchor.add(duct);
-    this.figure.object3d.parent?.add(this._ductAnchor);
-    this._built.duct = duct;
+    // The duct: the vent recording, a few voices on one buffer so a step and
+    // the layers over it overlap, all placed where he is in the wall.
+    const vents = buf(keys.duct);
+    if (vents) {
+      this._built.duct = Array.from({ length: DUCT_CRAWL.voices }, () => {
+        const a = new THREE.PositionalAudio(listener);
+        a.setBuffer(vents);
+        this._ductAnchor.add(a);
+        return a;
+      });
+      this.figure.object3d.parent?.add(this._ductAnchor);
+    }
     return this._built;
   }
 
@@ -717,41 +738,69 @@ export class Ragno extends Component {
     if (!this._canPlay(a)) return;
     if (a.isPlaying) a.stop();
     // Up close and at its own pitch: a shriek outside may have changed both.
-    a.setRefDistance(RAGNO_SOUNDS.refDistance);
-    a.setRolloffFactor(1);
+    // Indoors, tight to where he is, and not as loud.
+    const inside = this.logic.indoors;
+    a.setRefDistance(inside ? RAGNO_SOUNDS.inside.refDistance : RAGNO_SOUNDS.refDistance);
+    a.setRolloffFactor(inside ? RAGNO_SOUNDS.inside.rolloff : 1);
     a.setDetune(0);
-    a.setVolume(RAGNO_SOUNDS.attack * volume * (this.logic.mood === 'calm' ? RAGNO_SOUNDS.calm : 1));
+    a.setVolume(RAGNO_SOUNDS.attack * (inside ? RAGNO_SOUNDS.attackInside : 1) * volume * (this.logic.mood === 'calm' ? RAGNO_SOUNDS.calm : 1));
     a.play();
   }
 
   /** The duct crawl, from `from` toward `to` over `seconds` (or the time in
    *  the duct): heard from the side he's in the wall on. */
   _startDuct(from, to, seconds) {
-    const duct = this._audio().duct;
-    if (!this._canPlay(duct) || !from) return;
+    if (!this._audio().duct?.length || !from) return;
     this._ductFrom = from;
     this._ductTo = to ?? from;
     this._ductT = 0;
     this._ductFor = seconds ?? Math.max(this.logic._timer, 1);
     this._ductAnchor.position.set(from.x, from.y, from.z);
-    duct.setVolume(RAGNO_SOUNDS.duct * (this.logic.mood === 'calm' ? RAGNO_SOUNDS.calm : 1));
-    if (!duct.isPlaying) duct.play();
+    this._crawl.start();
+    this._ducting = true;
+    this._tickDuct(0);   // the first step, now
   }
 
   _tickDuct(dt) {
-    const duct = this._built?.duct;
-    if (!duct?.isPlaying) return;
+    if (!this._ducting) return;
     this._ductT += dt;
     const k = Math.min(this._ductT / this._ductFor, 1);
     const a = this._ductFrom, b = this._ductTo;
     this._ductAnchor.position.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
-    // Through the duct: it stops when he comes out, or has run its time.
-    if (this.logic.state !== 'duct' && k >= 1) this._stopDuct();
+    // Through the duct: it ends when he comes out, or has run its time, and
+    // what is sounding rings out.
+    if (this.logic.state !== 'duct' && k >= 1) {
+      this._ducting = false;
+      return;
+    }
+    const voices = this._built.duct;
+    const heard = this.terminal?.onAir ? RAGNO_SOUNDS.ductCamera : RAGNO_SOUNDS.ductEars;
+    const level = RAGNO_SOUNDS.duct * heard.gain * (this.logic.mood === 'calm' ? RAGNO_SOUNDS.calm : 1)
+      * ductEnvelope(this._ductT, this._ductFor, RAGNO_SOUNDS.ductFade);
+    for (const cue of this._crawl.update(dt)) {
+      // The next voice round, cutting off the oldest if they're all sounding.
+      const v = voices[this._ductNext];
+      this._ductNext = (this._ductNext + 1) % voices.length;
+      if (!this._canPlay(v)) continue;
+      if (v.isPlaying) v.stop();
+      v.setVolume(level * cue.gain);
+      v.setRefDistance(heard.refDistance);
+      v.setRolloffFactor(heard.rolloff);
+      v.setDetune(cue.detune);
+      v.offset = cue.clip[0];
+      v.duration = cue.clip[1];
+      v.play();
+    }
+  }
+
+  /** What is sounding in the duct cut; the crawl carries on if he is in it. */
+  _silenceDuct() {
+    for (const v of this._built?.duct ?? []) if (v.isPlaying) v.stop();
   }
 
   _stopDuct() {
-    const duct = this._built?.duct;
-    if (duct?.isPlaying) duct.stop();
+    this._ducting = false;
+    this._silenceDuct();
   }
 }
 

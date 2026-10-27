@@ -14,6 +14,7 @@ function memoryStorage(initial = {}) {
 const DEFAULT_BINDS = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', crouch: 'KeyC', interact: 'KeyE', flashlight: 'KeyF', rotateHeld: 'KeyR',
+  holdFurther: 'ArrowUp', holdCloser: 'ArrowDown',
 };
 
 const make = (storage = memoryStorage()) =>
@@ -57,6 +58,14 @@ describe('SettingsStore', () => {
     const s = make(memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ fov: 90, shadows: 'low' }) }));
     expect(s.values.fov).toBe(90);
     expect(s.values.shadows).toBe('low');
+  });
+
+  it('lets sensitivity go up to 5× for touchpads and slow mice (#117), still 1× by default', () => {
+    expect(SCHEMA.sensitivity).toMatchObject({ min: 0.1, max: 5, default: 1 });
+    const s = make(memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ sensitivity: 4.5 }) }));
+    expect(s.values.sensitivity).toBe(4.5);
+    s.set('sensitivity', 9);
+    expect(s.values.sensitivity).toBe(5);
   });
 
   it('has a dust storm quality on the VIDEO tab: 0 to 1, full by default, shown as a percentage', () => {

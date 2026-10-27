@@ -38,6 +38,7 @@ import { applySettings } from './applySettings.js';
 import { REBINDABLE, ACTION_LABELS, keyName, rebind } from './keyNames.js';
 import { DevConsole } from './devConsole/DevConsole.js';
 import { createCommands } from './devConsole/commands.js';
+import { RunRecord } from '../gameplay/RunRecord.js';
 import { setInteractKey } from '../ui/promptKeys.js';
 import { MenuView } from '../ui/menu/MenuView.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
@@ -284,6 +285,7 @@ export class App {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
         this._saveNight(null);   // a new run: Continue returns from night 2
+        this._newRun(this.intro?.array);
         this.flow.newGame();
         this.engine.setPaused(false);
       } else if (this.flow.screen === 'intro') {
@@ -292,6 +294,14 @@ export class App {
         this._setHint(COPY.lockRefused);
       }
     });
+  }
+
+  /** Start the run's record over (engine.run: the array's name and each
+   *  night's threat log), under the array the intro named. Reset in place, not
+   *  replaced: the scene under the menu already holds it. A restart keeps it;
+   *  nothing saves it. */
+  _newRun(array = null) {
+    (this.engine.run ??= new RunRecord()).reset({ array: array ?? null });
   }
 
   /** The tutorial: the intro first, like New game, then night 0. */
@@ -309,6 +319,7 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        this._newRun(this.intro?.array);
         this.engine.activeScene?.nights?.setNight(0);
         this.flow.newGame();
         this.engine.setPaused(false);
@@ -338,6 +349,7 @@ export class App {
     await this._run(async () => {
       if (this.flow.needsRebuild) await this._fadeRebuild();
       if (await this._lockHeld(lock)) {
+        this._newRun(null);   // no intro, so no array name
         this.engine.activeScene?.nights?.setNight(night);
         this._saveNight(null);   // a new run from here: Continue comes back as it's played
         this.flow.newGame();
@@ -464,8 +476,8 @@ export class App {
     }
     if (state === 'gameOver') {
       // A UFO catch fails the shift and then burns the screen white with
-      // "You were taken" — let that play (it has its own [E] retry) before
-      // the menu covers it. A missed quota has no white-out: shown at once.
+      // "You were taken" — let that play before the menu covers it (the
+      // menu is the only retry: GameController takes no key for it). A missed quota has no white-out: shown at once.
       // _catch() starts the white-out right after fail(), in the same call:
       // a microtask sees whether it did.
       clearTimeout(this._failTimer);
@@ -498,6 +510,9 @@ export class App {
       night: this._currentNight(),
       saved: dock?.collectedCount ?? 0,
       required: dock?.requiredCount ?? 0,
+      processed: dock?.processedCount ?? 0,
+      processedRequired: dock?.requiredProcessed ?? 0,
+      quotaMissed: !!this.engine.activeScene?.gameController?.quotaMissed,
     };
     this.flow.nightFailed();
     this.engine.setPaused(true);

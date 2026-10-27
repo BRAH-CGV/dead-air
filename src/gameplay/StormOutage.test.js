@@ -16,15 +16,15 @@ function makeSound() {
 }
 
 /** Every storm cuts the power unless a test says otherwise (`chance`). */
-function makeRig({ random = () => 0.5, chance = 1 } = {}) {
+function makeRig({ random = () => 0.5, chance = 1, night = 1, sureNights } = {}) {
   const listeners = [];
-  const controller = { state: 'playing', onNightStart: fn => { listeners.push(fn); return () => {}; } };
+  const controller = { state: 'playing', nightNumber: night, onNightStart: fn => { listeners.push(fn); return () => {}; } };
   // A storm the test moves through by hand.
   const sandstorm = { level: 1, stormId: 1, stormProgress: 0 };
   const grid = new PowerGrid();
   const cutPower = vi.fn(() => grid.setOn(false));
   const sounds = { flicker: makeSound() };
-  const outage = new StormOutage({ controller, sandstorm, grid, cutPower, sounds, random, chance });
+  const outage = new StormOutage({ controller, sandstorm, grid, cutPower, sounds, random, chance, sureNights });
   outage.onStart();
   return { outage, controller, sandstorm, grid, cutPower, sounds, startNight: n => listeners.forEach(fn => fn(n)) };
 }
@@ -199,5 +199,70 @@ describe('StormOutage — not every storm (#107)', () => {
       run(outage, STORM_OUTAGE.flickerSeconds + 0.1);
       expect(cutPower, `roll ${roll}`).toHaveBeenCalledTimes(cuts);
     }
+  });
+});
+
+// Night 2 is where the player first has to get the power back in a storm,
+// so its storm always takes it; the other nights keep the roll.
+describe('StormOutage — sure on some nights', () => {
+  /** Through a whole storm and out the other side of the flicker. */
+  const blowThrough = rig => {
+    through(rig, 0, 1, 80);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+  };
+
+  it('night 2 is sure, night 3 keeps its chance', () => {
+    expect(STORM_OUTAGE.sureNights).toContain(2);
+    expect(STORM_OUTAGE.sureNights).not.toContain(3);
+  });
+
+  it('on a sure night the storm takes the power, however the dice fall', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.99, night: 2 });
+    blowThrough(rig);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+    expect(rig.grid.on).toBe(false);
+  });
+
+  it('still at a random point inside its strong middle', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.5, night: 2 });
+    const when = STORM_OUTAGE.at[0] + 0.5 * (STORM_OUTAGE.at[1] - STORM_OUTAGE.at[0]);
+    through(rig, 0, when - 0.02);
+    expect(rig.grid.brownout).toBe(0);
+    through(rig, when - 0.02, when + 0.02, 4);
+    expect(rig.grid.brownout).toBeGreaterThan(0);
+  });
+
+  it('still once a storm: the power brought back stays on', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.99, night: 2 });
+    through(rig, 0, 0.8);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    rig.grid.setOn(true);
+    through(rig, 0.8, 1);
+    run(rig.outage, STORM_OUTAGE.flickerSeconds + 0.1);
+    expect(rig.cutPower).toHaveBeenCalledTimes(1);
+    expect(rig.grid.on).toBe(true);
+  });
+
+  it('a retry of a sure night takes it again', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.99, night: 2 });
+    blowThrough(rig);
+    rig.startNight(2);
+    rig.grid.setOn(true);
+    blowThrough(rig);
+    expect(rig.cutPower).toHaveBeenCalledTimes(2);
+  });
+
+  it('the other nights still roll', () => {
+    for (const night of [1, 3]) {
+      const rig = makeRig({ chance: 0.5, random: () => 0.99, night });
+      blowThrough(rig);
+      expect(rig.cutPower, `night ${night}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it('the sure nights can be handed in', () => {
+    const rig = makeRig({ chance: 0.5, random: () => 0.99, night: 2, sureNights: [] });
+    blowThrough(rig);
+    expect(rig.cutPower).not.toHaveBeenCalled();
   });
 });

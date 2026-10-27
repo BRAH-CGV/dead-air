@@ -121,15 +121,6 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
       }
-      #hud-scan-bar {
-        display: none;
-        width: 160px;
-        height: 4px;
-        background: #00e5ff;
-        border-radius: 2px;
-        margin-top: 6px;
-        transition: width 0.15s ease;
-      }
       #hud-prompt {
         margin-top: 8px;
         font-size: 13px;
@@ -339,6 +330,7 @@
       #radar-canvas {
         border-radius: 50%;
         box-shadow: 0 0 30px rgba(0, 200, 180, 0.15);
+        transform: translateY(20px);
       }
       #radar-warning {
         min-height: 1.4em;
@@ -368,6 +360,193 @@
         color: #556;
         letter-spacing: 0.06em;
       }
+
+      /* ── Evil signal "LET ME IN" flashing text ──────────── */
+      #radar-let-me-in {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 10;
+      }
+      .let-me-in-text {
+        position: absolute;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        color: #ff2222;
+        text-shadow: 0 0 6px #ff0000, 0 0 14px #cc0000;
+        opacity: 0;
+        white-space: nowrap;
+        user-select: none;
+        transform: translate(-50%, -50%);
+      }
+
+      /* ── Radar telemetry (left-side readouts) ─────────── */
+      #radar-telemetry {
+        position: absolute;
+        left: 24px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 10px 12px;
+        border: 1px solid rgba(0, 200, 180, 0.3);
+        border-radius: 4px;
+        pointer-events: none;
+        user-select: none;
+      }
+      .telemetry-block {
+        border-left: 2px solid rgba(0, 200, 180, 0.25);
+        padding: 6px 10px 6px 12px;
+        min-width: 200px;
+      }
+      .telemetry-block-title {
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #00dcc8;
+        margin-bottom: 4px;
+        opacity: 0.7;
+      }
+      .telemetry-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      .telemetry-label {
+        color: #556;
+        letter-spacing: 0.08em;
+      }
+      .telemetry-value {
+        color: #b8c8d8;
+        font-variant-numeric: tabular-nums;
+        min-width: 5em;
+        text-align: right;
+      }
+
+      /* ── Radar scan progress (right-side bar) ─────────── */
+      #radar-scan-progress {
+        position: absolute;
+        right: 100px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 12px;
+        height: 400px;
+        border: 1px solid rgba(0, 200, 180, 0.3);
+        border-radius: 4px;
+        background: rgba(10, 15, 25, 0.4);
+        pointer-events: none;
+        overflow: hidden;
+      }
+      /* ── Radar lock-on progress (left of scan bar) ─────── */
+      #radar-lockon-progress {
+        position: absolute;
+        right: 140px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 12px;
+        height: 400px;
+        border: 1px solid rgba(0, 200, 180, 0.3);
+        border-radius: 4px;
+        background: rgba(10, 15, 25, 0.4);
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .scan-fill {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 0%;
+        background: rgba(0, 255, 200, 0.7);
+        transition: height 0.1s linear;
+      }
+
+      /* ── Drive indicator lights (left of progress bars) ── */
+      #radar-drive-indicators {
+        position: absolute;
+        right: 180px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        pointer-events: none;
+        user-select: none;
+      }
+      .drive-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .drive-indicator-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #333;
+        border: 1px solid rgba(0, 200, 180, 0.3);
+      }
+      .drive-indicator-label {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #556;
+      }
+
+      /* ── On a screen (#161) ───────────────────────────────
+         The radar, the processing console and the camera's overlay are
+         what their screens in the world show: laid out here, for good, at
+         a fixed size (BaseScene._hostOnScreen), and painted onto the
+         screen from this layout (paintDom), leaned in to or not. So they
+         are never seen on the page: always displayed (the layout is what
+         is painted), never visible. Leaned in, ScreenView lays one onto
+         its screen with a matrix3d and .is-focused lets it take the mouse,
+         so clicks, hovers and drags land where they are painted. */
+      #radar-overlay.on-screen,
+      #processing-screen.on-screen,
+      #cctv.on-screen,
+      #bedroom-pc.on-screen {
+        inset: auto;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        opacity: 0 !important;
+        pointer-events: none;
+      }
+      #radar-overlay.on-screen,
+      #processing-screen.on-screen,
+      #bedroom-pc.on-screen { display: flex !important; }
+      #cctv.on-screen { display: block !important; background: none; }
+      #radar-overlay.on-screen.is-focused,
+      #processing-screen.on-screen.is-focused,
+      #cctv.on-screen.is-focused { pointer-events: auto; }
+      /* Leaned in to a screen (ScreenView): nothing to aim at or [E]. */
+      body.screen-on :is(#crosshair, #prompt) { visibility: hidden !important; }
+      /* The screen's own colour, painted edge to edge. The camera's overlay
+         has none: it goes over the feed. */
+      #radar-overlay.on-screen { background: #05080d; }
+      #processing-screen.on-screen { background: #04060b; }
+      #bedroom-pc.on-screen { background: #07130c; z-index: auto; }
+      /* The PC's panel fills its monitor, sized to be read on it. */
+      #bedroom-pc.on-screen .pc-screen {
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        padding: 30px 40px 24px;
+        gap: 18px;
+        border: 0;
+        border-radius: 0;
+        font-size: 24px;
+      }
+      #bedroom-pc.on-screen .pc-body { min-height: 0; flex: 1; }
+      #bedroom-pc.on-screen .pc-map { width: min(470px, 100%); }
+      #bedroom-pc.on-screen :is(.pc-note, .pc-hint) { font-size: 18px; }
 
       /* ── Processing screen (ServerRoom console) ────────── */
       #processing-screen {
@@ -655,10 +834,11 @@
       }
       .menu-tagline { --ls: 0.14em; color: var(--menu-ok); font-size: 13px; letter-spacing: var(--ls); min-height: 4.5em; }
       .menu-type {
-        /* Each character is 1ch plus the letter-spacing; 1ch alone clipped
-           the end of every line. */
-        width: calc(var(--chars) * (1ch + var(--ls)));
-        overflow: hidden;
+        /* Typed in by uncovering the line (clip-path, keyframes below), a
+           character a step; the line keeps its own width. A width worked out
+           as --chars × (1ch + the letter-spacing) cut the last letters off
+           wherever the glyphs drew wider than that ("KEEP LISTENIN"). */
+        width: max-content;
         white-space: nowrap;
         animation: menu-type 0.8s steps(var(--chars)) calc(0.3s + var(--i) * 0.9s) both;
       }
@@ -830,7 +1010,7 @@
 
       @keyframes menu-blink   { 50% { opacity: 0; } }
       @keyframes menu-flicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: 0.82; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
-      @keyframes menu-type    { from { width: 0; } }
+      @keyframes menu-type    { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
       @keyframes menu-flash   { 50% { background: rgba(232, 160, 80, 0.16); } }
       @keyframes menu-roll    { to { transform: translateY(-100%); } }
       @media (prefers-reduced-motion: reduce) {
@@ -929,7 +1109,9 @@
         position: absolute;
         left: 22px;
         bottom: 44px;
-        width: min(540px, 46vw);
+        /* A share of the monitor (the overlay is laid out at its size), so
+           the map is the same on any window, in the corner of the picture. */
+        width: 28%;
         background: rgba(6, 12, 10, 0.72);
         border: 1px solid rgba(160, 220, 180, 0.45);
         z-index: 1;
@@ -960,7 +1142,7 @@
            off its wall and the square agree. */
         box-sizing: border-box;
         padding: 0;
-        font: bold 14px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font: bold 11px/1 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
         color: #dfe9e2;
         background: #2a3530;
         border: 2px solid #9fb8a8;
@@ -973,50 +1155,9 @@
       /* The monitor is the whole screen: no crosshair or [E] prompt over it. */
       body.cctv-on :is(#crosshair, #prompt, #tutorial) { visibility: hidden !important; }
 
-      /* ── Journal (JournalPanel.js): the previous operator's notebook ──
-         A page of ruled paper held up close. Below the menus (150), so a
-         pause covers it; the game behind it runs slow (Journal.js). */
-      #journal {
-        position: fixed;
-        inset: 0;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 140;
-        background: rgba(0, 0, 0, 0.55);
-        pointer-events: none;
-      }
-      #journal.is-open { display: flex; }
-      .journal-paper {
-        box-sizing: border-box;
-        width: min(560px, calc(100vw - 32px));
-        max-height: calc(100vh - 48px);
-        overflow-y: auto;
-        padding: 30px 36px 22px 52px;
-        color: #2b2620;
-        font: 17px/30px "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
-        /* Off-white paper, faint blue rules every line, a red margin line. */
-        background:
-          linear-gradient(to right, transparent 38px, rgba(190, 70, 60, 0.35) 38px, rgba(190, 70, 60, 0.35) 40px, transparent 40px),
-          repeating-linear-gradient(to bottom, transparent 0 29px, rgba(70, 100, 150, 0.22) 29px 30px),
-          #e8e0c9;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-        transform: rotate(-0.6deg);
-      }
-      .journal-title { margin: 0 0 8px; font: inherit; font-size: 22px; font-weight: 700; }
-      .journal-body p { margin: 0 0 30px; }
-      .journal-body p:last-child { margin-bottom: 12px; }
-      .journal-hint {
-        font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-        color: #6a6050;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-      }
-      @media (max-width: 640px) { .journal-paper { padding: 22px 18px 18px 46px; font-size: 15px; } }
-
       /* Gameplay overlays show only while playing. visibility, not display,
          so each owner's own display state survives the menu. */
-      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #journal, #nap-hint, #event-banner, #tutorial) {
+      body:not([data-app="playing"]) :is(#hud, #crosshair, #prompt, #radar-overlay, #processing-screen, #signal-review, #cctv, #nap-hint, #event-banner, #tutorial):not(.on-screen) {
         visibility: hidden !important;
       }
 
@@ -1104,6 +1245,82 @@
         transition: opacity 0.6s ease;
       }
       #fade .fade-caption.is-shown { opacity: 1; }
+
+      /* ── Bedroom PC (BedroomPCPanel.js, #114) ──────────────
+         An old green-phosphor screen held up close: the colony map, and
+         last night's threats with tonight's forecast. It fills the view,
+         the way the desk's terminal does (the Sleep Demon counts it as a
+         screen). Below the menus (150), so a pause covers it; the night
+         runs on behind it. */
+      #bedroom-pc {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 140;
+        background: rgba(2, 6, 4, 0.82);
+        pointer-events: none;
+      }
+      #bedroom-pc.is-open { display: flex; }
+      body:not([data-app="playing"]) #bedroom-pc:not(.on-screen) { visibility: hidden !important; }
+      .pc-screen {
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 48px);
+        padding: 18px 22px 14px;
+        background: #07130c;
+        border: 2px solid #2f5a3e;
+        border-radius: 10px;
+        box-shadow: 0 0 0 6px #121a15, 0 12px 40px rgba(0, 0, 0, 0.7), inset 0 0 60px rgba(60, 255, 140, 0.06);
+        color: #8fe3a8;
+        font: 13px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        text-shadow: 0 0 4px rgba(90, 255, 150, 0.35);
+      }
+      .pc-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 6px 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #23462f;
+      }
+      .pc-array { color: #c8ffd8; font-weight: bold; letter-spacing: 0.1em; }
+      .pc-tabs { display: flex; gap: 10px; }
+      .pc-tab { color: #4f8a62; letter-spacing: 0.08em; }
+      .pc-tab.is-active { color: #07130c; background: #8fe3a8; padding: 0 5px; text-shadow: none; }
+      .pc-body { min-height: 240px; overflow-y: auto; }
+      .pc-map { display: block; width: min(320px, 100%); margin: 0 auto; overflow: visible; }
+      .pc-map text { font: 7px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; fill: #8fe3a8; }
+      .pc-ring { fill: none; stroke: #23462f; stroke-dasharray: 2 3; }
+      .pc-route { fill: none; stroke: #c8ffd8; stroke-width: 1.2; }
+      .pc-hub-line { stroke: #e0c25a; stroke-width: 1.2; stroke-dasharray: 4 3; }
+      .pc-hub-head { fill: #e0c25a; }
+      .pc-map .pc-hub-label { fill: #e0c25a; }
+      .pc-neighbour { fill: #07130c; stroke: #8fe3a8; stroke-width: 1.2; }
+      .pc-map .pc-neighbour-label { fill: #4f8a62; }
+      .pc-base { fill: #c8ffd8; }
+      .pc-map .pc-base-label { fill: #c8ffd8; font-weight: bold; }
+      .pc-note { margin: 8px 0 0; color: #4f8a62; font-size: 11px; }
+      .pc-section { margin-bottom: 14px; }
+      .pc-section-title { margin: 0 0 6px; color: #c8ffd8; font-size: inherit; font-weight: bold; letter-spacing: 0.08em; }
+      .pc-list { margin: 0; padding: 0; list-style: none; }
+      .pc-log-entry, .pc-forecast-item { margin-bottom: 4px; color: #8fe3a8; }
+      .pc-log-time { display: inline-block; min-width: 6ch; color: #4f8a62; }
+      .pc-forecast-item::before { content: "› "; color: #4f8a62; }
+      .pc-empty { margin: 0; color: #c8ffd8; letter-spacing: 0.06em; }
+      .pc-hint {
+        padding-top: 8px;
+        border-top: 1px solid #23462f;
+        color: #4f8a62;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
 
       /* ── Generator breaker panel (BreakerPanel.js) ──────── */
       #breaker-panel {
@@ -1229,7 +1446,6 @@
       <div id="hud-clock">12:00 AM</div>
       <div id="hud-signals">Signals: 0 / 3</div>
       <div id="hud-night">Night 1</div>
-      <div id="hud-scan-bar"></div>
       <div id="hud-prompt"></div>
       <div id="hud-suit">EVA suit on</div>
       <div id="hud-stamina" data-level="ok"><span>Stamina</span><div id="hud-stamina-track"><div id="hud-stamina-fill"></div></div></div>
@@ -1247,6 +1463,24 @@
 
     <!-- Radar overlay (shown while using the computer) -->
     <div id="radar-overlay">
+      <div id="radar-telemetry"></div>
+      <div id="radar-scan-progress">
+        <div class="scan-fill"></div>
+      </div>
+      <div id="radar-lockon-progress">
+        <div class="scan-fill"></div>
+      </div>
+      <div id="radar-drive-indicators">
+        <div class="drive-indicator">
+          <div class="drive-indicator-dot" id="drive-dot"></div>
+          <span class="drive-indicator-label">DRIVE</span>
+        </div>
+        <div class="drive-indicator">
+          <div class="drive-indicator-dot" id="signal-dot"></div>
+          <span class="drive-indicator-label">SIGNAL</span>
+        </div>
+      </div>
+      <div id="radar-let-me-in"></div>
       <canvas id="radar-canvas"></canvas>
       <div id="radar-warning"></div>
       <div id="radar-info"></div>
@@ -1267,7 +1501,7 @@
       <div id="processing-title">Signal Processing</div>
       <div id="processing-preview">
         <canvas id="processing-spectrogram" width="480" height="360"></canvas>
-        <div id="processing-scanline"></div>
+        <div id="processing-scanline" data-paint-live></div>
       </div>
       <div id="tuning-game">
         <canvas id="tuning-canvas" width="480" height="60"></canvas>
@@ -1308,13 +1542,13 @@
     <!-- The intro before the first shift (IntroPlayer.js fills it) -->
     <div id="intro" hidden></div>
 
-    <!-- The previous operator's journal (JournalPanel.js) -->
-    <div id="journal"></div>
-
     <div id="fade"></div>
 
     <!-- Generator breaker panel (built per puzzle by BreakerPanel.js) -->
     <div id="breaker-panel"></div>
+
+    <!-- The bedroom PC's screens (BedroomPCPanel.js) -->
+    <div id="bedroom-pc"></div>
 
     <div id="whiteout"><div class="whiteout-message"></div></div>
     

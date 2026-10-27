@@ -20,6 +20,7 @@ import { Layers, packGroups } from './PhysicsLayers.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
+import { MouseSpikeFilter } from './MouseSpikes.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
@@ -63,8 +64,8 @@ export class Engine {
   /** @type {PhysicsDebug} */ physicsDebug;
   /** @type {LevelEditor}  */ levelEditor;
   /** @type {DebugCamera}  */ debugCamera;
-  /** A camera to draw the frame through instead of the player's — a
-   *  security camera on the monitor (CameraTerminal), or the main menu's
+  /** A camera to draw the frame through instead of the player's — leaning
+   *  in to a screen (ScreenView), the buggy's send-off, or the main menu's
    *  shot (App, the scene's `menuCamera`). The player's camera keeps the
    *  ears (audioListener) and the interaction ray; only the picture moves.
    *  Cleared on every scene load.
@@ -74,9 +75,9 @@ export class Engine {
    *  When set, preRender() redirects the scene render to a target and
    *  postRender() composites.
    *  @type {import('./PostPipeline.js').PostPipeline|import('./RedOut.js').RedOut|null} */ postProcess = null;
-  /** Drawn over the finished frame, in order, after postProcess — each
-   *  `render()` (the CCTV switch, CameraSignalPass). They belong to the
-   *  scene that added them: emptied on every scene load.
+  /** Run after the finished frame, in order, after postProcess — each
+   *  `render()` (the security monitor's picture, FeedDisplay). They belong
+   *  to the scene that added them: emptied on every scene load.
    *  @type {{ render(): void }[]} */ screenPasses = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
@@ -110,10 +111,9 @@ export class Engine {
   paused = false;
 
   /** How fast game time runs: the updates are handed frameDt × timeScale.
-   *  A nap sets it above 1 (Nap.js) to fast-forward the night; the journal
-   *  sets it below 1 (Journal.js), so it reads in slowed time. Physics keeps
-   *  real time either way, since many more steps a frame would only cost
-   *  frames. The frame and its input never change speed. */
+   *  A nap sets it above 1 (Nap.js) to fast-forward the night; below 1
+   *  slows it, though nothing does that now. Physics keeps real time
+   *  either way, since many more steps a frame would only cost frames. The frame and its input never change speed. */
   timeScale = 1;
   /** Real seconds in the frame being simulated, whatever timeScale is: for
    *  what must keep real speed through a nap (getting into and out of bed,
@@ -126,6 +126,12 @@ export class Engine {
   /** True while a DOM panel has the mouse (the generator's breaker panel):
    *  the pointer lock was let go on purpose, so losing it isn't a pause. */
   uiHasMouse = false;
+  /** The run's record (src/gameplay/RunRecord.js): the array's name and
+   *  each night's threat log, for the bedroom PC. Held here because a dream
+   *  rebuilds the scene between nights; BaseScene makes one if there is
+   *  none, and App starts it over on New game, the Tutorial, Continue and
+   *  Select night. */
+  run = null;
   /** @type {Set<(scene: import('./Scene.js').Scene) => void>} */
   _sceneLoadedListeners = new Set();
   /** Told when the simulation pauses and resumes (onPauseChange). */
@@ -135,9 +141,10 @@ export class Engine {
   revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
 
   // ── Input ─────────────────────────────────
-  // Touchpads can occasionally emit one huge movement event. Cap each raw
-  // event before accumulation; FirstPersonController also caps the frame total.
-  mouseEventMaxDelta = 40;
+  // Touchpads can occasionally emit one huge movement event out of nowhere;
+  // it is dropped, not clamped, so a fast flick still turns as far as the
+  // mouse went (MouseSpikes.js, #117).
+  _mouseSpikes = new MouseSpikeFilter();
   input = {
     keys: {},
     pressed: {},
@@ -164,7 +171,9 @@ export class Engine {
     crouch:   'KeyC',
     interact: 'KeyE',
     flashlight: 'KeyF',
-    rotateHeld: 'KeyR',   // hold to turn a carried object with the mouse
+    rotateHeld: 'KeyR',   // hold (or tap) to turn a carried object with the mouse
+    holdFurther: 'ArrowUp',    // push a carried object away (the wheel, without one)
+    holdCloser: 'ArrowDown',   // pull it in
   };
 
   /** Freeze or unfreeze the simulation. Input is cleared both ways: a keyup
@@ -292,11 +301,13 @@ export class Engine {
       this.input.locked = document.pointerLockElement === canvas;
       this.input.mouse.dx = 0;
       this.input.mouse.dy = 0;
+      this._mouseSpikes.reset();
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.input.locked) return;
-      this.input.mouse.dx += this._clampMouseEventDelta(e.movementX);
-      this.input.mouse.dy += this._clampMouseEventDelta(e.movementY);
+      if (!this._mouseSpikes.accept(e.movementX, e.movementY)) return;
+      this.input.mouse.dx += e.movementX;
+      this.input.mouse.dy += e.movementY;
     });
 
     // ── Mouse wheel (scroll) ──
@@ -846,11 +857,6 @@ export class Engine {
     this.input.pressed = {};
   }
 
-  _clampMouseEventDelta(delta) {
-    if (!Number.isFinite(delta)) return 0;
-    return Math.max(-this.mouseEventMaxDelta, Math.min(this.mouseEventMaxDelta, delta));
-  }
-
   /** Snapshot every rigid-body transform BEFORE world.step(). */
   _savePrevPhysics() {
     for (const [handle, go] of this.rigidBodyMap) {
@@ -890,11 +896,13 @@ export class Engine {
       const prev = this._prevPos.get(handle);
       if (!prev) continue;
       const cur = go.rigidBody.translation();
-      
+      // Not interpolated (a carried object): the latest step, as the player.
+      const a = go.interpolate === false ? 1 : alpha;
+
       // Interpolated world position
-      const wx = prev.x + (cur.x - prev.x) * alpha;
-      const wy = prev.y + (cur.y - prev.y) * alpha;
-      const wz = prev.z + (cur.z - prev.z) * alpha;
+      const wx = prev.x + (cur.x - prev.x) * a;
+      const wy = prev.y + (cur.y - prev.y) * a;
+      const wz = prev.z + (cur.z - prev.z) * a;
       
       // Convert world position to local space if the object has a parent.
       // Child objects (e.g. drives inside a room) store position relative to
@@ -916,7 +924,7 @@ export class Engine {
         
         // Interpolated world quaternion
         const wq = this._scratchQ2.set(cr.x, cr.y, cr.z, cr.w);
-        wq.slerp(this._scratchQ, 1 - alpha);
+        wq.slerp(this._scratchQ, 1 - a);
         
         // Convert world quaternion to local space if the object has a parent.
         if (go.object3d.parent) {

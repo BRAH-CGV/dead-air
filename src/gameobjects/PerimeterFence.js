@@ -90,6 +90,12 @@ export const FENCE = {
    *  chainlink-fence's entry there. Kept here too because the collider needs
    *  a height and has no geometry of its own to measure it from. */
   height: 2.4,
+  /** How tall its collider stands, from the ground: an invisible wall far
+   *  above the wire, so nothing in the yard is a step over it — off the
+   *  generator or the buggy's roof a jump cleared the drawn height (#184).
+   *  Only the fence's own colliders; the buggy's body is fixed and is moved
+   *  through the gate's span without touching it. */
+  colliderHeight: 12,
   /** How thick a run's collider is, front to back. Thin: a fence is a line
    *  you cannot cross, not a wall with depth worth colliding into the side
    *  of. */
@@ -353,7 +359,7 @@ function attachColliders(world, fence, runsBySide, heightAt) {
 
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0));
   const colliders = [];
-  const halfHeight = FENCE.height / 2;
+  const halfHeight = FENCE.colliderHeight / 2;
   const halfThickness = FENCE.colliderThickness / 2;
 
   for (const { side, runs } of runsBySide) {

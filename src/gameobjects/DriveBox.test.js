@@ -66,6 +66,36 @@ describe('DriveBox', () => {
     expect(engine.rigidBodyMap.get(box.rigidBody.handle)).toBe(box);
   });
 
+  it('wears tex:drive-box once _init finds it loaded, keeping its own colour', () => {
+    const box = new DriveBox('Box', { color: 0x884422 });
+    const { scene, world, engine } = makeSceneContext();
+    const tex = new THREE.Texture();
+    const normal = new THREE.Texture();
+    engine.assets = { has: k => k.startsWith('tex:drive-box'), get: k => (k === 'tex:drive-box' ? tex : normal) };
+    box._init(scene, world);
+    expect(box._material.map).toBe(tex);
+    expect(box._material.normalMap).toBe(normal);
+    expect(box._material.color.getHex()).toBe(0x884422);
+  });
+
+  it('leaves a material it was handed alone', () => {
+    const material = new THREE.MeshStandardMaterial();
+    const box = new DriveBox('Box', { material });
+    const { scene, world, engine } = makeSceneContext();
+    engine.assets = { has: () => true, get: () => new THREE.Texture() };
+    box._init(scene, world);
+    expect(material.map).toBeNull();
+  });
+
+  it('starts its body turned the way it was placed', () => {
+    const box = new DriveBox();
+    box.object3d.rotation.y = Math.PI;
+    const { scene, world } = makeSceneContext();
+    box._init(scene, world);
+    const r = box.rigidBody.rotation();
+    expect(Math.abs(r.y)).toBeCloseTo(1);
+  });
+
   it('marks itself as a drive box for snap receivers', () => {
     const box = new DriveBox('ExampleDriveBox');
     expect(box.isDriveBox).toBe(true);

@@ -1,3 +1,4 @@
+import { Footsteps, STEP_SOUNDS } from '../components/Footsteps.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as THREE from 'three';
 
@@ -14,6 +15,13 @@ import { FatigueEffects } from '../components/FatigueEffects.js';
 import { FatigueOverlay } from '../ui/FatigueOverlay.js';
 import { Flashlight } from '../components/Flashlight.js';
 import { CoffeeMachine, COFFEE } from '../components/CoffeeMachine.js';
+import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
+import { CoffeeItems } from '../components/CoffeeItems.js';
+import { SnapSocket } from '../components/SnapSocket.js';
+import { COFFEE_MACHINE } from './rooms/LivingQuarters.js';
+import { ProcessorSound } from '../components/ProcessorSound.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
+import { CoffeeSound } from '../components/CoffeeSound.js';
 
 // A full base build is slow under jsdom — see BaseScene.test.js.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -97,30 +105,155 @@ describe('BaseScene stamina, the sleep demon and fatigue', () => {
     expect(ceiling.intensity).toBe(0);
   });
 
-  it("hands the bedroom's coffee machine the same stamina, with a full rack again each night", () => {
+  /** Carry what is in hand to `object` and let it go there. */
+  const dropAt = (item, object) => {
+    item.place(object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0.6, 0, 0)));
+    scene.pickupSystem.dropHeld();
+  };
+
+  /** Pick a ripe bush, let the beans go by the office's processor, [E] to
+   *  process them, pick up the bag: a bag of ground coffee in hand. */
+  const groundCoffee = () => {
+    const { coffeeBushes, beanProcessor } = scene.rooms.MainOffice;
+    const i = scene.coffee.bushes.indexOf('ripe');
+    const rack = coffeeBushes.gameObject.object3d;
+    rack.updateMatrixWorld(true);
+    coffeeBushes.onInteract({ point: rack.localToWorld(coffeeBushes.bushes[i].clone().setX(0.35)) });
+    const pile = scene.coffeeItems.held('beans');
+    expect(pile).toBeTruthy();                            // the beans in hand
+    dropAt(pile, beanProcessor.gameObject.object3d);
+    beanProcessor.onUpdate(0.016);
+    expect(pile.inPlay).toBe(false);                      // taken in
+    beanProcessor.onInteract({});
+    beanProcessor.onUpdate(COFFEE_HARVEST.processSeconds + 0.1);
+    const bag = scene.coffeeItems.bags.find(b => b.inPlay);
+    scene.pickupSystem.pickUp(bag.pickupable);
+    return bag;
+  };
+
+  it('one night\'s coffee for the rack, the processor and the bedroom machine: two ripe bushes, fresh each night (#168)', () => {
+    expect(scene.coffee).toBeInstanceOf(CoffeeHarvest);
+    expect(scene.coffeeItems).toBeInstanceOf(CoffeeItems);
+    const { coffeeBushes, beanProcessor } = scene.rooms.MainOffice;
+    expect(coffeeBushes.harvest).toBe(scene.coffee);
+    expect(coffeeBushes.items).toBe(scene.coffeeItems);
+    expect(beanProcessor.harvest).toBe(scene.coffee);
+    expect(beanProcessor.items).toBe(scene.coffeeItems);
+    expect(scene.coffee.bushes.length).toBe(coffeeBushes.bushes.length);
+    expect(scene.coffee.ripeLeft).toBe(COFFEE_HARVEST.ripePerNight);
+    // The goods are the office's, carried like its drives.
+    for (const it of [...scene.coffeeItems.beans, ...scene.coffeeItems.bags]) {
+      expect(it.parent).toBe(scene.rooms.MainOffice.root);
+      expect(it.inPlay).toBe(false);
+    }
+
+    const bag = groundCoffee();
+    expect(scene.coffeeItems.held('bag')).toBe(bag);
+    expect(scene.coffee.ripeLeft).toBe(1);
+
+    gameplay.getComponent(StaminaDrain).onStart();
+    scene.nights.advance();
+    expect(scene.coffee.ripeLeft).toBe(COFFEE_HARVEST.ripePerNight);
+    expect(bag.inPlay).toBe(false);                       // put away, out of the hands
+    expect(scene.pickupSystem.heldPickupable).toBeNull();
+  });
+
+  it('the coffee sounds: the processor grinds and sounds the beans going in, the machine the bag', () => {
+    const processor = scene.rooms.MainOffice.beanProcessor.gameObject;
+    const grind = processor.getComponent(ProcessorSound);
+    expect(grind).toBeTruthy();
+    expect(grind.harvest).toBe(scene.coffee);
+    expect(processor.getComponent(ImpactSound).clips).toEqual(IMPACT_SOUNDS.beans.clips);
+    const machine = scene.rooms.LivingQuarters.coffeeMachine.gameObject;
+    expect(machine.getComponent(ImpactSound)).toBeNull();   // the bag docks on it, and sounds itself
+  });
+
+  it('docks a bag dropped by the coffee machine on its top, to be seen there until it is brewed', () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    const dock = machine.dock;
+    expect(dock).toBeInstanceOf(SnapSocket);
+    expect(machine.gameObject.getComponent(SnapSocket)).toBe(dock);
+    expect(dock.candidates).toEqual(scene.coffeeItems.bags);
+    expect(dock.sounds).toBe('item');
+    const top = machine.gameObject.object3d.localToWorld(dock.slots[0].offset.clone());
+    const middle = machine.gameObject.object3d.getWorldPosition(new THREE.Vector3());
+    expect(top.y).toBeGreaterThan(middle.y + COFFEE_MACHINE[1] / 2);        // on top, not in it
+    expect(Math.hypot(top.x - middle.x, top.z - middle.z)).toBeLessThan(0.01);
+  });
+
+  it("hands the bedroom's coffee machine the same stamina and the coffee carried to it", () => {
     const machine = scene.rooms.LivingQuarters.coffeeMachine;
     expect(machine).toBeInstanceOf(CoffeeMachine);
     expect(machine.stamina).toBe(scene.stamina);
+    expect(machine.items).toBe(scene.coffeeItems);
     scene.stamina.value = 0.2;
     machine.onInteract({});
+    expect(machine.state).toBe('empty');                  // nothing to brew with yet
+    const bag = groundCoffee();
+    dropAt(bag, machine.gameObject.object3d);
+    machine.dock.onUpdate(0.016);
+    machine.onUpdate(0.016);
+    expect(machine.dock.firstAttached).toBe(bag);         // docked on its top
+    expect(bag.inPlay).toBe(true);                        // there to be seen
+    machine.onInteract({});
+    expect(bag.inPlay).toBe(false);                       // brewed: put away
     machine.onUpdate(COFFEE.brewSeconds + 0.1);
     machine.onInteract({});
     expect(scene.stamina.value).toBeCloseTo(0.2 + COFFEE.amount);
-    expect(machine.cups).toBe(COFFEE.cups - 1);
 
     gameplay.getComponent(StaminaDrain).onStart();
     scene.nights.advance();
     expect(scene.stamina.value).toBe(1);
-    expect(machine.cups).toBe(COFFEE.cups);
-    expect(machine.state).toBe('ready');
+    expect(machine.state).toBe('empty');
   });
 
-  it('a coffee makes a sound as it is drunk (the ration placeholder), not as it brews', () => {
+  it('Restart night mid-brew: tearing the scene down stops the coffee machine\'s sound', () => {
+    const machine = scene.rooms.LivingQuarters.coffeeMachine;
+    const voice = machine.gameObject.getComponent(CoffeeSound);
+    const brew = { isPlaying: false, play: vi.fn(() => { brew.isPlaying = true; }), stop: vi.fn(() => { brew.isPlaying = false; }),
+      pause: vi.fn(() => { brew.isPlaying = false; }), setVolume: vi.fn(), disconnect: vi.fn(), removeFromParent: vi.fn() };
+    voice.brew = brew;
+    voice.click = null;
+    voice.onStart();
+    machine.dock.attach(scene.coffeeItems.bags[0]);   // a bag of ground coffee on it
+    machine.onUpdate(0);
+    machine.onInteract({});
+    voice.onUpdate(0.1);
+    expect(brew.isPlaying).toBe(true);
+    // What Engine.loadScene does: the scene's dispose, then destroy whatever is still attached.
+    scene.dispose();
+    for (const go of engine._rootObjects) go.destroy();
+    expect(brew.stop).toHaveBeenCalled();
+    expect(brew.isPlaying).toBe(false);
+  });
+
+  it('the player has footsteps, that know when they are outside', () => {
+    const feet = engine.player.getComponent(Footsteps);
+    expect(feet).toBeTruthy();
+    expect(feet.isOutside()).toBe(false);                  // the camera is in the office
+    engine.camera.position.set(200, 1.24, 200);
+    engine.camera.updateMatrixWorld();
+    expect(feet.isOutside()).toBe(true);
+    // …that know what is under them…
+    expect(scene.rooms.LivingQuarters.root.find('Desk').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('SideTable').surface).toBe('wood');
+    expect(scene.rooms.LivingQuarters.root.find('Bunk').surface).toBe('bed');
+    expect(scene.rooms.MainOffice.root.find('ComputerDesk').surface).toBe('wood');
+    expect(feet.surfaceUnder()).toBe('floor');
+    // …and that are muffled in the suit, put on the player after them.
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.lowpass);
+    scene.suit.putOn();
+    expect(feet.cutoff('interior')).toBe(STEP_SOUNDS.suitLowpass);
+  });
+
+  it('a coffee is slurped as it is drunk, not as it brews', () => {
     const sip = { isPlaying: false, play: vi.fn(), stop: vi.fn() };
-    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:ration' ? sip : null));
+    vi.spyOn(BaseScene.prototype, '_sound').mockImplementation(key => (key === 'sfx:slurp' ? sip : null));
     const other = new BaseScene(makeSceneEngine());
     other.build();
     const machine = other.rooms.LivingQuarters.coffeeMachine;
+    machine.dock.attach(other.coffeeItems.bags[0]);      // a bag of ground coffee on it
+    machine.onUpdate(0.016);
     machine.onInteract({});
     expect(sip.play).not.toHaveBeenCalled();
     machine.onUpdate(COFFEE.brewSeconds + 0.1);

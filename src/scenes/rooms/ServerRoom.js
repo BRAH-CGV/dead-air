@@ -1,9 +1,12 @@
 import * as THREE from 'three';
+import { READER_SIZE, READER_SLOT, readerMaterial, skinReader } from '../../gameobjects/DriveReader.js';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { SightlineZone } from '../../gameobjects/SightlineZone.js';
 import { LEDStrip } from '../../components/LEDStrip.js';
+import { screenSurface, screenMesh } from '../../components/ScreenView.js';
+import { createScreenMaterial } from '../../gameobjects/ScreenGlass.js';
 
 // ─────────────────────────────────────────────
 // ServerRoom  –  dark rack room, open from night 2
@@ -23,10 +26,46 @@ import { LEDStrip } from '../../components/LEDStrip.js';
 // the corridor.
 // ─────────────────────────────────────────────
 
+/** The console's screen, read off radar-terminal.glb (#161): its CRT's face,
+ *  [tl, tr, br, bl] as seen from the aisle, in the model's own metres
+ *  (× 0.478 at its spawn scale). The glass bulges out to z 0.94 in the
+ *  middle; this is the flat rectangle in front of it. */
+const CONSOLE_SCREEN = [
+  [-0.384, 2.227, 0.94], [0.384, 2.227, 0.94],
+  [0.384, 1.588, 0.94], [-0.384, 1.588, 0.94],
+];
+
+/** The delete console's picture, in canvas px: the CRT's shape (#186). */
+const DELETE_SCREEN_SIZE = [600, 500];
+
+/** The delete console's screen: DELETE in the middle, in the processing
+ *  screen's teal, inside a border like its panels'. Painted once; the flow
+ *  of deleting doesn't touch it.
+ *  @param {CanvasRenderingContext2D} ctx */
+export function paintDeleteScreen(ctx, w, h) {
+  ctx.fillStyle = '#04060b';
+  ctx.fillRect(0, 0, w, h);
+  const inset = h * 0.08;
+  ctx.strokeStyle = 'rgba(0, 200, 180, 0.45)';
+  ctx.lineWidth = h * 0.012;
+  ctx.beginPath();
+  ctx.roundRect(inset, inset, w - inset * 2, h - inset * 2, h * 0.02);
+  ctx.stroke();
+  ctx.fillStyle = '#00dcc8';
+  ctx.font = `bold ${Math.round(h * 0.2)}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('DELETE', w / 2, h / 2);
+}
+
 export class ServerRoom extends Room {
   /** The server console with the "Process signal" interactable.
    *  @type {import('../../core/GameObject.js').GameObject|null} */
   _serverConsole = null;
+
+  /** The console's screen, for ScreenView: the processing screen is drawn
+   *  on it (#161). Marked by buildProps(). */
+  consoleScreen = null;
 
   /** The drive slot on the console. @type {import('../../components/DriveSlot.js').DriveSlot|null} */
   _driveSlot = null;
@@ -150,6 +189,7 @@ export class ServerRoom extends Room {
       name: 'ServerConsole', position: [consoleAt[0], 0, consoleAt[1]], scale: 0.478,
     });
     this._serverConsole = console_;
+    this.consoleScreen = screenSurface(console_.object3d, CONSOLE_SCREEN);
 
     // Drive slot on top of the console. The slot works independently —
     // no DriveManager needed. The console's Interactable checks the slot's
@@ -158,16 +198,10 @@ export class ServerRoom extends Room {
     // not a child of the scaled console model, so it keeps its own size.
     // It sits on the console's front ledge: 0.16 m left of the console's
     // origin, 0.7 m forward of it, 0.405 m up.
-    const slotSize = [0.12, 0.03, 0.15]; // same as MainOffice reader
+    const slotSize = READER_SIZE; // same as MainOffice reader
     const slotPos = [consoleAt[0] - 0.16, 0.405, consoleAt[1] + 0.7];
-    const slotMat = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.7,
-      metalness: 0.4,
-      emissive: 0x003322,
-      emissiveIntensity: 0.3,
-    }));
-    const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
+    const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, this._own(readerMaterial()));
+    skinReader(slotBox.object3d.children[0], this.engine?.assets);
 
     // Tooltip on hover (no interact action — just a label)
     const slotTooltip = new Interactable();
@@ -175,10 +209,10 @@ export class ServerRoom extends Room {
     slotBox.addComponent(slotTooltip);
 
     // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
-    const driveHeight = 0.02; // Drive._size[1] default
     const driveSlot = new DriveSlot({
       snapDistance: 0.25,
-      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+      snapOffset: READER_SLOT.offset,
+      snapRotation: READER_SLOT.rotation,
     });
     slotBox.addComponent(driveSlot);
     this._driveSlot = driveSlot;
@@ -297,6 +331,28 @@ export class ServerRoom extends Room {
     groupGO.object3d.add(glow);
   }
 
+  /** DELETE on the delete console's CRT (#186), through the same screen
+   *  glass as the processing console's picture. Without a canvas (tests)
+   *  the glass is blank. */
+  _addDeleteScreen(console_) {
+    const [w, h] = DELETE_SCREEN_SIZE;
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    const ctx = canvas?.getContext('2d') ?? null;
+    let picture = null;
+    if (ctx) {
+      canvas.width = w;
+      canvas.height = h;
+      paintDeleteScreen(ctx, w, h);
+      picture = this._own(new THREE.CanvasTexture(canvas));
+      picture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const surface = screenSurface(console_.object3d, CONSOLE_SCREEN);
+    const material = this._own(createScreenMaterial({ picture, aspect: w / h, corner: 0.06 }));
+    const mesh = screenMesh(surface, material, { lift: 0.005 });
+    mesh.name = 'DeleteScreen';
+    this._own(mesh.geometry);
+  }
+
   /** Signal delete console. A radar-terminal model with a standalone
    *  drive slot on its front ledge and an Interactable that deletes the
    *  signal from the inserted drive. */
@@ -306,19 +362,14 @@ export class ServerRoom extends Room {
       name: 'DeleteConsole', position: consolePos, rotationY: -Math.PI / 2, scale: 0.478,
     });
     this._deleteConsole = console_;
+    this._addDeleteScreen(console_);
 
     // Drive slot on the console's front ledge. Standalone static box,
     // not a child of the scaled model, so it keeps its own size.
-    const slotSize = [0.12, 0.03, 0.15];
+    const slotSize = READER_SIZE;
     const slotPos = [1.960, 0.405, 2.577];
-    const slotMat = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.7,
-      metalness: 0.4,
-      emissive: 0x003311,
-      emissiveIntensity: 0.3,
-    }));
-    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, slotMat);
+    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, this._own(readerMaterial()));
+    skinReader(slotBox.object3d.children[0], this.engine?.assets);
     slotBox.object3d.rotation.set(0, -Math.PI / 2, 0);
 
     // Tooltip on hover
@@ -327,10 +378,10 @@ export class ServerRoom extends Room {
     slotBox.addComponent(slotTooltip);
 
     // DriveSlot component
-    const driveHeight = 0.02;
     const driveSlot = new DriveSlot({
       snapDistance: 0.25,
-      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+      snapOffset: READER_SLOT.offset,
+      snapRotation: READER_SLOT.rotation,
     });
     slotBox.addComponent(driveSlot);
     this._deleteDriveSlot = driveSlot;

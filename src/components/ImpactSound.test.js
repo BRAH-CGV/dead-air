@@ -3,6 +3,7 @@ import { ImpactSound, IMPACT, IMPACT_SOUNDS, impactLevel } from './ImpactSound.j
 import { Pickupable } from './Pickupable.js';
 import { GameObject } from '../core/GameObject.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
+import { STEP_SOUNDS } from './Footsteps.js';
 
 // ─────────────────────────────────────────────
 // Built by hand: a body that only has the three things the component reads
@@ -418,6 +419,13 @@ describe('ImpactSound', () => {
     expect(sound.play).toHaveBeenCalledTimes(1);
   });
 
+  it('on something fixed (a machine sounding what it takes in), it never knocks', () => {
+    const prop = new GameObject('Machine');
+    prop.rigidBody = { isFixed: () => true };                // no isDynamic: a fixed body, as the test world's
+    const voice = prop.addComponent(new ImpactSound({ buffers: ['a'], sound: fakeSound() }));
+    expect(() => voice.onFixedUpdate(DT)).not.toThrow();
+  });
+
   it('carries on with no clips or no sound', () => {
     const none = build({ buffers: [] });
     expect(() => land(none.voice, none.body, 3)).not.toThrow();
@@ -454,9 +462,43 @@ describe('ImpactSound', () => {
     expect(new ImpactSound(drive).handling).toEqual(drive.clips);
   });
 
+  it('lays an overlay under every sound when it has one, at its own level', () => {
+    const prop = new GameObject('Bag');
+    prop.addComponent(new Pickupable());
+    prop.rigidBody = fakeBody();
+    const sound = fakeSound(), under = fakeSound();
+    const voice = prop.addComponent(new ImpactSound({
+      buffers: ['knock'], handlingBuffers: ['h'], sound, volume: 0.5,
+      overlay: { buffers: ['sand'], volume: 0.2, sound: under },
+    }));
+    voice.knock(1);
+    expect(sound.played).toEqual(['knock']);
+    expect(under.played).toEqual(['sand']);
+    expect(under.volume).toBeCloseTo(0.2);
+    voice._cooldown = 0;
+    voice.handle(0.5);
+    expect(under.played).toEqual(['sand', 'sand']);
+    expect(under.volume).toBeCloseTo(0.1);                 // with the sound's own level
+    voice.onDestroy();
+    expect(under.removeFromParent).toHaveBeenCalled();
+  });
+
+  it('gives the beans three shakes of one recording, and the bag a quieter box knock over a sand step', () => {
+    const { beans, bag, box } = IMPACT_SOUNDS;
+    expect(beans.clips).toHaveLength(3);
+    for (const c of beans.clips) expect(c).toMatchObject({ key: 'sfx:beans' });
+    expect(bag.clips).toEqual(box.clips);
+    expect(bag.handling).toEqual(box.handling);
+    expect(bag.volume).toBeLessThan(box.volume);
+    expect(bag.overlay.clips.every(c => c.key === 'sfx:steps')).toBe(true);
+    expect(bag.overlay.volume).toBeLessThan(bag.volume);   // quiet, under the knock
+    expect(bag.overlay.clips.map(c => c.span)).toEqual(STEP_SOUNDS.exterior);   // the footsteps' own sand crunch
+  });
+
   it('has every clip ready before the first drop', () => {
-    const { box, drive } = IMPACT_SOUNDS;
-    for (const key of [...box.clips, ...box.handling, ...drive.clips]) {
+    const { box, drive, beans, bag } = IMPACT_SOUNDS;
+    const keys = [...box.clips, ...box.handling, ...drive.clips, ...beans.clips, ...bag.overlay.clips].map(k => k.key ?? k);
+    for (const key of new Set(keys)) {
       expect(ASSETS[key], key).toMatchObject({ type: 'audio' });
       expect(ASSETS[key].url, key).toBe(`assets/audio/${key.slice('sfx:'.length)}.mp3`);
       expect(PRELOAD, key).toContain(key);

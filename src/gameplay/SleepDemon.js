@@ -113,7 +113,7 @@ import { terrainHeightAt } from '../gameobjects/MarsTerrain.js';
 // start, the shift ending under it, or onDestroy.
 // ─────────────────────────────────────────────
 
-export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting. [E] to retry';
+export const SLEEP_DEMON_KILL = 'You fell asleep. It was waiting.';
 
 /** The name it ducks the ambience under (Ambience.setDuck). */
 export const SLEEP_DEMON_DUCK = 'sleep-demon';
@@ -251,7 +251,8 @@ export class SleepDemon extends Component {
    * @param {import('./Stamina.js').Stamina} opts.stamina
    * @param {import('../core/GameObject.js').GameObject} opts.figure  Built hidden and owned by the scene.
    * @param {THREE.PerspectiveCamera|null} [opts.camera]  The player's eye.
-   * @param {{ state: string }|null} [opts.terminal]
+   * @param {{ state: string, exit?: () => void }|null} [opts.terminal]  The
+   *        screens: the kill takes the player off whichever is up (exit).
    * @param {(from: THREE.Vector3, dir: THREE.Vector3, max: number) => number} [opts.rayHit]
    *        metres to the first solid thing (sightRay); Infinity: nothing in the way
    * @param {() => boolean} [opts.isFrozen]  The debug fly camera is on.
@@ -354,7 +355,11 @@ export class SleepDemon extends Component {
       lookAngle: () => this.lookAngle(),
       place: spot => this._place(spot),
       hide: () => this._fadeAway(),
-      onKill: () => this._death.start(),
+      onKill: () => {
+        // Off any screen at once: the view is the player's own to fall.
+        this.terminal?.exit?.();
+        this._death.start();
+      },
       approach: (step, unseen) => this._approach(step, unseen),
       playerDrift: () => this._away,
       gap: () => this._gap(),

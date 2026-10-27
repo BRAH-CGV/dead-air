@@ -12,23 +12,32 @@ import { Component } from '../core/Component.js';
 // The count derives from the live socket on every read — no per-frame state
 // — so picking the box back out (SnapSocket detaches it) drops it to zero.
 //
+// Each night also asks for so many of those drives to be processed (taken
+// to PROCESSED_LEVEL at the ServerRoom's processing console):
+// requiredProcessed, 1 / 2 / 4 on nights 1 / 2 / 3 (SignalManager). A
+// processed drive still counts as one of the drives.
+//
 // Usage:
 //   const socket = pedestalGO.addComponent(new SnapSocket({
 //     canAccept: item => item?.isDriveBox === true, ... }));
 //   const dock = pedestalGO.addComponent(new DriveBoxDock({ socket }));
 //   dock.requiredCount = 3;
+//   dock.requiredProcessed = 1;
 //   dock.collectedCount;   // saved drives seated in the docked box
-//   dock.isQuotaMet();     // collectedCount >= requiredCount
+//   dock.processedCount;   // ... of them processed
+//   dock.isQuotaMet();     // enough of both
 //   dock.empty();          // night reset: wipe + release the docked box
 // ─────────────────────────────────────────────
+
+/** The signal level a drive has once processed (the cyan indicator). */
+export const PROCESSED_LEVEL = 2;
 
 export class DriveBoxDock extends Component {
   /** Saved drives needed to pass the night. */
   requiredCount = 0;
 
-  /** Minimum signal processing level a drive must have reached to count.
-   *  Night 3 raises this to 2 so only cyan (processed) drives qualify. */
-  minSignalLevel = 1;
+  /** How many of those drives must have been processed. */
+  requiredProcessed = 0;
 
   /** The SnapSocket that receives drive boxes.
    *  @type {import('../components/SnapSocket.js').SnapSocket|null} */
@@ -52,21 +61,21 @@ export class DriveBoxDock extends Component {
 
   /** Signal-bearing drives seated in the docked box. Unsaved drives don't
    *  count, and neither does anything outside the box. Corrupted (red)
-   *  drives never count: the evil signal has to be deleted, not stored.
-   *  On nights where minSignalLevel > 1, only drives processed to that
-   *  level or higher qualify. */
+   *  drives never count: the evil signal has to be deleted, not stored. */
   get collectedCount() {
-    const box = this.depositedBox;
-    if (!box) return 0;
-    return box.receiver.attachedItems.filter(
-      drive => drive?.saved && !drive?.corrupted
-        && (drive?.signalLevel ?? 1) >= this.minSignalLevel,
-    ).length;
+    return this._good().length;
   }
 
-  /** Whether enough saved drives are docked to pass the night. */
+  /** The counted drives that have been processed (PROCESSED_LEVEL up). */
+  get processedCount() {
+    return this._good().filter(drive => (drive.signalLevel ?? 1) >= PROCESSED_LEVEL).length;
+  }
+
+  /** Whether enough saved drives are docked to pass the night, and enough
+   *  of them processed. */
   isQuotaMet() {
-    return this.collectedCount >= this.requiredCount;
+    return this.collectedCount >= this.requiredCount
+      && this.processedCount >= this.requiredProcessed;
   }
 
   /** Night reset: wipe every drive seated in the docked box (even over
@@ -79,5 +88,12 @@ export class DriveBoxDock extends Component {
       drive?.setEjected?.();
     }
     return this.socket.detach(box);
+  }
+
+  /** The drives in the docked box that count: saved and not corrupted. */
+  _good() {
+    const box = this.depositedBox;
+    if (!box) return [];
+    return box.receiver.attachedItems.filter(drive => drive?.saved && !drive?.corrupted);
   }
 }

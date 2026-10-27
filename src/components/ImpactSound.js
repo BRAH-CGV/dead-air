@@ -35,7 +35,9 @@ import { ClipVoice, clipSet } from './ClipVoice.js';
 //
 // A prop may keep clips apart for handling (`handling`): the drive box has
 // two for landing on things and one of its own for being lifted and set
-// in the dock. Left out, handling uses the knocks.
+// in the dock. Left out, handling uses the knocks. It may also lay an
+// `overlay` under every sound, from a voice of its own: the coffee bag is
+// the box's knock with a quiet sand step under it, a soft, gritty bag.
 //
 // Like the signal lamp's beep, the sound is placed in the world, on the
 // prop (a ClipVoice). It is only built the first time the prop makes a
@@ -76,6 +78,23 @@ export const IMPACT_SOUNDS = {
     clips: ['sfx:drive-impact-1', 'sfx:drive-impact-2', 'sfx:drive-impact-3', 'sfx:drive-impact-4'],
     volume: 1,
   },
+  /** A pile of coffee beans: the three shakes in one recording, as spans,
+   *  each cut to its rattle (the tails after them dropped). */
+  beans: {
+    clips: [[0, 0.2], [0.44, 0.22], [0.97, 0.18]].map(span => ({ key: 'sfx:beans', span })),
+    volume: 0.7,
+  },
+  /** A bag of ground coffee: a box's knock, quieter, with the outdoor
+   *  footsteps' sand crunch under it (STEP_SOUNDS.exterior's spans). */
+  bag: {
+    clips: ['sfx:box-impact-1', 'sfx:box-impact-2'],
+    handling: ['sfx:box-handle'],
+    volume: 0.4,
+    overlay: {
+      clips: [[2.46, 0.38], [3.09, 0.49]].map(span => ({ key: 'sfx:steps', span })),
+      volume: 0.06,
+    },
+  },
 };
 
 /** How loud a knock that changed the prop's velocity by `speed` is, 0..1:
@@ -100,8 +119,10 @@ export class ImpactSound extends Component {
    * @param {import('three').Audio|null} [opts.sound]  Built the first time it is
    *        wanted when left out. Null: silent.
    * @param {() => number} [opts.random]  0..1, for the choice of clip.
+   * @param {{ clips?: (string|object)[], buffers?: AudioBuffer[], volume?: number, sound?: import('three').Audio|null }} [opts.overlay]
+   *        Laid under every sound, at `volume` times that sound's level.
    */
-  constructor({ clips = [], handling, volume = 1, buffers, handlingBuffers, sound, random = Math.random } = {}) {
+  constructor({ clips = [], handling, volume = 1, buffers, handlingBuffers, sound, random = Math.random, overlay = null } = {}) {
     super();
     this.clips = clips;
     this.handling = handling ?? clips;
@@ -110,6 +131,11 @@ export class ImpactSound extends Component {
 
     this._knocks = clipSet(clips, buffers);
     this._handling = handling || handlingBuffers ? clipSet(this.handling, handlingBuffers) : this._knocks;
+    this._overlay = overlay && {
+      voice: new ClipVoice({ sound: overlay.sound, random, refDistance: IMPACT.refDistance, rolloff: IMPACT.rolloff }),
+      set: clipSet(overlay.clips ?? [], overlay.buffers),
+      volume: overlay.volume ?? 1,
+    };
 
     /** The body whose velocity was last read, and that velocity. A body
      *  seen for the first time has nothing to be compared with. */
@@ -134,7 +160,7 @@ export class ImpactSound extends Component {
     this._held = held;
 
     const body = this.gameObject?.rigidBody;
-    if (!body || !body.isDynamic() || held) {
+    if (!body || !body.isDynamic?.() || held) {
       this._body = null;
       return;
     }
@@ -155,6 +181,7 @@ export class ImpactSound extends Component {
 
   onDestroy() {
     this._voice.dispose();
+    this._overlay?.voice.dispose();
   }
 
   /** The prop's sound: undefined until it first makes one, null if it
@@ -185,6 +212,9 @@ export class ImpactSound extends Component {
    *  the last sound. */
   _play(set, level) {
     if (this._cooldown > 0) return;
-    if (this._voice.play(this.gameObject, set, this.volume * level)) this._cooldown = IMPACT.cooldown;
+    if (!this._voice.play(this.gameObject, set, this.volume * level)) return;
+    this._cooldown = IMPACT.cooldown;
+    const o = this._overlay;
+    o?.voice.play(this.gameObject, o.set, o.volume * level);
   }
 }

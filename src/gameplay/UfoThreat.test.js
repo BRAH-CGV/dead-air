@@ -419,7 +419,7 @@ describe('UfoThreat', () => {
     run(threat, toLethal + 0.2);
     expect(threat.phase).toBe('caught');
     expect(controller.fail).toHaveBeenCalled();
-    expect(whiteOut.play).toHaveBeenCalledWith(expect.stringMatching(/\[E\] to retry/));
+    expect(whiteOut.play).toHaveBeenCalledWith('You were taken.');
     expect(sounds.ringing.play).toHaveBeenCalled();
     expect(hooks.setPlayerLocked).toHaveBeenCalledWith(true);
   });

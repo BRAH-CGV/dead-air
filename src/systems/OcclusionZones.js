@@ -118,6 +118,33 @@ export class OcclusionZones {
     }
   }
 
+  /** Draw the hidden zones among `names` for the length of `draw()` alone —
+   *  a security camera's picture of the yard (#161) — then hide them again.
+   *  Not a change: no listener hears it, so the frozen shadow maps aren't
+   *  redrawn, and the player's own frame stays culled. Everything was
+   *  compiled at boot, so nothing waits on readiness. */
+  drawFor(names, draw) {
+    const shown = (this._drawn ??= []);
+    shown.length = 0;
+    if (!this._revealed) {
+      for (const name of names ?? []) {
+        const zone = this._zones.get(name);
+        if (!zone || zone.visible) continue;
+        for (const o of zone.objects) {
+          if (o.visible) continue;
+          o.visible = true;
+          shown.push(o);
+        }
+      }
+    }
+    try {
+      draw();
+    } finally {
+      for (const o of shown) o.visible = false;
+      shown.length = 0;
+    }
+  }
+
   /** Draw everything (on) or go back to the zones' own state (off). */
   revealAll(on) {
     on = !!on;

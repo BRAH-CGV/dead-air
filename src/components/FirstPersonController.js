@@ -60,8 +60,6 @@ export class FirstPersonController extends Component {
     this.sensitivity   = opts.sensitivity   ?? 0.002;
     /** Mouse up looks down. Yaw is never inverted. */
     this.invertY       = opts.invertY       ?? false;
-    // Touchpads can emit rare huge movement deltas; cap one-frame camera jumps.
-    this.maxMouseDelta = opts.maxMouseDelta ?? 32;
     // Camera smoothing: 0 = instant, 1 = no movement. Lower = more responsive, higher = smoother.
     this.cameraSmoothing = opts.cameraSmoothing ?? 0.2;
     this._smoothYaw = 0;
@@ -108,6 +106,11 @@ export class FirstPersonController extends Component {
     /** Public: while true, the mouse doesn't turn the view but the player
      *  can still walk. PickupSystem sets it while R turns a held object. */
     this.lookLocked = false;
+
+    /** Public: the other way round — the mouse still looks, but nothing
+     *  walks, jumps or crouches. The dream's pull sets it while it drags the
+     *  player back (DreamWalk), so they can look round as they fly. */
+    this.moveLocked = false;
 
     this.pitch     = 0;
     this.yaw       = 0;
@@ -193,10 +196,11 @@ export class FirstPersonController extends Component {
     this.camera?.rotation.set(pitch, yaw, 0);
   }
 
-  _clampMouseDelta(delta) {
-    if (!Number.isFinite(delta)) return 0;
-    return Math.max(-this.maxMouseDelta, Math.min(this.maxMouseDelta, delta));
+  /** m/s over the ground: the horizontal velocity (for the footsteps). */
+  get groundSpeed() {
+    return Math.hypot(this._vel.x, this._vel.z);
   }
+
     
   // ── Variable timestep: input + mouse look ─────────────
   onUpdate(dt) {
@@ -224,8 +228,10 @@ export class FirstPersonController extends Component {
     // ── Mouse look (accumulate angles, apply in late update) ──
     // lookLocked: the mouse is turning a held object instead (PickupSystem).
     if (input.locked && !this.lookLocked) {
-      const dx = this._clampMouseDelta(input.mouse.dx);
-      const dy = this._clampMouseDelta(input.mouse.dy);
+      // Not capped: a frame's whole movement turns the view, however fast.
+      // Touchpad spikes are dropped as they come in (Engine, MouseSpikes.js).
+      const dx = Number.isFinite(input.mouse.dx) ? input.mouse.dx : 0;
+      const dy = Number.isFinite(input.mouse.dy) ? input.mouse.dy : 0;
     
       this.yaw   -= dx * this.sensitivity;
       this.pitch -= dy * this.sensitivity * (this.invertY ? -1 : 1);
@@ -239,6 +245,13 @@ export class FirstPersonController extends Component {
                     Math.min( Math.PI / 2 - 0.01, this.pitch));
     }
     
+    // Legs locked, eyes free: drop the last sample, as for inputLocked.
+    if (this.moveLocked) {
+      this._wish = false;
+      this._wantJump = false;
+      return;
+    }
+
     // ── Crouch input — the entire input-mode seam ──
     const crouchHeld = engine.isAction('crouch');
     if (this.crouchMode === 'hold') {

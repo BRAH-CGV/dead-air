@@ -66,9 +66,10 @@ export const EVIL = {
    *  TEMP: 10 s for debugging (was 30). Restore before release. */
   lockSeconds: 10,
   /** The drive-inserted penalty: seconds the array is pinned when a drive
-   *  is in the reader (blank or with a signal). Shorter than no-drive.
-   *  TEMP: 5 s for debugging. Restore before release. */
-  lockWithDriveSeconds: 5,
+   *  is in the reader (blank or with a signal), or until the corrupted
+   *  drive is wiped — whichever comes first.
+   *  TEMP: 30 s for debugging. Restore before release. */
+  lockWithDriveSeconds: 30,
   /** Seconds after a no-drive lock before the evil signal respawns at a
    *  new random position. The player dealt with it, but it comes back.
    *  TEMP: 30 s for debugging. Restore before release. */
@@ -220,6 +221,18 @@ export class EvilSignal extends Component {
    *  the same night can infect a drive again.
    *  @type {boolean} */
   _driveInfected = false;
+  /** True once the silence timer was started (in _infectDrive). Used to
+   *  detect early release: if the timer was started and the drive was
+   *  wiped (_corruptedDriveWiped), the lock ends early. Cleared in _reset().
+   *  @type {boolean} */
+  _silenceTimerStarted = false;
+  /** Set true in the silence-timer block when _findCorruptedDrive()
+   *  returns null AFTER the timer was started — meaning the player wiped
+   *  the corrupted drive. Checked in the locked block to end the lock
+   *  early. Cleared each frame before the silence-timer block runs, and
+   *  in _reset().
+   *  @type {boolean} */
+  _corruptedDriveWiped = false;
   /** Sparks flying from the corrupted drive while the silence timer runs.
    *  @type {import('./DriveSparks.js').DriveSparks|null} */
   _sparks = null;
@@ -392,10 +405,12 @@ export class EvilSignal extends Component {
 
     // The silence timer ticks even when not locked — the corrupted drive
     // must be wiped at the ServerRoom console before it runs out.
+    this._corruptedDriveWiped = false;
     if (this._silenceTimer !== null) {
       const corrupted = this._findCorruptedDrive();
       if (!corrupted) {
         // The drive was wiped (or lost): no more threat.
+        this._corruptedDriveWiped = this._silenceTimerStarted;
         this._disposeSparks();
         this._silenceTimer = null;
         this._driveHopTimer = null;
@@ -466,18 +481,13 @@ export class EvilSignal extends Component {
           this._disposeSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;
+          this._release();           // end the dish lock before game over
           this._caught = true;
-          this.controller?.fail('', { retryAfter: 4 });
+          this.controller?.fail('', { promptAfter: 4 });
           this.terminal?.exit?.();
           this.whiteOut?.play(CAUGHT_MESSAGE, CAUGHT_SCREEN);
           this.hooks?.setPlayerLocked?.(true);
           return;
-        }
-        // Warn the player while the lock is not showing its own message.
-        if (!this.locked) {
-          this.terminal?.radar?.setInfo?.(
-            `ANOMALOUS SIGNAL ON DRIVE — wipe in ${Math.ceil(this._silenceTimer)} s`,
-          );
         }
       }
     }
@@ -516,6 +526,10 @@ export class EvilSignal extends Component {
     // Infect any drive inserted during the lock phase.
     this._infectDrive();
 
+    // The DRIVE indicator dot on the radar blinks red continuously while
+    // the lock waits for a drive; once one is infected the blink stops.
+    if (!this._driveInfected) this.terminal?.radar?.startContinuousBlink?.();
+
     // The radar shows the same glitchy effect as the UFO, centered on the
     // locked signal, while the dish is held.
     if (this.terminal?.radar) {
@@ -529,12 +543,16 @@ export class EvilSignal extends Component {
     }
 
     this._remain -= dt;
-    if (this._remain <= 0) {
+    // Release early if the corrupted drive was wiped before the lock
+    // timer ran out. _corruptedDriveWiped is only set when the drive
+    // actually disappeared (not when the silence timer expires on its
+    // own), so a large dt that expires both timers still runs the full
+    // lock duration.
+    if (this._remain <= 0 || this._corruptedDriveWiped) {
       this._release();
       this._mustLeave = true;   // don't re-grab while the cursor sits on it
       return;
     }
-    this._showLock();
   }
 
   // ── Private ──────────────────────────────
@@ -561,6 +579,16 @@ export class EvilSignal extends Component {
     this._pullTarget = sig;
     this._pullTimer = EVIL.pullInSeconds;
     this.pullingIn = true;
+    // The progress bars fill to 100% and turn red for the duration of
+    // the pull-in and the lock that follows — _evilBarsActive prevents
+    // _updateRadarDisplay() from overwriting them each frame.
+    if (this.terminal) {
+      this.terminal._evilBarsActive = true;
+      this.terminal.radar?.setLockOnProgress?.(1);
+      this.terminal.radar?.setScanProgress?.(1);
+      this.terminal.radar?.setBarColor?.('rgba(255, 40, 40, 0.9)');
+      this.terminal.radar?.startLetMeIn?.();
+    }
   }
 
   /** Hovered: it scans itself at once, then locks the dish. The lock runs
@@ -570,7 +598,6 @@ export class EvilSignal extends Component {
     this.signalManager?.markScanned(sig.id);
     this.locked = true;
     this._remain = EVIL.lockWithDriveSeconds;
-    this._showLock();
     // Infect any drive that's already inserted right as the lock starts.
     this._infectDrive();
   }
@@ -589,27 +616,25 @@ export class EvilSignal extends Component {
     drive.saveEvilToDrive();
     // Shoot the corrupted drive out of the reader in a random direction.
     drive.ejectInsertedDrive?.();
-    this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
     // Force the player out of the computer screen so they must chase the
     // corrupted drive and wipe it at the ServerRoom console.
     this.terminal?.exit?.();
     this._silenceTimer = EVIL.silenceSeconds;
+    this._silenceTimerStarted = true;
     this._driveHopTimer = EVIL.driveHopStart;
     this._driveInfected = true;
     this.deleteWarning?.show();
+    // The "LET ME IN" flashing text has done its job — the drive is
+    // corrupted and the DELETE warning takes over as the visual cue.
+    this.terminal?.radar?.stopLetMeIn?.();
+    // The DRIVE indicator dot stops its continuous blink — drive corrupted.
+    this.terminal?.radar?.stopContinuousBlink?.();
     // Sparks: fly out of the corrupted drive at an increasing rate. A
     // second infection while the first window still runs must not leak
     // the first system.
     this._disposeSparks();
     this._sparks = new DriveSparks();
     this.scene?.add(this._sparks.points);
-  }
-
-  /** The radar info line while the dish is held — seconds remaining. */
-  _showLock() {
-    this.terminal?.radar?.setInfo?.(
-      `SIGNAL LOCKED — the dish is held for ${Math.ceil(this._remain)} s`,
-    );
   }
 
   /** Let go of the dish: the hold is over, or the shift ended. The signal
@@ -619,7 +644,6 @@ export class EvilSignal extends Component {
     if (!this.locked) return;
     this.locked = false;
     this._remain = 0;
-    this.terminal?.radar?.setInfo?.('');
     if (this.terminal?.radar) {
       this.terminal.radar.evilLock = null;
     }
@@ -627,6 +651,17 @@ export class EvilSignal extends Component {
     // must deal with it again. With a drive, the consequence is on the
     // drive — the next keeps its hour. Check before marking deleted (which
     // makes resolved true).
+    // Reset the progress bars: clear the evil colour and empty the fills.
+    if (this.terminal) {
+      this.terminal._evilBarsActive = false;
+      this.terminal.radar?.setBarColor?.('rgba(0, 255, 200, 0.7)');
+      this.terminal.radar?.setLockOnProgress?.(0);
+      this.terminal.radar?.setScanProgress?.(0);
+      this.terminal.radar?.stopLetMeIn?.();
+    }
+    // The DRIVE indicator dot stops its continuous blink — the lock is over.
+    this.terminal?.radar?.stopContinuousBlink?.();
+
     const noDrive = !this._target?.resolved;
     // The signal has been dealt with — make it disappear from the radar.
     if (this._target && !this._target.resolved) {
@@ -692,17 +727,29 @@ export class EvilSignal extends Component {
     this._pullTargetCursor = null;
     this._respawnTimer = null;
     this._silenceTimer = null;
+    this._silenceTimerStarted = false;
+    this._corruptedDriveWiped = false;
     this._driveHopTimer = null;
     this._driveInfected = false;
     this.deleteWarning?.hide();
     this.redOut?.clear();
     this._disposeSparks();
+    // Reset the progress bars (in case the night ended mid-lock).
+    if (this.terminal) {
+      this.terminal._evilBarsActive = false;
+      this.terminal.radar?.setBarColor?.('rgba(0, 255, 200, 0.7)');
+      this.terminal.radar?.setLockOnProgress?.(0);
+      this.terminal.radar?.setScanProgress?.(0);
+      this.terminal.radar?.stopLetMeIn?.();
+    }
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;
     // Reset the shared doom light.
     if (this.doomLight) this.doomLight.intensity = 0;
     this._doomLightFadeRemaining = null;
+    // The DRIVE indicator dot stops its continuous blink — night reset.
+    this.terminal?.radar?.stopContinuousBlink?.();
     if (this._caught) {
       this._caught = false;
       this.hooks?.setPlayerLocked?.(false);

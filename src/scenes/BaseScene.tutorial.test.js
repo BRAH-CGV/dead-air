@@ -86,6 +86,30 @@ describe('BaseScene tutorial (night 0)', () => {
     }
   });
 
+  it('teaches the coffee on the real things: the arrow on a ripe bush, the processor, the bag and the machine', () => {
+    const office = scene.rooms.MainOffice;
+    expect(scene.tutorial.coffee).toEqual({
+      harvest: scene.coffee, items: scene.coffeeItems, machine: scene.rooms.LivingQuarters.coffeeMachine,
+    });
+    const { bush, bag, processor, coffee } = scene.tutorial.targets;
+    const at = bush.object().getWorldPosition(new THREE.Vector3());
+    const ripe = scene.coffee.bushes.flatMap((b, i) => (b === 'ripe' ? [i] : []));
+    const rack = office.coffeeBushes.gameObject.object3d;
+    const near = ripe.some(i => rack.localToWorld(office.coffeeBushes.bushes[i].clone()).distanceTo(at) < 1e-6);
+    expect(near).toBe(true);                                         // on a ripe one
+    expect(processor.object).toBe(office.beanProcessor.gameObject.object3d);
+    expect(bag.object()).toBe(processor.object);                     // no bag yet: the processor that makes it
+    expect(coffee.object).toBe(scene.rooms.LivingQuarters.coffeeMachine.gameObject.object3d);
+  });
+
+  it("reads the server room's processing console, and points at its reader", () => {
+    const server = scene.rooms.ServerRoom;
+    expect(scene.tutorial.serverSlot).toBe(server.driveSlot);
+    expect(scene.tutorial.processingScreen).toBe(scene.processingScreen);
+    expect(scene.tutorial.targets.serverReader.object).toBe(server.driveSlot.gameObject.object3d);
+    expect(scene.tutorial.targets.serverConsole.object).toBe(server.root.find('ServerConsole').object3d);
+  });
+
   it("reads the buggy's boot and the send-off, and points at the boot", () => {
     expect(scene.tutorial.cargoDock).toBe(scene.buggyCargo.dock);
     expect(scene.tutorial.sendOff).toBe(scene.buggySendOff ?? null);
@@ -101,6 +125,17 @@ describe('BaseScene tutorial (night 0)', () => {
     expect(at.x - computer.x).toBeGreaterThan(0.8);          // past the desk's right side
     at.y += desk.lift ?? 0;
     expect(office.isOnDesk(at)).toBe(true);
+  });
+
+  it('points "put it back in a box" at a box with room, not the nearest full one', () => {
+    const boxes = scene.rooms.MainOffice.driveBoxes;
+    const { box, openBox } = scene.tutorial.targets;
+    const nearest = box.object();
+    expect(openBox.object()).toBe(nearest);                   // all full: the nearest still
+    const far = boxes.find(b => b.object3d !== nearest);
+    far.receiver.detach(far.receiver.attachments.findIndex(Boolean));
+    expect(openBox.object()).toBe(far.object3d);
+    expect(box.object()).toBe(nearest);
   });
 
   it("hides while the generator's breaker panel has the mouse, and comes back once it closes", () => {
@@ -142,7 +177,8 @@ describe('BaseScene tutorial (night 0)', () => {
     const [box] = scene.rooms.MainOffice.driveBoxes;
     expect(scene.tutorial.readContext().boxOnDesk).toBe(false);
     const desk = scene.rooms.MainOffice.root.find('ComputerDesk').object3d;
-    const top = desk.localToWorld(new THREE.Vector3(0.3, 0.95, 0));
+    // Desk-local metres: the desk is spawned at its model's scale.
+    const top = desk.localToWorld(new THREE.Vector3(0.3, 0.95, 0).divide(desk.scale));
     box.object3d.parent.worldToLocal(top);
     box.object3d.position.copy(top);
     box.object3d.updateMatrixWorld(true);

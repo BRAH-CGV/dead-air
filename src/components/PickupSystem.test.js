@@ -18,8 +18,8 @@ function makeEngine() {
   return {
     camera,
     input: { keys: {}, pressed: {}, mouse: { dx: 0, dy: 0, wheel: 0 }, locked: true },
-    keyBinds: { interact: 'KeyE', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', rotateHeld: 'KeyR' },
-    playerController: { lookLocked: false },
+    keyBinds: { interact: 'KeyE', forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'KeyC', rotateHeld: 'KeyR', holdFurther: 'ArrowUp', holdCloser: 'ArrowDown' },
+    playerController: { lookLocked: false, inputLocked: false },
     isAction(action) { const code = this.keyBinds[action]; return code ? !!this.input.keys[code] : false; },
   };
 }
@@ -96,6 +96,15 @@ describe('PickupSystem', () => {
     expect(go.rigidBody.setLinearDamping).toHaveBeenCalledWith(5.0, true);
     expect(go.rigidBody.setAngularDamping).toHaveBeenCalledWith(5.0, true);
     expect(go.rigidBody.setLinvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true);
+  });
+
+  it('a held object is drawn at the latest physics step, as the camera is, until it is dropped', () => {
+    const { go, pickupable } = makePickupableGO();
+    expect(go.interpolate).toBe(true);
+    system.pickUp(pickupable);
+    expect(go.interpolate).toBe(false);
+    system.dropHeld();
+    expect(go.interpolate).toBe(true);
   });
 
   it('pickUp returns false if already holding something', () => {
@@ -417,7 +426,7 @@ describe('PickupSystem', () => {
 
     system.onLateUpdate(1 / 60);
     expect(interactionSys.promptOverride).toBe(system);
-    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [R] Rotate');
+    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 [R] Rotate \u00b7 [\u2191/\u2193] Push/pull');
   });
 
   it('clears promptOverride when not holding', () => {
@@ -461,7 +470,7 @@ describe('PickupSystem', () => {
 
     system.onLateUpdate(1 / 60);
     expect(interactionSys.promptOverride).toBe(system);
-    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [R] Rotate');
+    expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 [R] Rotate \u00b7 [\u2191/\u2193] Push/pull');
   });
 
   // ── Rotation (#60) ──
@@ -524,13 +533,19 @@ describe('PickupSystem', () => {
       expect(system.targetRotation(new THREE.Quaternion()).w).toBeCloseTo(1);
     });
 
-    it('lets go of the view when R is released, or the object is dropped', () => {
-      const { pickupable } = makePickupableGO('Box');
-      system.pickUp(pickupable);
+    /** R down for `seconds` of frames, then up for one. */
+    function pressR(seconds) {
       engine.input.keys.KeyR = true;
-      system.onUpdate(1 / 60);
+      for (let t = 0; t < seconds; t += 1 / 60) system.onUpdate(1 / 60);
       engine.input.keys.KeyR = false;
       system.onUpdate(1 / 60);
+    }
+    const turned = () => 2 * Math.acos(Math.min(1, Math.abs(system.targetRotation(new THREE.Quaternion()).w)));
+
+    it('held, then let go: the view comes back on release, or when the object is dropped', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      pressR(0.5);
       expect(engine.playerController.lookLocked).toBe(false);
 
       engine.input.keys.KeyR = true;
@@ -539,18 +554,144 @@ describe('PickupSystem', () => {
       expect(engine.playerController.lookLocked).toBe(false);
     });
 
+    // A laptop's touchpad goes dead while a key is held (Windows' palm
+    // rejection), so R held + touchpad never turned anything.
+    it('a tap of R keeps turning with the mouse, hands free, until R is tapped again', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      pressR(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(true);
+      engine.input.mouse.dx = 100;
+      system.onUpdate(1 / 60);
+      expect(turned()).toBeGreaterThan(0.1);
+
+      engine.input.mouse.dx = 0;
+      pressR(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+      const before = turned();
+      engine.input.mouse.dx = 100;
+      system.onUpdate(1 / 60);
+      expect(turned()).toBeCloseTo(before);
+    });
+
+    it('a tap stops the turning while R is still going down, not only when it comes up', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      pressR(1 / 60);
+      engine.input.keys.KeyR = true;
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+    });
+
+    it('dropping ends the turning: the next thing picked up is not turned', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      pressR(1 / 60);
+      system.dropHeld();
+      expect(engine.playerController.lookLocked).toBe(false);
+
+      const other = makePickupableGO('Drive').pickupable;
+      system.pickUp(other);
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+    });
+
+    it('a tap with empty hands leaves nothing waiting for the next pick-up', () => {
+      pressR(1 / 60);
+      system.pickUp(makePickupableGO('Box').pickupable);
+      system.onUpdate(1 / 60);
+      expect(engine.playerController.lookLocked).toBe(false);
+    });
+
+    it('while it turns on a tap, the prompt says how to stop', () => {
+      const { pickupable } = makePickupableGO('Box');
+      system.pickUp(pickupable);
+      pressR(1 / 60);
+      system.onLateUpdate(1 / 60);
+      expect(interactionSys.prompt.show).toHaveBeenLastCalledWith('[E] Drop \u00b7 [R] Stop rotating');
+    });
+
     it('R does nothing with empty hands', () => {
       engine.input.keys.KeyR = true;
       system.onUpdate(1 / 60);
       expect(engine.playerController.lookLocked).toBe(false);
     });
 
-    it('the prompt names the rotate key as bound', () => {
+    it('the prompt names the keys as bound', () => {
       engine.keyBinds.rotateHeld = 'KeyT';
+      engine.keyBinds.holdFurther = 'KeyU';
+      engine.keyBinds.holdCloser = 'KeyJ';
       const { pickupable } = makePickupableGO('Box');
       system.pickUp(pickupable);
       system.onLateUpdate(1 / 60);
-      expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 hold [T] Rotate');
+      expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 [T] Rotate \u00b7 [U/J] Push/pull');
+    });
+  });
+
+  // \u2500\u2500 Push and pull on keys: a laptop has no wheel \u2500\u2500
+
+  describe('\u2191 / \u2193 push it away and pull it in', () => {
+    const steps = (n) => { for (let i = 0; i < n; i++) system.onFixedUpdate(1 / 60); };
+    /** Picked up 1 m off, the body keeping up with the hand. */
+    function carried() {
+      const { go, pickupable } = makePickupableGO('Drive');
+      go.rigidBody.translation = () => ({ x: 0, y: 1.6, z: -1 });
+      system.pickUp(pickupable);
+      go.rigidBody.translation = () => ({ x: 0, y: 1.6, z: -pickupable.holdDistance });
+      return pickupable;
+    }
+    /** `code` held for `seconds`, then let go. */
+    function hold(code, seconds) {
+      engine.input.keys[code] = true;
+      for (let t = 0; t < seconds; t += 1 / 60) system.onUpdate(1 / 60);
+      engine.input.keys[code] = false;
+    }
+
+    it('\u2191 pushes it further the longer it is held, \u2193 brings it closer', () => {
+      const p = carried();
+      hold('ArrowUp', 0.2);
+      const pushed = p.holdDistance;
+      expect(pushed).toBeGreaterThan(1.1);
+      hold('ArrowDown', 0.1);
+      expect(p.holdDistance).toBeLessThan(pushed);
+      expect(p.holdDistance).toBeGreaterThan(1);
+    });
+
+    it('never out of reach, either way', () => {
+      const p = carried();
+      hold('ArrowUp', 3);
+      expect(p.holdDistance).toBe(p.maxHoldDistance);
+      hold('ArrowDown', 3);
+      expect(p.holdDistance).toBe(p.minHoldDistance);
+    });
+
+    it('the keys stop the easing to 1 m, as a wheel does', () => {
+      const p = carried();
+      hold('ArrowUp', 0.3);
+      const pushed = p.holdDistance;
+      steps(120);
+      expect(p.holdDistance).toBeCloseTo(pushed);
+    });
+
+    it('follow their binds', () => {
+      engine.keyBinds.holdFurther = 'KeyU';
+      const p = carried();
+      hold('ArrowUp', 0.3);
+      expect(p.holdDistance).toBeCloseTo(1);
+      hold('KeyU', 0.3);
+      expect(p.holdDistance).toBeGreaterThan(1.1);
+    });
+
+    it('not while the player is held still: the security monitor steps cameras with \u2191 / \u2193', () => {
+      const p = carried();
+      engine.playerController.inputLocked = true;
+      hold('ArrowUp', 0.3);
+      expect(p.holdDistance).toBeCloseTo(1);
+    });
+
+    it('do nothing with empty hands', () => {
+      expect(() => hold('ArrowUp', 0.3)).not.toThrow();
+      expect(system.heldPickupable).toBeNull();
     });
   });
 

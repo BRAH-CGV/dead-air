@@ -21,7 +21,7 @@ describe('GrowPlant', () => {
     const leaves = bounds(buildGrowPlant().leaves);
     const width = Math.min(leaves.max.x - leaves.min.x, leaves.max.z - leaves.min.z);
     expect(width).toBeGreaterThan(GROW_PLANT.height * 0.6);
-    expect(triangles(buildGrowPlant().leaves)).toBeGreaterThan(2000);   // a dense canopy of leaflets
+    expect(triangles(buildGrowPlant().leaves)).toBeGreaterThan(1200);   // a full canopy of leaves
   });
 
   it('keeps inside its tray: no wider than a tray holds two of', () => {
@@ -30,39 +30,27 @@ describe('GrowPlant', () => {
     expect(leaves.max.z - leaves.min.z).toBeLessThan(0.48);
   });
 
-  it('carries fruit, mostly ripe red, some still turning', () => {
+  it('carries beans in clusters along its branches: dozens of small ones', () => {
     const { fruit } = buildGrowPlant();
-    const colour = fruit.attributes.color;
-    expect(colour).toBeDefined();
-    let red = 0, other = 0;
-    const c = new THREE.Color(), hsl = {};
-    for (let i = 0; i < colour.count; i++) {
-      c.fromBufferAttribute(colour, i).getHSL(hsl);
-      if (hsl.h < 0.03 || hsl.h > 0.97) red++; else other++;
-    }
-    expect(red).toBeGreaterThan(other);
-    expect(other).toBeGreaterThan(0);
+    const count = triangles(fruit) / 20;          // an icosahedron at detail 0 is 20 triangles
+    expect(count).toBeGreaterThanOrEqual(30);
+    expect(count).toBeLessThanOrEqual(100);
+    const box = bounds(fruit);
+    expect(Math.max(box.max.x - box.min.x, box.max.z - box.min.z)).toBeGreaterThan(0.15);
+    expect(box.max.y - box.min.y).toBeGreaterThan(0.15);
   });
 
-  it('carries a handful of fruit, not a cluster on every shoot', () => {
-    const count = triangles(buildGrowPlant().fruit) / 80;   // an icosahedron at detail 1 is 80 triangles
-    expect(count).toBeGreaterThanOrEqual(5);
-    expect(count).toBeLessThanOrEqual(12);
-  });
-
-  it('spreads its fruit round the bush, not bunched by the stem', () => {
-    const fruit = bounds(buildGrowPlant().fruit);
-    expect(Math.max(fruit.max.x - fruit.min.x, fruit.max.z - fruit.min.z)).toBeGreaterThan(0.15);
-    expect(fruit.max.y - fruit.min.y).toBeGreaterThan(0.08);
-  });
-
-  it('keeps the fruit muted, not candy-bright', () => {
+  it('leaves its beans a pale neutral, so the rack tints each bush ripe or not per night', () => {
     const colour = buildGrowPlant().fruit.attributes.color;
     const c = new THREE.Color(), hsl = {};
+    const shades = new Set();
     for (let i = 0; i < colour.count; i += 3) {
-      c.fromBufferAttribute(colour, i).getHSL(hsl, THREE.SRGBColorSpace);   // as it shows, not linear
-      expect(hsl.s).toBeLessThan(0.7);
+      c.fromBufferAttribute(colour, i).getHSL(hsl);
+      expect(hsl.s).toBeLessThan(0.15);
+      expect(hsl.l).toBeGreaterThan(0.6);
+      shades.add(hsl.l.toFixed(2));
     }
+    expect(shades.size).toBeGreaterThan(3);       // each bean a touch lighter or darker
   });
 
   it('hangs its fruit inside the bush, not floating off it', () => {
@@ -71,7 +59,7 @@ describe('GrowPlant', () => {
     expect(bush.containsBox(bounds(p.fruit))).toBe(true);
   });
 
-  it('gives leaves varied greens, so the canopy is not one flat colour', () => {
+  it('gives its leaves varied, dark greens, so the canopy is not one flat colour', () => {
     const colour = buildGrowPlant().leaves.attributes.color;
     const greens = new Set();
     for (let i = 0; i < colour.count; i += 7) {

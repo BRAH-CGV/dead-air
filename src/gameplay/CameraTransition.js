@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────
 // CameraTransition  –  a camera switch as a feed losing and finding signal
 // ─────────────────────────────────────────────
-// One timeline that both the picture (CameraSignalPass) and the hiss read,
+// One timeline that both the picture (FeedDisplay's shader) and the hiss read,
 // so they move as one. Pure: no Three.js, no DOM.
 //
 //   const t = new CameraTransition();

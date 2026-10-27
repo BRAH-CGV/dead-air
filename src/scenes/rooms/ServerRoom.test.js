@@ -3,7 +3,7 @@ import * as THREE from 'three';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
 
-import { ServerRoom } from './ServerRoom.js';
+import { ServerRoom, paintDeleteScreen } from './ServerRoom.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -126,6 +126,18 @@ describe('ServerRoom', () => {
     const zs = side => sideRacks(r, side).map(rack => rack.object3d.position.z).sort((a, b) => a - b);
     const left = zs(-1), right = zs(1);
     for (const [i, z] of right.entries()) expect(left[i]).toBeCloseTo(z);
+  });
+
+  it('marks the console\'s screen: upright, facing down the aisle (#161)', () => {
+    const [tl, tr, br, bl] = room.consoleScreen.worldCorners();
+    // The CRT's face at the console's 0.478 scale.
+    expect(tl.distanceTo(tr)).toBeCloseTo(0.367, 2);
+    expect(tl.distanceTo(bl)).toBeCloseTo(0.305, 2);
+    expect(tl.z).toBeCloseTo(bl.z);                     // upright
+    const console_ = room.root.find('ServerConsole').object3d;
+    expect(tl.z).toBeGreaterThan(console_.position.z);  // on its front
+    expect(tr.x).toBeGreaterThan(tl.x);                 // read from the aisle
+    expect(tl.y).toBeGreaterThan(bl.y);
   });
 
   it('stands the console in the middle of the aisle at the back of the room, facing down it', () => {
@@ -331,6 +343,28 @@ describe('ServerRoom', () => {
     const interactable = console_.getComponent(Interactable);
     expect(interactable).not.toBeNull();
     expect(interactable.promptLabel).toBe('[E] Delete signal');
+  });
+
+  it('the delete console\'s screen says what it is for (#186)', () => {
+    const console_ = room.root.find('DeleteConsole');
+    const screen = console_.object3d.getObjectByName('DeleteScreen');
+    expect(screen).toBeDefined();
+    expect(screen.material.name).toBe('ScreenGlass');
+    expect(screen.castShadow).toBe(false);
+  });
+
+  it('paints DELETE in the middle of the screen, inside a border', () => {
+    const calls = [];
+    const ctx = new Proxy({}, {
+      get: (target, key) => key in target ? target[key] : (...args) => calls.push([key, ...args]),
+      set: (target, key, value) => { target[key] = value; return true; },
+    });
+    paintDeleteScreen(ctx, 600, 500);
+    const text = calls.find(c => c[0] === 'fillText');
+    expect(text.slice(1)).toEqual(['DELETE', 300, 250]);
+    expect(ctx.textAlign).toBe('center');
+    expect(ctx.textBaseline).toBe('middle');
+    expect(calls.some(c => c[0] === 'stroke' || c[0] === 'strokeRect')).toBe(true);
   });
 
   it('the delete console drive slot is at position (1.960, 0.405, 2.577) with rotation (0, -90, 0)', () => {

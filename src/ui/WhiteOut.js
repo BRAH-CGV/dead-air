@@ -4,8 +4,8 @@
 // A slow fade to white that holds — the game is over until the player
 // retries — with a line of text surfacing once it is fully white:
 //
-//   whiteOut.play('You were taken. [E] to retry');
-//   whiteOut.play('You have been eaten. Press [E] to try again', { tone: 'blood' });
+//   whiteOut.play('You were taken.');
+//   whiteOut.play('You have been eaten.', { tone: 'blood' });
 //     // black at once, slowly turning red (redMs), the message once it has
 //   whiteOut.clear();   // the retry
 //

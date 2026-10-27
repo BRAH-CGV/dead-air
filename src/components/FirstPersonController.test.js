@@ -172,8 +172,8 @@ describe('FirstPersonController speedScale', () => {
 });
 
 describe('FirstPersonController mouse input', () => {
-  it('clamps one-frame touchpad mouse spikes before applying camera look', () => {
-    const { controller } = buildControllerWithStubs({ maxMouseDelta: 5 });
+  it('turns as far as the mouse moved, however fast — no per-frame cap (#117)', () => {
+    const { controller } = buildControllerWithStubs();
     controller.camera = { position: { y: 0 } };
     controller.gameObject = {
       components: [controller],
@@ -200,7 +200,8 @@ describe('FirstPersonController mouse input', () => {
 
     controller.onUpdate(DT);
 
-    expect(controller.yaw).toBeCloseTo(-0.01, 10);
-    expect(controller.pitch).toBeCloseTo(0.01, 10);
+    // 1000 px at the 0.002 default: 2 rad of yaw (wrapped), pitch held at the stop.
+    expect(controller.yaw).toBeCloseTo(-2, 10);
+    expect(controller.pitch).toBeCloseTo(Math.PI / 2 - 0.01, 10);
   });
 });
