@@ -86,6 +86,14 @@ describe('BaseScene tutorial (night 0)', () => {
     }
   });
 
+  it("reads the server room's processing console, and points at its reader", () => {
+    const server = scene.rooms.ServerRoom;
+    expect(scene.tutorial.serverSlot).toBe(server.driveSlot);
+    expect(scene.tutorial.processingScreen).toBe(scene.processingScreen);
+    expect(scene.tutorial.targets.serverReader.object).toBe(server.driveSlot.gameObject.object3d);
+    expect(scene.tutorial.targets.serverConsole.object).toBe(server.root.find('ServerConsole').object3d);
+  });
+
   it("reads the buggy's boot and the send-off, and points at the boot", () => {
     expect(scene.tutorial.cargoDock).toBe(scene.buggyCargo.dock);
     expect(scene.tutorial.sendOff).toBe(scene.buggySendOff ?? null);
@@ -101,6 +109,17 @@ describe('BaseScene tutorial (night 0)', () => {
     expect(at.x - computer.x).toBeGreaterThan(0.8);          // past the desk's right side
     at.y += desk.lift ?? 0;
     expect(office.isOnDesk(at)).toBe(true);
+  });
+
+  it('points "put it back in a box" at a box with room, not the nearest full one', () => {
+    const boxes = scene.rooms.MainOffice.driveBoxes;
+    const { box, openBox } = scene.tutorial.targets;
+    const nearest = box.object();
+    expect(openBox.object()).toBe(nearest);                   // all full: the nearest still
+    const far = boxes.find(b => b.object3d !== nearest);
+    far.receiver.detach(far.receiver.attachments.findIndex(Boolean));
+    expect(openBox.object()).toBe(far.object3d);
+    expect(box.object()).toBe(nearest);
   });
 
   it("hides while the generator's breaker panel has the mouse, and comes back once it closes", () => {
