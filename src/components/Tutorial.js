@@ -16,7 +16,9 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 //   - The clock holds at 7 PM, after dark, until the quota is met, so
 //     there is no hurry and no signal of the shift's own comes up.
 //   - One signal, placed off the dish's park so it has to be found,
-//     comes up once the player is at the computer and never fades.
+//     comes up once the player is at the computer and never fades. Saved,
+//     it is carried to the server room's processing console and processed
+//     (cyan) before it is boxed; the words stay up, small, over the console.
 //   - Stamina never drains: it is held at full until the stamina step,
 //     which drops it to `stamina` (51 %: just over half, where the Sleep
 //     Demon would start), so the coffee and the nap after it are seen to
@@ -59,6 +61,8 @@ export class Tutorial extends Component {
    * @param {Array}  [opts.drives]       The office's drives
    * @param {Array}  [opts.driveBoxes]   The office's drive boxes
    * @param {object} [opts.quotaDock]    The airlock's DriveBoxDock
+   * @param {object} [opts.serverSlot]   The processing console's DriveSlot: insertedDrive
+   * @param {object} [opts.processingScreen]  ProcessingScreen: isOpen
    * @param {object} [opts.grid]         PowerGrid
    * @param {object} [opts.suit]         EVASuit
    * @param {object} [opts.nap]
@@ -77,7 +81,9 @@ export class Tutorial extends Component {
    * @param {THREE.Camera} [opts.camera] The player's camera, for the arrow
    * @param {() => { width: number, height: number }} [opts.screen]
    * @param {() => boolean} [opts.covered]  A panel covers the view (the
-   *        generator's breakers): the words and arrow hide, the steps run on
+   *        generator's breakers): the words and arrow hide, the steps run on.
+   *        Ignored while the processing console's screen is up: its step is
+   *        shown over it
    * @param {Object<string, { object: THREE.Object3D|(() => THREE.Object3D|null), lift?: number }>} [opts.targets]
    *        What each step's arrow points at, by name; `lift` raises the
    *        point (metres) off the object's origin.
@@ -85,6 +91,7 @@ export class Tutorial extends Component {
   constructor({
     controller, clock, stamina = null, signalManager = null, terminal = null,
     driveManager = null, drives = [], driveBoxes = [], quotaDock = null, grid = null,
+    serverSlot = null, processingScreen = null,
     suit = null, nap = null, bed = null, bedRest = null, cargoDock = null, sendOff = null,
     flashlight = null, onDesk = null, coffee = null,
     sandstorm = null, stormOutage = null,
@@ -93,7 +100,8 @@ export class Tutorial extends Component {
     super();
     Object.assign(this, {
       controller, clock, stamina, signalManager, terminal, driveManager, drives,
-      driveBoxes, quotaDock, grid, suit, nap, bed, bedRest, cargoDock, sendOff, flashlight, onDesk, coffee,
+      driveBoxes, quotaDock, grid, serverSlot, processingScreen,
+      suit, nap, bed, bedRest, cargoDock, sendOff, flashlight, onDesk, coffee,
       sandstorm, stormOutage, overlay, camera, targets,
     });
     this.screen = screen ?? (() => this._windowSize());
@@ -109,7 +117,8 @@ export class Tutorial extends Component {
     this._ctx = {
       holdingBox: false, boxOnDesk: false,
       driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
-      saved: false, boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
+      saved: false, driveAtConsole: false, consoleOpen: false, processed: false,
+      boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
       suitOn: false, napping: false, morning: false, boxInBuggy: false, dispatched: false,
       coffee: COFFEE_STAGE.none,
     };
@@ -195,8 +204,9 @@ export class Tutorial extends Component {
     const ctx = this.readContext();
     this.runner.update(dt, ctx);
     // In the bunk the view is dark, a panel (the breakers) has it, or the
-    // send-off's cutscene does: nothing to read.
-    if (this.bedRest?.active || this.sendOff?.active || this.covered()) {
+    // send-off's cutscene does: nothing to read. The processing console's
+    // screen has the mouse too, but its step is shown over it, small.
+    if (this.bedRest?.active || this.sendOff?.active || (this.covered() && !ctx.consoleOpen)) {
       this.overlay?.hide();
       return;
     }
@@ -217,6 +227,10 @@ export class Tutorial extends Component {
     c.scanning = t?.state === 'scanning';
     c.scanned = !!sig?.scanned;
     c.saved = !!sig?.saved || this._anyDrive(this.drives);
+    const atConsole = this.serverSlot?.insertedDrive;
+    c.driveAtConsole = !!atConsole?.saved && !atConsole.corrupted;
+    c.consoleOpen = !!this.processingScreen?.isOpen;
+    c.processed = this._processed(this.drives);
     c.quotaMet = !!this.quotaDock?.isQuotaMet();
     c.boxed = c.quotaMet || this._boxed();
     c.powerOn = !!this.grid?.on;
@@ -275,6 +289,15 @@ export class Tutorial extends Component {
     for (let i = 0; i < drives.length; i++) {
       const d = drives[i];
       if (d?.saved && !d.corrupted) return true;
+    }
+    return false;
+  }
+
+  /** A drive in the list holds a good signal processed past level 1 (cyan). */
+  _processed(drives) {
+    for (let i = 0; i < drives.length; i++) {
+      const d = drives[i];
+      if (d?.saved && !d.corrupted && (d.signalLevel ?? 1) >= 2) return true;
     }
     return false;
   }

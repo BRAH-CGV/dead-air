@@ -2,15 +2,17 @@
 // BedroomPCPanel  –  the bedroom computer's screens (#114)
 // ─────────────────────────────────────────────
 // Wraps #bedroom-pc in index.html (the look lives there, like the other
-// overlays). Three screens, switched by BedroomPC from the keyboard:
+// overlays). Two screens, switched by BedroomPC from the keyboard:
 //
-//   Colony    a top-down map (colonyMap): our base and its array name, the
-//             six neighbouring arrays by bearing, the buggy's route out and
-//             the way on to the central hub
-//   Findings  one entry per processed signal the hub has sent back
-//             (RunRecord.findings). Placeholder text, clearly marked, until
-//             the story has words for them
-//   Forecast  an empty slot: insufficient data
+//   Colony   a top-down map (colonyMap): our base and its array name, the
+//            six neighbouring arrays by bearing, the buggy's route out and
+//            the way on to the central hub
+//   Threats  last night's log (ThreatWatch, through the RunRecord): each
+//            kind of threat and the hour it first showed, in 24-hour time;
+//            then the forecast for tonight (the next shift, in the
+//            morning), vague: the kinds due, no times (threatForecast).
+//            The wording is placeholder, clearly marked, until the story
+//            has words for it
 //
 // Text is set with textContent, never as HTML; the map is SVG built with
 // createElementNS. Without markup every call is a no-op.
@@ -18,23 +20,46 @@
 
 import { withKeys } from './promptKeys.js';
 import { COLONY_MAP } from './colonyMap.js';
+import { clockDigits } from '../gameobjects/DigitalClock.js';
 
-export const PC_SCREENS = Object.freeze(['colony', 'findings', 'forecast']);
+export const PC_SCREENS = Object.freeze(['colony', 'threats']);
 
 /** Every word the PC shows: one-line edits. The placeholders are marked as
  *  such; the story's words go here when there are some (docs/STORY.md). */
 export const PC_TEXT = Object.freeze({
   unnamedArray: 'YOUR ARRAY',
-  tabs: Object.freeze({ colony: 'COLONY', findings: 'FINDINGS', forecast: 'FORECAST' }),
+  tabs: Object.freeze({ colony: 'COLONY', threats: 'THREATS' }),
   hub: 'CENTRAL HUB',
   mapNote: 'Top: the window side. Neighbours at their radar bearings.',
   placeholder: '[PLACEHOLDER]',
-  findingTitle: (f) => `Night ${f.night} · signal ${f.index}`,
-  findingBody: "The hub's result for this signal goes here.",
-  findingsNote: 'Processed signals the buggy takes to the hub come back the evening after.',
-  noFindings: 'Nothing back from the hub yet.',
-  forecast: 'FORECAST — insufficient data',
-  hint: '[1] [2] [3] or [←] [→] to switch · [E] or [Q] to close',
+  logTitle: (night) => (night == null ? 'LAST NIGHT' : `LAST NIGHT · NIGHT ${night}`),
+  /** One per ThreatForecast kind, as the log lists it. */
+  logLabels: Object.freeze({
+    storm: 'Dust storm',
+    outage: 'Power cut by the storm',
+    eyes: 'Movement in the storm',
+    prowler: 'Movement at the treeline',
+    vents: 'Something in the vents',
+    aerial: 'Aerial anomaly',
+    corrupt: 'Corrupted transmission',
+  }),
+  quietNight: 'Nothing logged.',
+  noLog: 'No record.',
+  forecastTitle: (night, tonight) => (tonight ? `TONIGHT · NIGHT ${night}` : `NEXT SHIFT · NIGHT ${night}`),
+  /** One per ThreatForecast kind, as the forecast words it: no times. */
+  forecastLines: Object.freeze({
+    storm: 'Dust storm likely',
+    outage: 'Power at risk in the storm',
+    eyes: 'Movement reported in storms',
+    prowler: 'Movement at the treeline',
+    vents: 'Something in the vents',
+    aerial: 'Aerial anomaly expected',
+    corrupt: 'Corrupted transmissions expected',
+  }),
+  nothingDue: 'Nothing expected.',
+  noShifts: 'No further shifts scheduled.',
+  threatsNote: 'Log labels and forecast wording, until the story has some.',
+  hint: '[1] [2] or [←] [→] to switch · [E] or [Q] to close',
 });
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -56,7 +81,10 @@ export class BedroomPCPanel {
    * @param {object} data
    * @param {string|null} data.array  The array's name, or null
    * @param {ReturnType<import('./colonyMap.js').colonyMap>} data.map
-   * @param {{night: number, index: number}[]} data.findings
+   * @param {{night: number, entries: {kind: string, hour: number|null}[]|null}|null} data.log
+   *   Last night's log: entries [] for a quiet night, null for none kept
+   * @param {{night: number, tonight: boolean, kinds: string[]}|null} data.forecast
+   *   The shift ahead, or null after the last one
    */
   show(data) {
     this.render(data);
@@ -88,7 +116,7 @@ export class BedroomPCPanel {
   }
 
   _render() {
-    const { array, map, findings } = this._data;
+    const { array, map, log, forecast } = this._data;
     const header = el('div', 'pc-header');
     header.append(el('div', 'pc-array', array || PC_TEXT.unnamedArray));
     const tabs = el('div', 'pc-tabs');
@@ -102,8 +130,8 @@ export class BedroomPCPanel {
 
     const body = el('div', 'pc-body');
     if (this.screen === 'colony') body.append(colonySvg(map, array), el('p', 'pc-note', PC_TEXT.mapNote));
-    else if (this.screen === 'findings') body.append(...findingsList(findings));
-    else body.append(el('p', 'pc-empty', PC_TEXT.forecast));
+    else body.append(logSection(log), forecastSection(forecast),
+      el('p', 'pc-note', `${PC_TEXT.placeholder} ${PC_TEXT.threatsNote}`));
 
     const screen = el('div', 'pc-screen');
     screen.append(header, body, el('div', 'pc-hint', withKeys(PC_TEXT.hint)));
@@ -125,18 +153,46 @@ function svg(tag, attrs, text) {
   return node;
 }
 
-function findingsList(findings) {
-  if (!findings?.length) return [el('p', 'pc-empty', PC_TEXT.noFindings), el('p', 'pc-note', PC_TEXT.findingsNote)];
-  const list = el('ol', 'pc-findings');
-  for (const f of findings) {
-    const item = el('li', 'pc-finding');
-    item.append(
-      el('div', 'pc-finding-title', PC_TEXT.findingTitle(f)),
-      el('div', 'pc-finding-body', `${PC_TEXT.placeholder} ${PC_TEXT.findingBody}`),
-    );
-    list.append(item);
+function logSection(log) {
+  const entries = log?.entries ?? null;
+  const section = el('section', 'pc-section');
+  section.append(el('h3', 'pc-section-title pc-log-title', PC_TEXT.logTitle(entries ? log.night : null)));
+  if (!entries?.length) {
+    section.append(el('p', 'pc-empty pc-log-empty', entries ? PC_TEXT.quietNight : PC_TEXT.noLog));
+    return section;
   }
-  return [list, el('p', 'pc-note', PC_TEXT.findingsNote)];
+  const list = el('ul', 'pc-list');
+  for (const e of entries) {
+    const row = el('li', 'pc-log-entry');
+    row.append(el('span', 'pc-log-time', clockText(e.hour)), PC_TEXT.logLabels[e.kind] ?? e.kind);
+    list.append(row);
+  }
+  section.append(list);
+  return section;
+}
+
+function forecastSection(forecast) {
+  const section = el('section', 'pc-section');
+  if (!forecast) {
+    section.append(el('p', 'pc-empty pc-forecast-empty', PC_TEXT.noShifts));
+    return section;
+  }
+  section.append(el('h3', 'pc-section-title pc-forecast-title', PC_TEXT.forecastTitle(forecast.night, forecast.tonight)));
+  if (!forecast.kinds.length) {
+    section.append(el('p', 'pc-empty pc-forecast-empty', PC_TEXT.nothingDue));
+    return section;
+  }
+  const list = el('ul', 'pc-list');
+  for (const kind of forecast.kinds) list.append(el('li', 'pc-forecast-item', PC_TEXT.forecastLines[kind] ?? kind));
+  section.append(list);
+  return section;
+}
+
+/** A clock hour (-1.5 for 22:30) as the desk clock reads it. */
+function clockText(hour) {
+  if (hour == null) return '--:--';
+  const [a, b, c, d] = clockDigits(hour);
+  return `${a}${b}:${c}${d}`;
 }
 
 function colonySvg(map, array) {

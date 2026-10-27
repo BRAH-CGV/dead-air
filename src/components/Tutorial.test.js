@@ -64,6 +64,8 @@ function rig({ night = 0, covered } = {}) {
     bedRest:       { active: false },
     cargoDock:     { depositedBox: null },
     sendOff:       { active: false },
+    serverSlot:    { insertedDrive: null },
+    processingScreen: { isOpen: false },
     flashlight:    { on: false },
     // The night's coffee, as CoffeeHarvest, CoffeeItems and the machine show it.
     coffee: {
@@ -89,6 +91,8 @@ function rig({ night = 0, covered } = {}) {
       generator: { object: behind },
       bed:       { object: behind },
       buggy:     { object: behind },
+      serverReader:  { object: behind },
+      serverConsole: { object: behind },
       bush:      { object: ahead },
       processor: { object: ahead },
       bag:       { object: ahead },
@@ -201,6 +205,53 @@ describe('Tutorial', () => {
     expect(ctx.boxed).toBe(true);
     drive.corrupted = true;
     expect(s.tutorial.readContext().boxed).toBe(false);
+  });
+
+  it('reads the server room console: a good drive in its reader, its screen, a processed drive', () => {
+    const drive = { saved: true, corrupted: false, signalLevel: 1 };
+    s.drives.push(drive);
+    expect(s.tutorial.readContext()).toMatchObject({ driveAtConsole: false, consoleOpen: false, processed: false });
+    s.serverSlot.insertedDrive = drive;
+    s.processingScreen.isOpen = true;
+    expect(s.tutorial.readContext()).toMatchObject({ driveAtConsole: true, consoleOpen: true, processed: false });
+    drive.signalLevel = 2;
+    expect(s.tutorial.readContext().processed).toBe(true);
+    drive.corrupted = true;
+    expect(s.tutorial.readContext()).toMatchObject({ driveAtConsole: false, processed: false });
+  });
+
+  it('after saving, the drive goes to the console and is processed before it is boxed', () => {
+    const drive = { saved: true, corrupted: false, signalLevel: 1 };
+    s.drives.push(drive);
+    s.tutorial.onUpdate(0.01);
+    s.tutorial.runner.goTo('save');
+    s.tutorial.onUpdate(0.01);
+    expect(s.tutorial.runner.step.id).toBe('carry');
+    s.serverSlot.insertedDrive = drive;
+    s.tutorial.onUpdate(0.01);
+    expect(s.tutorial.runner.step.id).toBe('process');
+    drive.signalLevel = 2;
+    s.tutorial.onUpdate(0.01);
+    expect(s.tutorial.runner.step.id).toBe('box');
+  });
+
+  it('shows over the processing console, small, though it has the mouse: the step is about it', () => {
+    s = rig({ covered: () => true });         // the console's screen has the mouse
+    const drive = { saved: true, corrupted: false, signalLevel: 1 };
+    s.drives.push(drive);
+    s.serverSlot.insertedDrive = drive;
+    s.tutorial.onUpdate(0.01);
+    s.tutorial.runner.goTo('process');
+    s.processingScreen.isOpen = true;
+    s.overlay.show.mockClear();
+    s.tutorial.onUpdate(0.01);
+    expect(s.overlay.show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: 'PROCESS THE SIGNAL', compact: true }));
+    expect(s.overlay.setArrow).toHaveBeenLastCalledWith(null);
+    s.processingScreen.isOpen = false;        // shut: whatever else has the mouse covers it
+    s.overlay.hide.mockClear();
+    s.tutorial.onUpdate(0.01);
+    expect(s.overlay.hide).toHaveBeenCalled();
   });
 
   it('once the quota is met the clock runs, and the storm comes', () => {

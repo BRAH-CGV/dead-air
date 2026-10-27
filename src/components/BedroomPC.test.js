@@ -23,7 +23,8 @@ function setup() {
   const run = new RunRecord();
   run.reset({ array: 'ARRAY K-17' });
   const pc = new BedroomPC();
-  pc.controller = { nightNumber: 1, state: 'playing' };
+  pc.controller = { nightNumber: 1, state: 'playing', nights: { isLastNight: () => false } };
+  pc.forecast = vi.fn((night) => (night >= 2 ? ['storm', 'eyes'] : ['storm']));
   pc.panel = { show: vi.fn(), hide: vi.fn(), setScreen: vi.fn(), step: vi.fn(), visible: false };
   pc.run = run;
   pc.map = MAP;
@@ -51,7 +52,12 @@ describe('BedroomPC (#114)', () => {
   it('opens the panel on the colony map, under the array\'s name, and holds the player still', () => {
     pc.onInteract();
     expect(pc.open).toBe(true);
-    expect(pc.panel.show).toHaveBeenCalledWith({ array: 'ARRAY K-17', map: MAP, findings: [] });
+    expect(pc.panel.show).toHaveBeenCalledWith({
+      array: 'ARRAY K-17',
+      map: MAP,
+      log: { night: 0, entries: null },
+      forecast: { night: 1, tonight: true, kinds: ['storm'] },
+    });
     expect(engine.playerController.inputLocked).toBe(true);
   });
 
@@ -60,18 +66,44 @@ describe('BedroomPC (#114)', () => {
     expect(engine.timeScale).toBe(1);
   });
 
-  it("shows what the hub sent back from earlier nights' send-offs, not tonight's", () => {
-    run.deliver(1, 2);
-    run.deliver(2, 1);
+  it("through the shift: last night's log, and tonight's forecast", () => {
+    run.logThreats(1, [{ kind: 'storm', hour: -2 }]);
     pc.controller.nightNumber = 2;
     pc.onInteract();
-    expect(pc.panel.show.mock.calls[0][0].findings).toEqual([{ night: 1, index: 1 }, { night: 1, index: 2 }]);
+    const { log, forecast } = pc.panel.show.mock.calls[0][0];
+    expect(log).toEqual({ night: 1, entries: [{ kind: 'storm', hour: -2 }] });
+    expect(forecast).toEqual({ night: 2, tonight: true, kinds: ['storm', 'eyes'] });
   });
 
-  it('works without a run record: no name, nothing back', () => {
-    pc.run = null;
+  it("in the morning: the night just survived, and the next shift's forecast", () => {
+    run.logThreats(2, [{ kind: 'eyes', hour: 3 }]);
+    pc.controller.nightNumber = 2;
+    pc.controller.state = 'morning';
     pc.onInteract();
-    expect(pc.panel.show).toHaveBeenCalledWith({ array: null, map: MAP, findings: [] });
+    const { log, forecast } = pc.panel.show.mock.calls[0][0];
+    expect(log).toEqual({ night: 2, entries: [{ kind: 'eyes', hour: 3 }] });
+    expect(forecast).toEqual({ night: 3, tonight: false, kinds: ['storm', 'eyes'] });
+  });
+
+  it('the morning after the last shift forecasts nothing', () => {
+    pc.controller.nightNumber = 3;
+    pc.controller.state = 'morning';
+    pc.controller.nights.isLastNight = () => true;
+    pc.onInteract();
+    expect(pc.panel.show.mock.calls[0][0].forecast).toBeNull();
+  });
+
+  it('night 0 has no night before it', () => {
+    pc.controller.nightNumber = 0;
+    pc.onInteract();
+    expect(pc.panel.show.mock.calls[0][0].log).toBeNull();
+  });
+
+  it('works without a run record or a forecast: no name, no log, no forecast', () => {
+    pc.run = null;
+    pc.forecast = null;
+    pc.onInteract();
+    expect(pc.panel.show).toHaveBeenCalledWith({ array: null, map: MAP, log: { night: 0, entries: null }, forecast: null });
   });
 
   it('uses up the press that opened it, so it neither closes again nor reaches anything else', () => {
@@ -99,12 +131,12 @@ describe('BedroomPC (#114)', () => {
     expect(pc.open).toBe(false);
   });
 
-  it('1, 2 and 3 pick a screen; ← and → step through them', () => {
+  it('1 and 2 pick a screen; ← and → step through them', () => {
     pc.onInteract();
     press(engine, pc, 'Digit2');
-    expect(pc.panel.setScreen).toHaveBeenLastCalledWith('findings');
-    press(engine, pc, 'Digit3');
-    expect(pc.panel.setScreen).toHaveBeenLastCalledWith('forecast');
+    expect(pc.panel.setScreen).toHaveBeenLastCalledWith('threats');
+    press(engine, pc, 'Digit3');   // no third screen
+    expect(pc.panel.setScreen).toHaveBeenCalledTimes(1);
     press(engine, pc, 'Digit1');
     expect(pc.panel.setScreen).toHaveBeenLastCalledWith('colony');
     press(engine, pc, 'ArrowRight');
@@ -114,7 +146,7 @@ describe('BedroomPC (#114)', () => {
   });
 
   describe('a key click as the screen changes', () => {
-    const SCREENS = ['colony', 'findings', 'forecast'];
+    const SCREENS = ['colony', 'threats'];
     let click;
     beforeEach(() => {
       click = { isPlaying: false, play: vi.fn(function () { this.isPlaying = true; }), stop: vi.fn(function () { this.isPlaying = false; }),
@@ -122,7 +154,7 @@ describe('BedroomPC (#114)', () => {
       pc.click = click;
       pc.panel.screen = 'colony';
       pc.panel.setScreen = vi.fn(n => { pc.panel.screen = n; });
-      pc.panel.step = vi.fn(d => { pc.panel.screen = SCREENS[(SCREENS.indexOf(pc.panel.screen) + d + 3) % 3]; });
+      pc.panel.step = vi.fn(d => { pc.panel.screen = SCREENS[(SCREENS.indexOf(pc.panel.screen) + d + 2) % 2]; });
       pc.onInteract();
     });
 
@@ -140,7 +172,7 @@ describe('BedroomPC (#114)', () => {
 
     it('quiet, and each press a touch apart in pitch, as real keys are', () => {
       press(engine, pc, 'Digit2');
-      press(engine, pc, 'Digit3');
+      press(engine, pc, 'Digit1');
       expect(click.setVolume.mock.lastCall[0]).toBeLessThanOrEqual(0.2);
       for (const [cents] of click.setDetune.mock.calls) {
         expect(Math.abs(cents - PC_CLICK.detune)).toBeLessThanOrEqual(PC_CLICK.spread);
@@ -149,7 +181,7 @@ describe('BedroomPC (#114)', () => {
 
     it('a click still sounding is started over, not doubled', () => {
       press(engine, pc, 'Digit2');
-      press(engine, pc, 'Digit3');
+      press(engine, pc, 'Digit1');
       expect(click.stop).toHaveBeenCalledTimes(1);
     });
   });
@@ -239,7 +271,7 @@ describe('BedroomPC (#114)', () => {
     it('its screen shows the panel, drawn for tonight, whether or not anyone is at it', () => {
       const ctx = {};
       pc.paintScreen(ctx, 1226, 720);
-      expect(pc.panel.render).toHaveBeenCalledWith({ array: 'ARRAY K-17', map: MAP, findings: [] });
+      expect(pc.panel.render).toHaveBeenCalledWith(pc._data());
       expect(paintDom).toHaveBeenCalledWith(pc.panel.root, ctx, 1226, 720);
     });
 
@@ -250,6 +282,19 @@ describe('BedroomPC (#114)', () => {
       pc.controller.nightNumber = 2;
       pc.paintScreen({}, 1226, 720);
       expect(pc.panel.render).toHaveBeenCalledTimes(2);
+      pc.controller.state = 'morning';   // the log and forecast move on a night
+      pc.paintScreen({}, 1226, 720);
+      expect(pc.panel.render).toHaveBeenCalledTimes(3);
+      run.logThreats(2, [{ kind: 'storm', hour: 0 }]);   // the night's log written
+      pc.paintScreen({}, 1226, 720);
+      expect(pc.panel.render).toHaveBeenCalledTimes(4);
+    });
+
+    it('works the forecast out only when it redraws, not every frame', () => {
+      pc.paintScreen({}, 1226, 720);
+      pc.paintScreen({}, 1226, 720);
+      pc.paintScreen({}, 1226, 720);
+      expect(pc.forecast).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -296,8 +296,8 @@ export class App {
     });
   }
 
-  /** Start the run's record over (engine.run: what each morning's buggy
-   *  took to the hub), under the array the intro named. Reset in place, not
+  /** Start the run's record over (engine.run: the array's name and each
+   *  night's threat log), under the array the intro named. Reset in place, not
    *  replaced: the scene under the menu already holds it. A restart keeps it;
    *  nothing saves it. */
   _newRun(array = null) {

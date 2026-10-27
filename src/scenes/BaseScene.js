@@ -111,6 +111,8 @@ import { Footsteps } from '../components/Footsteps.js';
 import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
 import { colonyMap } from '../ui/colonyMap.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
+import { ThreatWatch } from '../gameplay/ThreatWatch.js';
+import { threatForecast } from '../gameplay/ThreatForecast.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
@@ -402,6 +404,7 @@ export class BaseScene extends Scene {
     this._addUfo();
     this._addSandstorm();
     this._addRagno();
+    this._addThreatWatch();
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
@@ -801,9 +804,9 @@ export class BaseScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     this.gameController.banner        = this.banner;
-    // What each morning's buggy takes to the hub, for the bedroom PC. On
-    // the engine, so a dream's rebuild between nights keeps it.
-    this.gameController.run           = (this.engine.run ??= new RunRecord());
+    // The run's array name and each night's threat log, for the bedroom PC.
+    // On the engine, so a dream's rebuild between nights keeps it.
+    this.engine.run ??= new RunRecord();
     gameplayGO.addComponent(this.gameController);
 
     // The banner's timing runs on real time (engine.realDt), ticked by a
@@ -2187,15 +2190,16 @@ export class BaseScene extends Scene {
   // The bedroom PC (#114)
   // ──────────────────────────────────────────
   /** The computer on the bedroom desk: the room put it there, this hands
-   *  it the night, its panel (#bedroom-pc), the run record and the colony
-   *  map — the six neighbours where the radar has them, and the buggy's
-   *  route out toward the hub. */
+   *  it the night, its panel (#bedroom-pc), the run record (last night's
+   *  threats), the forecast and the colony map — the six neighbours where
+   *  the radar has them, and the buggy's route out toward the hub. */
   _addBedroomPC() {
     const pc = this.rooms.LivingQuarters?.pc;
     if (!pc) return;
     pc.controller = this.gameController;
     pc.panel = new BedroomPCPanel();
     pc.run = this.engine.run;
+    pc.forecast = threatForecast;
     pc.map = colonyMap({
       neighbours: this.satellite?.neighbours ?? [],
       route: this._buggyRoutePoints(),
@@ -2625,6 +2629,40 @@ export class BaseScene extends Scene {
     return 'outside';
   }
 
+  /** The night's threat log for the bedroom PC (ThreatWatch): each kind
+   *  noted as it first shows, put on the run record as the shift ends. One
+   *  source a kind, as ThreatForecast names them, each reading the system
+   *  live. After every threat it reads; nothing allocated per frame. */
+  _addThreatWatch() {
+    const eyesOut = () => {
+      for (const slot of this.dustEyes?.slots ?? []) if (slot.phase !== 'off') return true;
+      return false;
+    };
+    const ufoHere = () => {
+      const phase = this.ufoThreat?.phase;
+      return phase === 'approaching' || phase === 'expanding' || phase === 'lethal' || phase === 'caught';
+    };
+    const corrupt = () => {
+      for (const s of this.signalManager?.signals ?? []) if (s.evil && s.appeared) return true;
+      return false;
+    };
+    this.threatWatch = this._sceneRoot.find('GameplaySystems').addComponent(new ThreatWatch());
+    Object.assign(this.threatWatch, {
+      controller: this.gameController,
+      clock:      this.nightClock,
+      run:        this.engine.run,
+      sources: {
+        storm:   () => (this.sandstorm?.level ?? 0) > 0.5,
+        outage:  () => !!this.stormOutage?.flickering,
+        eyes:    eyesOut,
+        prowler: () => { const l = this.ragno?.logic; return !!l && l.state !== 'off' && !l.indoors; },
+        vents:   () => !!this.ragno?.logic?.indoors,
+        aerial:  ufoHere,
+        corrupt,
+      },
+    });
+  }
+
   /** Ragno, the camera entity (Ragno.js): his figure under Threats on the
    *  scene root, built hidden so its shaders compile behind the loading
    *  screen, and the component that runs him on GameplaySystems. After the
@@ -2713,16 +2751,20 @@ export class BaseScene extends Scene {
   _addTutorial() {
     const office = this.rooms.MainOffice;
     const airlock = this.rooms.Airlock;
+    const server = this.rooms.ServerRoom;
     const boxes = office.driveBoxes ?? [];
     const eye = new THREE.Vector3();
     const at = new THREE.Vector3();
-    // The drive box nearest the player, for "put it in a box".
-    const nearestBox = () => {
+    // The drive box nearest the player, for "pick up a box"; with
+    // `withRoom`, the nearest with a free slot, for "put it in a box" (the
+    // shelf's boxes start full, so the one the drive came out of).
+    const nearestBox = (withRoom = false) => {
       if (!boxes.length || !this.engine.camera) return null;
       this.engine.camera.getWorldPosition(eye);
       let best = null;
       let bestDist = Infinity;
       for (const box of boxes) {
+        if (withRoom && !box.receiver.attachments.includes(null)) continue;
         const d = box.object3d.getWorldPosition(at).distanceToSquared(eye);
         if (d < bestDist) { bestDist = d; best = box.object3d; }
       }
@@ -2762,6 +2804,8 @@ export class BaseScene extends Scene {
       drives:        office.drives ?? [],
       driveBoxes:    boxes,
       quotaDock:     airlock.quotaDock ?? null,
+      serverSlot:    server?.driveSlot ?? null,
+      processingScreen: this.processingScreen ?? null,
       grid:          this.power ?? null,
       suit:          this.suit ?? null,
       nap:           this.nap ?? null,
@@ -2779,13 +2823,17 @@ export class BaseScene extends Scene {
       }),
       camera:        this.engine.camera ?? null,
       // The breaker panel has the mouse (_usePanel): it covers the words.
+      // (So does the processing console, but the tutorial shows over it.)
       covered:       () => !!this.engine.uiHasMouse,
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
         computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
-        box:       { object: nearestBox, lift: 0.1 },
+        box:       { object: () => nearestBox(), lift: 0.1 },
+        openBox:   { object: () => nearestBox(true) ?? nearestBox(), lift: 0.1 },
         desk:      { object: office.boxSpot ?? null, lift: 0.1 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
+        serverReader:  { object: server?.driveSlot?.gameObject?.object3d ?? null, lift: 0.05 },
+        serverConsole: { object: server?.root.find('ServerConsole')?.object3d ?? null, lift: 0.6 },
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },

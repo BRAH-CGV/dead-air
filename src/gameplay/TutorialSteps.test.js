@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT } from './TutorialSteps.js';
+import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT, CONSOLE_HINT } from './TutorialSteps.js';
 
 // ─────────────────────────────────────────────
 // TutorialSteps — night 0's steps, one at a time (pure)
@@ -9,7 +9,8 @@ import { TUTORIAL_STEPS, TutorialRunner, COMPUTER_HINT } from './TutorialSteps.j
 const fresh = (over = {}) => ({
   holdingBox: false, boxOnDesk: false, flashlightOn: false,
   driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
-  saved: false, boxed: false, quotaMet: false, powerOn: true, suitOn: false,
+  saved: false, driveAtConsole: false, consoleOpen: false, processed: false,
+  boxed: false, quotaMet: false, powerOn: true, suitOn: false,
   napping: false, morning: false, boxInBuggy: false, dispatched: false, coffee: 0, ...over,
 });
 
@@ -29,17 +30,18 @@ function doneFor(step) {
   return {
     deskBox: { boxOnDesk: true }, flashlight: { flashlightOn: true },
     drive: { driveIn: true }, computer: { terminalOpen: true }, aim: { onSignal: true },
-    scan: { scanned: true }, save: { saved: true }, box: { boxed: true }, dock: { quotaMet: true },
+    scan: { scanned: true }, save: { saved: true }, carry: { driveAtConsole: true },
+    process: { processed: true }, box: { boxed: true }, dock: { quotaMet: true },
     storm: { powerOn: false }, suit: { suitOn: true }, generator: { powerOn: true },
-    harvest: { coffee: 1 }, process: { coffee: 3 }, bag: { coffee: 5 }, brew: { coffee: 7 }, drink: { coffee: 9 },
+    harvest: { coffee: 1 }, processBeans: { coffee: 3 }, bag: { coffee: 5 }, brew: { coffee: 7 }, drink: { coffee: 9 },
   }[step.id] ?? {};
 }
 
 describe('TUTORIAL_STEPS', () => {
   it('teaches the signal game, then the storm, then the nap and the sleep, in that order', () => {
-    const order = ['deskBox', 'drive', 'computer', 'aim', 'scan', 'save', 'box', 'dock',
+    const order = ['deskBox', 'drive', 'computer', 'aim', 'scan', 'save', 'carry', 'process', 'box', 'dock',
       'storm', 'flashlight', 'suit', 'generator', 'inside',
-      'stamina', 'harvest', 'process', 'bag', 'brew', 'drink', 'napTip',
+      'stamina', 'harvest', 'processBeans', 'bag', 'brew', 'drink', 'napTip',
       'nap', 'wait', 'buggy', 'sleep'];
     const positions = order.map(id => ids().indexOf(id));
     expect(positions.every(p => p >= 0)).toBe(true);
@@ -126,6 +128,46 @@ describe('TutorialRunner', () => {
     expect(entered).toEqual(['computer', 'aim']);
   });
 
+  it('a saved signal goes to the server room console: the arrow is on its reader', () => {
+    const runner = at('carry');
+    expect(runner.view(fresh({ saved: true })).target).toBe('serverReader');
+    runner.update(30, fresh({ saved: true }));
+    expect(runner.step.id).toBe('carry');
+    runner.update(0.01, fresh({ saved: true, driveAtConsole: true }));
+    expect(runner.step.id).toBe('process');
+  });
+
+  it('a saved drive boxed or docked without processing still has to go to the console', () => {
+    const runner = at('carry');
+    runner.update(0.01, fresh({ saved: true, boxed: true, quotaMet: true }));
+    expect(runner.step.id).toBe('carry');
+  });
+
+  it('processing waits for the drive to come out processed, then it goes back in a box', () => {
+    const runner = at('process');
+    runner.update(30, fresh({ saved: true, driveAtConsole: true, consoleOpen: true }));
+    expect(runner.step.id).toBe('process');
+    runner.update(0.01, fresh({ saved: true, driveAtConsole: true, processed: true }));
+    expect(runner.step.id).toBe('box');
+    const step = TUTORIAL_STEPS.find(t => t.id === 'process');
+    expect(step.text).toContain('Upgrade Signal');
+    expect(step.text).toMatch(/slider/i);
+  });
+
+  it('a drive processed before the step comes skips straight to the box', () => {
+    const runner = at('carry');
+    runner.update(0.01, fresh({ saved: true, processed: true }));
+    expect(runner.step.id).toBe('box');
+  });
+
+  it('the box step says what processing is for', () => {
+    const box = TUTORIAL_STEPS.find(t => t.id === 'box');
+    expect(box.text).toMatch(/cyan/i);
+    expect(box.text).toMatch(/each night's quota/i);
+    expect(box.text).not.toMatch(/night 3/i);
+    expect(box.target).toBe('openBox');
+  });
+
   it('the storm step waits for the power to go, the suit and generator steps get it back', () => {
     const runner = at('storm');
     runner.update(0.01, fresh());
@@ -166,10 +208,10 @@ describe('TutorialRunner', () => {
     const runner = at('harvest');
     expect(runner.view(fresh()).target).toBe('bush');
     runner.update(0.01, fresh({ coffee: 1 }));            // beans in hand
-    expect(runner.step.id).toBe('process');
+    expect(runner.step.id).toBe('processBeans');
     expect(runner.view(fresh()).target).toBe('processor');
     runner.update(0.01, fresh({ coffee: 2 }));            // in the hopper, not yet started
-    expect(runner.step.id).toBe('process');
+    expect(runner.step.id).toBe('processBeans');
     runner.update(0.01, fresh({ coffee: 3 }));            // processing
     expect(runner.step.id).toBe('bag');
     expect(runner.view(fresh()).target).toBe('bag');
@@ -262,6 +304,24 @@ describe('TutorialRunner.view', () => {
     const view = runner.view(fresh({ driveIn: true }));
     expect(view.title).toBe(COMPUTER_HINT.title);
     expect(view.target).toBe('computer');
+  });
+
+  it('small, at the top, while the processing console is up, so its minigame shows', () => {
+    const ctx = fresh({ saved: true, driveAtConsole: true, consoleOpen: true });
+    const runner = at('process', ctx);
+    const view = runner.view(ctx);
+    expect(view.title).toBe('PROCESS THE SIGNAL');
+    expect(view.compact).toBe(true);
+    expect(view.target).toBe(null);
+  });
+
+  it('the processing step, with the console shut, points back to the console', () => {
+    const ctx = fresh({ saved: true, driveAtConsole: true });
+    const runner = at('process', ctx);
+    const view = runner.view(ctx);
+    expect(view.title).toBe(CONSOLE_HINT.title);
+    expect(view.target).toBe('serverConsole');
+    expect(view.compact).toBe(false);
   });
 
   it('no arrow on the story cards', () => {
