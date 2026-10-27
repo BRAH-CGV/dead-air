@@ -31,7 +31,7 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 
 export const TUTORIAL = Object.freeze({
   night: 0,
-  /** 7 PM: dark, and before any signal of the shift's own (APPEAR_START). */
+  /** 7 PM: dark, where the shift's own signals start (APPEAR_START). */
   startHour: -5,
   /** How far through the tutorial's storm its outage comes. */
   outageAt: 0.1,

@@ -1,4 +1,5 @@
 import { SignalTarget } from './SignalTarget.js';
+import { SHIFT } from './NightClock.js';
 
 // ─────────────────────────────────────────────
 // SignalManager  –  Night signal spawning and tracking
@@ -48,10 +49,14 @@ export const PROCESSED_QUOTA = Object.freeze([0, 1, 2, 4]);
  *  every ~42 s of their window), over the longer night. */
 export const SIGNALS_PER_NIGHT = 10;
 
-/** Shift fraction at which the first signal may appear: ~7:25 PM, once
- *  the dusk has gone — the Sun drowns the faint signals — and the sky has
- *  stayed empty a little longer. */
-export const APPEAR_START = 0.12;
+/** Signals in the sky, by night: night 3 asks for 8 drives, 4 of them
+ *  processed, so it gets more to choose from. Nights past the last keep its
+ *  number; the tutorial cuts its own down to one. */
+export const NIGHT_SIGNALS = Object.freeze([SIGNALS_PER_NIGHT, SIGNALS_PER_NIGHT, SIGNALS_PER_NIGHT, 14]);
+
+/** Shift fraction at which the first signal may appear: 7 PM, as soon as
+ *  the dusk has gone — the Sun drowns the faint signals. */
+export const APPEAR_START = (SHIFT.darkHour - SHIFT.startHour) / (SHIFT.endHour - SHIFT.startHour);
 
 /** Shift fraction by which every signal has appeared (~4:12 AM), leaving
  *  time before 6 AM to scan the last. */
@@ -84,17 +89,21 @@ export class SignalManager {
 
   /**
    * @param {Object} opts
-   * @param {number} [opts.signalsPerNight=SIGNALS_PER_NIGHT]
+   * @param {number} [opts.signalsPerNight]  The same count every night;
+   *        left out, each night takes its own from NIGHT_SIGNALS.
    * @param {string[]} [opts.signalNames=[]]
    */
-  constructor({ signalsPerNight = SIGNALS_PER_NIGHT, signalNames = [] } = {}) {
-    this.signalsPerNight = signalsPerNight;
+  constructor({ signalsPerNight = null, signalNames = [] } = {}) {
+    this._fixedCount = signalsPerNight;
+    this.signalsPerNight = signalsPerNight ?? SIGNALS_PER_NIGHT;
     this.signalNames = signalNames;
   }
 
   /** Generate a fresh set of signals for a new night. */
   startNight(nightNumber) {
     this.signals = [];
+    this.signalsPerNight = this._fixedCount
+      ?? NIGHT_SIGNALS[Math.max(0, Math.min(nightNumber, NIGHT_SIGNALS.length - 1))];
     this.required = Math.min(
       this.signalsPerNight,
       nightNumber === 0 ? TUTORIAL_QUOTA : Math.round(QUOTA_SCALE * (BASE_REQUIRED + (nightNumber - 1))),

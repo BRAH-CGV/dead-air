@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SignalManager, TUTORIAL_QUOTA, PROCESSED_QUOTA, SIGNALS_PER_NIGHT, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
+import { SignalManager, TUTORIAL_QUOTA, PROCESSED_QUOTA, SIGNALS_PER_NIGHT, NIGHT_SIGNALS, APPEAR_START, APPEAR_BY, SIGNAL_FADE_SECONDS, VISIBLE_SECONDS } from './SignalManager.js';
 import { SHIFT, NIGHT_SECONDS } from './NightClock.js';
 
 const POOL = [
@@ -97,6 +97,21 @@ describe('SignalManager', () => {
     mgr.startNight(0);
     expect(TUTORIAL_QUOTA).toBe(1);
     expect(mgr.required).toBe(1);
+  });
+
+  it('puts more signals in the sky on night 3: 10, 10, then 14', () => {
+    const mgr = new SignalManager({ signalNames: POOL });
+    const count = (n) => { mgr.startNight(n); return mgr.signals.length; };
+    expect([count(1), count(2), count(3)]).toEqual([10, 10, 14]);
+    expect(NIGHT_SIGNALS[3]).toBe(14);
+    expect(count(4)).toBe(14);              // past the last night: its number
+    expect(mgr.signalsPerNight).toBe(14);   // this night's count
+  });
+
+  it('a count given to the constructor holds for every night', () => {
+    const mgr = new SignalManager({ signalsPerNight: 5, signalNames: POOL });
+    mgr.startNight(3);
+    expect(mgr.signals).toHaveLength(5);
   });
 
   it('has as many signals as the old night had per minute: twice as many over twice the night', () => {
@@ -224,9 +239,9 @@ describe('SignalManager signal appearance', () => {
     }
   });
 
-  it('holds every signal until the sky is dark — the Sun drowns them at dusk', () => {
+  it('opens the sky at 7 PM, as soon as it is dark — the Sun drowns them at dusk', () => {
     const span = SHIFT.endHour - SHIFT.startHour;
-    expect(SHIFT.startHour + APPEAR_START * span).toBeGreaterThan(SHIFT.darkHour);
+    expect(SHIFT.startHour + APPEAR_START * span).toBeCloseTo(SHIFT.darkHour);
     // …and leaves time before 6 AM to scan the last one.
     expect(SHIFT.startHour + APPEAR_BY * span).toBeLessThanOrEqual(4.5);
   });
