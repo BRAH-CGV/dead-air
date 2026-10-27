@@ -4,6 +4,7 @@ import { Pickupable } from '../components/Pickupable.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { SnapSocket } from '../components/SnapSocket.js';
 import { packGroups } from '../core/PhysicsLayers.js';
+import { BOX_ATLAS, mapBoxFaces, cachedTexture } from './propAtlases.js';
 
 // Low, slightly rectangular magazine: about half the old height, z ≈ 0.8×x,
 // long side across the lid so the rows of seated drives run along it.
@@ -28,6 +29,11 @@ const SLOT_ROTATION = new THREE.Quaternion()
  * slightly inside. The sockets use the generic SnapSocket system; this class
  * only supplies the visual, dynamic body and drive-specific policy. The box
  * itself seats kinematically in the airlock's dock (DriveBoxDock).
+ *
+ * Its own material wears `tex:drive-box` and its normal map
+ * `tex:drive-box-normal` (scripts/make-prop-textures.mjs) once _init finds
+ * them loaded: rims, ribs, corner guards, a plate and a handle, all in greys, so the box's colour tints it and each box keeps its
+ * own. A material handed in (opts.material) is left as it is.
  */
 export class DriveBox extends GameObject {
   /** Marker used by generic snap receivers to accept only drive boxes. */
@@ -117,15 +123,20 @@ export class DriveBox extends GameObject {
 
   _init(scene, world) {
     super._init(scene, world);
+    if (this._ownsMaterial) this._applySkin(cachedTexture(scene, 'tex:drive-box'), cachedTexture(scene, 'tex:drive-box-normal'));
 
     const RAPIER = scene.userData.engine?.RAPIER;
     if (!RAPIER) return;
 
     const worldPos = new THREE.Vector3();
+    const worldQuat = new THREE.Quaternion();
     this.object3d.getWorldPosition(worldPos);
+    this.object3d.getWorldQuaternion(worldQuat);
 
+    // Its body starts as it was placed, turned as well as moved.
     this._swapBody(RAPIER, world, RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(worldPos.x, worldPos.y, worldPos.z)
+      .setRotation({ x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w })
       .setLinearDamping(0.8)
       .setAngularDamping(1.2)
       .setGravityScale(1)
@@ -206,9 +217,18 @@ export class DriveBox extends GameObject {
     this.colliders = [];
   }
 
+  /** Put the texture and its normal map on (the asset cache owns them;
+   *  dispose() never frees them). */
+  _applySkin(texture, normal = null) {
+    if (!texture || this._material.map === texture) return;
+    this._material.map = texture;
+    if (normal) this._material.normalMap = normal;
+    this._material.needsUpdate = true;
+  }
+
   _buildVisual() {
     this._mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(...this.size),
+      mapBoxFaces(new THREE.BoxGeometry(...this.size), BOX_ATLAS.faces, BOX_ATLAS.size),
       this._material,
     );
     this._mesh.name = 'DriveBoxMesh';

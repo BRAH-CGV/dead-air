@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
 
+import * as THREE from 'three';
 import { Airlock } from './Airlock.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -475,6 +476,33 @@ describe('Airlock', () => {
     // Zero required until the scene syncs it each night
     expect(dock.requiredCount).toBe(0);
     expect(dock.collectedCount).toBe(0);
+  });
+
+  it('seats a box turned half round, its drives\' LEDs to the chamber', () => {
+    const slot = airlock.quotaSocket.slots[0];
+    const x = new THREE.Vector3(1, 0, 0).applyQuaternion(slot.rotation);
+    expect(x.x).toBeCloseTo(-1);
+  });
+
+  it('the box dock wears tex:box-dock when it is loaded', () => {
+    const engine = makeEngine();
+    const tex = { isTexture: true };
+    engine.assets = { has: k => k === 'tex:box-dock', get: () => tex };
+    const airlock = new Airlock(engine);
+    airlock.build();
+    expect(airlock.quotaDockGO.object3d.children[0].material.map).toBe(tex);
+  });
+
+  it('the dock\'s table wears tex:dock-table and its normal map when they are loaded', () => {
+    const engine = makeEngine();
+    const tex = { isTexture: true };
+    const normal = { isTexture: true };
+    engine.assets = { has: k => k.startsWith('tex:dock-table'), get: k => (k === 'tex:dock-table' ? tex : normal) };
+    const airlock = new Airlock(engine);
+    airlock.build();
+    const material = airlock.dockTable.object3d.children[0].material;
+    expect(material.map).toBe(tex);
+    expect(material.normalMap).toBe(normal);
   });
 
   it('dispose lets go of the suit and the inner door, and removes its bodies', () => {

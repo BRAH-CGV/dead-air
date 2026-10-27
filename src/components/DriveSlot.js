@@ -34,7 +34,12 @@ export class DriveSlot extends SnapSocket {
   constructor(opts = {}) {
     super({
       snapDistance: opts.snapDistance ?? DEFAULT_SNAP_DISTANCE,
-      snapOffset: { ...DEFAULT_SNAP_OFFSET, ...(opts.snapOffset ?? {}) },
+      // A drive seats turned by snapRotation (Euler radians), e.g. half round
+      // to slide pins first into a reader's slot (DriveReader).
+      slots: [{
+        offset: { ...DEFAULT_SNAP_OFFSET, ...(opts.snapOffset ?? {}) },
+        rotation: opts.snapRotation ?? null,
+      }],
       attachedPromptLabel: null,
       sounds: READER_SOUNDS,
       onBeforeAttach: drive => {

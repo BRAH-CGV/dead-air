@@ -127,6 +127,40 @@ describe('Drive', () => {
     expect(mesh.geometry).toBeInstanceOf(THREE.BoxGeometry);
   });
 
+  it('carries an LED on the edge of its top and its −z end, dark when blank', () => {
+    const drive = new Drive();
+    const led = drive.object3d.children.find(c => c.name === 'DriveLED');
+    expect(led).toBeDefined();
+    expect(led.material).toBe(drive._material);
+    const box = new THREE.Box3().setFromObject(led);
+    expect(box.max.y).toBeGreaterThan(0.01);    // just proud of the top (h/2)
+    expect(box.min.z).toBeLessThan(-0.06);      // and of the −z end (−d/2)
+    expect(drive._material.emissiveIntensity).toBe(0);
+  });
+
+  it('the casing wears tex:drive and its normal map once _init finds them loaded, and never frees them', () => {
+    const drive = new Drive();
+    const tex = new THREE.Texture();
+    const engine = makeFakeEngine();
+    const normal = new THREE.Texture();
+    engine.assets = { has: k => k === 'tex:drive' || k === 'tex:drive-normal', get: k => (k === 'tex:drive' ? tex : normal) };
+    drive._init(makeFakeScene(engine), engine.world);
+    expect(drive._bodyMaterial.map).toBe(tex);
+    expect(drive._bodyMaterial.normalMap).toBe(normal);
+    expect(drive._bodyMaterial.color.getHex()).toBe(0xffffff);
+    tex.dispose = vi.fn();
+    drive.dispose();
+    expect(tex.dispose).not.toHaveBeenCalled();
+  });
+
+  it('without the texture the casing stays plain grey', () => {
+    const drive = new Drive();
+    const engine = makeFakeEngine();
+    drive._init(makeFakeScene(engine), engine.world);
+    expect(drive._bodyMaterial.map).toBeNull();
+    expect(drive._bodyMaterial.color.getHex()).toBe(0x3a3a3a);
+  });
+
   it('carries the drive clips for when it is dropped or knocked', () => {
     const impact = new Drive().getComponent(ImpactSound);
     expect(impact).toBeTruthy();
@@ -214,12 +248,18 @@ describe('Drive', () => {
     const drive = new Drive();
     const geomDispose = vi.fn();
     const matDispose = vi.fn();
+    const bodyDispose = vi.fn();
+    const ledDispose = vi.fn();
     drive._mesh.geometry.dispose = geomDispose;
     drive._material.dispose = matDispose;
+    drive._bodyMaterial.dispose = bodyDispose;
+    drive._led.geometry.dispose = ledDispose;
 
     drive.dispose();
     expect(geomDispose).toHaveBeenCalled();
     expect(matDispose).toHaveBeenCalled();
+    expect(bodyDispose).toHaveBeenCalled();
+    expect(ledDispose).toHaveBeenCalled();
   });
 
   // ── Physics body (Phase 3) ──

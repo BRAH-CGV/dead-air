@@ -4,6 +4,7 @@ import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { packGroups } from '../core/PhysicsLayers.js';
+import { BAG_ATLAS, mapBoxFaces, cachedTexture } from './propAtlases.js';
 
 // ─────────────────────────────────────────────
 // CoffeeGoods  –  the coffee you carry (#168)
@@ -14,7 +15,11 @@ import { packGroups } from '../core/PhysicsLayers.js';
 //                stuck together as one heap, carried to the bean
 //                processor's hopper.
 //   CoffeeBag    a kraft bag of ground coffee, out of the processor's bay,
-//                carried to the bedroom's coffee machine.
+//                carried to the bedroom's coffee machine. Its top tapers
+//                to a sealed seam; it wears `tex:coffee-bag`
+//                (scripts/make-prop-textures.mjs: the label on its wide
+//                front, the seam's tin tie) once _init finds it loaded;
+//                plain kraft without.
 //
 // Each is a dynamic body (a box round it, the drives' collision groups)
 // that rests where it is put and falls when dropped, and sounds as it is
@@ -43,7 +48,10 @@ const PARKED = Object.freeze({ x: 0, y: -50, z: 0 });
 export const BEANS_COLOUR = 0x7a3a22;
 
 export const COFFEE_BEANS = Object.freeze({ size: [0.13, 0.055, 0.13], beans: 34 });
-export const COFFEE_BAG = Object.freeze({ size: [0.1, 0.17, 0.125], colour: 0x9a7348 });
+/** The bag: its wide face (+z, the label) across x, its top pinched to a
+ *  sealed seam. `pinch` is the share of its depth left at the seam,
+ *  `straight` the share of its body below where the taper starts. */
+export const COFFEE_BAG = Object.freeze({ size: [0.125, 0.17, 0.1], colour: 0x9a7348, pinch: 0.18, straight: 2 / 3, seal: 0.12 });
 
 class CarriedItem extends GameObject {
   /** Out in the world (true) or parked away (false). */
@@ -69,6 +77,7 @@ class CarriedItem extends GameObject {
 
   _init(scene, world) {
     super._init(scene, world);
+    this._applySkin(scene);
     const engine = scene.userData.engine;
     if (!engine?.RAPIER) return;
     const RAPIER = engine.RAPIER;
@@ -94,6 +103,9 @@ class CarriedItem extends GameObject {
     if (this._placeAt) this.place(this._placeAt);
     else this.park();
   }
+
+  /** Put on its texture, if it has one (CoffeeBag). */
+  _applySkin() {}
 
   /** Into the world, standing on `at` (world space), upright and still. */
   place(at) {
@@ -205,15 +217,42 @@ export class CoffeeBag extends CarriedItem {
   /** @param {string} name @param {{ own?: (r: any) => any }} [opts] */
   constructor(name = 'CoffeeBag', { own = r => r } = {}) {
     const [w, h, d] = COFFEE_BAG.size;
-    // The bag and its top rolled over.
+    const { pinch, straight, seal } = COFFEE_BAG;
+    const bodyH = h * (1 - seal);
+    // The body: straight sides, then front and back leaning in over its top
+    // third to the seam (a box in three bands, its top band's top row pinched).
+    const body = mapBoxFaces(new THREE.BoxGeometry(w * 0.96, bodyH, d, 1, 3, 1), BAG_ATLAS.body, BAG_ATLAS.size);
+    const pos = body.attributes.position;
+    const taperFrom = bodyH * (straight - 0.5);
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y <= taperFrom + 1e-6) continue;
+      const t = (y - taperFrom) / (bodyH / 2 - taperFrom);
+      pos.setZ(i, pos.getZ(i) * (1 - (1 - pinch) * t));
+      pos.setX(i, pos.getX(i) * (1 - 0.04 * t));
+    }
+    // The sealed seam along the top, a strip with its tin tie.
     const parts = [
-      new THREE.BoxGeometry(w * 0.9, h * 0.86, d * 0.95).translate(0, h * 0.43, 0),
-      new THREE.BoxGeometry(w, h * 0.14, d).translate(0, h * 0.93, 0),
-    ].map(g => g.toNonIndexed());
+      body.translate(0, bodyH / 2, 0),
+      mapBoxFaces(new THREE.BoxGeometry(w * 0.92, h * seal, d * pinch + 0.004), BAG_ATLAS.roll, BAG_ATLAS.size)
+        .translate(0, bodyH + h * seal / 2, 0),
+    ].map(g => g.toNonIndexed().deleteAttribute('normal'));
+    parts.forEach(g => g.computeVertexNormals());
     const geometry = own(mergeGeometries(parts));
     parts.forEach(g => g.dispose());
     const mesh = new THREE.Mesh(geometry, own(new THREE.MeshStandardMaterial({ color: COFFEE_BAG.colour, roughness: 0.9, fog: false })));
     mesh.name = 'CoffeeBagBody';
     super(name, { kind: 'bag', size: COFFEE_BAG.size, mesh });
+  }
+
+  /** The bag's texture, from the asset cache (which owns it), over a white
+   *  base: the kraft is in the picture. */
+  _applySkin(scene) {
+    const texture = cachedTexture(scene, 'tex:coffee-bag');
+    const material = this.mesh.material;
+    if (!texture || material.map === texture) return;
+    material.map = texture;
+    material.color.setHex(0xffffff);
+    material.needsUpdate = true;
   }
 }

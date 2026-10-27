@@ -14,6 +14,26 @@ function init(item) {
   return engine;
 }
 
+describe('CoffeeBag texture', () => {
+  it('wears tex:coffee-bag once _init finds it loaded; plain kraft without', () => {
+    const tex = new THREE.Texture();
+    const bag = new CoffeeBag();
+    const engine = makeEngine();
+    engine.RAPIER = rapierModule().default;
+    engine.assets = { has: k => k === 'tex:coffee-bag', get: () => tex };
+    const scene = new THREE.Scene();
+    scene.userData.engine = engine;
+    bag._init(scene, engine.world);
+    expect(bag.mesh.material.map).toBe(tex);
+    expect(bag.mesh.material.color.getHex()).toBe(0xffffff);
+
+    const plain = new CoffeeBag();
+    init(plain);
+    expect(plain.mesh.material.map).toBeNull();
+    expect(plain.mesh.material.color.getHex()).toBe(COFFEE_BAG.colour);
+  });
+});
+
 describe('CoffeeGoods', () => {
   for (const [Kind, kind, spec] of [[CoffeeBeans, 'beans', COFFEE_BEANS], [CoffeeBag, 'bag', COFFEE_BAG]]) {
     describe(Kind.name, () => {

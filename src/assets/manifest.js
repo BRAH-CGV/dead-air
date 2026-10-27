@@ -374,6 +374,57 @@ const PLACED = {
     url: 'assets/textures/mug-hang-in-there.png',
     colorSpace: 'srgb',
   },
+  // The carried props' atlases (scripts/make-prop-textures.mjs), a
+  // rectangle a face (src/gameobjects/propAtlases.js): the drive's casing,
+  // the drive box in greys (its colour tints it), the coffee bag, the drive
+  // readers and the airlock's box dock.
+  'tex:drive': {
+    type: 'texture',
+    url: 'assets/textures/drive.png',
+    colorSpace: 'srgb',
+  },
+  'tex:drive-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-normal.png',
+  },
+  'tex:drive-box': {
+    type: 'texture',
+    url: 'assets/textures/drive-box.png',
+    colorSpace: 'srgb',
+  },
+  'tex:drive-box-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-box-normal.png',
+  },
+  'tex:coffee-bag': {
+    type: 'texture',
+    url: 'assets/textures/coffee-bag.png',
+    colorSpace: 'srgb',
+  },
+  'tex:drive-reader': {
+    type: 'texture',
+    url: 'assets/textures/drive-reader.png',
+    colorSpace: 'srgb',
+  },
+  // Their relief: a normal map, made from a height map of the same shapes.
+  'tex:drive-reader-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-reader-normal.png',
+  },
+  'tex:box-dock': {
+    type: 'texture',
+    url: 'assets/textures/box-dock.png',
+    colorSpace: 'srgb',
+  },
+  'tex:dock-table': {
+    type: 'texture',
+    url: 'assets/textures/dock-table.png',
+    colorSpace: 'srgb',
+  },
+  'tex:dock-table-normal': {
+    type: 'texture',
+    url: 'assets/textures/dock-table-normal.png',
+  },
   // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
   // (the tables lay their UVs out in metres).
   'tex:wood-table': {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { READER_SIZE, READER_SLOT, readerMaterial, skinReader } from '../../gameobjects/DriveReader.js';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -197,16 +198,10 @@ export class ServerRoom extends Room {
     // not a child of the scaled console model, so it keeps its own size.
     // It sits on the console's front ledge: 0.16 m left of the console's
     // origin, 0.7 m forward of it, 0.405 m up.
-    const slotSize = [0.12, 0.03, 0.15]; // same as MainOffice reader
+    const slotSize = READER_SIZE; // same as MainOffice reader
     const slotPos = [consoleAt[0] - 0.16, 0.405, consoleAt[1] + 0.7];
-    const slotMat = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.7,
-      metalness: 0.4,
-      emissive: 0x003322,
-      emissiveIntensity: 0.3,
-    }));
-    const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, slotMat);
+    const slotBox = this._addStaticBox('DriveSlot', slotPos, slotSize, this._own(readerMaterial()));
+    skinReader(slotBox.object3d.children[0], this.engine?.assets);
 
     // Tooltip on hover (no interact action — just a label)
     const slotTooltip = new Interactable();
@@ -214,10 +209,10 @@ export class ServerRoom extends Room {
     slotBox.addComponent(slotTooltip);
 
     // Attach a DriveSlot component — it auto-snaps nearby unheld drives.
-    const driveHeight = 0.02; // Drive._size[1] default
     const driveSlot = new DriveSlot({
       snapDistance: 0.25,
-      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+      snapOffset: READER_SLOT.offset,
+      snapRotation: READER_SLOT.rotation,
     });
     slotBox.addComponent(driveSlot);
     this._driveSlot = driveSlot;
@@ -371,16 +366,10 @@ export class ServerRoom extends Room {
 
     // Drive slot on the console's front ledge. Standalone static box,
     // not a child of the scaled model, so it keeps its own size.
-    const slotSize = [0.12, 0.03, 0.15];
+    const slotSize = READER_SIZE;
     const slotPos = [1.960, 0.405, 2.577];
-    const slotMat = this._own(new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.7,
-      metalness: 0.4,
-      emissive: 0x003311,
-      emissiveIntensity: 0.3,
-    }));
-    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, slotMat);
+    const slotBox = this._addStaticBox('DeleteDriveSlot', slotPos, slotSize, this._own(readerMaterial()));
+    skinReader(slotBox.object3d.children[0], this.engine?.assets);
     slotBox.object3d.rotation.set(0, -Math.PI / 2, 0);
 
     // Tooltip on hover
@@ -389,10 +378,10 @@ export class ServerRoom extends Room {
     slotBox.addComponent(slotTooltip);
 
     // DriveSlot component
-    const driveHeight = 0.02;
     const driveSlot = new DriveSlot({
       snapDistance: 0.25,
-      snapOffset: { y: slotSize[1] / 2 + driveHeight / 2 },
+      snapOffset: READER_SLOT.offset,
+      snapRotation: READER_SLOT.rotation,
     });
     slotBox.addComponent(driveSlot);
     this._deleteDriveSlot = driveSlot;
