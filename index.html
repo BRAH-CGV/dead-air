@@ -706,10 +706,11 @@
       }
       .menu-tagline { --ls: 0.14em; color: var(--menu-ok); font-size: 13px; letter-spacing: var(--ls); min-height: 4.5em; }
       .menu-type {
-        /* Each character is 1ch plus the letter-spacing; 1ch alone clipped
-           the end of every line. */
-        width: calc(var(--chars) * (1ch + var(--ls)));
-        overflow: hidden;
+        /* Typed in by uncovering the line (clip-path, keyframes below), a
+           character a step; the line keeps its own width. A width worked out
+           as --chars × (1ch + the letter-spacing) cut the last letters off
+           wherever the glyphs drew wider than that ("KEEP LISTENIN"). */
+        width: max-content;
         white-space: nowrap;
         animation: menu-type 0.8s steps(var(--chars)) calc(0.3s + var(--i) * 0.9s) both;
       }
@@ -881,7 +882,7 @@
 
       @keyframes menu-blink   { 50% { opacity: 0; } }
       @keyframes menu-flicker { 0%, 96%, 100% { opacity: 1; } 97% { opacity: 0.82; } 98% { opacity: 1; } 99% { opacity: 0.9; } }
-      @keyframes menu-type    { from { width: 0; } }
+      @keyframes menu-type    { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
       @keyframes menu-flash   { 50% { background: rgba(232, 160, 80, 0.16); } }
       @keyframes menu-roll    { to { transform: translateY(-100%); } }
       @media (prefers-reduced-motion: reduce) {
