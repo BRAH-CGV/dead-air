@@ -8,6 +8,7 @@
 //                       its LED sits on, the connector on the other
 //   drive-normal.png    its relief, made like the reader's
 //   drive-box.png       the drive box, in greys: its own colour tints it
+//   drive-box-normal.png  its relief, made like the reader's
 //   coffee-bag.png      a kraft bag of ground coffee, its sealed seam and tie
 //   drive-reader.png    the drive readers: a slot on the front the drive
 //                       slides into, a cover plate, grille and vents
@@ -183,43 +184,57 @@ function drive(height = false) {
 
 // ── The drive box ──────────────────────────────
 
-function box() {
+/** The drive box, as its colour or (`height`) a height map, as the reader
+ *  is. Each shape has its own height, though several share a grey. */
+function box(height = false) {
   const { size, faces } = BOX_ATLAS;
+  const grey = v => { const g = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0'); return `#${g}${g}${g}`; };
+  const P = (colour, h) => (height ? grey(h) : colour);
   // Greys only: the box's colour multiplies them.
-  const BASE = '#cfcfcf', RIM = '#d8d8d8', LINE = '#8a8a8a', DEEP = '#a8a8a8', HOLE = '#262626', CORNER = '#626262', PLATE = '#c4c4c4', INK = '#3a3a3a';
+  const BASE = P('#cfcfcf', 0.5), RIM = P('#d8d8d8', 0.56), TRAY = P('#a8a8a8', 0.42), RIB = P('#a8a8a8', 0.6);
+  const RIVET = P('#a8a8a8', 0.68), GROOVE = P('#a8a8a8', 0.42), HOLE = P('#262626', 0.04), CORNER = P('#626262', 0.64);
+  const PLATE = P('#c4c4c4', 0.55), INK = '#3a3a3a';
+  const bevel_ = (...args) => (height ? '' : bevel(...args));
+  const paint = str => (height ? '' : str);
+  const screwAt = (x, y, r) => height
+    ? `<circle cx="${x}" cy="${y}" r="${r}" fill="${grey(0.66)}"/>`
+    : screw(x, y, r, '#a8a8a8', '#8a8a8a');
   const frame = (w, h, band) => `<rect width="${w}" height="${h}" fill="${RIM}"/>
     <rect x="${band}" y="${band}" width="${w - 2 * band}" height="${h - 2 * band}" fill="${BASE}"/>
-    ${bevel(band, band, w - 2 * band, h - 2 * band, { sunk: true, k: 1.4 })}`;
+    ${bevel_(band, band, w - 2 * band, h - 2 * band, { sunk: true, k: 1.4 })}`;
   const rivets = (w, h, inset) => [[inset, inset], [w - inset, inset], [inset, h - inset], [w - inset, h - inset]]
-    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="${DEEP}"/>${bevel(x - 4, y - 4, 8, 8)}`).join('');
-  const scuffs = (w, h) => `<rect x="0" y="${h - 22}" width="${w}" height="22" fill="${DEEP}" opacity="0.5"/>`;
+    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5" fill="${RIVET}"/>${bevel_(x - 4, y - 4, 8, 8)}`).join('');
+  const scuffs = (w, h) => paint(`<rect x="0" y="${h - 22}" width="${w}" height="22" fill="#a8a8a8" opacity="0.5"/>`);
   // Dark corner guards, an L in each corner of a side.
   const guards = (w, h, s) => [[0, 0], [w - s, 0], [0, h - 12], [w - s, h - 12]]
     .map(([x, y]) => `<rect x="${x}" y="${y}" width="${s}" height="12" fill="${CORNER}"/>`)
     .concat([[0, 0], [w - 12, 0], [0, h - s], [w - 12, h - s]]
       .map(([x, y]) => `<rect x="${x}" y="${y}" width="12" height="${s}" fill="${CORNER}"/>`)).join('');
   const top = `${frame(512, 448, 22)}
-    <rect x="34" y="44" width="444" height="360" rx="8" fill="${DEEP}"/>${bevel(34, 44, 444, 360, { sunk: true, k: 1.6 })}
+    <rect x="34" y="44" width="444" height="360" rx="8" fill="${TRAY}"/>${bevel_(34, 44, 444, 360, { sunk: true, k: 1.6 })}
     ${rivets(512, 448, 12)}`;
   const long = `${frame(512, 192, 14)}${scuffs(512, 192)}
-    <rect x="120" y="14" width="6" height="164" fill="${DEEP}"/><rect x="386" y="14" width="6" height="164" fill="${DEEP}"/>
-    <rect x="176" y="56" width="160" height="64" rx="3" fill="${PLATE}"/>${bevel(176, 56, 160, 64)}
-    ${screw(190, 88, 4, DEEP, LINE)}${screw(322, 88, 4, DEEP, LINE)}
+    <rect x="120" y="14" width="6" height="164" fill="${RIB}"/><rect x="386" y="14" width="6" height="164" fill="${RIB}"/>
+    <rect x="176" y="56" width="160" height="64" rx="3" fill="${PLATE}"/>${bevel_(176, 56, 160, 64)}
+    ${screwAt(190, 88, 4)}${screwAt(322, 88, 4)}
     ${guards(512, 192, 40)}`;
   const short = `${frame(448, 192, 14)}${scuffs(448, 192)}
     <rect x="144" y="36" width="160" height="34" rx="17" fill="${HOLE}"/>
-    <rect x="144" y="36" width="160" height="10" rx="5" fill="#000000" opacity="0.5"/>
-    ${text(224, 128, 16, '▲ THIS WAY UP ▲', { fill: INK, font: MONO })}
+    ${paint(`<rect x="144" y="36" width="160" height="10" rx="5" fill="#000000" opacity="0.5"/>
+    ${text(224, 128, 16, '▲ THIS WAY UP ▲', { fill: INK, font: MONO })}`)}
     ${guards(448, 192, 40)}`;
   const bottom = `${frame(512, 192, 10)}
-    ${slots(32, 10, 7, 64, 3, 172, DEEP)}`;
+    ${slots(32, 10, 7, 64, 3, 172, GROOVE)}`;
   // Light greys show grime hard: less of it.
   const light = { grime: 0.18, scratches: 0.6 };
+  const rect = (r, body, id) => height
+    ? `<g transform="translate(${r[0]} ${r[1]})">${body}</g>`
+    : inRect(r, body, id, light);
   return svg(size, [
-    inRect(faces.py, top, 'py', light),
-    inRect(faces.pz, long, 'pz', light),
-    inRect(faces.px, short, 'px', light),
-    inRect(faces.ny, bottom, 'ny', light),
+    rect(faces.py, top, 'py'),
+    rect(faces.pz, long, 'pz'),
+    rect(faces.px, short, 'px'),
+    rect(faces.ny, bottom, 'ny'),
   ].join(''));
 }
 
@@ -468,14 +483,14 @@ function bag() {
   ].join(''), defs);
 }
 
-for (const [name, draw] of [['drive', () => drive()], ['drive-box', box], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock], ['dock-table', () => table()]]) {
+for (const [name, draw] of [['drive', () => drive()], ['drive-box', () => box()], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock], ['dock-table', () => table()]]) {
   const out = `${outDir}/${name}.png`;
   await sharp(Buffer.from(draw())).png({ compressionLevel: 9, palette: true }).toFile(out);
   console.log(`wrote ${out}`);
 }
 
-// The reader's, the drive's and the table's relief, from the same shapes as their colour.
-for (const [name, draw, { size, faces }] of [['drive-reader-normal', reader, READER_ATLAS], ['drive-normal', drive, DRIVE_ATLAS], ['dock-table-normal', table, TABLE_ATLAS]]) {
+// The reader's, the drive's, the table's and the box's relief, from the same shapes as their colour.
+for (const [name, draw, { size, faces }] of [['drive-reader-normal', reader, READER_ATLAS], ['drive-normal', drive, DRIVE_ATLAS], ['dock-table-normal', table, TABLE_ATLAS], ['drive-box-normal', box, BOX_ATLAS]]) {
   const out = `${outDir}/${name}.png`;
   await (await normalMap(draw(true), size, Object.values(faces), 4)).png({ compressionLevel: 9 }).toFile(out);
   console.log(`wrote ${out}`);

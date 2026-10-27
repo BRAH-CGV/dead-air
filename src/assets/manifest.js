@@ -392,6 +392,10 @@ const PLACED = {
     url: 'assets/textures/drive-box.png',
     colorSpace: 'srgb',
   },
+  'tex:drive-box-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-box-normal.png',
+  },
   'tex:coffee-bag': {
     type: 'texture',
     url: 'assets/textures/coffee-bag.png',

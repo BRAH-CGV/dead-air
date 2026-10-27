@@ -30,9 +30,9 @@ const SLOT_ROTATION = new THREE.Quaternion()
  * only supplies the visual, dynamic body and drive-specific policy. The box
  * itself seats kinematically in the airlock's dock (DriveBoxDock).
  *
- * Its own material wears `tex:drive-box` (scripts/make-prop-textures.mjs)
- * once _init finds it loaded: rims, ribs, corner guards, a label plate and a
- * handle, all in greys, so the box's colour tints it and each box keeps its
+ * Its own material wears `tex:drive-box` and its normal map
+ * `tex:drive-box-normal` (scripts/make-prop-textures.mjs) once _init finds
+ * them loaded: rims, ribs, corner guards, a plate and a handle, all in greys, so the box's colour tints it and each box keeps its
  * own. A material handed in (opts.material) is left as it is.
  */
 export class DriveBox extends GameObject {
@@ -123,7 +123,7 @@ export class DriveBox extends GameObject {
 
   _init(scene, world) {
     super._init(scene, world);
-    if (this._ownsMaterial) this._applySkin(cachedTexture(scene, 'tex:drive-box'));
+    if (this._ownsMaterial) this._applySkin(cachedTexture(scene, 'tex:drive-box'), cachedTexture(scene, 'tex:drive-box-normal'));
 
     const RAPIER = scene.userData.engine?.RAPIER;
     if (!RAPIER) return;
@@ -217,10 +217,12 @@ export class DriveBox extends GameObject {
     this.colliders = [];
   }
 
-  /** Put the texture on (the asset cache owns it; dispose() never frees it). */
-  _applySkin(texture) {
+  /** Put the texture and its normal map on (the asset cache owns them;
+   *  dispose() never frees them). */
+  _applySkin(texture, normal = null) {
     if (!texture || this._material.map === texture) return;
     this._material.map = texture;
+    if (normal) this._material.normalMap = normal;
     this._material.needsUpdate = true;
   }
 

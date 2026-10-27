@@ -70,9 +70,11 @@ describe('DriveBox', () => {
     const box = new DriveBox('Box', { color: 0x884422 });
     const { scene, world, engine } = makeSceneContext();
     const tex = new THREE.Texture();
-    engine.assets = { has: k => k === 'tex:drive-box', get: () => tex };
+    const normal = new THREE.Texture();
+    engine.assets = { has: k => k.startsWith('tex:drive-box'), get: k => (k === 'tex:drive-box' ? tex : normal) };
     box._init(scene, world);
     expect(box._material.map).toBe(tex);
+    expect(box._material.normalMap).toBe(normal);
     expect(box._material.color.getHex()).toBe(0x884422);
   });
 
