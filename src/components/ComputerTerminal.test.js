@@ -57,6 +57,7 @@ function makeSatellite() {
       }
       return false;
     },
+    isRotating() { return false; },
   };
   return sat;
 }
@@ -65,7 +66,7 @@ function makeHUD() {
   return {
     show: vi.fn(), hide: vi.fn(),
     setTime: vi.fn(), setSignals: vi.fn(), setNight: vi.fn(),
-    setScanProgress: vi.fn(), setPrompt: vi.fn(),
+    setPrompt: vi.fn(),
   };
 }
 
@@ -73,7 +74,8 @@ function makeRadar() {
   return {
     show: vi.fn(), hide: vi.fn(),
     update: vi.fn(), setInfo: vi.fn(), setHint: vi.fn(),
-    setWarning: vi.fn(), threatAt: vi.fn(() => false),
+    setWarning: vi.fn(), setTelemetry: vi.fn(), setScanProgress: vi.fn(), setLockOnProgress: vi.fn(), setDriveIndicators: vi.fn(), flashIndicator: vi.fn(), threatAt: vi.fn(() => false),
+    setBarColor: vi.fn(),
   };
 }
 
@@ -244,6 +246,8 @@ describe('ComputerTerminal', () => {
       -1,
       dish.neighbours,
       dish.rig,
+      -1,    // lockOnFraction — not in lock-on
+      null,  // lockOnTarget
     );
   });
 
@@ -456,8 +460,11 @@ describe('ComputerTerminal', () => {
     expect(sat.isAimedAt(sig.yaw, sig.pitch, sig.tolerance)).toBe(true);
     term._enterScanning();
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Lock-on phase: satellite is NOT scanning yet — lock-on must complete first.
+    expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBe(sig);
+    expect(term._lockOnTarget).toBe(sig);
+    expect(term._lockOnProgress).toBe(0);
   });
 
   it('scan does not start when dish is not aimed', () => {
@@ -504,11 +511,13 @@ describe('ComputerTerminal', () => {
 
     term._enterScanning();
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Lock-on phase: satellite is NOT scanning yet — lock-on must complete first.
+    expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBe(sig);
+    expect(term._lockOnTarget).toBe(sig);
   });
 
-  it('radar info explains a missing lock when no dish of the array is aimed', () => {
+  it('no pull-in starts when no dish of the array is aimed', () => {
     term.enter();
     const sig = mgr.signals[0];
     const cur = skyToCursor(sig.yaw, sig.pitch);
@@ -522,9 +531,88 @@ describe('ComputerTerminal', () => {
     // Drive the Enter gate exactly as onUpdate does for a hovering signal.
     const aimed = sat.isAnyDishAimedAt(sig.yaw, sig.pitch, sig.tolerance);
     expect(aimed).toBe(false);
-    term.radar.setInfo('No dish aimed — wait for one to settle');
-    expect(radar.setInfo).toHaveBeenCalledWith('No dish aimed — wait for one to settle');
     expect(term.state).toBe('radar');
+  });
+
+  // ── Dish pull-in ──
+
+  it('pull-in starts when Enter is pressed on a hovered signal', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    expect(term._hoveredSignal).toBe(sig);
+
+    term._startDishPullIn(sig);
+    expect(term._pullingIn).toBe(true);
+    expect(term._pullSignal).toBe(sig);
+    expect(term.state).toBe('radar');  // not scanning yet
+  });
+
+  it('cursor moves toward signal centre during pull-in', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    // Start from a different position than the signal.
+    term._cursorX = 0;
+    term._cursorY = 0;
+    term._startDishPullIn(sig);
+
+    // Half-way through the pull-in.
+    term._stepPullIn(0.25);
+    const target = skyToCursor(sig.yaw, sig.pitch);
+    // Cursor should have moved toward the target.
+    expect(term._cursorX).not.toBe(0);
+    // Not there yet.
+    expect(Math.abs(term._cursorX - target.x)).toBeGreaterThan(0.001);
+  });
+
+  it('pull-in completion transitions to scanning (lock-on begins)', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._startDishPullIn(sig);
+
+    // Complete the pull-in.
+    term._stepPullIn(1);
+    expect(term._pullingIn).toBe(false);
+    expect(term.state).toBe('scanning');
+    expect(term._lockOnTarget).toBe(sig);
+  });
+
+  it('WASD is frozen during pull-in', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({ KeyA: true }) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    term._startDishPullIn(sig);
+
+    term.onUpdate(1 / 60);
+    // Cursor should not have moved from WASD — pull-in overrides it.
+    // The pull-in moves the cursor toward the signal, not left.
+    expect(term._pullingIn).toBe(true);
+  });
+
+  it('exit cancels an in-progress pull-in', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    term._startDishPullIn(sig);
+    expect(term._pullingIn).toBe(true);
+
+    term.exit();
+    expect(term._pullingIn).toBe(false);
+    expect(term._pullSignal).toBeNull();
+    expect(term.state).toBe('idle');
   });
 
   // ── The evil signal hook ──
@@ -605,6 +693,112 @@ describe('ComputerTerminal', () => {
     expect(sat.isScanning).toBe(false);
   });
 
+  // ── Lock-on phase ──
+
+  it('lock-on accumulates progress while the dish stays aimed', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    expect(term._lockOnTarget).toBe(sig);
+    expect(sat.isScanning).toBe(false);
+
+    // Tick — dish is aimed, lock-on should accumulate.
+    term.onUpdate(0.5);
+    expect(term._lockOnProgress).toBeCloseTo(0.5);
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(0.5 / term._lockOnDuration);
+    expect(radar.setScanProgress).toHaveBeenCalledWith(0);
+    // Satellite still not scanning during lock-on.
+    expect(sat.isScanning).toBe(false);
+  });
+
+  it('lock-on completes and transitions to scan phase', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    // Accumulate past the lock-on threshold.
+    term._lockOnProgress = term._lockOnDuration;
+    term.onUpdate(1 / 60);
+
+    // Satellite should now be scanning.
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanProgress).toBe(0);
+    // Lock-on bar stays full during scan.
+    expect(radar.setLockOnProgress).toHaveBeenCalledWith(1);
+  });
+
+  it('lock-on resets and returns to radar when the dish drifts', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+
+    // Partial lock-on progress.
+    term._lockOnProgress = 0.5;
+
+    // Move the dish away — no longer aimed.
+    sat.neck.object3d.rotation.y = 0;
+    sat.dish.object3d.rotation.x = 0;
+
+    term.onUpdate(1 / 60);
+
+    expect(term.state).toBe('radar');
+    expect(term._lockOnTarget).toBeNull();
+    expect(term._lockOnProgress).toBe(0);
+    expect(sat.isScanning).toBe(false);
+  });
+
+  it('exit during lock-on lets it keep progressing in the background', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = 0.5;
+
+    term.exit();
+    expect(term.state).toBe('idle');
+    // Satellite scan state is cleared (lock-on hasn't completed yet).
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    // Lock-on fields are preserved so the bar stays visible.
+    expect(term._lockOnTarget).toBe(sig);
+
+    // Drive lock-on to completion in the background.
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term._lockOnProgress = term._lockOnDuration - 1 / 120;
+    term.onUpdate(1 / 60);
+    // Lock-on completed: satellite now scanning in the background.
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+    expect(sat.scanProgress).toBe(0);
+  });
+
   // ── SCANNING → AUTO-SAVE ──
 
   it('auto-saves the signal and closes the terminal when scan completes', () => {
@@ -620,7 +814,9 @@ describe('ComputerTerminal', () => {
     term._enterScanning();
 
     expect(term.state).toBe('scanning');
-    expect(sat.isScanning).toBe(true);
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
 
     // Simulate scan completion (happens on Satellite._update)
     sat.scanProgress = sig.scanTime;
@@ -634,28 +830,10 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('idle');
     expect(sig.saved).toBe(true);
     expect(driveMgr.saveToDrive).toHaveBeenCalled();
-    expect(radar.hide).toHaveBeenCalled();
     expect(crosshair.show).toHaveBeenCalled();
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
     expect(sat.scanProgress).toBe(0);
-  });
-
-  it('scan progress bar updates during scanning state', () => {
-    term.enter();
-    const sig = mgr.signals[0];
-    const cur = skyToCursor(sig.yaw, sig.pitch);
-    term._cursorX = cur.x;
-    term._cursorY = cur.y;
-    term._updateHover();
-    term._enterScanning();
-
-    // Manually accumulate progress (as Satellite._update would do)
-    sat.scanProgress += 1.5;
-    const progress = sat.scanProgress / sig.scanTime;
-    expect(progress).toBeCloseTo(0.5);
-    hud.setScanProgress(progress);
-    expect(hud.setScanProgress).toHaveBeenCalledWith(0.5);
   });
 
   it('scan progress preserved when dish drifts (background scanning)', () => {
@@ -716,12 +894,159 @@ describe('ComputerTerminal', () => {
     expect(term.state).toBe('radar');
   });
 
-  it('radar hint tells the player to insert a drive when none is inserted', () => {
+  it('radar always shows the controls hint regardless of drive state', () => {
     driveMgr.driveInserted = false;
     term.enter();
     expect(radar.setHint).toHaveBeenCalledWith(
-      expect.stringContaining('Insert a drive'),
+      expect.stringContaining('WASD'),
     );
+  });
+
+  it('drive removed during lock-on resets to radar without saving', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    expect(term.state).toBe('scanning');
+    expect(term._lockOnTarget).toBe(sig);
+
+    // Simulate drive removal.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Reset to radar — signal NOT saved.
+    expect(term.state).toBe('radar');
+    expect(sig.saved).toBeFalsy();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(term._lockOnTarget).toBeNull();
+  });
+
+  it('drive removed during scan resets to radar without saving', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    expect(term.state).toBe('scanning');
+
+    // Simulate drive removal mid-scan.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Reset to radar — signal NOT saved.
+    expect(term.state).toBe('radar');
+    expect(sig.saved).toBeFalsy();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+  });
+
+  it('drive removed during background scan prevents save on completion', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+
+    // Exit — scan keeps going in background.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Satellite finishes the scan while the terminal is closed.
+    sat.scanProgress = sig.scanTime;
+    sig.scanned = true;
+    sat.isScanning = false;
+    sat._scanComplete = true;
+
+    // Drive removed before the idle handler processes the completion.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+    term.onUpdate(1 / 60);
+
+    // Signal NOT saved — drive was gone.
+    expect(sig.saved).toBeFalsy();
+    expect(driveMgr.saveToDrive).not.toHaveBeenCalled();
+    // Satellite state cleaned up.
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat._scanComplete).toBe(false);
+  });
+
+  it('re-entering during background scan with drive removed resets to radar', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Drive removed while terminal is closed.
+    driveMgr.driveInserted = false;
+
+    // Re-enter — should go to radar, not resume scanning.
+    term.enter();
+    expect(term.state).toBe('radar');
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+  });
+
+  it('drive removal stops a background scan immediately', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanTarget = sig;
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going in background.
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    // Drive removed.
+    driveMgr.driveInserted = false;
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // One idle-frame tick — the scan must stop right away.
+    term.onUpdate(1 / 60);
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
+    // Signal was NOT saved.
+    expect(sig.saved).toBeFalsy();
   });
 
   // ── EXIT ──
@@ -731,17 +1056,27 @@ describe('ComputerTerminal', () => {
     term.state = 'scanning';  // force a non-idle state
     term.exit();
     expect(term.state).toBe('idle');
-    expect(radar.hide).toHaveBeenCalled();
   });
 
-  it('exit during scanning drops the scan in progress', () => {
+  it('exit during scanning preserves the scan so the satellite keeps going', () => {
     term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
     term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanProgress = 1.5;
     expect(term.state).toBe('scanning');
 
     term.exit();
     expect(term.state).toBe('idle');
-    expect(sat.isScanning).toBe(false);
+    expect(sat.isScanning).toBe(true);
+    expect(sat.scanTarget).toBe(sig);
+    expect(sat.scanProgress).toBe(1.5);
   });
 
   it('exit from idle does nothing', () => {
@@ -751,13 +1086,14 @@ describe('ComputerTerminal', () => {
 
   // ── Scan state cleanup ──
 
-  it('cleanup resets satellite scan state on exit', () => {
+  it('cleanup resets satellite scan state on power loss', () => {
     term.enter();
     sat.scanProgress = 2.5;
     sat.isScanning = true;
     sat.scanTarget = mgr.signals[0];
 
-    term.exit();
+    // Losing power is a hard interruption — full cleanup even mid-scan.
+    term.setPowered(false);
     expect(sat.scanProgress).toBe(0);
     expect(sat.isScanning).toBe(false);
     expect(sat.scanTarget).toBeNull();
@@ -831,14 +1167,11 @@ describe('ComputerTerminal', () => {
       expect(radar.show).toHaveBeenCalled();
     });
 
-    it('keeps the radar up while leaning back out, and drops it once out', () => {
+    it('leans back out without hiding the radar', () => {
       term.enter();
       term.exit();
       expect(view.close).toHaveBeenCalledTimes(1);
       expect(radar.hide).not.toHaveBeenCalled();
-      const onClosed = view.close.mock.calls[0][0];
-      onClosed();
-      expect(radar.hide).toHaveBeenCalled();
     });
 
     it('draws the radar only when the screen\'s picture is painted, not every frame', () => {
@@ -888,10 +1221,151 @@ describe('ComputerTerminal', () => {
     });
   });
 
-  it('without a screen, the radar goes over the view as before', () => {
+  it('without a screen, the radar opens and stays visible after close', () => {
     term.enter();
     expect(radar.show).toHaveBeenCalled();
     term.exit();
-    expect(radar.hide).toHaveBeenCalled();
+    expect(term.state).toBe('idle');
+    // Radar stays visible — hide() is never called.
+    expect(radar.hide).not.toHaveBeenCalled();
+  });
+
+  // ── Background scan continuation ──
+
+  it('saves the signal when a background scan completes while the terminal is idle', () => {
+    term.gameObject = { scene: { userData: { engine: makeEngine({}) } } };
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    sat.neck.object3d.rotation.y = sig.yaw;
+    sat.dish.object3d.rotation.x = sig.pitch;
+    term._updateHover();
+    term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+
+    // Exit mid-scan — scan state preserved.
+    term.exit();
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(true);
+
+    // Satellite finishes the scan while the terminal is closed.
+    sat.scanProgress = sig.scanTime;
+    sig.scanned = true;
+    sat.isScanning = false;
+    sat._scanComplete = true;
+
+    // onUpdate detects the completion and saves.
+    term.onUpdate(1 / 60);
+    expect(term.state).toBe('idle');
+    expect(sig.saved).toBe(true);
+    expect(driveMgr.saveToDrive).toHaveBeenCalled();
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
+  });
+
+  it('re-entering during an active background scan resumes the scanning UI', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanProgress = 1.5;
+
+    // Exit — scan keeps going.
+    term.exit();
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(true);
+
+    // Come back — should resume scanning, not radar.
+    radar.show.mockClear();
+    crosshair.hide.mockClear();
+    term.enter();
+    expect(term.state).toBe('scanning');
+    expect(term._hoveredSignal).toBe(sig);
+    expect(radar.show).toHaveBeenCalled();
+    expect(crosshair.hide).toHaveBeenCalled();
+  });
+
+  it('power loss during a background scan cancels it', () => {
+    term.enter();
+    const sig = mgr.signals[0];
+    const cur = skyToCursor(sig.yaw, sig.pitch);
+    term._cursorX = cur.x;
+    term._cursorY = cur.y;
+    term._updateHover();
+    term._enterScanning();
+    // Complete lock-on to enter scan phase.
+    term._lockOnProgress = term._lockOnDuration;
+    sat.isScanning = true;
+    sat.scanProgress = 1.5;
+    term.exit();
+    expect(sat.isScanning).toBe(true);
+
+    term.setPowered(false);
+    expect(term.state).toBe('idle');
+    expect(sat.isScanning).toBe(false);
+    expect(sat.scanTarget).toBeNull();
+    expect(sat.scanProgress).toBe(0);
+  });
+});
+
+describe('ComputerTerminal evil bar guard', () => {
+  function makeEngine() {
+    return {
+      input: { keys: {} }, keyBinds: { left: 'KeyA', right: 'KeyD', forward: 'KeyW', back: 'KeyS', jump: 'Space', crouch: 'KeyC' },
+      player: { getComponent: () => ({ inputLocked: false }) },
+      audioListener: null, assets: { has: () => false },
+    };
+  }
+
+  it('_updateRadarDisplay skips bar writes while _evilBarsActive is true', () => {
+    const term = new ComputerTerminal();
+    const radar = makeRadar();
+    const mgr = { signals: [{ id: 1, yaw: 0, pitch: -Math.PI / 4, tolerance: 0.2, resolved: false, opacity: 1, scanTime: 6 }] };
+    const sat = { currentYaw: 0, currentPitch: 0, isScanning: false, scanTarget: null, scanProgress: 0, neighbours: [], rig: null, isRotating: () => false, _scanComplete: false };
+    term.radar = radar;
+    term.signalManager = mgr;
+    term.satellite = sat;
+    term.driveManager = makeDriveManager();
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // Activate the evil bar guard.
+    term._evilBarsActive = true;
+
+    // Drive a full display update.
+    term._updateRadarDisplay();
+
+    // The bars were NOT written — the evil signal owns them.
+    expect(radar.setScanProgress).not.toHaveBeenCalled();
+    expect(radar.setLockOnProgress).not.toHaveBeenCalled();
+  });
+
+  it('_updateRadarDisplay writes bars normally when _evilBarsActive is false', () => {
+    const term = new ComputerTerminal();
+    const radar = makeRadar();
+    const mgr = { signals: [] };
+    const sat = { currentYaw: 0, currentPitch: 0, isScanning: false, scanTarget: null, scanProgress: 0, neighbours: [], rig: null, isRotating: () => false, _scanComplete: false };
+    term.radar = radar;
+    term.signalManager = mgr;
+    term.satellite = sat;
+    term.driveManager = makeDriveManager();
+    term.gameObject = { scene: { userData: { engine: makeEngine() } } };
+
+    // Default: no evil bars active.
+    term._updateRadarDisplay();
+
+    // The bars ARE written.
+    expect(radar.setScanProgress).toHaveBeenCalled();
+    expect(radar.setLockOnProgress).toHaveBeenCalled();
   });
 });

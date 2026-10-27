@@ -762,6 +762,11 @@ export class BaseScene extends Scene {
     this.radarOverlay = new RadarOverlay();
     this.processingScreen = new ProcessingScreen();
 
+    // Show the radar overlay (and its telemetry panel) from scene build,
+    // not only after the first terminal interaction. The overlay stays
+    // permanently visible once shown.
+    this.radarOverlay.show();
+
     // The real sky behind the radar grid: the backdrop reads it live, so it
     // turns with the night and drowns in the dawn exactly as the window
     // view does.

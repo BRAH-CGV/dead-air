@@ -29,7 +29,6 @@ export class HUD {
     this._clock     = root?.querySelector('#hud-clock')     ?? null;
     this._signals   = root?.querySelector('#hud-signals')   ?? null;
     this._night     = root?.querySelector('#hud-night')     ?? null;
-    this._scanBar   = root?.querySelector('#hud-scan-bar')  ?? null;
     this._prompt    = root?.querySelector('#hud-prompt')    ?? null;
     this._suit      = root?.querySelector('#hud-suit')      ?? null;
     this._stamina     = root?.querySelector('#hud-stamina')      ?? null;
@@ -53,17 +52,6 @@ export class HUD {
 
   setNight(number) {
     if (this._night) this._night.textContent = `Night ${number}`;
-  }
-
-  /** Set scan progress bar fill (0..1). Pass -1 or negative to hide. */
-  setScanProgress(fraction) {
-    if (!this._scanBar) return;
-    if (fraction < 0) {
-      this._scanBar.style.display = 'none';
-    } else {
-      this._scanBar.style.display = 'block';
-      this._scanBar.style.width = `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
-    }
   }
 
   setPrompt(text) {
@@ -94,6 +82,139 @@ export class HUD {
   }
 }
 
+// ── RadarTelemetry ──────────────────────────────────────────
+// A data-driven panel of stylised readouts beside the radar disc.
+// Organised in titled blocks (e.g. DISH, CURSOR), each block holding
+// labelled rows whose values are formatted on the way in.  Adding a new
+// readout is just registering a row in a block; updating is passing a
+// value by key.  The panel only writes the DOM when a formatted value
+// actually changes, so paintDom re-reads are cheap.
+
+/** Format a radian angle as a signed degree string with one decimal. */
+function _deg(rad) {
+  return (rad * 180 / Math.PI).toFixed(1);
+}
+
+/** Format an azimuth (radians) as a 0–360° string with one decimal. */
+function _az(rad) {
+  let d = rad * 180 / Math.PI;
+  d = ((d % 360) + 360) % 360;
+  return d.toFixed(1) + '°';
+}
+
+/** Format an elevation (radians, negative = up) as a signed degree string.
+ *  The sign is flipped so the display reads positive-up (zenith = +90°). */
+function _el(rad) {
+  return _deg(-rad) + '°';
+}
+
+/** The default block/row descriptors wired by RadarOverlay.  Each entry
+ *  names a block, its title, and the rows it contains.  A row's format
+ *  function turns a raw number into the display string. */
+const DEFAULT_BLOCKS = [
+  {
+    name: 'dish',
+    title: 'DISH',
+    rows: [
+      { key: 'dishAz',     label: 'AZ',    format: _az },
+      { key: 'dishEl',     label: 'EL',    format: _el },
+      { key: 'dishStatus', label: 'STATE', format: String },
+    ],
+  },
+  {
+    name: 'cursor',
+    title: 'CURSOR',
+    rows: [
+      { key: 'cursorAz', label: 'AZ', format: _az },
+      { key: 'cursorEl', label: 'EL', format: _el },
+      { key: 'cursorR',  label: 'R',  format: (v) => v.toFixed(2) },
+    ],
+  },
+];
+
+export class RadarTelemetry {
+  /**
+   * @param {HTMLElement|null} root  Container element (#radar-telemetry).
+   *        Null-safe: every method no-ops when root is absent (tests, other
+   *        scenes).
+   * @param {Array} [blocks=DEFAULT_BLOCKS]  Block descriptors to register.
+   */
+  constructor(root = null, blocks = DEFAULT_BLOCKS) {
+    this._root = root;
+    /** key → { valueEl, format, last } */
+    this._rows = new Map();
+    if (!root) return;
+    // Clear any leftover blocks from a previous construction on the same
+    // container — scene rebuilds create a fresh RadarTelemetry but the
+    // #radar-telemetry div persists in index.html, so without this the
+    // DISH / CURSOR blocks would double up.
+    root.innerHTML = '';
+    for (const block of blocks) this._addBlock(block);
+  }
+
+  /** Build the DOM for one block (a titled group of rows). */
+  _addBlock({ name, title, rows }) {
+    const block = document.createElement('div');
+    block.className = 'telemetry-block';
+    block.dataset.block = name;
+
+    const heading = document.createElement('div');
+    heading.className = 'telemetry-block-title';
+    heading.textContent = title;
+    block.appendChild(heading);
+
+    for (const row of rows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'telemetry-row';
+
+      const label = document.createElement('span');
+      label.className = 'telemetry-label';
+      label.textContent = row.label;
+
+      const value = document.createElement('span');
+      value.className = 'telemetry-value';
+      value.textContent = '—';
+
+      rowEl.appendChild(label);
+      rowEl.appendChild(value);
+      block.appendChild(rowEl);
+
+      this._rows.set(row.key, {
+        valueEl: value,
+        format: row.format ?? String,
+        last: null,
+      });
+    }
+
+    this._root.appendChild(block);
+  }
+
+  /** Update values by key.  Only writes the DOM when the formatted string
+   *  actually changed — the radar is painted onto the computer screen via
+   *  paintDom every frame, so minimising DOM mutation matters. */
+  update(values) {
+    if (!this._root) return;
+    for (const [key, raw] of Object.entries(values)) {
+      const row = this._rows.get(key);
+      if (!row) continue;
+      const text = row.format(raw);
+      if (text === row.last) continue;
+      row.last = text;
+      row.valueEl.textContent = text;
+    }
+  }
+
+  show() { if (this._root) this._root.style.display = ''; }
+  hide() { if (this._root) this._root.style.display = 'none'; }
+
+  /** Remove all block elements from the container. Called by RadarOverlay
+   *  dispose() so a scene rebuild starts with a clean panel. */
+  dispose() {
+    if (this._root) this._root.innerHTML = '';
+    this._rows.clear();
+  }
+}
+
 // ── RadarOverlay ───────────────────────────────────────────
 
 export class RadarOverlay {
@@ -105,9 +226,28 @@ export class RadarOverlay {
     this._hint   = root?.querySelector('#radar-hint')    ?? null;
     this._warning = root?.querySelector('#radar-warning') ?? null;
     this._warningText = '';
+    // Telemetry panel — stylised dish/cursor readouts on the left.
+    this._telemetry = new RadarTelemetry(
+      root?.querySelector('#radar-telemetry') ?? null,
+    );
     /** The box fit() was given, [width, height], or null for the window. */
     this._box = null;
     this._resizeHandler = null;
+    // Flash state for error feedback (beep + red blink on an indicator).
+    this._flashWhich = null;  // 'drive' | 'signal' | null
+    this._flashTime = 0;
+    this._flashPhase = 0;
+    this._prevFlashPhase = null;
+    // Continuous blink on the DRIVE dot (evil signal waiting for a drive).
+    this._continuousBlink = false;
+    this._continuousBlinkTime = 0;
+    this._prevContinuousPhase = null;
+    // "LET ME IN" flashing text (evil signal lock).
+    this._letMeInContainer = root?.querySelector('#radar-let-me-in') ?? null;
+    /** @type {{ el: HTMLElement, baseX: number, baseY: number, timer: number|null, visible: boolean }[]} */
+    this._letMeInItems = [];
+    this._letMeInActive = false;
+    this._letMeInRafId = null;
     this._resize();
     // Resize when the window changes
     if (typeof window !== 'undefined') {
@@ -150,19 +290,174 @@ export class RadarOverlay {
     this._cy = this._radius;
   }
 
-  show() { if (this.root) this.root.style.display = 'flex'; }
-  hide() { if (this.root) this.root.style.display = 'none'; }
+  show() {
+    if (this.root) this.root.style.display = 'flex';
+    this._telemetry.show();
+  }
+  hide() {
+    if (this.root) this.root.style.display = 'none';
+    this._telemetry.hide();
+  }
 
   /** Stop listening for resizes and drop the sky. The window listener
    *  would otherwise keep this overlay — and the scene's sky through the
    *  backdrop — alive after every rebuild. */
   dispose() {
     this.hide();
+    // Tear down any active effects so their timers / RAF handles don't
+    // outlive the overlay.
+    this.stopLetMeIn();
+    this.stopContinuousBlink();
+    this._telemetry.dispose();
     if (this._resizeHandler && typeof window !== 'undefined') {
       window.removeEventListener('resize', this._resizeHandler);
     }
     this._resizeHandler = null;
     this._backdrop = null;
+  }
+
+  /** Push new values into the telemetry panel.  See RadarTelemetry.update.
+   *  Called every frame by ComputerTerminal._updateRadarDisplay. */
+  setTelemetry(values) {
+    this._telemetry.update(values);
+  }
+
+  /** Update the scan progress bar (0–1).  Called every frame by the terminal. */
+  setScanProgress(progress) {
+    const bar = this.root?.querySelector('#radar-scan-progress');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
+    const fill = bar.querySelector('.scan-fill');
+    if (fill) fill.style.height = pct + '%';
+  }
+
+  /** Update the lock-on progress bar (0–1).  Called every frame by the terminal. */
+  setLockOnProgress(progress) {
+    const bar = this.root?.querySelector('#radar-lockon-progress');
+    if (!bar) return;
+    const pct = Math.max(0, Math.min(1, progress ?? 0)) * 100;
+    const fill = bar.querySelector('.scan-fill');
+    if (fill) fill.style.height = pct + '%';
+  }
+
+  /** Change the fill colour of both progress bars at once (direct inline
+   *  style write — paintDom does not reliably pick up class toggles).
+   *  Pass the CSS colour string; pass the default to restore. */
+  setBarColor(color) {
+    for (const id of ['#radar-scan-progress', '#radar-lockon-progress']) {
+      const fill = this.root?.querySelector(`${id} .scan-fill`);
+      if (fill) fill.style.background = color;
+    }
+  }
+
+  /** Update the two drive indicator lights.
+   *  Uses direct inline style writes (not CSS class toggles) because the
+   *  overlay is captured by paintDom each frame, which does not reliably
+   *  pick up class-driven style changes with transitions.
+   *  When a flash is active the targeted dot blinks red instead of its
+   *  normal colour; the flash runs for three on/off cycles then clears.
+   *  Returns true when a new flash phase starts (so the caller can play
+   *  a beep in sync with each blink).
+   *  @param {boolean} driveInserted  Whether a drive is in the reader.
+   *  @param {boolean} hasSignal       Whether the inserted drive has a signal.
+   *  @returns {boolean} True when a flash phase transition occurred. */
+  setDriveIndicators(driveInserted, hasSignal) {
+    const driveDot = this.root?.querySelector('#drive-dot');
+    const signalDot = this.root?.querySelector('#signal-dot');
+
+    // Advance flash animation if one is running.
+    let flashRed = false;
+    let phaseChanged = false;
+    if (this._flashWhich) {
+      this._flashTime += 1 / 60;
+      const phaseDur = 0.075;
+      const totalPhases = 6;  // 3 on + 3 off
+      const phase = Math.floor(this._flashTime / phaseDur);
+      if (phase >= totalPhases) {
+        this._flashWhich = null;
+        this._flashTime = 0;
+        this._flashPhase = 0;
+        this._prevFlashPhase = null;
+      } else {
+        this._flashPhase = phase;
+        flashRed = phase % 2 === 0;
+        if (this._prevFlashPhase === null || phase !== this._prevFlashPhase) {
+          this._prevFlashPhase = phase;
+          phaseChanged = true;
+        }
+      }
+    }
+
+    if (driveDot) {
+      let bg, shadow;
+      if (this._continuousBlink) {
+        // Continuous red blink: overrides the normal drive state while the
+        // evil signal lock waits for a drive to be inserted. Faster than
+        // the one-shot scan-block flash, with a beep on every phase edge.
+        this._continuousBlinkTime += 1 / 60;
+        const phaseDur = 0.06;
+        const phase = Math.floor(this._continuousBlinkTime / phaseDur);
+        const on = phase % 2 === 0;
+        if (this._prevContinuousPhase === null || phase !== this._prevContinuousPhase) {
+          this._prevContinuousPhase = phase;
+          phaseChanged = true;
+        }
+        bg = on ? 'rgba(255, 50, 50, 0.9)' : '#333';
+        shadow = on ? '0 0 6px rgba(255, 50, 50, 0.5)' : 'none';
+      } else if (this._flashWhich === 'drive' && flashRed) {
+        bg = 'rgba(255, 50, 50, 0.9)';
+        shadow = '0 0 6px rgba(255, 50, 50, 0.5)';
+      } else {
+        bg = driveInserted ? 'rgba(0, 255, 200, 0.85)' : '#333';
+        shadow = driveInserted ? '0 0 6px rgba(0, 255, 200, 0.4)' : 'none';
+      }
+      if (driveDot.style.background !== bg) {
+        driveDot.style.background = bg;
+        driveDot.style.boxShadow = shadow;
+      }
+    }
+    if (signalDot) {
+      let bg, shadow;
+      if (this._flashWhich === 'signal' && flashRed) {
+        bg = 'rgba(255, 50, 50, 0.9)';
+        shadow = '0 0 6px rgba(255, 50, 50, 0.5)';
+      } else {
+        bg = hasSignal ? 'rgba(0, 255, 200, 0.85)' : '#333';
+        shadow = hasSignal ? '0 0 6px rgba(0, 255, 200, 0.4)' : 'none';
+      }
+      if (signalDot.style.background !== bg) {
+        signalDot.style.background = bg;
+        signalDot.style.boxShadow = shadow;
+      }
+    }
+
+    return phaseChanged;
+  }
+
+  /** Flash an indicator light red 3 times as error feedback.
+   *  @param {'drive'|'signal'} which  Which dot to flash. */
+  flashIndicator(which) {
+    this._flashWhich = which;
+    this._flashTime = 0;
+    this._flashPhase = 0;
+    this._prevFlashPhase = null;
+  }
+
+  /** Start a continuous red blink on the DRIVE indicator dot. Called by
+   *  EvilSignal while the dish lock waits for a drive to be inserted.
+   *  Idempotent — calling while already blinking is a no-op. */
+  startContinuousBlink() {
+    if (this._continuousBlink) return;
+    this._continuousBlink = true;
+    this._continuousBlinkTime = 0;
+    this._prevContinuousPhase = null;
+  }
+
+  /** Stop the continuous red blink on the DRIVE indicator dot. Called when
+   *  a drive is infected, the lock ends, or the night resets. */
+  stopContinuousBlink() {
+    this._continuousBlink = false;
+    this._continuousBlinkTime = 0;
   }
 
   // Only on a change: the radar is painted onto the computer's screen from
@@ -185,6 +480,89 @@ export class RadarOverlay {
     if (!this._warning) return;
     if (next) this._warning.textContent = next;
     this._warning.classList.toggle('is-shown', !!next);
+  }
+
+  /** Start flashing "LET ME IN" texts at random positions inside the
+   *  radar overlay.  Called by EvilSignal when the lock begins (pull-in
+   *  or engage); the texts appear on the in-world computer screen via
+   *  paintDom.  Idempotent — calling while already active is a no-op. */
+  startLetMeIn() {
+    if (this._letMeInActive) return;
+    this._letMeInActive = true;
+    if (!this._letMeInContainer) return;
+
+    const TEXT_COUNT = 6;
+    const FLASH_MIN = 80, FLASH_MAX = 250;
+    const PAUSE_MIN = 50, PAUSE_MAX = 300;
+    const SIZE_MIN = 16, SIZE_MAX = 48;
+    const VIBRATE_PX = 4;
+
+    // Create the text elements if they don't exist yet.
+    if (this._letMeInItems.length === 0) {
+      for (let i = 0; i < TEXT_COUNT; i++) {
+        const el = document.createElement('span');
+        el.className = 'let-me-in-text';
+        el.textContent = 'LET ME IN';
+        this._letMeInContainer.appendChild(el);
+        this._letMeInItems.push({ el, baseX: 0, baseY: 0, timer: null, visible: false });
+      }
+    }
+
+    const scheduleFlash = (item, delayMs = 0) => {
+      item.timer = setTimeout(() => {
+        if (!this._letMeInActive) return;
+        item.baseX = 8 + Math.random() * 84;
+        item.baseY = 8 + Math.random() * 84;
+        const size = SIZE_MIN + Math.random() * (SIZE_MAX - SIZE_MIN);
+        item.el.style.left = `${item.baseX}%`;
+        item.el.style.top = `${item.baseY}%`;
+        item.el.style.fontSize = `${size}px`;
+        item.el.style.opacity = '1';
+        item.visible = true;
+
+        const dur = FLASH_MIN + Math.random() * (FLASH_MAX - FLASH_MIN);
+        item.timer = setTimeout(() => {
+          item.el.style.opacity = '0';
+          item.visible = false;
+          const pause = PAUSE_MIN + Math.random() * (PAUSE_MAX - PAUSE_MIN);
+          scheduleFlash(item, pause);
+        }, dur);
+      }, delayMs);
+    };
+
+    // Stagger the first flash for each text.
+    for (const item of this._letMeInItems) {
+      scheduleFlash(item, Math.random() * 400);
+    }
+
+    // Vibration loop — jitters every visible text each frame.
+    const vibrate = () => {
+      if (!this._letMeInActive) return;
+      for (const item of this._letMeInItems) {
+        if (!item.visible) continue;
+        const jx = (Math.random() - 0.5) * 2 * VIBRATE_PX;
+        const jy = (Math.random() - 0.5) * 2 * VIBRATE_PX;
+        item.el.style.left = `${item.baseX + jx * 0.3}%`;
+        item.el.style.top = `${item.baseY + jy * 0.3}%`;
+      }
+      this._letMeInRafId = requestAnimationFrame(vibrate);
+    };
+    this._letMeInRafId = requestAnimationFrame(vibrate);
+  }
+
+  /** Stop the flashing "LET ME IN" texts and hide them. */
+  stopLetMeIn() {
+    this._letMeInActive = false;
+    for (const item of this._letMeInItems) {
+      clearTimeout(item.timer);
+      item.timer = null;
+      item.el.style.opacity = '0';
+      item.visible = false;
+    }
+    if (this._letMeInRafId !== null) {
+      cancelAnimationFrame(this._letMeInRafId);
+      this._letMeInRafId = null;
+    }
   }
 
   /** Is the cursor (unit-circle coords, as the terminal keeps it) over the
@@ -523,7 +901,7 @@ export class RadarOverlay {
    *  @param {import('../gameobjects/DishRig.js').DishRig|null} [localRig]
    *   The local dish's rig: draws its reach as an amber circle around the
    *   centre, covering the majority of the scannable band */
-  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null) {
+  update(signals, dishYaw, dishPitch, cursorX, cursorY, hoveredSignal, scanProgress, neighbours = [], localRig = null, lockOnFraction = -1, lockOnTarget = null) {
     const ctx = this._ctx;
     if (!ctx) return;
 
@@ -661,24 +1039,18 @@ export class RadarOverlay {
     // The dish is locked on the evil signal — same glitch, red.
     this._drawEvilGlitch(ctx, s);
 
-    // Hover highlight — pulsing glow around the hovered signal
-    if (hoveredSignal && !hoveredSignal.resolved) {
-      const hPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
-      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
+    // Lock-on X — fades in over the target signal during phase 1.
+    if (lockOnFraction > 0 && lockOnTarget && !lockOnTarget.resolved) {
+      const pos = this._skyToCanvas(lockOnTarget.yaw, lockOnTarget.pitch);
+      const xSize = 12 * s;
+      const alpha = Math.min(1, lockOnFraction) * 0.9;
       ctx.beginPath();
-      ctx.arc(hPos.x, hPos.y, (10 + pulse * 3) * s, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0, 255, 230, ${0.3 + pulse * 0.3})`;
+      ctx.moveTo(pos.x - xSize, pos.y - xSize);
+      ctx.lineTo(pos.x + xSize, pos.y + xSize);
+      ctx.moveTo(pos.x + xSize, pos.y - xSize);
+      ctx.lineTo(pos.x - xSize, pos.y + xSize);
+      ctx.strokeStyle = `rgba(0, 255, 200, ${alpha.toFixed(3)})`;
       ctx.lineWidth = 2 * s;
-      ctx.stroke();
-    }
-
-    // Scan progress ring — arc around the hovered/scanning signal
-    if (scanProgress >= 0 && hoveredSignal) {
-      const sPos = this._skyToCanvas(hoveredSignal.yaw, hoveredSignal.pitch);
-      ctx.beginPath();
-      ctx.arc(sPos.x, sPos.y, 14 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * scanProgress);
-      ctx.strokeStyle = 'rgba(0, 255, 200, 0.9)';
-      ctx.lineWidth = 3 * s;
       ctx.stroke();
     }
 
