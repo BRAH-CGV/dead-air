@@ -23,6 +23,13 @@ import { GlobeSpin } from './GlobeSpin.js';
 // Mashed into a ball of cheese (GlobeSpin.cheese, #169), it pops once
 // (sfx:pop, Mixkit's "Hard pop click" with its leading click cut off), from
 // a voice of its own so a spin still sounding isn't cut.
+//
+// When the cheese goes off (GlobeSpin.blasted), everything else is cut for
+// the explosion (sfx:explosion, off Pixabay), played flat rather than from
+// the globe, at twice its own level: it fills the room. As the screen
+// blacks out (GlobeSpin.blackedOut), the ears ring: the UFO's catch's
+// ringing (sfx:ear-ringing), looped at its level, kept through a pause as
+// that one is (the Night failed menu pauses), until the night is rebuilt.
 // ─────────────────────────────────────────────
 
 /** Tuning. */
@@ -46,6 +53,10 @@ export const GLOBE_SOUND = {
   refDistance: 1,
   /** The pop as it turns to cheese: once, at `volume` of the clip's level. */
   pop: { key: 'sfx:pop', volume: 0.8 },
+  /** The cheese going off: once, at `volume` of the clip's level. */
+  boom: { key: 'sfx:explosion', volume: 2 },
+  /** The black after it: looped, as the UFO's catch plays it (UfoThreat). */
+  ringing: { key: 'sfx:ear-ringing', volume: 0.7 },
 };
 
 export class GlobeSound extends Component {
@@ -56,13 +67,21 @@ export class GlobeSound extends Component {
    *        when left out. Null or empty: silent.
    * @param {THREE.Audio|null} [opts.pop]  Built from GLOBE_SOUND.pop.key
    *        when left out. Null: no pop.
+   * @param {THREE.Audio|null} [opts.boom]  Built from GLOBE_SOUND.boom.key
+   *        when left out. Null: no boom.
+   * @param {THREE.Audio|null} [opts.ringing]  Built from GLOBE_SOUND.ringing.key
+   *        when left out. Null: no ringing.
    */
-  constructor({ spin = null, voices, pop } = {}) {
+  constructor({ spin = null, voices, pop, boom, ringing } = {}) {
     super();
     this.spin = spin;
     this.voices = voices;
     this.pop = pop;
+    this.boom = boom;
+    this.ringing = ringing;
     this._cheese = false;
+    this._blasted = false;
+    this._blackedOut = false;
     this._next = 0;
     this._current = null;
     this._pushes = 0;
@@ -76,7 +95,11 @@ export class GlobeSound extends Component {
     if (this.voices === undefined) this.voices = this._build(engine);
     this.voices ??= [];
     if (this.pop === undefined) this.pop = this._buildPop(engine);
+    if (this.boom === undefined) this.boom = this._buildFlat(engine, GLOBE_SOUND.boom.key);
+    if (this.ringing === undefined) this.ringing = this._buildFlat(engine, GLOBE_SOUND.ringing.key);
     this._cheese = !!this.spin?.cheese;
+    this._blasted = !!this.spin?.blasted;
+    this._blackedOut = !!this.spin?.blackedOut;
     this._offPause ??= engine?.onPauseChange?.(paused => this._onPause(paused)) ?? null;
   }
 
@@ -86,9 +109,19 @@ export class GlobeSound extends Component {
       this._cheese = true;
       this._pop();
     }
+    if (!this._blasted && this.spin?.blasted) {
+      this._blasted = true;
+      this._boom();
+    }
+    if (!this._blackedOut && this.spin?.blackedOut) {
+      this._blackedOut = true;
+      this._ring();
+    }
     const pushes = this.spin?.pushes ?? 0;
     if (pushes === this._pushes) return;
     this._pushes = pushes;
+    // The press that set it off is the boom's, not a spin's.
+    if (this._blasted) return;
     if (this._since < GLOBE_SOUND.minGap || !this.voices.length) return;
     this._since = 0;
     this._push();
@@ -96,7 +129,7 @@ export class GlobeSound extends Component {
 
   onDestroy() {
     this._offPause?.();
-    for (const v of [...(this.voices ?? []), ...(this.pop ? [this.pop] : [])]) {
+    for (const v of [...(this.voices ?? []), ...[this.pop, this.boom, this.ringing].filter(Boolean)]) {
       if (v.isPlaying) v.stop();
       try { v.disconnect?.(); } catch (_) { /* never connected */ }
       v.removeFromParent?.();
@@ -141,6 +174,23 @@ export class GlobeSound extends Component {
     if (!paused) return;
     for (const v of this.voices ?? []) if (v.isPlaying) v.stop();
     if (this.pop?.isPlaying) this.pop.stop();
+    if (this.boom?.isPlaying) this.boom.stop();
+    // The ringing goes on under the Night failed menu, as the UFO's does.
+  }
+
+  /** Everything else cut: the boom alone. */
+  _boom() {
+    for (const v of [...(this.voices ?? []), this.pop]) if (v?.isPlaying) v.stop();
+    if (!this.boom) return;
+    this.boom.setVolume(GLOBE_SOUND.boom.volume);
+    this.boom.play();
+  }
+
+  _ring() {
+    if (!this.ringing) return;
+    this.ringing.setLoop?.(true);
+    this.ringing.setVolume(GLOBE_SOUND.ringing.volume);
+    if (!this.ringing.isPlaying) this.ringing.play();
   }
 
   _pop() {
@@ -157,6 +207,15 @@ export class GlobeSound extends Component {
     const audio = new THREE.PositionalAudio(engine.audioListener);
     audio.setBuffer(engine.assets.get(key));
     audio.setRefDistance(GLOBE_SOUND.refDistance);
+    this.gameObject.object3d.add(audio);
+    return audio;
+  }
+
+  /** A voice for `key`, flat (not from the globe). Null without audio. */
+  _buildFlat(engine, key) {
+    if (!engine?.audioListener || !engine.assets?.has?.(key)) return null;
+    const audio = new THREE.Audio(engine.audioListener);
+    audio.setBuffer(engine.assets.get(key));
     this.gameObject.object3d.add(audio);
     return audio;
   }

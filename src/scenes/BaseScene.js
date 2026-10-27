@@ -114,6 +114,7 @@ import { RunRecord } from '../gameplay/RunRecord.js';
 import { ThreatWatch } from '../gameplay/ThreatWatch.js';
 import { threatForecast } from '../gameplay/ThreatForecast.js';
 import { Pickupable } from '../components/Pickupable.js';
+import { GlobeSpin } from '../components/GlobeSpin.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
 import { approachRoute, climbRoute, slopeOut, NavGraph, RAGNO_PATHS } from '../gameplay/RagnoPaths.js';
@@ -333,6 +334,10 @@ const RAGNO_VIA = { ServerRoom: [0.3, 1.9] };
 /** Metres his standing spots round the office desk keep off it. */
 const RAGNO_DESK_GAP = 0.8;
 const DESK_EYE = [0, 1.24, -1.4];
+/** The desk globe's cheese, gone off (GlobeSpin): the screen black at
+ *  once, and this on it. */
+const GLOBE_PROMPT = 'Intended game design.';
+const GLOBE_SCREEN = { tone: 'black', messageDelayMs: 1200 };
 
 
 export class BaseScene extends Scene {
@@ -1922,6 +1927,38 @@ export class BaseScene extends Scene {
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
+  /** The globe's cheese going off: the player held where they stand. */
+  _globeGoesOff() {
+    if (this.gameController?.state !== 'playing') return;
+    this._globeLocked = true;
+    this._setPlayerLocked(true);
+  }
+
+  /** The shift ends where the globe's cheese went off: black, at once. Over
+   *  some other way meanwhile, the player is let go (if this held them). */
+  _globeBlast() {
+    if (this.gameController?.state !== 'playing') {
+      if (this._globeLocked) this._setPlayerLocked(false);
+      this._globeLocked = false;
+      return;
+    }
+    this.gameController.fail(GLOBE_PROMPT, { promptAfter: GLOBE_SCREEN.messageDelayMs / 1000 });
+    this.whiteOut?.play(GLOBE_PROMPT, GLOBE_SCREEN);
+    this._setPlayerLocked(true);
+  }
+
+  /** A room's inside, floor to ceiling, wall face to wall face (bounds()
+   *  is to the walls' outer faces). */
+  _insideOf(room) {
+    const box = room.bounds();
+    const t = room.wallThick;
+    box.min.x += t; box.max.x -= t;
+    box.min.z += t; box.max.z -= t;
+    box.min.y = room.position[1];
+    box.max.y = room.position[1] + room.height;
+    return box;
+  }
+
   _setPlayerLocked(locked) {
     const ctrl = this.engine.player?.getComponent(FirstPersonController);
     if (ctrl) ctrl.inputLocked = locked;
@@ -2311,6 +2348,13 @@ export class BaseScene extends Scene {
 
     this.whiteOut = new WhiteOut();
     this.evilSignal.whiteOut = this.whiteOut;
+    const globeSpin = this.rooms.MainOffice.globe?.getComponent(GlobeSpin);
+    if (globeSpin) {
+      globeSpin.blastBounds = this._insideOf(this.rooms.MainOffice);
+      globeSpin.blastLight = this.rooms.MainOffice.ceilingLight ?? null;
+      globeSpin.onGoOff = () => this._globeGoesOff();
+      globeSpin.onBlast = () => this._globeBlast();
+    }
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();

@@ -194,6 +194,8 @@ export class MainOffice extends Room {
 
   /** On the bean processor, by buildProps(). @type {CoffeeProcessor|null} */
   beanProcessor = null;
+  /** The desk globe (GlobeSpin), set by build. @type {import('../../core/GameObject.js').GameObject|null} */
+  globe = null;
 
   /**
    * @param {import('../../core/Engine.js').Engine} engine
@@ -581,6 +583,7 @@ export class MainOffice extends Room {
     const globe = this._spawnProp('model:mars-globe', { name: 'Globe', ...place });
     globe.addComponent(new GlobeSpin());
     globe.addComponent(new GlobeSound());
+    this.globe = globe;
   }
 
   /** An empty node at the middle of the right wing's top, for the

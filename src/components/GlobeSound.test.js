@@ -155,3 +155,90 @@ describe('GlobeSound — the pop as it turns to cheese (#169)', () => {
     expect(g.pop.disconnect).toHaveBeenCalled();
   });
 });
+
+describe('GlobeSound — the boom as the cheese goes off', () => {
+  function buildWithBoom() {
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin({ screenPoof: () => {}, screenFlash: () => {} }));
+    const voices = Array.from({ length: GLOBE_SOUND.voices }, fakeSound);
+    const pop = fakeSound();
+    const boom = fakeSound();
+    const sound = globe.addComponent(new GlobeSound({ voices, pop, boom }));
+    sound.onStart();
+    return { spin, sound, voices, pop, boom };
+  }
+
+  it('booms once, at its level, the moment it goes off, everything else cut', () => {
+    const g = buildWithBoom();
+    for (let i = 0; i < 200 && !g.spin.blasted; i++) { push(g); run(g, 1 / 8); }
+    expect(g.spin.blasted).toBe(true);
+    expect(g.boom.play).toHaveBeenCalledTimes(1);
+    expect(g.boom.volume).toBe(GLOBE_SOUND.boom.volume);
+    expect(g.voices.every(v => !v.isPlaying)).toBe(true);
+    run(g, 3);
+    expect(g.boom.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('no boom for the cheese spun a little', () => {
+    const g = buildWithBoom();
+    for (let i = 0; i < 80 && !g.spin.cheese; i++) { push(g); run(g, 1 / 8); }
+    push(g);
+    run(g, 3);
+    expect(g.boom.play).not.toHaveBeenCalled();
+  });
+
+  it('stops the boom on a pause and lets it go when torn down', () => {
+    const g = buildWithBoom();
+    g.boom.isPlaying = true;
+    g.sound._onPause(true);
+    expect(g.boom.stop).toHaveBeenCalled();
+    g.sound.onDestroy();
+    expect(g.boom.disconnect).toHaveBeenCalled();
+  });
+
+  it('the explosion is twice as loud as its clip', () => {
+    expect(GLOBE_SOUND.boom.volume).toBe(2);
+  });
+
+  it('its clip is in the manifest', () => {
+    expect(ASSETS[GLOBE_SOUND.boom.key]).toMatchObject({ type: 'audio', url: 'assets/audio/explosion.mp3' });
+  });
+});
+
+describe('GlobeSound — the ringing in the black after', () => {
+  function buildWithRinging() {
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin({ screenPoof: () => {}, screenFlash: () => {}, screenShake: () => {} }));
+    const voices = Array.from({ length: GLOBE_SOUND.voices }, fakeSound);
+    const ringing = Object.assign(fakeSound(), { setLoop: vi.fn() });
+    const sound = globe.addComponent(new GlobeSound({ voices, pop: fakeSound(), boom: fakeSound(), ringing }));
+    sound.onStart();
+    for (let i = 0; i < 200 && !spin.blasted; i++) { push({ spin, sound }); run({ spin, sound }, 1 / 8); }
+    return { spin, sound, ringing };
+  }
+
+  it('the same ringing as the UFO catch', () => {
+    expect(GLOBE_SOUND.ringing.key).toBe('sfx:ear-ringing');
+    expect(ASSETS[GLOBE_SOUND.ringing.key]).toMatchObject({ type: 'audio' });
+  });
+
+  it('rings, looped at its level, once the screen blacks out and not before', () => {
+    const g = buildWithRinging();
+    expect(g.spin.blasted).toBe(true);
+    expect(g.ringing.play).not.toHaveBeenCalled();
+    run(g, g.spin.blackAfter + 0.1);
+    expect(g.spin.blackedOut).toBe(true);
+    expect(g.ringing.play).toHaveBeenCalledTimes(1);
+    expect(g.ringing.setLoop).toHaveBeenCalledWith(true);
+    expect(g.ringing.volume).toBe(GLOBE_SOUND.ringing.volume);
+  });
+
+  it('keeps ringing under the Night failed menu (a pause), and stops when torn down', () => {
+    const g = buildWithRinging();
+    run(g, g.spin.blackAfter + 0.1);
+    g.sound._onPause(true);
+    expect(g.ringing.stop).not.toHaveBeenCalled();
+    g.sound.onDestroy();
+    expect(g.ringing.stop).toHaveBeenCalled();
+  });
+});

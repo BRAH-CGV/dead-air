@@ -7,6 +7,7 @@
 //   whiteOut.play('You were taken.');
 //   whiteOut.play('You have been eaten.', { tone: 'blood' });
 //     // black at once, slowly turning red (redMs), the message once it has
+//   whiteOut.play('…', { tone: 'black' });   // black at once, and it stays black
 //   whiteOut.clear();   // the retry
 //
 // Wraps #whiteout in index.html (markup and the `is-white` / `is-shown`
@@ -40,10 +41,10 @@ export class WhiteOut {
 
   /**
    * @param {string} [message]
-   * @param {{ tone?: 'white'|'blood', fadeMs?: number, messageDelayMs?: number, redMs?: number }} [opts]
+   * @param {{ tone?: 'white'|'blood'|'black', fadeMs?: number, messageDelayMs?: number, redMs?: number }} [opts]
    *        'blood' (DustEyes) cuts to black at once and turns slowly red over
-   *        redMs. fadeMs / messageDelayMs override this WhiteOut's own for
-   *        this play only.
+   *        redMs; 'black' cuts to black and stays there. fadeMs /
+   *        messageDelayMs override this WhiteOut's own for this play only.
    */
   play(message = '', {
     tone = 'white', fadeMs = this.fadeMs, messageDelayMs = this.messageDelayMs, redMs = 2500,
@@ -51,19 +52,25 @@ export class WhiteOut {
     this.active = true;
     if (!this.root) return;
     const blood = tone === 'blood';
+    const black = tone === 'black';
     this.root.classList.toggle('is-blood', blood);
+    this.root.classList.toggle('is-black', black);
     clearTimeout(this._redTimer);
-    if (blood) {
+    if (blood || black) {
       // Black this instant — with no transition at all, and the style flushed
       // so the browser has really taken it (otherwise the switch to black is
-      // itself eased, and the screen fades from white). Then the slow turn
-      // to red.
+      // itself eased, and the screen fades from white). Then, for blood, the
+      // slow turn to red.
       this.root.style.transition = 'none';
       this.root.style.backgroundColor = '#000';
       this.root.classList.add('is-white');
       void getComputedStyle(this.root).backgroundColor;
-      this.root.style.transition = `opacity 0ms, background-color ${redMs}ms ease-in`;
-      this._redTimer = setTimeout(() => { this.root.style.backgroundColor = BLOOD_RED; }, 30);
+      if (black) {
+        this.root.style.transition = 'opacity 0ms';
+      } else {
+        this.root.style.transition = `opacity 0ms, background-color ${redMs}ms ease-in`;
+        this._redTimer = setTimeout(() => { this.root.style.backgroundColor = BLOOD_RED; }, 30);
+      }
     } else {
       this.root.style.transition = '';
       this.root.style.backgroundColor = '';

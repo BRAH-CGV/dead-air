@@ -224,3 +224,131 @@ describe('GlobeSpin — the poof as it turns (#169)', () => {
     expect(screen).not.toHaveBeenCalled();
   });
 });
+
+describe('GlobeSpin — the cheese mashed again', () => {
+  const quiet = { screenPoof: () => {}, screenFlash: () => {} };
+  /** Mash at 8 presses a second until `done`, or 160 presses; how many it took. */
+  function mashUntil(spin, done) {
+    let presses = 0;
+    for (; presses < 160 && !done(); presses++) { spin.onInteract({}); run(spin, 1 / 8); }
+    return presses;
+  }
+  function cheese(opts = {}) {
+    const globe = new GameObject('Globe');
+    globe.object3d.add(new THREE.Mesh(new THREE.SphereGeometry(0.143), new THREE.MeshBasicMaterial()));
+    const spin = globe.addComponent(new GlobeSpin({ ...quiet, ...opts }));
+    mashUntil(spin, () => spin.cheese);
+    return { globe, spin };
+  }
+  const blowUp = spin => mashUntil(spin, () => spin.blasted);
+
+  it('turning to cheese starts the strain again from nothing', () => {
+    const { spin } = cheese();
+    expect(spin.strain).toBeLessThan(1);
+    expect(spin.blasted).toBe(false);
+  });
+
+  it('a spin or two of the cheese leaves it be', () => {
+    const { spin } = cheese();
+    run(spin, 10);
+    for (let i = 0; i < 6; i++) { spin.onInteract({}); run(spin, 1 / 4); }
+    run(spin, 10);
+    expect(spin.blasted).toBe(false);
+  });
+
+  it('mashed the same way the globe was, it goes off', () => {
+    const globe = new GameObject('Globe');
+    const fresh = globe.addComponent(new GlobeSpin(quiet));
+    const toCheese = mashUntil(fresh, () => fresh.cheese);
+    run(fresh, 30);
+    expect(blowUp(fresh)).toBe(toCheese);
+    expect(fresh.blasted).toBe(true);
+  });
+
+  it('the cheese goes, and the blast goes off where it was', () => {
+    const { globe, spin } = cheese();
+    blowUp(spin);
+    expect(globe.object3d.getObjectByName('CheeseBall').visible).toBe(false);
+    const blast = globe.object3d.getObjectByName('CheeseBlast');
+    expect(blast).toBeTruthy();
+    expect(blast.visible).toBe(true);
+    expect(spin.promptLabel).toBe('');
+  });
+
+  it('flares the screen at once; onBlast follows blackAfter later, once', () => {
+    const flash = vi.fn();
+    const onBlast = vi.fn();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 2);
+    camera.updateMatrixWorld();
+    const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
+    const { spin } = cheese({ screenFlash: flash, view: () => ({ camera, canvas }), blackAfter: 0.2 });
+    expect(new GlobeSpin().blackAfter).toBeGreaterThan(1);   // long enough to see it
+    spin.onBlast = onBlast;
+    for (let i = 0; i < 160 && !spin.blasted; i++) {
+      spin.onInteract({});
+      if (!spin.blasted) run(spin, 1 / 8);
+    }
+    expect(flash).toHaveBeenCalledTimes(1);
+    expect(onBlast).not.toHaveBeenCalled();
+    run(spin, 0.15);
+    expect(onBlast).not.toHaveBeenCalled();
+    run(spin, 0.1);
+    expect(onBlast).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 20; i++) spin.onInteract({});
+    run(spin, 5);
+    expect(onBlast).toHaveBeenCalledTimes(1);
+  });
+
+  it('flares the screen from its middle when the globe is behind the view', () => {
+    const flash = vi.fn();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 2);
+    camera.lookAt(0, 0, 10);
+    camera.updateMatrixWorld();
+    const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
+    const { spin } = cheese({ screenFlash: flash, view: () => ({ camera, canvas }) });
+    blowUp(spin);
+    expect(flash).toHaveBeenCalledWith(400, 300);
+  });
+
+  it('as it goes off: onGoOff, the view shaken, the light of the room flared, the blast filling its bounds', () => {
+    const shake = vi.fn();
+    const onGoOff = vi.fn();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 2);
+    camera.updateMatrixWorld();
+    const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
+    const { globe, spin } = cheese({ screenShake: shake, view: () => ({ camera, canvas }) });
+    spin.onGoOff = onGoOff;
+    spin.blastLight = new THREE.PointLight(0xffffff, 10);
+    spin.blastBounds = new THREE.Box3(new THREE.Vector3(-6, -1, -5), new THREE.Vector3(6, 2, 5));
+    blowUp(spin);
+    expect(onGoOff).toHaveBeenCalledTimes(1);
+    expect(shake).toHaveBeenCalledWith(canvas);
+    expect(spin.blastLight.intensity).toBeGreaterThan(10);
+    const blast = globe.object3d.getObjectByName('CheeseBlast');
+    expect(blast.playing).toBe(true);
+  });
+
+  it('the blast is on the scene, not on the turning globe', () => {
+    const scene = new THREE.Scene();
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin(quiet));
+    globe.scene = scene;
+    spin.onAwake();
+    expect(scene.getObjectByName('CheeseBlast')).toBeTruthy();
+    expect(globe.object3d.getObjectByName('CheeseBlast')).toBeUndefined();
+    spin.onDestroy();
+    expect(scene.getObjectByName('CheeseBlast')).toBeUndefined();
+  });
+
+  it('gone off, E does nothing more', () => {
+    const { spin } = cheese();
+    blowUp(spin);
+    const pushes = spin.pushes;
+    spin.onInteract({});
+    expect(spin.pushes).toBe(pushes);
+    expect(spin.speed).toBe(0);
+  });
+});
