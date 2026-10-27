@@ -329,6 +329,22 @@ describe('the yard block — a fence that keeps the player on the airlock side',
     }
   });
 
+  it('stands far taller than it is drawn, so nothing in the yard is a step over it (#184)', () => {
+    // Off the generator or the buggy's roof a jump cleared the 2.4 m wire.
+    expect(FENCE.colliderHeight).toBeGreaterThanOrEqual(8);
+    const heightAt = (x, z) => 0.1 * x - 0.05 * z;
+    const world = new FakeWorld();
+    const gate = { side: 'N', at: 9.6, halfWidth: 3 };   // its span across the opening too
+    const fence = createPerimeterFence({ rect: yardRect(), openSides: ['S'], world, heightAt, gate });
+    expect(fence.colliders).toHaveLength(5);
+    for (const c of fence.colliders) {
+      const { x, y, z } = c.translation();
+      const half = c.halfExtents().y;
+      expect(y - half).toBeCloseTo(heightAt(x, z));
+      expect(2 * half).toBeCloseTo(FENCE.colliderHeight);
+    }
+  });
+
   it('the default is still the full perimeter, every side fenced', () => {
     const fence = createPerimeterFence({ world: new FakeWorld() });
     expect(fence.rect).toEqual(perimeterRect());
