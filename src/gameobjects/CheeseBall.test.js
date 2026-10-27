@@ -72,6 +72,37 @@ describe('createCheeseBall', () => {
     ball.dispose();
   });
 
+  it('is lit like the room: dark where the light doesn\'t reach, Lambert in steps where it does', () => {
+    const ball = createCheeseBall();
+    const ramp = ball.cheese.material.gradientMap.image.data;   // indexed by dotNL * 0.5 + 0.5
+    const half = ramp.length / 2;
+    for (let i = 0; i < half; i++) expect(ramp[i]).toBe(0);       // facing away: unlit
+    for (let i = half + 1; i < ramp.length; i++) expect(ramp[i]).toBeGreaterThan(ramp[i - 1]);
+    for (let i = half; i < ramp.length; i++) {
+      const dotNL = ((i + 0.5) / ramp.length) * 2 - 1;            // the middle of the step
+      expect(ramp[i] / 255).toBeCloseTo(dotNL, 1);
+    }
+    expect(ball.cheese.material.gradientMap.magFilter).toBe(THREE.NearestFilter);
+    ball.dispose();
+  });
+
+  it('has round holes: a ring of vertices lies right on each rim', () => {
+    const ball = createCheeseBall({ radius: 1 });
+    const pos = ball.cheese.geometry.getAttribute('position');
+    const n = new THREE.Vector3();
+    const smallest = cheeseHoles().reduce((a, h) => (h.radius < a.radius ? h : a));
+    for (const h of [smallest, cheeseHoles()[0]]) {
+      const dir = new THREE.Vector3(...h.dir);
+      let onRim = 0;
+      for (let i = 0; i < pos.count; i++) {
+        n.fromBufferAttribute(pos, i).normalize();
+        if (Math.abs(n.distanceTo(dir) - h.radius) < 1e-4) onRim++;
+      }
+      expect(onRim).toBeGreaterThanOrEqual(24);
+    }
+    ball.dispose();
+  });
+
   it('takes no fog: it lives indoors, where the building has none', () => {
     const ball = createCheeseBall();
     expect(ball.cheese.material.fog).toBe(false);

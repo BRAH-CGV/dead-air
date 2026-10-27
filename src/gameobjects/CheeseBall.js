@@ -8,7 +8,8 @@ import { makeRandom, randRange } from '../core/Random.js';
 // A ball of cheese the globe's size, built here: an icosphere with round
 // holes sunk into it, as a Swiss cheese's bubbles are where it was cut,
 // coloured by vertex (pale yellow rind, darker and warmer down in the
-// holes). A little toon: MeshToonMaterial over a soft five-step ramp, and
+// holes). A little toon: MeshToonMaterial over a ramp that is plain Lambert
+// in five steps (dark where the light doesn't reach, as the room is), and
 // a thin dark outline (the surface pushed out along its normals and drawn
 // back faces only), so it reads as a cartoon prop without leaving the room's
 // look behind.
@@ -26,22 +27,23 @@ import { makeRandom, randRange } from '../core/Random.js';
 export const CHEESE = Object.freeze({
   holes: 22,
   /** A hole's radius on the surface, as a share of the ball's. */
-  holeRadius: [0.1, 0.32],
+  holeRadius: [0.12, 0.32],
   /** How deep a hole is, as a share of its own radius. */
   depth: 0.75,
   /** Holes no nearer each other than this share of their two radii. */
   spacing: 0.8,
-  /** Icosphere subdivisions: 5 is 20 480 triangles, crisp rims. */
-  detail: 5,
+  /** Icosphere subdivisions: each face cut into (detail + 1)² triangles,
+   *  so 40 is 33 620 — enough that the smallest hole's rim is a smooth ring. */
+  detail: 40,
   /** The rind's slight lumpiness, a share of the radius, only ever inward. */
   lumps: 0.008,
-  rind: 0xf4c84a,
-  hole: 0xc98418,
+  rind: 0xd9a838,
+  hole: 0x9a6210,
   outline: 0x5a3810,
   /** The outline's width, a share of the radius. */
   outlineWidth: 0.012,
-  /** The toon ramp's steps, 0–255: soft, so only a little banded. */
-  ramp: [80, 130, 180, 220, 255],
+  /** Steps of light on the lit side: few enough to band a little. */
+  bands: 5,
   seed: 169,
 });
 
@@ -84,7 +86,7 @@ function chord(a, b) {
 export function createCheeseBall({ radius = 0.143, seed = CHEESE.seed } = {}) {
   const geometry = cheeseGeometry(radius, cheeseHoles(seed));
 
-  const gradientMap = new THREE.DataTexture(new Uint8Array(CHEESE.ramp), CHEESE.ramp.length, 1, THREE.RedFormat);
+  const gradientMap = new THREE.DataTexture(toonRamp(CHEESE.bands), CHEESE.bands * 2, 1, THREE.RedFormat);
   gradientMap.minFilter = gradientMap.magFilter = THREE.NearestFilter;
   gradientMap.generateMipmaps = false;
   gradientMap.needsUpdate = true;
@@ -118,6 +120,19 @@ export function createCheeseBall({ radius = 0.143, seed = CHEESE.seed } = {}) {
   return ball;
 }
 
+/**
+ * The toon ramp, looked up at dotNL * 0.5 + 0.5: nothing on the half facing
+ * away (the default ramp lights that too, which made the cheese glow from
+ * every side), and on the lit half Lambert's dotNL at the middle of each of
+ * `bands` steps — the same light on average as the room's own materials.
+ */
+function toonRamp(bands) {
+  const n = bands * 2;
+  const ramp = new Uint8Array(n);
+  for (let i = bands; i < n; i++) ramp[i] = Math.round((((i + 0.5) / n) * 2 - 1) * 255);
+  return ramp;
+}
+
 /** The icosphere with its holes sunk in and its colours laid on. */
 function cheeseGeometry(radius, holes) {
   let g = new THREE.IcosahedronGeometry(1, CHEESE.detail);
@@ -130,9 +145,30 @@ function cheeseGeometry(radius, holes) {
   const rind = new THREE.Color(CHEESE.rind), hole = new THREE.Color(CHEESE.hole), c = new THREE.Color();
   const n = new THREE.Vector3();
   const deepest = CHEESE.holeRadius[1] * CHEESE.depth * 0.5;
+  // Half an edge of the icosphere, as a chord on the unit ball.
+  const snap = 0.5 * 1.1071 / (CHEESE.detail + 1);
+  const dirs = holes.map((h) => new THREE.Vector3(...h.dir));
+  const t = new THREE.Vector3();
 
   for (let i = 0; i < pos.count; i++) {
     n.fromBufferAttribute(pos, i).normalize();
+
+    // A point within half an edge of a rim is moved onto it, so each rim is
+    // a ring of vertices on the circle rather than a zigzag through them.
+    let near = null, gap = snap;
+    for (let k = 0; k < holes.length; k++) {
+      const off = Math.abs(n.distanceTo(dirs[k]) - holes[k].radius);
+      if (off < gap) { gap = off; near = k; }
+    }
+    if (near !== null) {
+      const dir = dirs[near];
+      const angle = 2 * Math.asin(holes[near].radius / 2);      // chord → angle
+      t.copy(n).addScaledVector(dir, -n.dot(dir));
+      if (t.lengthSq() > 1e-12) {
+        t.normalize();
+        n.copy(dir).multiplyScalar(Math.cos(angle)).addScaledVector(t, Math.sin(angle));
+      }
+    }
 
     // The deepest of the holes this point is in: a round bowl, steep at its rim.
     let sink = 0;
@@ -147,9 +183,9 @@ function cheeseGeometry(radius, holes) {
     pos.setXYZ(i, n.x * r, n.y * r, n.z * r);
 
     // Darker and warmer down a hole, with a faint mottling over all of it.
-    const t = Math.min(1, sink / deepest);
+    const deep = Math.min(1, sink / deepest);
     const mottle = 1 - 0.05 * (0.5 + 0.5 * Math.sin(n.x * 23 + n.y * 17 + n.z * 29));
-    c.copy(rind).lerp(hole, t).multiplyScalar(mottle);
+    c.copy(rind).lerp(hole, deep).multiplyScalar(mottle);
     colors.set([c.r, c.g, c.b], i * 3);
   }
 
