@@ -700,6 +700,17 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | The tired player's yawns (`FatigueEffects`) |
 | **Modifications** | Trailing silence cut (3.0 s → 2.5 s), short fades at both ends, converted to mp3 |
 
+### Hard pop click
+
+"Hard pop click" (https://mixkit.co/free-sound-effects/pop/) from Mixkit is used under the Mixkit Sound Effects Free License (https://mixkit.co/license/#sfxFree) — free to use in a game, attribution not required, credited here anyway. Downloaded as `mixkit-hard-pop-click-2364.wav`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/pop.mp3` |
+| **Manifest key** | `sfx:pop` |
+| **Used for** | The desk globe turning into a ball of cheese (`GlobeSound`) |
+| **Modifications** | Its leading click cut off (the clip starts 38 ms in, on the pop), its quiet tail trimmed to 0.13 s with short fades, downmixed to mono, encoded as MP3, renamed |
+
 ### Heartbeat
 
 "my heart beat for Halloween+.mp3" by strongheartbeat (https://freesound.org/people/strongheartbeat/sounds/62120/), used under Creative Commons Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/) — sampling and remixing allowed, attribution required.
