@@ -207,6 +207,9 @@ const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
 /** Metres round the generator kept free of grass. The tallest blade
  *  (1.45 m), tipped its furthest, reaches about 1 m from its root. */
 const GRASS_GENERATOR_CLEARANCE = 1;
+/** Metres past that over which the grass grows back, thin and short at
+ *  first: a hard edge left a few tall blades standing alone by the casing. */
+const GRASS_GENERATOR_FADE = 2;
 
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
@@ -1214,7 +1217,8 @@ export class BaseScene extends Scene {
         ...[-1, 1].map(side => this._yardWalk(side, fenceRect)),
       ],
       // Blades grew up through the generator's casing.
-      grassClearOf: this._footprintOf(this.generator, GRASS_GENERATOR_CLEARANCE),
+      grassClearOf: this._footprintOf(this.generator, GRASS_GENERATOR_CLEARANCE)
+        .map(box => ({ ...box, fade: GRASS_GENERATOR_FADE })),
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
     // what is left to look at in the distance — and standing one at the end of
