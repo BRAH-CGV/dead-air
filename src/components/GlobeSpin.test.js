@@ -98,3 +98,74 @@ describe('GlobeSpin', () => {
     expect(globe.object3d.quaternion.angleTo(stopped)).toBeLessThan(1.5);   // no jump back to the start
   });
 });
+
+describe('GlobeSpin — spammed, it turns to cheese (#169)', () => {
+  let globe, spin, model;
+
+  beforeEach(() => {
+    globe = new GameObject('Globe');
+    model = new THREE.Mesh(new THREE.SphereGeometry(0.143), new THREE.MeshBasicMaterial());
+    globe.object3d.add(model);                      // the globe's own model
+    spin = globe.addComponent(new GlobeSpin());
+  });
+
+  /** Mash E `presses` times, `perSecond` a second. */
+  function mash(presses, perSecond) {
+    for (let i = 0; i < presses; i++) {
+      spin.onInteract({});
+      run(spin, 1 / perSecond);
+    }
+  }
+
+  it('an ordinary push or two, even a few at top speed, leaves it a globe', () => {
+    mash(6, 4);
+    run(spin, 20);
+    mash(6, 4);
+    expect(spin.cheese).toBe(false);
+    expect(model.visible).toBe(true);
+  });
+
+  it('pushes spaced out at top speed never wind it up: the strain wears off', () => {
+    for (let i = 0; i < 60; i++) { spin.onInteract({}); run(spin, 1); }
+    expect(spin.cheese).toBe(false);
+  });
+
+  it('mashed at top speed for a few seconds, it becomes a ball of cheese', () => {
+    mash(40, 8);
+    expect(spin.cheese).toBe(true);
+    expect(model.visible).toBe(false);              // the globe gone…
+    const ball = globe.object3d.getObjectByName('CheeseBall');
+    expect(ball).toBeTruthy();                      // …cheese in its place, spinning with it
+    expect(ball.parent).toBe(globe.object3d);
+    expect(spin.promptLabel).toMatch(/\[E\].*cheese/i);
+  });
+
+  it('pops in rather than appearing: it overshoots its size and settles on it', () => {
+    for (let i = 0; i < 80 && !spin.cheese; i++) { spin.onInteract({}); run(spin, 1 / 8); }
+    expect(spin.cheese).toBe(true);
+    const ball = globe.object3d.getObjectByName('CheeseBall');
+    let biggest = 0;
+    for (let i = 0; i < 60; i++) { spin.onUpdate(1 / 60); biggest = Math.max(biggest, ball.scale.x); }
+    expect(biggest).toBeGreaterThan(1.05);
+    expect(ball.scale.x).toBeCloseTo(1, 6);
+  });
+
+  it('stays cheese, and still spins', () => {
+    mash(40, 8);
+    run(spin, 30);
+    expect(spin.cheese).toBe(true);
+    const before = globe.object3d.quaternion.clone();
+    spin.onInteract({});
+    run(spin, 0.2);
+    expect(globe.object3d.quaternion.angleTo(before)).toBeGreaterThan(0.1);
+  });
+
+  it('frees the cheese it built when it is destroyed', () => {
+    mash(40, 8);
+    const ball = globe.object3d.getObjectByName('CheeseBall');
+    let freed = 0;
+    ball.traverse((o) => { if (o.isMesh) o.geometry.addEventListener('dispose', () => freed++); });
+    spin.onDestroy();
+    expect(freed).toBeGreaterThan(0);
+  });
+});
