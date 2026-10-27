@@ -400,6 +400,17 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       set: (zones, on) => zones.revealAll(on),
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
     }),
+    toggle({
+      name: 'hud', help: 'Hide or show the HUD overlay and crosshair',
+      target: () => system('hud', 'HUD'),
+      get: (hud) => hud.visible,
+      set: (hud, on) => {
+        on ? hud.show() : hud.hide();
+        const crosshair = engine.crosshair;
+        if (crosshair) on ? crosshair.show() : crosshair.hide();
+      },
+      say: (on) => `HUD ${on ? 'shown' : 'hidden'}`,
+    }),
 
     {
       name: 'signals', usage: 'signals [count]', help: 'Spawn drives with signals already stored (default 1)',

@@ -38,6 +38,7 @@ function fakeScene() {
     MainOffice: { root: mainOfficeRoot, driveBoxes, driveReader: null, _own: vi.fn((r) => r) },
     ServerRoom: { driveSlot: null },
   };
+  const hud = { visible: true, show: vi.fn(() => { hud.visible = true; }), hide: vi.fn(() => { hud.visible = false; }) };
   return {
     nights: new NightManager(),
     nightClock: new NightClock(),
@@ -55,6 +56,7 @@ function fakeScene() {
       switchOff: vi.fn(() => { power.on = false; }),
     },
     suit: flag('worn', 'putOn', 'takeOff'),
+    hud,
     driveManager,
     rooms,
     _sceneRoot: mainOfficeRoot,
@@ -72,6 +74,7 @@ function withZones(scene) {
 function fakeEngine(scene) {
   const physicsDebug = { visible: false, toggle: vi.fn(() => { physicsDebug.visible = !physicsDebug.visible; }) };
   const levelEditor = { enabled: false, toggle: vi.fn(() => { levelEditor.enabled = !levelEditor.enabled; }) };
+  const crosshair = { visible: true, show: vi.fn(() => { crosshair.visible = true; }), hide: vi.fn(() => { crosshair.visible = false; }) };
   // Player with object3d for the signals command.
   const playerObject = new THREE.Object3D();
   playerObject.position.set(0, 0, 0);
@@ -84,6 +87,7 @@ function fakeEngine(scene) {
     debugCamera: flag('active', 'enable', 'disable'),
     fullbright: flag('active', 'enable', 'disable'),
     perfStats: flag('visible', 'show', 'hide'),
+    crosshair,
     loadScene: vi.fn(),
   };
 }
@@ -606,6 +610,25 @@ describe('createCommands', () => {
 
     it('zones on is a usage error', () => {
       expect(run('zones on').out.at(-1)).toBe('Usage: zones [reveal|hide]');
+    });
+
+    it('hud off hides the overlay and crosshair, on shows them again', () => {
+      expect(run('hud off').out).toEqual(['HUD hidden']);
+      expect(scene.hud.hide).toHaveBeenCalledOnce();
+      expect(scene.hud.visible).toBe(false);
+      expect(engine.crosshair.hide).toHaveBeenCalledOnce();
+      expect(run('hud on').out).toEqual(['HUD shown']);
+      expect(scene.hud.show).toHaveBeenCalledOnce();
+      expect(scene.hud.visible).toBe(true);
+      expect(engine.crosshair.show).toHaveBeenCalledOnce();
+    });
+
+    it('hud with no argument flips visibility', () => {
+      expect(scene.hud.visible).toBe(true);
+      run('hud');
+      expect(scene.hud.visible).toBe(false);
+      run('hud');
+      expect(scene.hud.visible).toBe(true);
     });
   });
 

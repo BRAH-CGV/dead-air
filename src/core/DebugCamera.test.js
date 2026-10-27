@@ -34,7 +34,7 @@ function makeInput(keys = {}, locked = true) {
   return {
     keys,
     locked,
-    mouse: { dx: 0, dy: 0 },
+    mouse: { dx: 0, dy: 0, wheel: 0 },
   };
 }
 
@@ -240,6 +240,84 @@ describe('DebugCamera flight', () => {
     expect(camera.position.x).toBe(0);
     expect(camera.position.y).toBe(0);
     expect(camera.position.z).toBe(0);
+  });
+});
+
+describe('DebugCamera scroll-wheel zoom', () => {
+  function flyRig() {
+    const { scene, camera } = buildRig();
+    const dbg = new DebugCamera(camera, scene);
+    dbg.enable(null);
+    camera.position.set(0, 0, 0);
+    return { dbg, camera };
+  }
+
+  function wheelInput(wheel) {
+    return { locked: true, keys: {}, mouse: { dx: 0, dy: 0, wheel } };
+  }
+
+  it('scroll down (positive wheel) widens the FOV (zoom out)', () => {
+    const { dbg, camera } = flyRig();
+    const before = camera.fov;
+
+    dbg.update(0, wheelInput(1), KEY_BINDS);
+
+    expect(camera.fov).toBe(before + dbg.zoomStep);
+  });
+
+  it('scroll up (negative wheel) narrows the FOV (zoom in)', () => {
+    const { dbg, camera } = flyRig();
+    const before = camera.fov;
+
+    dbg.update(0, wheelInput(-1), KEY_BINDS);
+
+    expect(camera.fov).toBe(before - dbg.zoomStep);
+  });
+
+  it('multiple scrolls accumulate', () => {
+    const { dbg, camera } = flyRig();
+    const before = camera.fov;
+
+    dbg.update(0, wheelInput(3), KEY_BINDS);
+
+    expect(camera.fov).toBe(before + 3 * dbg.zoomStep);
+  });
+
+  it('FOV is clamped to fovMin', () => {
+    const { dbg, camera } = flyRig();
+
+    // Scroll up a lot — FOV must not go below fovMin.
+    dbg.update(0, wheelInput(-100), KEY_BINDS);
+
+    expect(camera.fov).toBe(dbg.fovMin);
+  });
+
+  it('FOV is clamped to fovMax', () => {
+    const { dbg, camera } = flyRig();
+
+    // Scroll down a lot — FOV must not exceed fovMax.
+    dbg.update(0, wheelInput(100), KEY_BINDS);
+
+    expect(camera.fov).toBe(dbg.fovMax);
+  });
+
+  it('zero wheel does nothing', () => {
+    const { dbg, camera } = flyRig();
+    const before = camera.fov;
+
+    dbg.update(0, wheelInput(0), KEY_BINDS);
+
+    expect(camera.fov).toBe(before);
+  });
+
+  it('does not zoom while inactive', () => {
+    const { scene, camera } = buildRig();
+    const dbg = new DebugCamera(camera, scene);
+    const before = camera.fov;
+
+    dbg.update(0, wheelInput(5), KEY_BINDS);
+
+    expect(camera.fov).toBe(before);
   });
 });
 

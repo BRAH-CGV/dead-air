@@ -33,6 +33,44 @@ describe('HUD suit indicator', () => {
   });
 });
 
+// ── HUD visibility ────────────────────────────────────────
+describe('HUD show/hide', () => {
+  function fakeRoot() {
+    return { root: { style: {}, querySelector: () => null } };
+  }
+
+  it('starts visible', () => {
+    const { root } = fakeRoot();
+    const hud = new HUD(root);
+    expect(hud.visible).toBe(true);
+  });
+
+  it('hide() sets visible to false and writes display none', () => {
+    const { root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.hide();
+    expect(hud.visible).toBe(false);
+    expect(root.style.display).toBe('none');
+  });
+
+  it('show() sets visible to true and writes display block', () => {
+    const { root } = fakeRoot();
+    const hud = new HUD(root);
+    hud.hide();
+    hud.show();
+    expect(hud.visible).toBe(true);
+    expect(root.style.display).toBe('block');
+  });
+
+  it('works without a DOM root (tests)', () => {
+    const hud = new HUD(null);
+    expect(() => hud.hide()).not.toThrow();
+    expect(hud.visible).toBe(false);
+    expect(() => hud.show()).not.toThrow();
+    expect(hud.visible).toBe(true);
+  });
+});
+
 // ── Stamina bar ───────────────────────────────────────────
 describe('HUD stamina bar', () => {
   function fakeRoot() {

@@ -39,6 +39,12 @@ export class DebugCamera {
   boost       = 4;
   sensitivity = 0.002;  // rad per mouse px — matches the player's default
 
+  // Scroll-wheel zoom (FOV).  Positive wheel (scroll down) widens the FOV
+  // (zoom out); negative (scroll up) narrows it (zoom in).
+  zoomStep = 5;   // degrees per scroll tick
+  fovMin   = 10;
+  fovMax   = 120;
+
   pitch = 0;
   yaw   = 0;
 
@@ -141,5 +147,13 @@ export class DebugCamera {
     this.camera.position.addScaledVector(this._dir, right * speed * dt);
 
     this.camera.position.y += up * speed * dt;
+
+    // ── Scroll-wheel zoom (adjust FOV) ──
+    const wheel = input.mouse.wheel || 0;
+    if (wheel !== 0) {
+      this.camera.fov = Math.max(this.fovMin,
+        Math.min(this.fovMax, this.camera.fov + wheel * this.zoomStep));
+      this.camera.updateProjectionMatrix();
+    }
   }
 }

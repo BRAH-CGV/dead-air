@@ -36,10 +36,11 @@ export class HUD {
     this._staminaFill = root?.querySelector('#hud-stamina-fill') ?? null;
     this._staminaShown = -1;
     this._staminaLevel = null;
+    this.visible = true;
   }
 
-  show() { if (this.root) this.root.style.display = 'block'; }
-  hide() { if (this.root) this.root.style.display = 'none'; }
+  show() { if (this.root) this.root.style.display = 'block'; this.visible = true; }
+  hide() { if (this.root) this.root.style.display = 'none'; this.visible = false; }
 
   setTime(timeString) {
     if (this._clock) this._clock.textContent = timeString;
