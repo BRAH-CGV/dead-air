@@ -90,7 +90,7 @@ export const RAGNO_SOUNDS = {
 };
 
 /** The prompt when he catches the player, and the screen it is shown on. */
-const CAUGHT_PROMPT = 'Something came out of the vents. Press [E] to try again';
+const CAUGHT_PROMPT = 'Something came out of the vents.';
 const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 900, messageDelayMs: 700 };
 /** Seconds of lunge, in the player's face, before the screen cuts. The view
  *  drains to red through it, as with the evil signal (RedOut). */
@@ -548,7 +548,7 @@ export class Ragno extends Component {
     }
     if (this._lunge >= LUNGE_SECONDS) {
       this._lunge = -1;
-      this.controller.fail(CAUGHT_PROMPT, { retryAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
+      this.controller.fail(CAUGHT_PROMPT, { promptAfter: CAUGHT_SCREEN.messageDelayMs / 1000 });
       this.whiteOut?.play(CAUGHT_PROMPT, CAUGHT_SCREEN);
       this.logic.despawn();
       this.figure.show(false);

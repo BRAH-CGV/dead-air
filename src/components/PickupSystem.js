@@ -161,6 +161,7 @@ export class PickupSystem extends Component {
 
     // Restore normal physics so the object falls / sits.
     const go = pickupable.gameObject;
+    if (go) go.interpolate = true;
     if (go?.rigidBody) {
       go.rigidBody.setGravityScale(1, true);
       go.rigidBody.setLinearDamping(0.5, true);
@@ -190,6 +191,10 @@ export class PickupSystem extends Component {
 
     // Make the body dynamic with no gravity and high damping so it floats.
     const go = pickupable.gameObject;
+    // Drawn at the latest physics step, as the camera is: interpolated, it
+    // trailed the camera by a part of a step that changed every frame, a
+    // jitter while running.
+    if (go) go.interpolate = false;
     if (go?.rigidBody) {
       go.rigidBody.setGravityScale(0, true);
       go.rigidBody.setLinearDamping(5.0, true);

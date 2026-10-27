@@ -33,6 +33,11 @@ export class GameObject {
   world = null;
   /** Marker for group nodes (no mesh, no physics, just a container). */
   isGroup = false;
+  /** Whether a dynamic body's visual is interpolated between physics steps.
+   *  Off, it is drawn at the latest step, like the player: a carried object
+   *  (PickupSystem) then keeps step with the camera instead of trailing it
+   *  by a fraction of a step that changes every frame (a jitter on the run). */
+  interpolate = true;
 
   _started = false;
 

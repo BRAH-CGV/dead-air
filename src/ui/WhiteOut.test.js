@@ -23,7 +23,7 @@ describe('WhiteOut', () => {
   });
 
   it('fades to white over its own duration and holds there', () => {
-    whiteOut.play('You were taken. [E] to retry');
+    whiteOut.play('You were taken.');
     expect(white()).toBe(true);
     expect(whiteOut.active).toBe(true);
     expect(root.style.transitionDuration).toBe('2000ms');
@@ -32,10 +32,10 @@ describe('WhiteOut', () => {
   });
 
   it('shows its message only once the screen has gone white', () => {
-    whiteOut.play('You were taken. [E] to retry');
+    whiteOut.play('You were taken.');
     expect(message().classList.contains('is-shown')).toBe(false);
     vi.advanceTimersByTime(3000);
-    expect(message().textContent).toBe('You were taken. [E] to retry');
+    expect(message().textContent).toBe('You were taken.');
     expect(message().classList.contains('is-shown')).toBe(true);
   });
 
@@ -49,7 +49,7 @@ describe('WhiteOut', () => {
   });
 
   it('blood: black at once, then slowly red — the message once it has turned', () => {
-    whiteOut.play('You have been eaten. Press [E] to try again', { tone: 'blood', redMs: 2500, messageDelayMs: 2200 });
+    whiteOut.play('You have been eaten.', { tone: 'blood', redMs: 2500, messageDelayMs: 2200 });
     expect(white()).toBe(true);
     expect(root.classList.contains('is-blood')).toBe(true);
     expect(root.style.transition).toMatch(/opacity 0ms/);          // no fade in: black now
@@ -67,7 +67,7 @@ describe('WhiteOut', () => {
     whiteOut.play('x', { tone: 'blood' });
     vi.advanceTimersByTime(5000);
     whiteOut.clear();
-    whiteOut.play('You were taken. [E] to retry');
+    whiteOut.play('You were taken.');
     expect(root.classList.contains('is-blood')).toBe(false);
     expect(root.style.backgroundColor).toBe('');
   });
@@ -78,7 +78,7 @@ describe('WhiteOut', () => {
     vi.advanceTimersByTime(700);
     expect(message().classList.contains('is-shown')).toBe(true);
     whiteOut.clear();
-    whiteOut.play('You were taken. [E] to retry');
+    whiteOut.play('You were taken.');
     expect(root.style.transitionDuration).toBe('2000ms');   // back to its own
   });
 

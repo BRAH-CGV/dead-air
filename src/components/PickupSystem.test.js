@@ -98,6 +98,15 @@ describe('PickupSystem', () => {
     expect(go.rigidBody.setLinvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true);
   });
 
+  it('a held object is drawn at the latest physics step, as the camera is, until it is dropped', () => {
+    const { go, pickupable } = makePickupableGO();
+    expect(go.interpolate).toBe(true);
+    system.pickUp(pickupable);
+    expect(go.interpolate).toBe(false);
+    system.dropHeld();
+    expect(go.interpolate).toBe(true);
+  });
+
   it('pickUp returns false if already holding something', () => {
     const { pickupable: p1 } = makePickupableGO('A');
     const { pickupable: p2 } = makePickupableGO('B');

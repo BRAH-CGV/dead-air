@@ -531,7 +531,7 @@ describe('SleepDemon', () => {
     run(DEATH_TOTAL + 0.2);
     expect(controller.fail).toHaveBeenCalledWith(SLEEP_DEMON_KILL);
     expect(SLEEP_DEMON_KILL).toMatch(/fell asleep/i);
-    expect(SLEEP_DEMON_KILL).toMatch(/\[E\] to retry/);
+    expect(SLEEP_DEMON_KILL).not.toMatch(/\[E\]/);     // the Night failed menu retries
   });
 
   it('is hidden and harmless outside the shift: the morning, or a failed night', () => {

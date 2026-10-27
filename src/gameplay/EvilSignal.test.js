@@ -478,7 +478,7 @@ describe('EvilSignal silence timer — wipe the corrupted drive or lose', () => 
     evil.onUpdate(EVIL.silenceSeconds + 0.1);
     expect(controller.fail).toHaveBeenCalledWith(
       '',
-      expect.objectContaining({ retryAfter: expect.any(Number) }),
+      expect.objectContaining({ promptAfter: expect.any(Number) }),
     );
     expect(terminal.exit).toHaveBeenCalled();
     expect(whiteOut.play).toHaveBeenCalledWith(

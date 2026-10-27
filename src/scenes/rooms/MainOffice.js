@@ -295,6 +295,7 @@ export class MainOffice extends Room {
     });
     this.computerScreen = desk ? screenSurface(desk.object3d, COMPUTER_SCREEN) : null;
     if (desk) desk.surface = 'wood';   // what a foot on it sounds of (Footsteps)
+    this._lineDesk(desk);
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);
@@ -477,6 +478,26 @@ export class MainOffice extends Room {
     this.engine._bodyToGO?.set(body.handle, go);
     this.root.addChild(go);
     return go;
+  }
+
+  /** The desk drawn from inside too, dark. Its model is drawn front faces
+   *  only (the manifest's `side: 'front'`), but it is a shell with no
+   *  faces under the keyboard tray and none on the kneehole's inner walls:
+   *  crouched beside it, the player saw up through the tray and out through
+   *  the side panels. A copy of each mesh drawing only its back faces fills
+   *  every such gap with the shell's dark inside, and is hidden behind the
+   *  front faces everywhere else. The geometry is the asset cache's. */
+  _lineDesk(desk) {
+    const meshes = [];
+    desk?.object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+    if (!meshes.length) return;
+    const material = this._own(new THREE.MeshStandardMaterial({ color: 0x1c1612, roughness: 0.9, side: THREE.BackSide }));
+    for (const mesh of meshes) {
+      const inside = new THREE.Mesh(mesh.geometry, material);
+      inside.name = 'DeskInside';
+      inside.receiveShadow = true;
+      mesh.add(inside);
+    }
   }
 
   /** The desk top carried on to each side: a wing turned 45° in toward the

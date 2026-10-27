@@ -897,11 +897,13 @@ export class Engine {
       const prev = this._prevPos.get(handle);
       if (!prev) continue;
       const cur = go.rigidBody.translation();
-      
+      // Not interpolated (a carried object): the latest step, as the player.
+      const a = go.interpolate === false ? 1 : alpha;
+
       // Interpolated world position
-      const wx = prev.x + (cur.x - prev.x) * alpha;
-      const wy = prev.y + (cur.y - prev.y) * alpha;
-      const wz = prev.z + (cur.z - prev.z) * alpha;
+      const wx = prev.x + (cur.x - prev.x) * a;
+      const wy = prev.y + (cur.y - prev.y) * a;
+      const wz = prev.z + (cur.z - prev.z) * a;
       
       // Convert world position to local space if the object has a parent.
       // Child objects (e.g. drives inside a room) store position relative to
@@ -923,7 +925,7 @@ export class Engine {
         
         // Interpolated world quaternion
         const wq = this._scratchQ2.set(cr.x, cr.y, cr.z, cr.w);
-        wq.slerp(this._scratchQ, 1 - alpha);
+        wq.slerp(this._scratchQ, 1 - a);
         
         // Convert world quaternion to local space if the object has a parent.
         if (go.object3d.parent) {
