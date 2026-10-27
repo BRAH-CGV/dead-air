@@ -26,7 +26,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice, WINDOW_CORNER_RADIUS, deskStation } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
-import { LivingQuarters } from './rooms/LivingQuarters.js';
+import { LivingQuarters, COFFEE_MACHINE } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
@@ -90,6 +90,11 @@ import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { Stamina } from '../gameplay/Stamina.js';
+import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
+import { CoffeeItems } from '../components/CoffeeItems.js';
+import { ProcessorSound } from '../components/ProcessorSound.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
+import { CoffeeBeans, CoffeeBag, COFFEE_BAG } from '../gameobjects/CoffeeGoods.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
@@ -203,6 +208,10 @@ const BUGGY_HALF_LENGTH = 2.6;
  *  Room-local equals world (the office root is at the origin); y is half a
  *  box's height. */
 const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
+
+/** Metres from the coffee machine's top a bag let go docks on it from:
+ *  enough for the floor in front of its table. */
+const COFFEE_DOCK_REACH = 1.4;
 
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
@@ -385,6 +394,7 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addCameraTerminal();
     this._addScreenPictures();
+    this._addCoffee();
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
@@ -1921,7 +1931,7 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   /** Stamina drains through the shift — faster outside, and faster still
    *  while the player stares at the dust eyes — and the bedroom's coffee
-   *  machine tops it up, a couple of cups a night. The drain ticks on
+   *  machine tops it up, a cup for each ripe bush picked (_addCoffee). The drain ticks on
    *  GameplaySystems after the controller, and before the demon and the
    *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
@@ -1929,6 +1939,7 @@ export class BaseScene extends Scene {
     const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
+      machine.items = this.coffeeItems;
       // The machine at work while a cup brews, and its start click.
       machine.gameObject.addComponent(new CoffeeSound({ machine }));
       // A slurp as the cup is drunk (a quiet recording, so lifted).
@@ -1950,10 +1961,62 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       grid:         this.power,
-      onNightStart: () => machine?.reset(),
+      onNightStart: () => { this.coffee.newNight(); this.coffeeItems.reset(); machine?.reset(); },
       isOutside:    () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
       isStaring:    () => !!this.dustEyes?.staredAt,
     }));
+  }
+
+  /** The night's coffee (#168): a CoffeeHarvest over the office rack's
+   *  bushes, two ripe a night (a new one on each night start, from the
+   *  stamina drain's), and the piles of beans and bags of ground coffee
+   *  carried from the rack to the processor and on to the bedroom's coffee
+   *  machine (CoffeeItems, as many of each as there are ripe bushes, built
+   *  once and parked between uses). The goods are the office's, like its
+   *  drives. Rooms don't know about gameplay, so it is wired here, and in
+   *  _addStamina for the machine. */
+  _addCoffee() {
+    const office = this.rooms.MainOffice;
+    const { coffeeBushes, beanProcessor } = office;
+    const own = r => office._own(r);
+    const make = (Kind, name) => Array.from({ length: COFFEE_HARVEST.ripePerNight }, (_, i) => {
+      const item = new Kind(`${name}_${i + 1}`, { own });
+      office.root.addChild(item);
+      return item;
+    });
+    this.coffee = new CoffeeHarvest({ bushes: coffeeBushes?.bushes.length ?? 0 });
+    this.coffeeItems = this._sceneRoot.find('GameplaySystems').addComponent(new CoffeeItems({
+      beans: make(CoffeeBeans, 'CoffeeBeans'),
+      bags: make(CoffeeBag, 'CoffeeBag'),
+      pickup: this.pickupSystem,
+      engine: this.engine,
+    }));
+    coffeeBushes?.bind(this.coffee, this.coffeeItems);
+    beanProcessor?.bind(this.coffee, this.coffeeItems);
+    // Their sounds: the grind while a pile is processed, and what each
+    // machine takes in (the pile or bag is parked away with its own voice).
+    beanProcessor?.gameObject.addComponent(new ProcessorSound({ harvest: this.coffee }));
+    beanProcessor?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.beans));
+    this._addCoffeeDock();
+  }
+
+  /** The bedroom coffee machine's top: a bag of ground coffee let go near
+   *  it docks there (a SnapSocket, like the drive boxes' and the airlock's),
+   *  seen and still able to be picked back off, until a cup is brewed from
+   *  it. Near is within `COFFEE_DOCK_REACH` of the top: the table round it
+   *  and the floor in front. The bag sounds its own seating. */
+  _addCoffeeDock() {
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
+    if (!machine) return;
+    const dock = machine.gameObject.addComponent(new SnapSocket({
+      slots: [{ offset: { y: COFFEE_MACHINE[1] / 2 + COFFEE_BAG.size[1] / 2 + 0.005 } }],
+      snapDistance: COFFEE_DOCK_REACH,
+      sounds: 'item',
+      attachedPromptLabel: '[E] Pick up',
+      canAccept: item => machine.accepts(item),
+    }));
+    for (const bag of this.coffeeItems.bags) dock.addCandidate(bag);
+    machine.dock = dock;
   }
 
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
@@ -2708,6 +2771,29 @@ export class BaseScene extends Scene {
       return best;
     };
     const bed = this.rooms.LivingQuarters.bed;
+    // The coffee lesson's arrows: the ripe bush nearest the player, and a
+    // bag once one is out (the processor that makes it until then).
+    const bushes = office.coffeeBushes;
+    const processorObject = office.beanProcessor?.gameObject.object3d ?? null;
+    const bushMark = new THREE.Object3D();
+    const ripeBush = () => {
+      if (!bushes || !this.coffee || !this.engine.camera) return null;
+      this.engine.camera.getWorldPosition(eye);
+      const rack = bushes.gameObject.object3d;
+      let best = null;
+      let bestDist = Infinity;
+      this.coffee.bushes.forEach((state, i) => {
+        if (state !== 'ripe') return;
+        rack.localToWorld(at.copy(bushes.bushes[i]));
+        const d = at.distanceToSquared(eye);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      if (best === null) return null;
+      rack.localToWorld(bushMark.position.copy(bushes.bushes[best]));
+      bushMark.updateMatrixWorld(true);
+      return bushMark;
+    };
+    const bagOut = () => this.coffeeItems?.loose('bag')[0]?.object3d ?? processorObject;
     this.tutorial = new Tutorial({
       controller:    this.gameController,
       clock:         this.nightClock,
@@ -2731,6 +2817,7 @@ export class BaseScene extends Scene {
       bed,
       flashlight:    this.engine.player?.getComponent(Flashlight) ?? null,
       onDesk:        (p) => office.isOnDesk(p),
+      coffee:        { harvest: this.coffee, items: this.coffeeItems, machine: this.rooms.LivingQuarters.coffeeMachine },
       overlay:       new TutorialOverlay(undefined, {
         keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
       }),
@@ -2751,6 +2838,10 @@ export class BaseScene extends Scene {
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },
         buggy:     { object: this.buggyBoot?.object3d ?? null, lift: 0.6 },
+        bush:      { object: ripeBush, lift: 0.1 },
+        processor: { object: processorObject, lift: 0.5 },
+        bag:       { object: bagOut, lift: 0.15 },
+        coffee:    { object: this.rooms.LivingQuarters.coffeeMachine?.gameObject.object3d ?? null, lift: 0.35 },
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);

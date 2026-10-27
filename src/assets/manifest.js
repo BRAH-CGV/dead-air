@@ -359,11 +359,11 @@ const PLACED = {
     scale: 0.00396,
     origin: 'floor',
   },
-  // The food dispenser's plates (scripts/make-dispenser-labels.mjs): four
-  // 8:1 strips, its name, the meal bay's, the hopper's and a caution.
-  'tex:dispenser-labels': {
+  // The bean processor's plates (scripts/make-processor-labels.mjs): four
+  // 8:1 strips, its name, the bay's, the hopper's and a caution.
+  'tex:processor-labels': {
     type: 'texture',
-    url: 'assets/textures/dispenser-labels.png',
+    url: 'assets/textures/processor-labels.png',
     colorSpace: 'srgb',
   },
   // The coffee's mug: its picture all the way round, the cat on the front
@@ -753,6 +753,18 @@ const PLACED = {
   'sfx:coffee-machine': {
     type: 'audio',
     url: 'assets/audio/coffee-machine.mp3',
+  },
+  // The office's bean processor processing a pile of beans (ProcessorSound):
+  // an espresso machine's grind, exactly a pile long, 5 s.
+  'sfx:coffee-grinding': {
+    type: 'audio',
+    url: 'assets/audio/coffee-grinding.mp3',
+  },
+  // A pile of coffee beans knocked or handled (ImpactSound, IMPACT_SOUNDS.beans):
+  // beads shaken in a plastic tub, three shakes played as spans of it.
+  'sfx:beans': {
+    type: 'audio',
+    url: 'assets/audio/beans.mp3',
   },
   // The player's footsteps (Footsteps): three interior steps and two outdoor
   // thumps in one recording, cut by hand (STEP_SOUNDS).

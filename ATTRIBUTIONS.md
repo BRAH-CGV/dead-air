@@ -955,6 +955,28 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | The bedroom's coffee machine while a cup brews (`CoffeeSound`) |
 | **Modifications** | Cut to 20 s, a brew's length |
 
+### Bean processor grinding
+
+"Espresso Machine (Automated)" (https://freesound.org/people/ultradust/sounds/167506/) by ultradust, from Freesound, is used under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): credit required.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/coffee-grinding.mp3` |
+| **Manifest key** | `sfx:coffee-grinding` |
+| **Used for** | The office's bean processor while it processes a pile of beans (`ProcessorSound`) |
+| **Modifications** | Renamed; cut to 5 s of its grind, a pile's length |
+
+### Coffee beans
+
+"shaking beads in a plastic container.wav" (https://freesound.org/people/__bernicetredoux/sounds/655302/) by __bernicetredoux, from Freesound, is used under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): credit required.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/beans.mp3` |
+| **Manifest key** | `sfx:beans` |
+| **Used for** | A pile of coffee beans knocked, picked up or taken in by the bean processor (`ImpactSound`, `IMPACT_SOUNDS.beans`) |
+| **Modifications** | Renamed and shortened to three shakes, each played on its own |
+
 ### Coffee slurp
 
 "Coffee Slurping" (https://freesound.org/people/redcheek/sounds/251984/) by redcheek, from Freesound under CC0 1.0 (public domain) — attribution not required, credited here anyway.

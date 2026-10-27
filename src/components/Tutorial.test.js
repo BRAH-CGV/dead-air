@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { Tutorial, TUTORIAL } from './Tutorial.js';
-import { TUTORIAL_STEPS } from '../gameplay/TutorialSteps.js';
+import { TUTORIAL_STEPS, COFFEE_STAGE } from '../gameplay/TutorialSteps.js';
 import { SignalTarget } from '../gameplay/SignalTarget.js';
 import { Stamina } from '../gameplay/Stamina.js';
 import { NAP } from '../gameplay/Nap.js';
@@ -67,6 +67,12 @@ function rig({ night = 0, covered } = {}) {
     serverSlot:    { insertedDrive: null },
     processingScreen: { isOpen: false },
     flashlight:    { on: false },
+    // The night's coffee, as CoffeeHarvest, CoffeeItems and the machine show it.
+    coffee: {
+      harvest: { processor: 'idle' },
+      items:   { held: () => null, loose: () => [] },
+      machine: { state: 'empty', loaded: false },
+    },
     // The desk: anything over x −1…1, z −3…−2, from 0.6 m up.
     onDesk:        (p) => Math.abs(p.x) < 1 && p.z > -3 && p.z < -2 && p.y > 0.6,
     sandstorm:     { summon: vi.fn(() => true) },
@@ -87,6 +93,10 @@ function rig({ night = 0, covered } = {}) {
       buggy:     { object: behind },
       serverReader:  { object: behind },
       serverConsole: { object: behind },
+      bush:      { object: ahead },
+      processor: { object: ahead },
+      bag:       { object: ahead },
+      coffee:    { object: behind },
     },
   };
   s.tutorial = new Tutorial(s);
@@ -258,12 +268,64 @@ describe('Tutorial', () => {
     expect(s.stormOutage.force).toHaveBeenCalledWith(TUTORIAL.outageAt);
   });
 
+  it('the stamina step drops stamina to just over half, and holds it there: it never drains, but coffee and naps raise it', () => {
+    s.tutorial.onUpdate(0.01);
+    s.tutorial.runner.goTo('stamina');
+    expect(s.stamina.value).toBeCloseTo(0.51);
+    expect(0.51).toBeGreaterThan(0.5);    // above where the Sleep Demon comes (appearBelow)
+    s.stamina.value -= 0.05;               // a frame's drain
+    s.tutorial.onUpdate(0.01);
+    expect(s.stamina.value).toBeCloseTo(0.51);
+    s.stamina.restore(0.35);               // a cup drunk
+    s.tutorial.onUpdate(0.01);
+    s.stamina.value -= 0.05;
+    s.tutorial.onUpdate(0.01);
+    expect(s.stamina.value).toBeCloseTo(0.86);
+    s.controller.startNight(0, { retry: true });   // a retry: full again
+    s.stamina.value = 0.3;
+    s.tutorial.onUpdate(0.01);
+    expect(s.stamina.value).toBe(1);
+  });
+
+  it('reads how far the coffee has got, the furthest yet, so a bag dropped again is no step back', () => {
+    const c = s.coffee;
+    const stage = () => s.tutorial.readContext().coffee;
+    expect(stage()).toBe(COFFEE_STAGE.none);
+    const pile = { coffeeKind: 'beans' };
+    c.items.held = k => (k === 'beans' ? pile : null);
+    expect(stage()).toBe(COFFEE_STAGE.beans);
+    c.items.held = () => null;
+    c.harvest.processor = 'loaded';
+    expect(stage()).toBe(COFFEE_STAGE.loaded);
+    c.harvest.processor = 'processing';
+    expect(stage()).toBe(COFFEE_STAGE.processing);
+    c.harvest.processor = 'idle';
+    c.items.loose = k => (k === 'bag' ? [{}] : []);
+    expect(stage()).toBe(COFFEE_STAGE.bagged);
+    c.items.held = k => (k === 'bag' ? {} : null);
+    expect(stage()).toBe(COFFEE_STAGE.bagInHand);
+    c.items.held = () => null;                       // dropped on the floor again
+    expect(stage()).toBe(COFFEE_STAGE.bagInHand);
+    c.machine.loaded = true;
+    expect(stage()).toBe(COFFEE_STAGE.bagIn);
+    c.machine.loaded = false;
+    c.machine.state = 'brewing';
+    expect(stage()).toBe(COFFEE_STAGE.brewing);
+    c.machine.state = 'brewed';
+    expect(stage()).toBe(COFFEE_STAGE.brewed);
+    c.machine.state = 'empty';                       // drunk
+    expect(stage()).toBe(COFFEE_STAGE.drunk);
+    s.controller.startNight(0, { retry: true });     // a retry puts the coffee things away
+    c.items.loose = () => [];
+    expect(stage()).toBe(COFFEE_STAGE.none);
+  });
+
   it("the nap step sets the bunk's alarm to 6 AM, and leaves the night to run", () => {
     s.tutorial.onUpdate(0.01);
     s.clock.resume();                      // as it is once the quota is met
     s.clock.setTime(-3);
-    s.tutorial.runner.goTo('inside');
-    s.tutorial.onUpdate(0.01);             // the suit is off: on to the nap
+    s.tutorial.runner.goTo('napTip');
+    s.tutorial.onUpdate(6.01);             // the tip read: on to the nap
     expect(s.tutorial.runner.step.id).toBe('nap');
     expect(NAP.lengths[s.bed.napLength]).toBe(null);
     expect(s.clock.currentTime).toBe(-3);
