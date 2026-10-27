@@ -477,6 +477,15 @@ describe('Airlock', () => {
     expect(dock.collectedCount).toBe(0);
   });
 
+  it('the box dock wears tex:box-dock when it is loaded', () => {
+    const engine = makeEngine();
+    const tex = { isTexture: true };
+    engine.assets = { has: k => k === 'tex:box-dock', get: () => tex };
+    const airlock = new Airlock(engine);
+    airlock.build();
+    expect(airlock.quotaDockGO.object3d.children[0].material.map).toBe(tex);
+  });
+
   it('dispose lets go of the suit and the inner door, and removes its bodies', () => {
     const inner = officeDoor();
     airlock.bindInnerDoor(inner);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { mapBoxFaces, cachedTexture, DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS } from './propAtlases.js';
+import { mapBoxFaces, cachedTexture, skinBox, DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS, READER_ATLAS, DOCK_ATLAS } from './propAtlases.js';
 
 /** The uv range a face of `geometry` covers. */
 function faceRange(geometry, g) {
@@ -29,7 +29,7 @@ describe('mapBoxFaces', () => {
   });
 
   it('keeps every rectangle inside its atlas', () => {
-    for (const atlas of [DRIVE_ATLAS, BOX_ATLAS]) {
+    for (const atlas of [DRIVE_ATLAS, BOX_ATLAS, READER_ATLAS, DOCK_ATLAS]) {
       for (const [x, y, w, h] of Object.values(atlas.faces)) {
         expect(x + w).toBeLessThanOrEqual(atlas.size[0]);
         expect(y + h).toBeLessThanOrEqual(atlas.size[1]);
@@ -52,5 +52,23 @@ describe('cachedTexture', () => {
     expect(cachedTexture(scene, 'tex:a')).toBe(tex);
     expect(cachedTexture(scene, 'tex:b')).toBeNull();
     expect(cachedTexture({ userData: {} }, 'tex:a')).toBeNull();
+  });
+});
+
+describe('skinBox', () => {
+  it('maps the faces and puts a loaded texture on over white', () => {
+    const tex = new THREE.Texture();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
+    skinBox(mesh, tex, READER_ATLAS);
+    expect(mesh.material.map).toBe(tex);
+    expect(mesh.material.color.getHex()).toBe(0xffffff);
+    expect(faceRange(mesh.geometry, 2)[1]).toBeCloseTo(205 / 256);
+  });
+
+  it('without a texture leaves the material as it was', () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
+    skinBox(mesh, null, DOCK_ATLAS);
+    expect(mesh.material.map).toBeNull();
+    expect(mesh.material.color.getHex()).toBe(0x1a1a1a);
   });
 });

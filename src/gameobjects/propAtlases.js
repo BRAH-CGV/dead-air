@@ -41,25 +41,57 @@ export const BOX_ATLAS = Object.freeze({
   },
 });
 
-/** The coffee bag: its body (front label, back, gussets) and the rolled top
- *  with its tin tie, two boxes, a set of faces each. */
+/** The coffee bag (0.125 × 0.17 × 0.1 m): its body (the label on its wide
+ *  front, the back, the gussets) and the sealed seam along its top with its
+ *  tin tie, two boxes, a set of faces each. */
 export const BAG_ATLAS = Object.freeze({
   size: [512, 1024],
   body: {
-    pz: [0, 0, 256, 416],
-    nz: [256, 0, 256, 416],
-    px: [0, 416, 256, 320],
-    nx: [0, 416, 256, 320],
-    py: [256, 416, 256, 320],
-    ny: [256, 416, 256, 320],
+    pz: [0, 0, 256, 310],
+    nz: [256, 0, 256, 310],
+    px: [0, 310, 206, 310],
+    nx: [0, 310, 206, 310],
+    py: [206, 310, 306, 245],
+    ny: [206, 310, 306, 245],
   },
   roll: {
-    pz: [0, 736, 512, 120],
-    nz: [0, 736, 512, 120],
-    px: [0, 856, 256, 56],
-    nx: [0, 856, 256, 56],
-    py: [256, 856, 256, 168],
-    ny: [256, 856, 256, 168],
+    pz: [0, 620, 512, 86],
+    nz: [0, 620, 512, 86],
+    px: [0, 706, 128, 86],
+    nx: [0, 706, 128, 86],
+    py: [128, 706, 384, 86],
+    ny: [128, 706, 384, 86],
+  },
+});
+
+/** The drive readers (0.12 × 0.03 × 0.15 m: the office computer's and the
+ *  server room's two consoles'). A drive slides into the slot on its front
+ *  (+z) connector first and stands half out of it; the top carries a cover
+ *  plate over the drive's channel, a grille and screws, the back a cable
+ *  gland. A normal map (`tex:drive-reader-normal`) shares the layout. */
+export const READER_ATLAS = Object.freeze({
+  size: [256, 512],
+  faces: {
+    py: [0, 0, 205, 256],
+    ny: [205, 0, 51, 64],
+    px: [0, 256, 256, 52],
+    nx: [0, 256, 256, 52],
+    pz: [0, 320, 256, 64],
+    nz: [0, 384, 256, 64],
+  },
+});
+
+/** The airlock's drive-box dock (0.42 × 0.12 × 0.36 m): a ribbed pad for
+ *  the box on top, guide blocks at its corners, bolted steel round it. */
+export const DOCK_ATLAS = Object.freeze({
+  size: [512, 512],
+  faces: {
+    py: [0, 0, 512, 439],
+    ny: [0, 0, 512, 439],
+    pz: [0, 439, 256, 73],
+    nz: [0, 439, 256, 73],
+    px: [256, 439, 219, 73],
+    nx: [256, 439, 219, 73],
   },
 });
 
@@ -97,9 +129,31 @@ export function mapBoxFaces(geometry, faces, [W, H]) {
   return geometry;
 }
 
+/**
+ * Lay an atlas onto a box mesh built square (Room._addStaticBox) and, when
+ * the texture is loaded, put it on the mesh's material over a white base:
+ * the picture carries the colour. The cache owns the texture.
+ *
+ * @param {import('three').Mesh} mesh
+ * @param {import('three').Texture|null} texture
+ * @param {{ size: number[], faces: Record<string, number[]> }} atlas
+ */
+export function skinBox(mesh, texture, { faces, size }) {
+  mapBoxFaces(mesh.geometry, faces, size);
+  if (!texture) return mesh;
+  mesh.material.map = texture;
+  mesh.material.color.setHex(0xffffff);
+  mesh.material.needsUpdate = true;
+  return mesh;
+}
+
+/** A texture from an asset manager, or null when it isn't loaded. */
+export function assetTexture(assets, key) {
+  return assets?.has?.(key) ? assets.get(key) : null;
+}
+
 /** A texture from the scene's asset cache, or null when it isn't loaded
  *  (a scene test's stub assets). */
 export function cachedTexture(scene, key) {
-  const assets = scene?.userData?.engine?.assets;
-  return assets?.has?.(key) ? assets.get(key) : null;
+  return assetTexture(scene?.userData?.engine?.assets, key);
 }

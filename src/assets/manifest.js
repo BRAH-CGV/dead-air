@@ -376,7 +376,8 @@ const PLACED = {
   },
   // The carried props' atlases (scripts/make-prop-textures.mjs), a
   // rectangle a face (src/gameobjects/propAtlases.js): the drive's casing,
-  // the drive box in greys (its colour tints it), the coffee bag.
+  // the drive box in greys (its colour tints it), the coffee bag and the
+  // airlock's box dock.
   'tex:drive': {
     type: 'texture',
     url: 'assets/textures/drive.png',
@@ -390,6 +391,11 @@ const PLACED = {
   'tex:coffee-bag': {
     type: 'texture',
     url: 'assets/textures/coffee-bag.png',
+    colorSpace: 'srgb',
+  },
+  'tex:box-dock': {
+    type: 'texture',
+    url: 'assets/textures/box-dock.png',
     colorSpace: 'srgb',
   },
   // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat

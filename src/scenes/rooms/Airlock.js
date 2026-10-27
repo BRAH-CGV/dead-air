@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skinBox, assetTexture, DOCK_ATLAS } from '../../gameobjects/propAtlases.js';
 import { Corridor } from './Corridor.js';
 import { Component } from '../../core/Component.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -222,6 +223,8 @@ export class Airlock extends Corridor {
     this._own(dockMat);
 
     this.quotaDockGO = this._addStaticBox('QuotaDock', dockPos, dockSize, dockMat);
+    // Its pad and bolted steel (scripts/make-prop-textures.mjs).
+    skinBox(this.quotaDockGO.object3d.children[0], assetTexture(this.engine?.assets, 'tex:box-dock'), DOCK_ATLAS);
 
     // Tooltip on hover (no interact action — just a label)
     const dockTooltip = new Interactable();
