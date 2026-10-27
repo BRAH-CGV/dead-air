@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EvilSignal, EVIL, SPARK_SOUNDS, HUM } from './EvilSignal.js';
+import { EvilSignal, EVIL, SPARK_SOUNDS, HUM, scheduleEvil } from './EvilSignal.js';
 import { ASSETS, PRELOAD } from '../assets/manifest.js';
 import { SignalManager, PITCH_MIN, PITCH_MAX, VISIBLE_SECONDS } from './SignalManager.js';
 import { skyToCursor, cursorToSky } from '../gameobjects/DishRig.js';
@@ -29,6 +29,7 @@ function makeDrive() {
 }
 
 function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humVoice } = {}) {
+  const clock = { currentTime: -6 };   // 6 PM, the shift's start
   const controller = {
     state: 'playing',
     nightNumber: night,
@@ -70,13 +71,13 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   _sparksMock = sparks;
   const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
   const hum = humVoice ?? { set: vi.fn(() => true), dispose: vi.fn() };
-  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, random, voice, hum });
+  const evil = new EvilSignal({ controller, signalManager, terminal, driveManager, satellite, clock, random, voice, hum });
   evil.whiteOut = whiteOut;
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.gameObject = { scene: { userData: { engine }, add: vi.fn() } };
   evil.onStart();
-  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum, engine };
+  return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum, engine, clock };
 }
 
 /** The single red target in the manager's list. */
@@ -163,7 +164,7 @@ describe('EvilSignal hover — the dish hold', () => {
 
   it('disappears after the lock ends — no re-hovering, but respawns later', () => {
     const { evil, signalManager } = makeRig();
-    evil._spawnsRemaining = 2;   // simulate a scheduled night
+    evil._schedule = [5];   // one more to come tonight
     evil.summon();
     const sig = evilSig(signalManager);
 
@@ -373,42 +374,186 @@ describe('EvilSignal nights', () => {
     expect(evilSig(signalManager)).toBe(null);   // startNight rebuilt the sky
   });
 
-  it('is scheduled for night 3', () => {
+  it('is scheduled for night 3, twice', () => {
     expect(EVIL.nights).toEqual([3]);
+    expect(EVIL.appearances).toBe(2);
   });
 
-  it('summons the signal on night 3 (guaranteed one appearance)', () => {
-    const { evil, controller, signalManager } = makeRig({ random: () => 0.99 });
-    // Night 3 with high random (>= 0.25) → 1 spawn only.
+  it('schedules each appearance in its own part of the dark, in order', () => {
+    const [h0, h1] = EVIL.spawnHours;
+    const part = (h1 - h0) / EVIL.appearances;
+    for (const dice of [0, 0.5, 0.999]) {
+      const hours = scheduleEvil({ night: 3, random: () => dice });
+      expect(hours).toHaveLength(EVIL.appearances);
+      hours.forEach((h, i) => {
+        expect(h).toBeGreaterThanOrEqual(h0 + i * part);
+        expect(h).toBeLessThan(h0 + (i + 1) * part);
+      });
+    }
+    // After dark (7 PM), with time left before 6 AM to deal with the last.
+    expect(h0).toBeGreaterThanOrEqual(-5);
+    expect(h1).toBeLessThanOrEqual(5);
+  });
+
+  it('is not scheduled on nights 0, 1 or 2', () => {
+    for (const night of [0, 1, 2]) expect(scheduleEvil({ night })).toEqual([]);
+  });
+
+  it('does not come at the start of the shift, but at its hour', () => {
+    const { evil, controller, signalManager, clock } = makeRig();
     controller.startNight(3);
-    expect(evil._spawnsRemaining).toBe(0);   // summon() already decremented
+    const [first] = evil._schedule;
+    expect(evilSig(signalManager)).toBeNull();
+
+    clock.currentTime = first - 0.01;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).toBeNull();
+
+    clock.currentTime = first;
+    evil.onUpdate(0.1);
     expect(evilSig(signalManager)).not.toBeNull();
   });
 
-  it('allows a second appearance on night 3 when random < doubleChance', () => {
-    const { evil, controller } = makeRig({ random: () => 0.1 });
-    // Night 3 with low random (< 0.25) → 2 spawns.
+  it('comes twice: the second at its own hour, once the first has gone', () => {
+    const { evil, controller, signalManager, clock } = makeRig();
     controller.startNight(3);
-    // First summon already ran; _spawnsRemaining was 2, summon decremented to 1.
-    expect(evil._spawnsRemaining).toBe(1);
+    const [first, second] = evil._schedule;
+    clock.currentTime = first;
+    evil.onUpdate(0.1);
+    const one = evilSig(signalManager);
+    one.appeared = true;
+    one.fadeElapsed = one.lifeSeconds;       // missed: it faded out
+    expect(one.expired).toBe(true);
+
+    clock.currentTime = second - 0.01;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).toBe(one);
+
+    clock.currentTime = second;
+    evil.onUpdate(0.1);
+    const two = evilSig(signalManager);
+    expect(two).not.toBe(one);
+    expect(two.expired).toBe(false);
+    expect(evil._schedule).toEqual([]);
   });
 
-  it('does not summon on nights 1 or 2', () => {
-    const { evil, controller, signalManager } = makeRig();
-    controller.startNight(1);
-    expect(evil._spawnsRemaining).toBe(0);
-    expect(evilSig(signalManager)).toBeNull();
+  it('waits while the one before is still up', () => {
+    const { evil, controller, signalManager, clock } = makeRig();
+    controller.startNight(3);
+    const [first, second] = evil._schedule;
+    clock.currentTime = first;
+    evil.onUpdate(0.1);
+    const one = evilSig(signalManager);
 
-    controller.startNight(2);
-    expect(evil._spawnsRemaining).toBe(0);
+    clock.currentTime = second;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).toBe(one);   // still up: the second waits
+    expect(evil._schedule).toHaveLength(1);
+
+    one.deleted = true;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).not.toBe(one);
+  });
+
+  it('waits while the power is out, so the terminal can show it', () => {
+    const { evil, controller, signalManager, clock, terminal } = makeRig();
+    controller.startNight(3);
+    clock.currentTime = evil._schedule[0];
+    terminal.powered = false;
+    evil.onUpdate(0.1);
     expect(evilSig(signalManager)).toBeNull();
+    terminal.powered = true;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).not.toBeNull();
+  });
+
+  it('waits while something else has the night (the UFO, a nap)', () => {
+    const { evil, controller, signalManager, clock, hooks } = makeRig();
+    let busy = true;
+    hooks.busy = () => busy;
+    controller.startNight(3);
+    clock.currentTime = evil._schedule[0];
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).toBeNull();
+    busy = false;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).not.toBeNull();
+  });
+
+  it('waits while a red drive is still out', () => {
+    const drive = makeDrive();
+    const { evil, controller, signalManager, clock } = makeRig({ drive });
+    controller.startNight(3);
+    const [first, second] = evil._schedule;
+    clock.currentTime = first;
+    evil.onUpdate(0.1);
+    const one = evilSig(signalManager);
+    evil.hover(one);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);  // the drive is infected
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
+    expect(drive.corrupted).toBe(true);
+    expect(evil.locked).toBe(false);
+
+    clock.currentTime = second;
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).toBe(one);   // the countdown runs: no second yet
+
+    drive.setSaved(false);                      // wiped at the console
+    evil.onUpdate(0.1);
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).not.toBe(one);
+  });
+
+  it('dodged with no drive, the second comes sooner, and there is no third', () => {
+    const { evil, controller, signalManager, clock } = makeRig();
+    controller.startNight(3);
+    const [first, second] = evil._schedule;
+    clock.currentTime = first;
+    evil.onUpdate(0.1);
+    const one = evilSig(signalManager);
+    evil.hover(one);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    evil.onUpdate(EVIL.lockSeconds + 0.1);      // pinned with no drive, then gone
+    expect(evil._respawnTimer).toBe(EVIL.respawnDelaySeconds);
+
+    evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);   // long before its own hour
+    const two = evilSig(signalManager);
+    expect(two).not.toBe(one);
+    expect(evil._schedule).toEqual([]);
+
+    // Dodged again: no third.
+    evil.hover(two);
+    evil.onUpdate(EVIL.pullInSeconds + 0.1);
+    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    expect(evil._respawnTimer).toBeNull();
+    clock.currentTime = second;
+    evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);
+    expect(evilSig(signalManager)).toBe(two);
+  });
+
+  it('does not come on nights 1 or 2, however late', () => {
+    const { evil, controller, signalManager, clock } = makeRig();
+    for (const night of [1, 2]) {
+      controller.startNight(night);
+      clock.currentTime = 5.9;
+      evil.onUpdate(0.1);
+      expect(evilSig(signalManager)).toBeNull();
+    }
+  });
+
+  it("the console's summon works on any night and leaves the schedule alone", () => {
+    const { evil, controller, signalManager } = makeRig();
+    controller.startNight(3);
+    expect(evil.summon()).toBe(true);
+    expect(evilSig(signalManager)).not.toBeNull();
+    expect(evil._schedule).toHaveLength(EVIL.appearances);
   });
 });
 
 describe('EvilSignal respawn — no drive means it comes back', () => {
   it('respawns at a new position after the delay when no drive was used', () => {
     const { evil, signalManager } = makeRig();
-    evil._spawnsRemaining = 2;   // simulate a scheduled night with two appearances
+    evil._schedule = [5];   // one more to come tonight
     evil.summon();
     const sig1 = evilSig(signalManager);
 
@@ -451,7 +596,7 @@ describe('EvilSignal respawn — no drive means it comes back', () => {
 
   it('a new night cancels the respawn timer', () => {
     const { evil, controller, signalManager } = makeRig();
-    evil._spawnsRemaining = 2;   // simulate a scheduled night
+    evil._schedule = [5];   // one more to come tonight
     evil.summon();
     evil.hover(evilSig(signalManager));
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete the pull-in
