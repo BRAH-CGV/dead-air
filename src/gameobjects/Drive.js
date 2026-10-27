@@ -11,7 +11,8 @@ import { DRIVE_ATLAS, mapBoxFaces, cachedTexture } from './propAtlases.js';
 // ─────────────────────────────────────────────
 // A small box representing a hard drive. Placed near the desk as a physics
 // object the player can pick up and carry to the drive reader. Its casing
-// wears `tex:drive` (scripts/make-prop-textures.mjs: its size on top, vents
+// wears `tex:drive` and its normal map `tex:drive-normal`
+// (scripts/make-prop-textures.mjs: its size on top, vents
 // on the −z end, the connector on the +z end) once _init finds it loaded.
 // An LED on the edge between the top and the −z end shows what is stored:
 // dark when blank, green for a saved signal, cyan processed, red the
@@ -202,7 +203,7 @@ export class Drive extends GameObject {
    *  attaches a Pickupable component. */
   _init(scene, world) {
     super._init(scene, world);
-    this._applySkin(cachedTexture(scene, 'tex:drive'));
+    this._applySkin(cachedTexture(scene, 'tex:drive'), cachedTexture(scene, 'tex:drive-normal'));
 
     const engine = scene.userData.engine;
     if (!engine?.RAPIER) return;
@@ -538,11 +539,13 @@ export class Drive extends GameObject {
     this.colliders = [];
   }
 
-  /** Put the casing's texture on (from the asset cache; the cache owns it,
-   *  so dispose() never frees it). Without one it stays plain grey. */
-  _applySkin(texture) {
+  /** Put the casing's texture and its normal map on (from the asset cache;
+   *  the cache owns them, so dispose() never frees them). Without the
+   *  texture it stays plain grey. */
+  _applySkin(texture, normal = null) {
     if (!texture || this._bodyMaterial.map === texture) return;
     this._bodyMaterial.map = texture;
+    if (normal) this._bodyMaterial.normalMap = normal;
     this._bodyMaterial.color.setHex(0xffffff);
     this._bodyMaterial.needsUpdate = true;
   }

@@ -493,13 +493,16 @@ describe('Airlock', () => {
     expect(airlock.quotaDockGO.object3d.children[0].material.map).toBe(tex);
   });
 
-  it('the dock\'s table wears tex:dock-table when it is loaded', () => {
+  it('the dock\'s table wears tex:dock-table and its normal map when they are loaded', () => {
     const engine = makeEngine();
     const tex = { isTexture: true };
-    engine.assets = { has: k => k === 'tex:dock-table', get: () => tex };
+    const normal = { isTexture: true };
+    engine.assets = { has: k => k.startsWith('tex:dock-table'), get: k => (k === 'tex:dock-table' ? tex : normal) };
     const airlock = new Airlock(engine);
     airlock.build();
-    expect(airlock.dockTable.object3d.children[0].material.map).toBe(tex);
+    const material = airlock.dockTable.object3d.children[0].material;
+    expect(material.map).toBe(tex);
+    expect(material.normalMap).toBe(normal);
   });
 
   it('dispose lets go of the suit and the inner door, and removes its bodies', () => {

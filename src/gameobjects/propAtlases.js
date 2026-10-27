@@ -147,17 +147,20 @@ export function mapBoxFaces(geometry, faces, [W, H]) {
 /**
  * Lay an atlas onto a box mesh built square (Room._addStaticBox) and, when
  * the texture is loaded, put it on the mesh's material over a white base:
- * the picture carries the colour. The cache owns the texture.
+ * the picture carries the colour. A normal map in the same layout goes on
+ * with it. The cache owns both.
  *
  * @param {import('three').Mesh} mesh
  * @param {import('three').Texture|null} texture
  * @param {{ size: number[], faces: Record<string, number[]> }} atlas
+ * @param {import('three').Texture|null} [normal]
  */
-export function skinBox(mesh, texture, { faces, size }) {
+export function skinBox(mesh, texture, { faces, size }, normal = null) {
   mapBoxFaces(mesh.geometry, faces, size);
   if (!texture) return mesh;
   mesh.material.map = texture;
   mesh.material.color.setHex(0xffffff);
+  if (normal) mesh.material.normalMap = normal;
   mesh.material.needsUpdate = true;
   return mesh;
 }

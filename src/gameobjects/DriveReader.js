@@ -36,11 +36,6 @@ export function readerMaterial() {
 /** Lay the reader's atlas on its box, and its picture and relief on its
  *  material when they are loaded (the cache owns both). */
 export function skinReader(mesh, assets) {
-  skinBox(mesh, assetTexture(assets, 'tex:drive-reader'), READER_ATLAS);
-  const normal = assetTexture(assets, 'tex:drive-reader-normal');
-  if (normal) {
-    mesh.material.normalMap = normal;
-    mesh.material.needsUpdate = true;
-  }
-  return mesh;
+  return skinBox(mesh, assetTexture(assets, 'tex:drive-reader'), READER_ATLAS,
+    assetTexture(assets, 'tex:drive-reader-normal'));
 }

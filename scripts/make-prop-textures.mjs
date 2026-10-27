@@ -6,6 +6,7 @@
 //
 //   drive.png           the drive's casing: its size on top, vents on the end
 //                       its LED sits on, the connector on the other
+//   drive-normal.png    its relief, made like the reader's
 //   drive-box.png       the drive box, in greys: its own colour tints it
 //   coffee-bag.png      a kraft bag of ground coffee, its sealed seam and tie
 //   drive-reader.png    the drive readers: a slot on the front the drive
@@ -14,6 +15,7 @@
 //                       map of the same shapes
 //   dock-table.png      the table under it: a steel cabinet, drawers and a
 //                       louvred door, a kick plate, a worn worktop
+//   dock-table-normal.png  its relief, made like the reader's
 //   box-dock.png        the airlock's box dock: a steel plate, a ribbed
 //                       rubber pad for the box and guide blocks round it
 //
@@ -128,38 +130,54 @@ const slots = (x, y, n, pitch, w, h, fill) =>
 
 // ── The drive ──────────────────────────────────
 
-function drive() {
+/**
+ * The drive, as its colour (`height` false) or as a height map (true), the
+ * way the reader is drawn: the same shapes, each with a colour and a height
+ * (the casing at 0.5). Print (the sticker's words and lines) has no height.
+ */
+function drive(height = false) {
   const { size, faces } = DRIVE_ATLAS;
-  const CASE = '#36383b', DARK = '#1b1c1e', STICKER = '#aca595', INK = '#2c2925';
-  const casing = (w, h) => `<rect width="${w}" height="${h}" fill="${CASE}"/>${bevel(0, 0, w, h)}`;
+  const grey = v => { const g = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0'); return `#${g}${g}${g}`; };
+  const P = (colour, h) => (height ? grey(h) : colour);
+  const CASE = P('#36383b', 0.5), DARK = P('#1b1c1e', 0.2), STICKER = P('#aca595', 0.54), INK = P('#2c2925', 0.54);
+  const GROOVE = P('#1b1c1e', 0.32), EMBOSS = P('#45484c', 0.58), PIN = P('#8f7a3e', 0.32), RECESS = P('#1b1c1e', 0.12);
+  const relief = (...args) => (height ? '' : bevel(...args));
+  const print = str => (height ? '' : str);
+  const screwAt = (x, y, r) => height
+    ? `<circle cx="${x}" cy="${y}" r="${r}" fill="${grey(0.72)}"/><rect x="${x - r * 0.7}" y="${y - r * 0.18}" width="${r * 1.4}" height="${r * 0.36}" fill="${grey(0.55)}" transform="rotate(${(x * 37 + y * 13) % 180} ${x} ${y})"/>`
+    : screw(x, y, r, '#55595e', '#1b1c1e');
+  const casing = (w, h) => `<rect width="${w}" height="${h}" fill="${CASE}"/>${relief(0, 0, w, h)}`;
   const top = `${casing(128, 192)}
-    <rect x="64" y="0" width="62" height="28" rx="3" fill="${DARK}"/>${bevel(64, 0, 62, 28, { sunk: true })}
+    <rect x="64" y="0" width="62" height="28" rx="3" fill="${DARK}"/>${relief(64, 0, 62, 28, { sunk: true })}
     <rect x="16" y="56" width="96" height="96" rx="3" fill="${STICKER}"/>
     <rect x="16" y="56" width="96" height="14" rx="3" fill="${INK}"/>
     <rect x="16" y="64" width="96" height="6" fill="${INK}"/>
-    <rect x="24" y="62" width="34" height="3" fill="${STICKER}" opacity="0.6"/>
+    ${print(`<rect x="24" y="62" width="34" height="3" fill="${STICKER}" opacity="0.6"/>
     <rect x="62" y="62" width="20" height="3" fill="${STICKER}" opacity="0.6"/>
     ${text(24, 98, 13, '64 MB', { fill: INK, font: MONO, anchor: 'start' })}
     ${[[24, 114, 80], [24, 122, 62], [24, 130, 72], [24, 138, 44]].map(([x, y, w]) =>
-      `<rect x="${x}" y="${y}" width="${w}" height="3" fill="${INK}" opacity="0.4"/>`).join('')}`;
+      `<rect x="${x}" y="${y}" width="${w}" height="3" fill="${INK}" opacity="0.4"/>`).join('')}`)}`;
   const bottom = `${casing(128, 192)}
-    ${screw(14, 14, 5, '#55595e', DARK)}${screw(114, 14, 5, '#55595e', DARK)}
-    ${screw(14, 178, 5, '#55595e', DARK)}${screw(114, 178, 5, '#55595e', DARK)}
+    ${screwAt(14, 14, 5)}${screwAt(114, 14, 5)}
+    ${screwAt(14, 178, 5)}${screwAt(114, 178, 5)}
     ${[[30, 82, 68], [30, 92, 52], [30, 102, 60], [30, 112, 36]].map(([x, y, w]) =>
-      `<rect x="${x}" y="${y}" width="${w}" height="3" fill="#45484c"/>`).join('')}`;
+      `<rect x="${x}" y="${y}" width="${w}" height="3" fill="${EMBOSS}"/>`).join('')}`;
   const side = `${casing(256, 32)}
-    <rect x="8" y="11" width="240" height="2" fill="${DARK}"/>
-    <rect x="8" y="19" width="240" height="2" fill="${DARK}"/>`;
-  const vents = `${casing(128, 32)}${slots(68, 8, 7, 8, 4, 16, DARK)}`;
+    <rect x="8" y="11" width="240" height="2" fill="${GROOVE}"/>
+    <rect x="8" y="19" width="240" height="2" fill="${GROOVE}"/>`;
+  const vents = `${casing(128, 32)}${slots(68, 8, 7, 8, 4, 16, RECESS)}`;
   const connector = `${casing(128, 32)}
-    <rect x="14" y="9" width="100" height="14" rx="2" fill="${DARK}"/>
-    ${slots(19, 12, 14, 6.8, 3.4, 8, '#8f7a3e')}`;
+    <rect x="14" y="9" width="100" height="14" rx="2" fill="${RECESS}"/>
+    ${slots(19, 12, 14, 6.8, 3.4, 8, PIN)}`;
+  const rect = (r, body, id) => height
+    ? `<g transform="translate(${r[0]} ${r[1]})">${body}</g>`
+    : inRect(r, body, id, TECH);
   return svg(size, [
-    inRect(faces.py, top, 'py', TECH),
-    inRect(faces.ny, bottom, 'ny', TECH),
-    inRect(faces.px, side, 'px', TECH),
-    inRect(faces.nz, vents, 'nz', TECH),
-    inRect(faces.pz, connector, 'pz', TECH),
+    rect(faces.py, top, 'py'),
+    rect(faces.ny, bottom, 'ny'),
+    rect(faces.px, side, 'px'),
+    rect(faces.nz, vents, 'nz'),
+    rect(faces.pz, connector, 'pz'),
   ].join(''));
 }
 
@@ -335,42 +353,54 @@ function dock() {
 
 // ── The dock's table ───────────────────────────
 
-function table() {
+/** The table, as its colour or (`height`) a height map, as the reader is. */
+function table(height = false) {
   const { size, faces } = TABLE_ATLAS;
-  const STEEL = '#464b51', FACE = '#4d5359', SEAM = '#24272a', KICK = '#2b2e32', HANDLE = '#8a9096', TOP = '#3f4449', LOUVRE = '#1c1e21';
+  const grey = v => { const g = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0'); return `#${g}${g}${g}`; };
+  const P = (colour, h) => (height ? grey(h) : colour);
+  const STEEL = P('#464b51', 0.5), FACE = P('#4d5359', 0.58), SEAM = P('#24272a', 0.3), KICK = P('#2b2e32', 0.4);
+  const HANDLE = P('#8a9096', 0.82), TOP = P('#3f4449', 0.56), LOUVRE = P('#1c1e21', 0.14);
+  const bevel_ = (...args) => (height ? '' : bevel(...args));
+  const gleam = str => (height ? '' : str);
+  const screwAt = (x, y, r) => height
+    ? `<circle cx="${x}" cy="${y}" r="${r}" fill="${grey(0.72)}"/>`
+    : screw(x, y, r, '#5a5f65', '#24272a');
   // A drawer or a door: a raised face in the frame, a bar handle.
   const panel = (x, y, w, h, handleY = 22) => `
     <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${SEAM}"/>
-    <rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="2" fill="${FACE}"/>${bevel(x + 3, y + 3, w - 6, h - 6, { k: 1.3 })}
-    <rect x="${x + w / 2 - 34}" y="${y + handleY}" width="68" height="9" rx="4" fill="${HANDLE}"/>${bevel(x + w / 2 - 34, y + handleY, 68, 9, { k: 1.6 })}`;
+    <rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="2" fill="${FACE}"/>${bevel_(x + 3, y + 3, w - 6, h - 6, { k: 1.3 })}
+    <rect x="${x + w / 2 - 34}" y="${y + handleY}" width="68" height="9" rx="4" fill="${HANDLE}"/>${bevel_(x + w / 2 - 34, y + handleY, 68, 9, { k: 1.6 })}`;
   // The front (−x), 1.95 m long: a lip under the top, three bays (stacked
   // drawers, a louvred door, stacked drawers), a kick plate along the foot.
-  const front = `<rect width="1024" height="394" fill="${STEEL}"/>${bevel(0, 0, 1024, 394)}
+  const front = `<rect width="1024" height="394" fill="${STEEL}"/>${bevel_(0, 0, 1024, 394)}
     <rect y="0" width="1024" height="16" fill="${TOP}"/><rect y="16" width="1024" height="3" fill="${SEAM}"/>
     ${panel(24, 30, 300, 98)}${panel(24, 134, 300, 98)}${panel(24, 238, 300, 98)}
     ${panel(700, 30, 300, 98)}${panel(700, 134, 300, 98)}${panel(700, 238, 300, 98)}
     <rect x="340" y="30" width="344" height="306" fill="${SEAM}"/>
-    <rect x="343" y="33" width="338" height="300" rx="2" fill="${FACE}"/>${bevel(343, 33, 338, 300, { k: 1.3 })}
+    <rect x="343" y="33" width="338" height="300" rx="2" fill="${FACE}"/>${bevel_(343, 33, 338, 300, { k: 1.3 })}
     ${Array.from({ length: 9 }, (_, i) => `<rect x="392" y="${70 + i * 22}" width="240" height="9" rx="3" fill="${LOUVRE}"/>
-      <rect x="392" y="${70 + i * 22}" width="240" height="2" fill="rgba(255,255,255,0.08)"/>`).join('')}
-    <rect x="652" y="150" width="10" height="70" rx="4" fill="${HANDLE}"/>${bevel(652, 150, 10, 70, { k: 1.6 })}
-    <rect y="346" width="1024" height="48" fill="${KICK}"/>${bevel(0, 346, 1024, 48, { sunk: true })}
+      ${gleam(`<rect x="392" y="${70 + i * 22}" width="240" height="2" fill="rgba(255,255,255,0.08)"/>`)}`).join('')}
+    <rect x="652" y="150" width="10" height="70" rx="4" fill="${HANDLE}"/>${bevel_(652, 150, 10, 70, { k: 1.6 })}
+    <rect y="346" width="1024" height="48" fill="${KICK}"/>${bevel_(0, 346, 1024, 48, { sunk: true })}
     ${slots(40, 362, 31, 31, 18, 16, LOUVRE)}`;
   // The worktop: a sheet of steel with a rolled edge, worn where things go.
-  const top = `<rect width="131" height="512" fill="${TOP}"/>${bevel(0, 0, 131, 512)}
+  const top = `<rect width="131" height="512" fill="${TOP}"/>${bevel_(0, 0, 131, 512)}
     <rect x="6" y="6" width="119" height="500" fill="none" stroke="${SEAM}" stroke-width="2"/>
-    ${screw(14, 14, 3, '#5a5f65', SEAM)}${screw(117, 14, 3, '#5a5f65', SEAM)}${screw(14, 498, 3, '#5a5f65', SEAM)}${screw(117, 498, 3, '#5a5f65', SEAM)}`;
+    ${screwAt(14, 14, 3)}${screwAt(117, 14, 3)}${screwAt(14, 498, 3)}${screwAt(117, 498, 3)}`;
   // The ends: a side panel in its frame, a lifting slot.
-  const end = `<rect width="341" height="512" fill="${STEEL}"/>${bevel(0, 0, 341, 512)}
+  const end = `<rect width="341" height="512" fill="${STEEL}"/>${bevel_(0, 0, 341, 512)}
     <rect y="0" width="341" height="21" fill="${TOP}"/><rect y="21" width="341" height="3" fill="${SEAM}"/>
-    <rect x="24" y="40" width="293" height="390" rx="3" fill="${FACE}"/>${bevel(24, 40, 293, 390, { k: 1.2 })}
+    <rect x="24" y="40" width="293" height="390" rx="3" fill="${FACE}"/>${bevel_(24, 40, 293, 390, { k: 1.2 })}
     <rect x="120" y="80" width="100" height="22" rx="10" fill="${LOUVRE}"/>
-    <rect y="450" width="341" height="62" fill="${KICK}"/>${bevel(0, 450, 341, 62, { sunk: true })}`;
+    <rect y="450" width="341" height="62" fill="${KICK}"/>${bevel_(0, 450, 341, 62, { sunk: true })}`;
   const look = { grime: 0.35, scratches: 0.9 };
+  const rect = (r, body, id) => height
+    ? `<g transform="translate(${r[0]} ${r[1]})">${body}</g>`
+    : inRect(r, body, id, look);
   return svg(size, [
-    inRect(faces.nx, front, 'nx', look),
-    inRect(faces.py, top, 'py', look),
-    inRect(faces.pz, end, 'pz', look),
+    rect(faces.nx, front, 'nx'),
+    rect(faces.py, top, 'py'),
+    rect(faces.pz, end, 'pz'),
   ].join(''));
 }
 
@@ -438,16 +468,15 @@ function bag() {
   ].join(''), defs);
 }
 
-for (const [name, draw] of [['drive', drive], ['drive-box', box], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock], ['dock-table', table]]) {
+for (const [name, draw] of [['drive', () => drive()], ['drive-box', box], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock], ['dock-table', () => table()]]) {
   const out = `${outDir}/${name}.png`;
   await sharp(Buffer.from(draw())).png({ compressionLevel: 9, palette: true }).toFile(out);
   console.log(`wrote ${out}`);
 }
 
-// The reader's relief, from the same shapes as its colour.
-{
-  const { size, faces } = READER_ATLAS;
-  const out = `${outDir}/drive-reader-normal.png`;
-  await (await normalMap(reader(true), size, Object.values(faces), 4)).png({ compressionLevel: 9 }).toFile(out);
+// The reader's, the drive's and the table's relief, from the same shapes as their colour.
+for (const [name, draw, { size, faces }] of [['drive-reader-normal', reader, READER_ATLAS], ['drive-normal', drive, DRIVE_ATLAS], ['dock-table-normal', table, TABLE_ATLAS]]) {
+  const out = `${outDir}/${name}.png`;
+  await (await normalMap(draw(true), size, Object.values(faces), 4)).png({ compressionLevel: 9 }).toFile(out);
   console.log(`wrote ${out}`);
 }

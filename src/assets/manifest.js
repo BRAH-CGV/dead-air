@@ -383,6 +383,10 @@ const PLACED = {
     url: 'assets/textures/drive.png',
     colorSpace: 'srgb',
   },
+  'tex:drive-normal': {
+    type: 'texture',
+    url: 'assets/textures/drive-normal.png',
+  },
   'tex:drive-box': {
     type: 'texture',
     url: 'assets/textures/drive-box.png',
@@ -412,6 +416,10 @@ const PLACED = {
     type: 'texture',
     url: 'assets/textures/dock-table.png',
     colorSpace: 'srgb',
+  },
+  'tex:dock-table-normal': {
+    type: 'texture',
+    url: 'assets/textures/dock-table-normal.png',
   },
   // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
   // (the tables lay their UVs out in metres).

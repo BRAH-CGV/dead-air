@@ -138,13 +138,15 @@ describe('Drive', () => {
     expect(drive._material.emissiveIntensity).toBe(0);
   });
 
-  it('the casing wears tex:drive once _init finds it loaded, and never frees it', () => {
+  it('the casing wears tex:drive and its normal map once _init finds them loaded, and never frees them', () => {
     const drive = new Drive();
     const tex = new THREE.Texture();
     const engine = makeFakeEngine();
-    engine.assets = { has: k => k === 'tex:drive', get: () => tex };
+    const normal = new THREE.Texture();
+    engine.assets = { has: k => k === 'tex:drive' || k === 'tex:drive-normal', get: k => (k === 'tex:drive' ? tex : normal) };
     drive._init(makeFakeScene(engine), engine.world);
     expect(drive._bodyMaterial.map).toBe(tex);
+    expect(drive._bodyMaterial.normalMap).toBe(normal);
     expect(drive._bodyMaterial.color.getHex()).toBe(0xffffff);
     tex.dispose = vi.fn();
     drive.dispose();
