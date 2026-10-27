@@ -20,6 +20,7 @@ import { Layers, packGroups } from './PhysicsLayers.js';
 import { PhysicsDebug } from './PhysicsDebug.js';
 import { DebugCamera } from './DebugCamera.js';
 import { Fullbright } from './Fullbright.js';
+import { MouseSpikeFilter } from './MouseSpikes.js';
 import { OfficeScene } from '../scenes/OfficeScene.js';
 import { TestScene } from '../scenes/TestScene.js';
 import { BaseScene } from '../scenes/BaseScene.js';
@@ -140,9 +141,10 @@ export class Engine {
   revealed = new Promise((resolve) => { this._resolveRevealed = resolve; });
 
   // ── Input ─────────────────────────────────
-  // Touchpads can occasionally emit one huge movement event. Cap each raw
-  // event before accumulation; FirstPersonController also caps the frame total.
-  mouseEventMaxDelta = 40;
+  // Touchpads can occasionally emit one huge movement event out of nowhere;
+  // it is dropped, not clamped, so a fast flick still turns as far as the
+  // mouse went (MouseSpikes.js, #117).
+  _mouseSpikes = new MouseSpikeFilter();
   input = {
     keys: {},
     pressed: {},
@@ -299,11 +301,13 @@ export class Engine {
       this.input.locked = document.pointerLockElement === canvas;
       this.input.mouse.dx = 0;
       this.input.mouse.dy = 0;
+      this._mouseSpikes.reset();
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.input.locked) return;
-      this.input.mouse.dx += this._clampMouseEventDelta(e.movementX);
-      this.input.mouse.dy += this._clampMouseEventDelta(e.movementY);
+      if (!this._mouseSpikes.accept(e.movementX, e.movementY)) return;
+      this.input.mouse.dx += e.movementX;
+      this.input.mouse.dy += e.movementY;
     });
 
     // ── Mouse wheel (scroll) ──
@@ -851,11 +855,6 @@ export class Engine {
     this.input.mouse.dy = 0;
     this.input.mouse.wheel = 0;
     this.input.pressed = {};
-  }
-
-  _clampMouseEventDelta(delta) {
-    if (!Number.isFinite(delta)) return 0;
-    return Math.max(-this.mouseEventMaxDelta, Math.min(this.mouseEventMaxDelta, delta));
   }
 
   /** Snapshot every rigid-body transform BEFORE world.step(). */
