@@ -63,6 +63,19 @@ describe('WhiteOut', () => {
     expect(message().classList.contains('is-shown')).toBe(true);
   });
 
+  it('black: black at once, and it stays black', () => {
+    whiteOut.play('Gone.', { tone: 'black', messageDelayMs: 900 });
+    expect(white()).toBe(true);
+    expect(root.classList.contains('is-black')).toBe(true);
+    expect(root.classList.contains('is-blood')).toBe(false);
+    expect(root.style.transition).toMatch(/opacity 0ms/);
+    vi.advanceTimersByTime(5000);
+    expect(root.style.backgroundColor).toMatch(/rgb\(0, 0, 0\)|#000/);
+    expect(message().textContent).toBe('Gone.');
+    whiteOut.play('You were taken.');
+    expect(root.classList.contains('is-black')).toBe(false);
+  });
+
   it('the next plain white-out is white again', () => {
     whiteOut.play('x', { tone: 'blood' });
     vi.advanceTimersByTime(5000);

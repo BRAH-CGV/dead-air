@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GlobeSound, GLOBE_SOUND } from './GlobeSound.js';
+import { GlobeSound, GLOBE_SOUND, boomBuffer } from './GlobeSound.js';
 import { GlobeSpin } from './GlobeSpin.js';
 import { GameObject } from '../core/GameObject.js';
 import { ASSETS } from '../assets/manifest.js';
@@ -153,5 +153,64 @@ describe('GlobeSound — the pop as it turns to cheese (#169)', () => {
     expect(g.pop.stop).toHaveBeenCalled();
     g.sound.onDestroy();
     expect(g.pop.disconnect).toHaveBeenCalled();
+  });
+});
+
+describe('GlobeSound — the boom as the cheese goes off', () => {
+  function buildWithBoom() {
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin({ screenPoof: () => {}, screenFlash: () => {} }));
+    const voices = Array.from({ length: GLOBE_SOUND.voices }, fakeSound);
+    const pop = fakeSound();
+    const boom = fakeSound();
+    const sound = globe.addComponent(new GlobeSound({ voices, pop, boom }));
+    sound.onStart();
+    return { spin, sound, voices, pop, boom };
+  }
+
+  it('booms once, at its level, the moment it goes off, everything else cut', () => {
+    const g = buildWithBoom();
+    for (let i = 0; i < 200 && !g.spin.blasted; i++) { push(g); run(g, 1 / 8); }
+    expect(g.spin.blasted).toBe(true);
+    expect(g.boom.play).toHaveBeenCalledTimes(1);
+    expect(g.boom.volume).toBe(GLOBE_SOUND.boom.volume);
+    expect(g.voices.every(v => !v.isPlaying)).toBe(true);
+    run(g, 3);
+    expect(g.boom.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('no boom for the cheese spun a little', () => {
+    const g = buildWithBoom();
+    for (let i = 0; i < 80 && !g.spin.cheese; i++) { push(g); run(g, 1 / 8); }
+    push(g);
+    run(g, 3);
+    expect(g.boom.play).not.toHaveBeenCalled();
+  });
+
+  it('stops the boom on a pause and lets it go when torn down', () => {
+    const g = buildWithBoom();
+    g.boom.isPlaying = true;
+    g.sound._onPause(true);
+    expect(g.boom.stop).toHaveBeenCalled();
+    g.sound.onDestroy();
+    expect(g.boom.disconnect).toHaveBeenCalled();
+  });
+
+  it('is made, not loaded: loud from the first instant, dying away, never clipping, the same every time', () => {
+    const sampleRate = 8000;
+    const context = {
+      sampleRate,
+      createBuffer: (channels, length, rate) => {
+        const data = new Float32Array(length);
+        return { length, sampleRate: rate, numberOfChannels: channels, getChannelData: () => data };
+      },
+    };
+    const data = boomBuffer(context, { seconds: 2 }).getChannelData(0);
+    expect(data.length).toBe(2 * sampleRate);
+    const peak = (from, to) => data.subarray(from * sampleRate, to * sampleRate).reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    expect(peak(0, 0.2)).toBeGreaterThan(0.6);
+    expect(peak(1.6, 2)).toBeLessThan(peak(0, 0.2) / 4);
+    expect(peak(0, 2)).toBeLessThanOrEqual(1);
+    expect(boomBuffer(context, { seconds: 2 }).getChannelData(0)).toEqual(data);
   });
 });

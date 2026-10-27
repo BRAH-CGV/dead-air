@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { Interactable } from './Interactable.js';
 import { createCheeseBall } from '../gameobjects/CheeseBall.js';
 import { createCloudPoof } from '../gameobjects/CloudPoof.js';
+import { createCheeseBlast } from '../gameobjects/CheeseBlast.js';
 import { showToonPoof } from '../ui/ToonPoof.js';
+import { showBlastFlash } from '../ui/BlastFlash.js';
 
 // ─────────────────────────────────────────────
 // GlobeSpin  –  [E] gives the desk globe a little spin on its stand
@@ -25,9 +27,14 @@ import { showToonPoof } from '../ui/ToonPoof.js';
 // size, which pops in and spins on as the globe did, for the rest of the
 // run. It turns in a cartoon cloud (CloudPoof, held upright while the
 // globe spins under it) and, if the globe is in view, a small burst of
-// comic lines on the screen over it (ToonPoof). The ball and the cloud are built hidden
-// on awake, so their shaders are compiled with the scene rather than on
-// the moment they appear.
+// comic lines on the screen over it (ToonPoof).
+//
+// Mash the cheese the same way and it goes off: a fireball and flung
+// chunks (CheeseBlast), the screen flaring from it (BlastFlash), and
+// `blackAfter` seconds later `onBlast`, which the scene takes as the
+// player's death. The ball, the cloud and the blast are built hidden on
+// awake, so their shaders are compiled with the scene rather than on the
+// moment they appear.
 // ─────────────────────────────────────────────
 
 /** The globe's polar axis in mars-globe.glb's own space, read off the mesh
@@ -52,6 +59,10 @@ export class GlobeSpin extends Interactable {
   strain = 0;
   /** Whether it has become a ball of cheese. */
   cheese = false;
+  /** Whether the cheese has gone off. */
+  blasted = false;
+  /** Called `blackAfter` seconds after it goes off. @type {(() => void)|null} */
+  onBlast = null;
 
   /**
    * @param {object} [opts]
@@ -65,14 +76,17 @@ export class GlobeSpin extends Interactable {
    * @param {number} [opts.cheeseAt=20]  Strain at which it turns to cheese: about 3 s of mashing at 8 presses a second
    * @param {number} [opts.radius=0.143]  The globe's radius, metres: the cheese's
    * @param {number} [opts.popSeconds=0.35]  How long the cheese takes to pop in
+   * @param {number} [opts.blastAt]  Strain, mashing the cheese, at which it goes off: `cheeseAt` left out
+   * @param {number} [opts.blackAfter=0.2]  Seconds from it going off to `onBlast`
    * @param {(x: number, y: number) => void} [opts.screenPoof]  The on-screen burst, at page pixels
+   * @param {(x: number, y: number) => void} [opts.screenFlash]  The screen flaring as it goes off, at page pixels
    * @param {() => ({ camera: THREE.Camera, canvas: { getBoundingClientRect(): DOMRect } }|null)} [opts.view]
    *   What the frame is drawn through; left out, the engine's camera and canvas
    */
   constructor({
     axis = GLOBE_AXIS, kick = 8, friction = 1.3, maxSpeed = 16, stopSpeed = 0.08,
     strainFrom = 0.75, strainDecay = 1.5, cheeseAt = 20, radius = 0.143, popSeconds = 0.35,
-    screenPoof = showToonPoof, view = null,
+    blastAt = cheeseAt, blackAfter = 0.2, screenPoof = showToonPoof, screenFlash = showBlastFlash, view = null,
   } = {}) {
     super();
     this.kick = kick;
@@ -84,7 +98,10 @@ export class GlobeSpin extends Interactable {
     this.cheeseAt = cheeseAt;
     this.radius = radius;
     this.popSeconds = popSeconds;
+    this.blastAt = blastAt;
+    this.blackAfter = blackAfter;
     this.screenPoof = screenPoof;
+    this.screenFlash = screenFlash;
     this._view = view;
 
     this._axis = new THREE.Vector3(...axis).normalize();
@@ -98,6 +115,10 @@ export class GlobeSpin extends Interactable {
     this._pop = null;
     /** The cloud it turns in, built hidden on awake. */
     this._poof = null;
+    /** The blast, built hidden on awake. */
+    this._blast = null;
+    /** Seconds left until `onBlast`; null when not counting. */
+    this._toBlack = null;
   }
 
   get spinning() { return this.speed > 0; }
@@ -107,15 +128,28 @@ export class GlobeSpin extends Interactable {
   }
 
   onInteract() {
+    if (this.blasted) return;
     this._rest ??= this.gameObject.object3d.quaternion.clone();
     if (this.speed >= this.strainFrom * this.maxSpeed) this.strain++;
     this.speed = Math.min(this.maxSpeed, this.speed + this.kick);
     this.pushes++;
     if (!this.cheese && this.strain >= this.cheeseAt) this._becomeCheese();
+    else if (this.cheese && this.strain >= this.blastAt) this._goOff();
   }
 
   onUpdate(dt) {
     this.strain = Math.max(0, this.strain - this.strainDecay * dt);
+    if (this._toBlack !== null) {
+      this._toBlack -= dt;
+      if (this._toBlack <= 0) {
+        this._toBlack = null;
+        this.onBlast?.();
+      }
+    }
+    if (this._blast?.playing) {
+      this._blast.quaternion.copy(this.gameObject.object3d.quaternion).invert();
+      this._blast.update(dt);
+    }
     if (this._pop !== null) this._popIn(dt);
     if (this.speed !== 0) {
       this.angle = (this.angle + this.speed * dt) % TWO_PI;
@@ -139,6 +173,9 @@ export class GlobeSpin extends Interactable {
     this._poof?.removeFromParent();
     this._poof?.dispose();
     this._poof = null;
+    this._blast?.removeFromParent();
+    this._blast?.dispose();
+    this._blast = null;
   }
 
   _buildBall() {
@@ -146,34 +183,58 @@ export class GlobeSpin extends Interactable {
     this._ball = createCheeseBall({ radius: this.radius });
     this._ball.visible = false;
     this._poof = createCloudPoof({ radius: this.radius });
-    this.gameObject.object3d.add(this._ball, this._poof);
+    this._blast = createCheeseBlast({ radius: this.radius });
+    this.gameObject.object3d.add(this._ball, this._poof, this._blast);
   }
 
   /** The globe's own model goes, the cheese pops in where it was. */
   _becomeCheese() {
     this._buildBall();
     this.cheese = true;
+    // Mashing it again starts from nothing.
+    this.strain = 0;
     this.promptLabel = '[E] Spin the cheese';
     for (const child of this.gameObject.object3d.children) {
-      if (child !== this._ball && child !== this._poof) child.visible = false;
+      if (child !== this._ball && child !== this._poof && child !== this._blast) child.visible = false;
     }
     this._ball.visible = true;
     this._ball.scale.setScalar(0);
     this._pop = 0;
     this._poof.quaternion.copy(this.gameObject.object3d.quaternion).invert();
     this._poof.play();
-    this._showScreenPoof();
+    this._showOnScreen(this.screenPoof);
     this._redrawShadows();
   }
 
-  /** The comic burst over the globe, if the globe is in front of the view. */
-  _showScreenPoof() {
+  /** The cheese goes, the blast goes off where it was, and the count to
+   *  `onBlast` starts. */
+  _goOff() {
+    this._buildBall();
+    this.blasted = true;
+    this.promptLabel = '';
+    this.speed = 0;
+    this._pop = null;
+    this._ball.visible = false;
+    this._poof.visible = this._poof.playing = false;
+    this._blast.quaternion.copy(this.gameObject.object3d.quaternion).invert();
+    this._blast.play();
+    this._showOnScreen(this.screenFlash, { offScreen: true });
+    this._toBlack = this.blackAfter;
+    this._redrawShadows();
+  }
+
+  /** `show` at the globe's page pixels, if the globe is in front of the
+   *  view; `offScreen`, at the middle of the page when it isn't. */
+  _showOnScreen(show, { offScreen = false } = {}) {
     const view = this._view ? this._view() : this._engineView();
-    if (!view?.camera || !view.canvas) return;
+    if (!show || !view?.camera || !view.canvas) return;
     const p = _screen.setFromMatrixPosition(this.gameObject.object3d.matrixWorld).project(view.camera);
-    if (p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) return;
     const rect = view.canvas.getBoundingClientRect();
-    this.screenPoof(rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height);
+    if (p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) {
+      if (offScreen) show(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return;
+    }
+    show(rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height);
   }
 
   _engineView() {
