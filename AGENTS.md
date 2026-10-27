@@ -121,7 +121,7 @@ src/
 │   ├── BeanProcessor.js # The office's coffee bean processor: side hopper, process window, bay and chute, plates; merged by material; its solids
 │   ├── CoffeeGoods.js   # CoffeeBeans (a pile) and CoffeeBag (ground coffee): carried like drives, parked out of play between uses
 │   ├── DriveReader.js   # The drive readers' size, front slot (a drive half in, pins first), material and textures (normal map)
-│   ├── propAtlases.js   # Texture atlases for the drives, drive boxes, coffee bag, drive readers and box dock: a rectangle a face (mapBoxFaces, skinBox); drawn by scripts/make-prop-textures.mjs
+│   ├── propAtlases.js   # Texture atlases for the drives, drive boxes, coffee bag, drive readers, box dock and its table: a rectangle a face (mapBoxFaces, skinBox); drawn by scripts/make-prop-textures.mjs
 │   ├── GrowPlant.js     # A procedural coffee bush: stems, leaves, pale beans the rack tints (three geometries)
 │   ├── BunkerShell.js   # The building's outside: sloped concrete berm, roof cap, rust band, window embrasure (baked textures)
 │   ├── SignalMast.js    # Lattice relay mast on the bunker roof; red lamp flashing (SignalBlink), no light

@@ -408,6 +408,11 @@ const PLACED = {
     url: 'assets/textures/box-dock.png',
     colorSpace: 'srgb',
   },
+  'tex:dock-table': {
+    type: 'texture',
+    url: 'assets/textures/dock-table.png',
+    colorSpace: 'srgb',
+  },
   // The bedroom's tables: Poly Haven's worn table wood, 0.55 m a repeat
   // (the tables lay their UVs out in metres).
   'tex:wood-table': {

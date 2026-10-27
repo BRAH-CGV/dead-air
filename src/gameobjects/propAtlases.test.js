@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { mapBoxFaces, cachedTexture, skinBox, DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS, READER_ATLAS, DOCK_ATLAS } from './propAtlases.js';
+import { mapBoxFaces, cachedTexture, skinBox, DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS, READER_ATLAS, DOCK_ATLAS, TABLE_ATLAS } from './propAtlases.js';
 
 /** The uv range a face of `geometry` covers. */
 function faceRange(geometry, g) {
@@ -29,7 +29,7 @@ describe('mapBoxFaces', () => {
   });
 
   it('keeps every rectangle inside its atlas', () => {
-    for (const atlas of [DRIVE_ATLAS, BOX_ATLAS, READER_ATLAS, DOCK_ATLAS]) {
+    for (const atlas of [DRIVE_ATLAS, BOX_ATLAS, READER_ATLAS, DOCK_ATLAS, TABLE_ATLAS]) {
       for (const [x, y, w, h] of Object.values(atlas.faces)) {
         expect(x + w).toBeLessThanOrEqual(atlas.size[0]);
         expect(y + h).toBeLessThanOrEqual(atlas.size[1]);

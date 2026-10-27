@@ -12,6 +12,8 @@
 //                       slides into, a cover plate, grille and vents
 //   drive-reader-normal.png  their relief, a normal map made from a height
 //                       map of the same shapes
+//   dock-table.png      the table under it: a steel cabinet, drawers and a
+//                       louvred door, a kick plate, a worn worktop
 //   box-dock.png        the airlock's box dock: a steel plate, a ribbed
 //                       rubber pad for the box and guide blocks round it
 //
@@ -22,7 +24,7 @@
 // Usage: node scripts/make-prop-textures.mjs [outDir]
 // ─────────────────────────────────────────────
 import sharp from 'sharp';
-import { DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS, READER_ATLAS, DOCK_ATLAS } from '../src/gameobjects/propAtlases.js';
+import { DRIVE_ATLAS, BOX_ATLAS, BAG_ATLAS, READER_ATLAS, DOCK_ATLAS, TABLE_ATLAS } from '../src/gameobjects/propAtlases.js';
 
 const outDir = process.argv[2] ?? 'public/assets/textures';
 const SANS = 'DejaVu Sans, sans-serif';
@@ -331,6 +333,47 @@ function dock() {
   ].join(''));
 }
 
+// ── The dock's table ───────────────────────────
+
+function table() {
+  const { size, faces } = TABLE_ATLAS;
+  const STEEL = '#464b51', FACE = '#4d5359', SEAM = '#24272a', KICK = '#2b2e32', HANDLE = '#8a9096', TOP = '#3f4449', LOUVRE = '#1c1e21';
+  // A drawer or a door: a raised face in the frame, a bar handle.
+  const panel = (x, y, w, h, handleY = 22) => `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${SEAM}"/>
+    <rect x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="2" fill="${FACE}"/>${bevel(x + 3, y + 3, w - 6, h - 6, { k: 1.3 })}
+    <rect x="${x + w / 2 - 34}" y="${y + handleY}" width="68" height="9" rx="4" fill="${HANDLE}"/>${bevel(x + w / 2 - 34, y + handleY, 68, 9, { k: 1.6 })}`;
+  // The front (−x), 1.95 m long: a lip under the top, three bays (stacked
+  // drawers, a louvred door, stacked drawers), a kick plate along the foot.
+  const front = `<rect width="1024" height="394" fill="${STEEL}"/>${bevel(0, 0, 1024, 394)}
+    <rect y="0" width="1024" height="16" fill="${TOP}"/><rect y="16" width="1024" height="3" fill="${SEAM}"/>
+    ${panel(24, 30, 300, 98)}${panel(24, 134, 300, 98)}${panel(24, 238, 300, 98)}
+    ${panel(700, 30, 300, 98)}${panel(700, 134, 300, 98)}${panel(700, 238, 300, 98)}
+    <rect x="340" y="30" width="344" height="306" fill="${SEAM}"/>
+    <rect x="343" y="33" width="338" height="300" rx="2" fill="${FACE}"/>${bevel(343, 33, 338, 300, { k: 1.3 })}
+    ${Array.from({ length: 9 }, (_, i) => `<rect x="392" y="${70 + i * 22}" width="240" height="9" rx="3" fill="${LOUVRE}"/>
+      <rect x="392" y="${70 + i * 22}" width="240" height="2" fill="rgba(255,255,255,0.08)"/>`).join('')}
+    <rect x="652" y="150" width="10" height="70" rx="4" fill="${HANDLE}"/>${bevel(652, 150, 10, 70, { k: 1.6 })}
+    <rect y="346" width="1024" height="48" fill="${KICK}"/>${bevel(0, 346, 1024, 48, { sunk: true })}
+    ${slots(40, 362, 31, 31, 18, 16, LOUVRE)}`;
+  // The worktop: a sheet of steel with a rolled edge, worn where things go.
+  const top = `<rect width="131" height="512" fill="${TOP}"/>${bevel(0, 0, 131, 512)}
+    <rect x="6" y="6" width="119" height="500" fill="none" stroke="${SEAM}" stroke-width="2"/>
+    ${screw(14, 14, 3, '#5a5f65', SEAM)}${screw(117, 14, 3, '#5a5f65', SEAM)}${screw(14, 498, 3, '#5a5f65', SEAM)}${screw(117, 498, 3, '#5a5f65', SEAM)}`;
+  // The ends: a side panel in its frame, a lifting slot.
+  const end = `<rect width="341" height="512" fill="${STEEL}"/>${bevel(0, 0, 341, 512)}
+    <rect y="0" width="341" height="21" fill="${TOP}"/><rect y="21" width="341" height="3" fill="${SEAM}"/>
+    <rect x="24" y="40" width="293" height="390" rx="3" fill="${FACE}"/>${bevel(24, 40, 293, 390, { k: 1.2 })}
+    <rect x="120" y="80" width="100" height="22" rx="10" fill="${LOUVRE}"/>
+    <rect y="450" width="341" height="62" fill="${KICK}"/>${bevel(0, 450, 341, 62, { sunk: true })}`;
+  const look = { grime: 0.35, scratches: 0.9 };
+  return svg(size, [
+    inRect(faces.nx, front, 'nx', look),
+    inRect(faces.py, top, 'py', look),
+    inRect(faces.pz, end, 'pz', look),
+  ].join(''));
+}
+
 // ── The coffee bag ─────────────────────────────
 
 function bag() {
@@ -395,7 +438,7 @@ function bag() {
   ].join(''), defs);
 }
 
-for (const [name, draw] of [['drive', drive], ['drive-box', box], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock]]) {
+for (const [name, draw] of [['drive', drive], ['drive-box', box], ['coffee-bag', bag], ['drive-reader', () => reader()], ['box-dock', dock], ['dock-table', table]]) {
   const out = `${outDir}/${name}.png`;
   await sharp(Buffer.from(draw())).png({ compressionLevel: 9, palette: true }).toFile(out);
   console.log(`wrote ${out}`);

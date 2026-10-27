@@ -95,6 +95,21 @@ export const DOCK_ATLAS = Object.freeze({
   },
 });
 
+/** The table under the airlock's dock (0.5 × 0.75 × 1.95 m, its back to
+ *  the wall at +x): a steel cabinet, drawers and a louvred door on its front
+ *  (−x), a worn worktop. */
+export const TABLE_ATLAS = Object.freeze({
+  size: [1024, 1024],
+  faces: {
+    nx: [0, 0, 1024, 394],
+    px: [0, 0, 1024, 394],
+    py: [0, 394, 131, 512],
+    ny: [0, 394, 131, 512],
+    pz: [131, 394, 341, 512],
+    nz: [131, 394, 341, 512],
+  },
+});
+
 const FACE_ORDER = ['px', 'nx', 'py', 'ny', 'pz', 'nz'];
 
 /**

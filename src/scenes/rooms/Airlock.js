@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { skinBox, assetTexture, DOCK_ATLAS } from '../../gameobjects/propAtlases.js';
+import { skinBox, assetTexture, DOCK_ATLAS, TABLE_ATLAS } from '../../gameobjects/propAtlases.js';
 import { Corridor } from './Corridor.js';
 import { Component } from '../../core/Component.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -213,6 +213,8 @@ export class Airlock extends Corridor {
     const tableSize = [0.5, 0.75, 1.95];
     const tableMat = this._own(new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.6, metalness: 0.4 }));
     this.dockTable = this._addStaticBox('DockTable', [inX - tableSize[0] / 2, tableSize[1] / 2, 0], tableSize, tableMat);
+    // A steel cabinet: drawers and a louvred door to the chamber.
+    skinBox(this.dockTable.object3d.children[0], assetTexture(this.engine?.assets, 'tex:dock-table'), TABLE_ATLAS);
 
     const dockSize = [0.42, 0.12, 0.36];
     const dockPos = [inX - dockSize[0] / 2 - 0.05, tableSize[1] + dockSize[1] / 2, 0];
