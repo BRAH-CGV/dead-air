@@ -1,18 +1,22 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { flattenModelParts } from '../core/ModelUtils.js';
-import { buildGrowPlant } from './GrowPlant.js';
+import { buildGrowPlant, GROW_PLANT } from './GrowPlant.js';
 
 // The food corner's grow rack: a two-tier steel rack of soil trays, each tier
-// under a row of UV grow lights, two plants to a tray.
+// under a row of UV grow lights, two coffee bushes to a tray (#168).
 //
 //   • Frame, boards, lips, braces, pipes: plain boxes and cylinders, merged
 //     by material, so the whole frame is a handful of draw calls.
 //   • The grow lights are the ceiling light model (`model:light-ceiling`),
 //     flipped to hang face-down, one over each tray, with its glow coloured UV.
 //     One InstancedMesh.
-//   • The plants are our own cherry-tomato plants (GrowPlant.js), built once
-//     and instanced: three InstancedMeshes (stems, leaves, fruit) for all twelve.
+//   • The plants are our own coffee bushes (GrowPlant.js), built once and
+//     instanced: three InstancedMeshes (stems, leaves, fruit) for all twelve.
+//     The beans carry an instance colour, so setBush(i, state) shows each
+//     bush ripe (a dull red-brown), unripe (green) or picked (its beans
+//     gone) without a new draw call or a recompile. The CoffeeHarvest says
+//     which is which.
 //   • No real lights: the light count is compiled into every lit shader. The
 //     fixtures glow and the plants carry a faint UV wash of emissive, both
 //     found by the PowerGrid, so a power cut darkens them.
@@ -35,6 +39,10 @@ export const GROW_RACK = {
 /** The grow lights' glow, and the faint wash they leave on the plants. */
 export const UV_LIGHT = { color: 0x8a2eff, intensity: 1.4 };
 const PLANT_WASH = { color: 0x4b1a8a, intensity: 0.12 };
+
+/** The beans' colours on the bush: ripe (a dull brownish red, not a bright
+ *  berry red), and not yet. */
+export const BEAN = Object.freeze({ ripe: 0x7a3a22, unripe: 0x5a6e34 });
 
 /** Each plant grows to between these multiples of GROW_PLANT.height. */
 const PLANT_SCALE = [0.9, 1.1];
@@ -63,7 +71,9 @@ function rng(seed) {
  * @param {import('../core/AssetManager.js').AssetManager} [opts.assets]
  * @param {(resource: { dispose(): void }) => any} opts.own  Registers what it
  *   made to be freed with the room.
- * @returns {{ fixtures: THREE.InstancedMesh | null, plants: THREE.InstancedMesh[] }}
+ * @returns {{ fixtures: THREE.InstancedMesh | null, plants: THREE.InstancedMesh[],
+ *   bushes: THREE.Vector3[], setBush(i: number, state: 'ripe'|'unripe'|'picked'): void }}
+ *   `bushes`: each bush's middle, rack-local, for aiming at one.
  */
 export function populateGrowRack(target, { assets, own }) {
   const { size, tiers, trayZ, plantsPerTray, seed } = GROW_RACK;
@@ -198,6 +208,7 @@ export function populateGrowRack(target, { assets, own }) {
   }));
   const rand = rng(seed);
   const plantMatrices = [];
+  const bushes = [];
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const scale = new THREE.Vector3();
@@ -206,22 +217,35 @@ export function populateGrowRack(target, { assets, own }) {
       for (let i = 0; i < plantsPerTray; i++) {
         const along = (i - (plantsPerTray - 1) / 2) * 0.5 + (rand() - 0.5) * 0.08;
         const s = PLANT_SCALE[0] + rand() * (PLANT_SCALE[1] - PLANT_SCALE[0]);
-        plantMatrices.push(new THREE.Matrix4().compose(
-          new THREE.Vector3((rand() - 0.5) * 0.03, shelf + SOIL_TOP - ROOT_SINK - half, z + along),
-          q.setFromAxisAngle(up, rand() * Math.PI * 2),
-          scale.setScalar(s),
-        ));
+        const foot = new THREE.Vector3((rand() - 0.5) * 0.03, shelf + SOIL_TOP - ROOT_SINK - half, z + along);
+        plantMatrices.push(new THREE.Matrix4().compose(foot, q.setFromAxisAngle(up, rand() * Math.PI * 2), scale.setScalar(s)));
+        bushes.push(foot.clone().setY(foot.y + GROW_PLANT.height * s * 0.55));
       }
     }
   }
   const plants = instancedAll('GrowPlants', plantParts, plantMatrices, part => own(new THREE.MeshStandardMaterial({
     vertexColors: true,
-    emissive: PLANT_WASH.color,
-    emissiveIntensity: PLANT_WASH.intensity,
+    // The UV wash on stems and leaves only: on the dark beans it read purple.
+    emissive: part.kind === 'fruit' ? 0x000000 : PLANT_WASH.color,
+    emissiveIntensity: part.kind === 'fruit' ? 0 : PLANT_WASH.intensity,
     ...plantMaterial[part.kind],
   })), { castShadow: false });
 
-  return { fixtures: fixtures ?? null, plants };
+  // The beans: one colour each bush, set before the first draw so the
+  // shader is compiled with instance colours.
+  const fruit = plants.find(p => p.name === 'GrowPlants_fruit');
+  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+  const tint = new THREE.Color();
+  const setBush = (i, state) => {
+    if (!fruit || i < 0 || i >= plantMatrices.length) return;
+    fruit.setMatrixAt(i, state === 'picked' ? hidden : plantMatrices[i]);
+    fruit.setColorAt(i, tint.setHex(state === 'ripe' ? BEAN.ripe : BEAN.unripe));
+    fruit.instanceMatrix.needsUpdate = true;
+    fruit.instanceColor.needsUpdate = true;
+  };
+  for (let i = 0; i < plantMatrices.length; i++) setBush(i, 'unripe');
+
+  return { fixtures: fixtures ?? null, plants, bushes, setBush };
 
   // ── Instancing helpers, closed over target and own. ──
   /** The first part of a model, instanced at `matrices`. */

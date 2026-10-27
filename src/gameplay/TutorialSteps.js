@@ -6,8 +6,10 @@
 // desk, a drive from it into the reader, a signal found, scanned and saved,
 // the drive carried to the server room's processing console and processed
 // there, then boxed and the box docked (a quota of one); a storm that takes
-// the power, the flashlight, the generator brought back; a nap until 6 AM,
-// the box sent off in the buggy, and the sleep that starts night 1.
+// the power, the flashlight, the generator brought back; stamina, and a
+// coffee made from the bush to the cup (#168), a nap the other way back;
+// a nap until 6 AM, the box sent off in the buggy, and the sleep that
+// starts night 1.
 //
 // A step is either timed (`seconds`) or waits on a test of what the player
 // has done (`done(ctx)`). `ctx` is a plain object of booleans the Tutorial
@@ -16,6 +18,9 @@
 //   holdingBox, boxOnDesk, driveIn, terminalOpen, onSignal, scanning,
 //   scanned, saved, driveAtConsole, consoleOpen, processed, boxed, quotaMet,
 //   powerOn, flashlightOn, suitOn, napping, morning, boxInBuggy, dispatched
+//
+// and `coffee`, how far the night's coffee has got (COFFEE_STAGE), so a
+// player who runs ahead with it skips the steps already done.
 //
 // The runner skips past a step that is already done, so a player who runs
 // ahead is never told to do what they already did. `target` names what the
@@ -38,6 +43,12 @@ export const CONSOLE_HINT = Object.freeze({
   title: 'USE THE PROCESSING CONSOLE',
   text: 'Put the drive in its reader and [E] at the console at the back of the server room.',
   target: 'serverConsole',
+});
+
+/** How far the night's coffee has got, for `ctx.coffee`: the furthest yet. */
+export const COFFEE_STAGE = Object.freeze({
+  none: 0, beans: 1, loaded: 2, processing: 3, bagged: 4, bagInHand: 5,
+  bagIn: 6, brewing: 7, brewed: 8, drunk: 9,
 });
 
 export const TUTORIAL_STEPS = Object.freeze([
@@ -100,6 +111,27 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'inside', title: 'GET BACK INSIDE', target: 'locker',
     text: 'Take the suit off in the airlock.',
     done: c => !c.suitOn },
+
+  // Stamina, and a coffee made from the bush to the cup (#168).
+  { id: 'stamina', seconds: 7, title: 'STAMINA',
+    text: 'Staying awake wears you down. Watch your stamina bar. Coffee brings it back up.' },
+  { id: 'harvest', title: 'HARVEST COFFEE BEANS', target: 'bush',
+    text: 'In the grow rack, [E] on a bush with ripe, dark red beans.',
+    done: c => c.coffee >= COFFEE_STAGE.beans },
+  { id: 'processBeans', title: 'PROCESS THE BEANS', target: 'processor',
+    text: 'Drop the beans by the bean processor, then [E] to process them.',
+    done: c => c.coffee >= COFFEE_STAGE.processing },
+  { id: 'bag', title: 'TAKE THE COFFEE', target: 'bag',
+    text: 'When it is done, pick up the bag of ground coffee.',
+    done: c => c.coffee >= COFFEE_STAGE.bagInHand },
+  { id: 'brew', title: 'BREW A COFFEE', target: 'coffee',
+    text: 'Drop the bag on the coffee machine in the living quarters, then [E] to brew.',
+    done: c => c.coffee >= COFFEE_STAGE.brewing },
+  { id: 'drink', title: 'DRINK IT', target: 'coffee',
+    text: 'When it is ready, [E] to drink it.',
+    done: c => c.coffee >= COFFEE_STAGE.drunk },
+  { id: 'napTip', seconds: 6, title: 'OUT OF COFFEE?',
+    text: 'Only a couple of bushes are ripe each night. A nap at the bunk brings your stamina back too.' },
 
   // Naps and sleep.
   { id: 'nap', title: 'NAP UNTIL 6 AM', target: 'bed',
