@@ -1927,12 +1927,36 @@ export class BaseScene extends Scene {
   }
 
   /** Freeze the player where they stand (a panel, the white-out), or free them. */
-  /** The shift ends where the globe's cheese went off: black, at once. */
-  _globeBlast() {
+  /** The globe's cheese going off: the player held where they stand. */
+  _globeGoesOff() {
     if (this.gameController?.state !== 'playing') return;
+    this._globeLocked = true;
+    this._setPlayerLocked(true);
+  }
+
+  /** The shift ends where the globe's cheese went off: black, at once. Over
+   *  some other way meanwhile, the player is let go (if this held them). */
+  _globeBlast() {
+    if (this.gameController?.state !== 'playing') {
+      if (this._globeLocked) this._setPlayerLocked(false);
+      this._globeLocked = false;
+      return;
+    }
     this.gameController.fail(GLOBE_PROMPT, { promptAfter: GLOBE_SCREEN.messageDelayMs / 1000 });
     this.whiteOut?.play(GLOBE_PROMPT, GLOBE_SCREEN);
     this._setPlayerLocked(true);
+  }
+
+  /** A room's inside, floor to ceiling, wall face to wall face (bounds()
+   *  is to the walls' outer faces). */
+  _insideOf(room) {
+    const box = room.bounds();
+    const t = room.wallThick;
+    box.min.x += t; box.max.x -= t;
+    box.min.z += t; box.max.z -= t;
+    box.min.y = room.position[1];
+    box.max.y = room.position[1] + room.height;
+    return box;
   }
 
   _setPlayerLocked(locked) {
@@ -2325,7 +2349,12 @@ export class BaseScene extends Scene {
     this.whiteOut = new WhiteOut();
     this.evilSignal.whiteOut = this.whiteOut;
     const globeSpin = this.rooms.MainOffice.globe?.getComponent(GlobeSpin);
-    if (globeSpin) globeSpin.onBlast = () => this._globeBlast();
+    if (globeSpin) {
+      globeSpin.blastBounds = this._insideOf(this.rooms.MainOffice);
+      globeSpin.blastLight = this.rooms.MainOffice.ceilingLight ?? null;
+      globeSpin.onGoOff = () => this._globeGoesOff();
+      globeSpin.onBlast = () => this._globeBlast();
+    }
     this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();

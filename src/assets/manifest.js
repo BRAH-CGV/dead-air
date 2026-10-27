@@ -789,6 +789,12 @@ const PLACED = {
     type: 'audio',
     url: 'assets/audio/pop.mp3',
   },
+  // The desk globe's last turn (GlobeSound): an explosion off Pixabay
+  // (freesound_community), as downloaded, about 3.8 s.
+  'sfx:explosion': {
+    type: 'audio',
+    url: 'assets/audio/explosion.mp3',
+  },
   'sfx:whispering': {
     type: 'audio',
     url: 'assets/audio/whispering.mp3',

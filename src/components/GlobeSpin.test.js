@@ -283,6 +283,7 @@ describe('GlobeSpin — the cheese mashed again', () => {
     camera.updateMatrixWorld();
     const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
     const { spin } = cheese({ screenFlash: flash, view: () => ({ camera, canvas }), blackAfter: 0.2 });
+    expect(new GlobeSpin().blackAfter).toBeGreaterThan(1);   // long enough to see it
     spin.onBlast = onBlast;
     for (let i = 0; i < 160 && !spin.blasted; i++) {
       spin.onInteract({});
@@ -309,6 +310,37 @@ describe('GlobeSpin — the cheese mashed again', () => {
     const { spin } = cheese({ screenFlash: flash, view: () => ({ camera, canvas }) });
     blowUp(spin);
     expect(flash).toHaveBeenCalledWith(400, 300);
+  });
+
+  it('as it goes off: onGoOff, the view shaken, the light of the room flared, the blast filling its bounds', () => {
+    const shake = vi.fn();
+    const onGoOff = vi.fn();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 2);
+    camera.updateMatrixWorld();
+    const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
+    const { globe, spin } = cheese({ screenShake: shake, view: () => ({ camera, canvas }) });
+    spin.onGoOff = onGoOff;
+    spin.blastLight = new THREE.PointLight(0xffffff, 10);
+    spin.blastBounds = new THREE.Box3(new THREE.Vector3(-6, -1, -5), new THREE.Vector3(6, 2, 5));
+    blowUp(spin);
+    expect(onGoOff).toHaveBeenCalledTimes(1);
+    expect(shake).toHaveBeenCalledWith(canvas);
+    expect(spin.blastLight.intensity).toBeGreaterThan(10);
+    const blast = globe.object3d.getObjectByName('CheeseBlast');
+    expect(blast.playing).toBe(true);
+  });
+
+  it('the blast is on the scene, not on the turning globe', () => {
+    const scene = new THREE.Scene();
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin(quiet));
+    globe.scene = scene;
+    spin.onAwake();
+    expect(scene.getObjectByName('CheeseBlast')).toBeTruthy();
+    expect(globe.object3d.getObjectByName('CheeseBlast')).toBeUndefined();
+    spin.onDestroy();
+    expect(scene.getObjectByName('CheeseBlast')).toBeUndefined();
   });
 
   it('gone off, E does nothing more', () => {

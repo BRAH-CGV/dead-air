@@ -4,7 +4,7 @@ import { createCheeseBall } from '../gameobjects/CheeseBall.js';
 import { createCloudPoof } from '../gameobjects/CloudPoof.js';
 import { createCheeseBlast } from '../gameobjects/CheeseBlast.js';
 import { showToonPoof } from '../ui/ToonPoof.js';
-import { showBlastFlash } from '../ui/BlastFlash.js';
+import { showBlastFlash, shakeScreen } from '../ui/BlastFlash.js';
 
 // ─────────────────────────────────────────────
 // GlobeSpin  –  [E] gives the desk globe a little spin on its stand
@@ -29,12 +29,15 @@ import { showBlastFlash } from '../ui/BlastFlash.js';
 // globe spins under it) and, if the globe is in view, a small burst of
 // comic lines on the screen over it (ToonPoof).
 //
-// Mash the cheese the same way and it goes off: a fireball and flung
-// chunks (CheeseBlast), the screen flaring from it (BlastFlash), and
-// `blackAfter` seconds later `onBlast`, which the scene takes as the
-// player's death. The ball, the cloud and the blast are built hidden on
-// awake, so their shaders are compiled with the scene rather than on the
-// moment they appear.
+// Mash the cheese the same way and it goes off, and the room with it
+// (CheeseBlast: fire to the walls, sparks and debris bouncing round
+// `blastBounds`, smoke, `blastLight` flaring), the screen flaring from it
+// and shaken (BlastFlash). `onGoOff` is called then, and `blackAfter`
+// seconds later `onBlast`, which the scene takes as the player's death.
+// The blast is in world space, on the scene, not on the turning globe. The
+// ball, the cloud and the blast are built hidden on awake, so their
+// shaders are compiled with the scene rather than on the moment they
+// appear.
 // ─────────────────────────────────────────────
 
 /** The globe's polar axis in mars-globe.glb's own space, read off the mesh
@@ -61,8 +64,16 @@ export class GlobeSpin extends Interactable {
   cheese = false;
   /** Whether the cheese has gone off. */
   blasted = false;
+  /** Whether `blackAfter` has run out since, and `onBlast` been called. */
+  blackedOut = false;
+  /** Called as it goes off. @type {(() => void)|null} */
+  onGoOff = null;
   /** Called `blackAfter` seconds after it goes off. @type {(() => void)|null} */
   onBlast = null;
+  /** The room's inside, world space, that the blast fills. @type {THREE.Box3|null} */
+  blastBounds = null;
+  /** The room's light, flared by the blast. @type {THREE.Light|null} */
+  blastLight = null;
 
   /**
    * @param {object} [opts]
@@ -77,16 +88,18 @@ export class GlobeSpin extends Interactable {
    * @param {number} [opts.radius=0.143]  The globe's radius, metres: the cheese's
    * @param {number} [opts.popSeconds=0.35]  How long the cheese takes to pop in
    * @param {number} [opts.blastAt]  Strain, mashing the cheese, at which it goes off: `cheeseAt` left out
-   * @param {number} [opts.blackAfter=0.2]  Seconds from it going off to `onBlast`
+   * @param {number} [opts.blackAfter=1.5]  Seconds from it going off to `onBlast`
    * @param {(x: number, y: number) => void} [opts.screenPoof]  The on-screen burst, at page pixels
    * @param {(x: number, y: number) => void} [opts.screenFlash]  The screen flaring as it goes off, at page pixels
+   * @param {(canvas: HTMLElement) => void} [opts.screenShake]  The view shaken as it goes off
    * @param {() => ({ camera: THREE.Camera, canvas: { getBoundingClientRect(): DOMRect } }|null)} [opts.view]
    *   What the frame is drawn through; left out, the engine's camera and canvas
    */
   constructor({
     axis = GLOBE_AXIS, kick = 8, friction = 1.3, maxSpeed = 16, stopSpeed = 0.08,
     strainFrom = 0.75, strainDecay = 1.5, cheeseAt = 20, radius = 0.143, popSeconds = 0.35,
-    blastAt = cheeseAt, blackAfter = 0.2, screenPoof = showToonPoof, screenFlash = showBlastFlash, view = null,
+    blastAt = cheeseAt, blackAfter = 1.5, screenPoof = showToonPoof, screenFlash = showBlastFlash,
+    screenShake = shakeScreen, view = null,
   } = {}) {
     super();
     this.kick = kick;
@@ -102,6 +115,7 @@ export class GlobeSpin extends Interactable {
     this.blackAfter = blackAfter;
     this.screenPoof = screenPoof;
     this.screenFlash = screenFlash;
+    this.screenShake = screenShake;
     this._view = view;
 
     this._axis = new THREE.Vector3(...axis).normalize();
@@ -143,13 +157,11 @@ export class GlobeSpin extends Interactable {
       this._toBlack -= dt;
       if (this._toBlack <= 0) {
         this._toBlack = null;
+        this.blackedOut = true;
         this.onBlast?.();
       }
     }
-    if (this._blast?.playing) {
-      this._blast.quaternion.copy(this.gameObject.object3d.quaternion).invert();
-      this._blast.update(dt);
-    }
+    if (this._blast?.playing) this._blast.update(dt);
     if (this._pop !== null) this._popIn(dt);
     if (this.speed !== 0) {
       this.angle = (this.angle + this.speed * dt) % TWO_PI;
@@ -183,8 +195,10 @@ export class GlobeSpin extends Interactable {
     this._ball = createCheeseBall({ radius: this.radius });
     this._ball.visible = false;
     this._poof = createCloudPoof({ radius: this.radius });
-    this._blast = createCheeseBlast({ radius: this.radius });
-    this.gameObject.object3d.add(this._ball, this._poof, this._blast);
+    this._blast = createCheeseBlast();
+    this.gameObject.object3d.add(this._ball, this._poof);
+    // World space: it fills the room, it doesn't turn with the globe.
+    (this.gameObject.scene ?? this.gameObject.object3d).add(this._blast);
   }
 
   /** The globe's own model goes, the cheese pops in where it was. */
@@ -216,10 +230,15 @@ export class GlobeSpin extends Interactable {
     this._pop = null;
     this._ball.visible = false;
     this._poof.visible = this._poof.playing = false;
-    this._blast.quaternion.copy(this.gameObject.object3d.quaternion).invert();
-    this._blast.play();
+    this.gameObject.object3d.updateMatrixWorld(true);
+    this._blast.play(new THREE.Vector3().setFromMatrixPosition(this.gameObject.object3d.matrixWorld), {
+      bounds: this.blastBounds, light: this.blastLight,
+    });
     this._showOnScreen(this.screenFlash, { offScreen: true });
+    const canvas = (this._view ? this._view() : this._engineView())?.canvas;
+    if (canvas) this.screenShake?.(canvas);
     this._toBlack = this.blackAfter;
+    this.onGoOff?.();
     this._redrawShadows();
   }
 

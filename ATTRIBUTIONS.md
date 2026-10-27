@@ -711,6 +711,19 @@ attribution not required, credited here anyway. Downloaded as
 | **Used for** | The desk globe turning into a ball of cheese (`GlobeSound`) |
 | **Modifications** | Its leading click cut off (the clip starts 38 ms in, on the pop), its quiet tail trimmed to 0.13 s with short fades, downmixed to mono, encoded as MP3, renamed |
 
+### Explosion
+
+"Explosion" (https://pixabay.com/sound-effects/explosion-42132/), uploaded to Pixabay by freesound_community, is used under the Pixabay Content License — free to use,
+attribution not required, credited here anyway. Downloaded as
+`freesound_community-explosion-42132.mp3`.
+
+| | |
+|---|---|
+| **File** | `public/assets/audio/explosion.mp3` |
+| **Manifest key** | `sfx:explosion` |
+| **Used for** | The desk globe's cheese going off (`GlobeSound`) |
+| **Modifications** | Renamed |
+
 ### Heartbeat
 
 "my heart beat for Halloween+.mp3" by strongheartbeat (https://freesound.org/people/strongheartbeat/sounds/62120/), used under Creative Commons Sampling+ 1.0 (https://creativecommons.org/licenses/sampling+/1.0/) — sampling and remixing allowed, attribution required.

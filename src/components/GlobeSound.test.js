@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GlobeSound, GLOBE_SOUND, boomBuffer } from './GlobeSound.js';
+import { GlobeSound, GLOBE_SOUND } from './GlobeSound.js';
 import { GlobeSpin } from './GlobeSpin.js';
 import { GameObject } from '../core/GameObject.js';
 import { ASSETS } from '../assets/manifest.js';
@@ -196,21 +196,49 @@ describe('GlobeSound — the boom as the cheese goes off', () => {
     expect(g.boom.disconnect).toHaveBeenCalled();
   });
 
-  it('is made, not loaded: loud from the first instant, dying away, never clipping, the same every time', () => {
-    const sampleRate = 8000;
-    const context = {
-      sampleRate,
-      createBuffer: (channels, length, rate) => {
-        const data = new Float32Array(length);
-        return { length, sampleRate: rate, numberOfChannels: channels, getChannelData: () => data };
-      },
-    };
-    const data = boomBuffer(context, { seconds: 2 }).getChannelData(0);
-    expect(data.length).toBe(2 * sampleRate);
-    const peak = (from, to) => data.subarray(from * sampleRate, to * sampleRate).reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    expect(peak(0, 0.2)).toBeGreaterThan(0.6);
-    expect(peak(1.6, 2)).toBeLessThan(peak(0, 0.2) / 4);
-    expect(peak(0, 2)).toBeLessThanOrEqual(1);
-    expect(boomBuffer(context, { seconds: 2 }).getChannelData(0)).toEqual(data);
+  it('the explosion is twice as loud as its clip', () => {
+    expect(GLOBE_SOUND.boom.volume).toBe(2);
+  });
+
+  it('its clip is in the manifest', () => {
+    expect(ASSETS[GLOBE_SOUND.boom.key]).toMatchObject({ type: 'audio', url: 'assets/audio/explosion.mp3' });
+  });
+});
+
+describe('GlobeSound — the ringing in the black after', () => {
+  function buildWithRinging() {
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin({ screenPoof: () => {}, screenFlash: () => {}, screenShake: () => {} }));
+    const voices = Array.from({ length: GLOBE_SOUND.voices }, fakeSound);
+    const ringing = Object.assign(fakeSound(), { setLoop: vi.fn() });
+    const sound = globe.addComponent(new GlobeSound({ voices, pop: fakeSound(), boom: fakeSound(), ringing }));
+    sound.onStart();
+    for (let i = 0; i < 200 && !spin.blasted; i++) { push({ spin, sound }); run({ spin, sound }, 1 / 8); }
+    return { spin, sound, ringing };
+  }
+
+  it('the same ringing as the UFO catch', () => {
+    expect(GLOBE_SOUND.ringing.key).toBe('sfx:ear-ringing');
+    expect(ASSETS[GLOBE_SOUND.ringing.key]).toMatchObject({ type: 'audio' });
+  });
+
+  it('rings, looped at its level, once the screen blacks out and not before', () => {
+    const g = buildWithRinging();
+    expect(g.spin.blasted).toBe(true);
+    expect(g.ringing.play).not.toHaveBeenCalled();
+    run(g, g.spin.blackAfter + 0.1);
+    expect(g.spin.blackedOut).toBe(true);
+    expect(g.ringing.play).toHaveBeenCalledTimes(1);
+    expect(g.ringing.setLoop).toHaveBeenCalledWith(true);
+    expect(g.ringing.volume).toBe(GLOBE_SOUND.ringing.volume);
+  });
+
+  it('keeps ringing under the Night failed menu (a pause), and stops when torn down', () => {
+    const g = buildWithRinging();
+    run(g, g.spin.blackAfter + 0.1);
+    g.sound._onPause(true);
+    expect(g.ringing.stop).not.toHaveBeenCalled();
+    g.sound.onDestroy();
+    expect(g.ringing.stop).toHaveBeenCalled();
   });
 });
