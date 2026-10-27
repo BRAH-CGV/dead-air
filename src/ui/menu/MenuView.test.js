@@ -117,6 +117,16 @@ describe('MenuView', () => {
     expect(items(view).map(b => b.dataset.action)).toEqual(['retry', 'quit']);
   });
 
+  it('Night failed names the processed drives too, on a night that asks for them', () => {
+    view.show('nightFailed', { night: 2, saved: 4, required: 6, processed: 1, processedRequired: 2 });
+    expect(view.panel.textContent).toContain('Night 2 failed: 4/6 drives, 1/2 processed');
+  });
+
+  it('Night failed says the quota was not met, when that is why', () => {
+    view.show('nightFailed', { night: 2, saved: 6, required: 6, processed: 1, processedRequired: 2, quotaMissed: true });
+    expect(view.panel.textContent).toContain('Quota not met: 6/6 drives, 1/2 processed');
+  });
+
   it('a settings heading row draws a subheading', () => {
     view.show('settings', { tabs: [], tab: 'controls', rows: [{ type: 'heading', label: 'COMPUTER TERMINAL' }] });
     expect(view.panel.querySelector('.menu-settings h3').textContent).toBe('COMPUTER TERMINAL');

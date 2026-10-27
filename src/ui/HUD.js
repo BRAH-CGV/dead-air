@@ -44,10 +44,14 @@ export class HUD {
     if (this._clock) this._clock.textContent = timeString;
   }
 
-  setSignals(saved, required, { minSignalLevel = 1 } = {}) {
+  /** The night's quota: drives in the docked box, and how many of them are
+   *  processed when the night asks for any. */
+  setSignals(saved, required, { processed = 0, processedRequired = 0 } = {}) {
     if (!this._signals) return;
-    const label = minSignalLevel >= 2 ? 'Cyan drives' : 'Drives';
-    this._signals.textContent = `${label}: ${saved} / ${required}`;
+    const drives = `Drives: ${saved} / ${required}`;
+    this._signals.textContent = processedRequired > 0
+      ? `${drives} · Processed: ${processed} / ${processedRequired}`
+      : drives;
   }
 
   setNight(number) {

@@ -128,39 +128,61 @@ describe('DriveBoxDock', () => {
     expect(dock.empty()).toBeNull();
   });
 
-  it('minSignalLevel = 2 excludes level-1 drives from the count', () => {
-    const box = makeBox([
-      makeDrive({ saved: true, signalLevel: 1 }),
-      makeDrive({ saved: true, signalLevel: 1 }),
-      makeDrive({ saved: true, signalLevel: 2 }),
-    ]);
-    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 1 });
-    dock.minSignalLevel = 2;
-
-    expect(dock.collectedCount).toBe(1);
-    expect(dock.isQuotaMet()).toBe(true);
-  });
-
-  it('minSignalLevel = 1 (default) counts all saved non-corrupted drives', () => {
+  // Processing (the ServerRoom's console) takes a drive to level 2. Each
+  // night asks for so many of the docked drives to have been processed.
+  it('counts processed drives — level 2 or higher — and still counts them as drives', () => {
     const box = makeBox([
       makeDrive({ saved: true, signalLevel: 1 }),
       makeDrive({ saved: true, signalLevel: 2 }),
-      makeDrive({ saved: true }),
+      makeDrive({ saved: true, signalLevel: 3 }),
     ]);
-    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 3 });
+    const dock = new DriveBoxDock({ socket: makeSocket(box) });
 
     expect(dock.collectedCount).toBe(3);
+    expect(dock.processedCount).toBe(2);
+  });
+
+  it('asks for no processed drives unless told to', () => {
+    const box = makeBox([makeDrive({ saved: true }), makeDrive({ saved: true })]);
+    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 2 });
+
+    expect(dock.requiredProcessed).toBe(0);
     expect(dock.isQuotaMet()).toBe(true);
   });
 
-  it('minSignalLevel = 2 still excludes corrupted drives regardless of level', () => {
+  it('is met only with enough drives and enough of them processed', () => {
+    const drives = [
+      makeDrive({ saved: true, signalLevel: 2 }),
+      makeDrive({ saved: true }),
+      makeDrive({ saved: true }),
+    ];
+    const dock = new DriveBoxDock({ socket: makeSocket(makeBox(drives)), requiredCount: 3 });
+    dock.requiredProcessed = 2;
+    expect(dock.isQuotaMet()).toBe(false);   // three drives, one processed
+
+    drives[1].signalLevel = 2;
+    expect(dock.isQuotaMet()).toBe(true);    // three drives, two processed
+
+    dock.requiredCount = 4;
+    expect(dock.isQuotaMet()).toBe(false);   // processed enough, too few drives
+  });
+
+  it('never counts a corrupted or unsaved drive as processed', () => {
     const box = makeBox([
       makeDrive({ saved: true, corrupted: true, signalLevel: 2 }),
+      makeDrive({ saved: false, signalLevel: 2 }),
       makeDrive({ saved: true, signalLevel: 2 }),
     ]);
-    const dock = new DriveBoxDock({ socket: makeSocket(box), requiredCount: 1 });
-    dock.minSignalLevel = 2;
+    const dock = new DriveBoxDock({ socket: makeSocket(box) });
 
-    expect(dock.collectedCount).toBe(1);
+    expect(dock.processedCount).toBe(1);
+  });
+
+  it('counts no processed drives with no box docked', () => {
+    const dock = new DriveBoxDock({ socket: makeSocket(null) });
+    dock.requiredProcessed = 1;
+
+    expect(dock.processedCount).toBe(0);
+    expect(dock.isQuotaMet()).toBe(false);
   });
 });

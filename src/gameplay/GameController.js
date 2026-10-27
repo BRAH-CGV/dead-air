@@ -36,6 +36,7 @@ const PROMPT = {
   send:     'Drives loaded — send the buggy off',
   delivered: 'Buggy away — get some sleep (bedroom)',
   failed:   'Night failed.',
+  quotaMissed: 'Quota not met.',
   finished: 'You made it through every shift.',
 };
 
@@ -80,6 +81,9 @@ export class GameController extends Component {
   /** Seconds before a failed night's prompt shows. */
   _promptLock = 0;
   _heldPrompt = null;
+  /** Whether the night failed because 6 AM came with the quota short, not a
+   *  threat. The Night failed screen says so. */
+  quotaMissed = false;
 
   /** @type {Set<(state: string, previous: string) => void>} */
   _stateListeners = new Set();
@@ -98,6 +102,7 @@ export class GameController extends Component {
     this.nightNumber = nightNumber;
     this._shiftPrompt = null;
     this.dispatched = false;
+    this.quotaMissed = false;
     this._setState('playing');
 
     this.nightClock?.reset();
@@ -106,25 +111,19 @@ export class GameController extends Component {
     // Sync the dock's required count with the signal manager's night
     // requirement. signalManager.required is computed by startNight(),
     // so we sync AFTER it runs.
+    // So is how many of them must be processed (1, 2, 4).
     if (this.quotaDock && this.signalManager) {
       this.quotaDock.requiredCount = this.signalManager.required;
+      this.quotaDock.requiredProcessed = this.signalManager.requiredProcessed ?? 0;
     }
     if (this.cargo) {
       this.cargo.requiredCount = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
-    }
-
-    // Night 3 only counts drives processed to level 2 (cyan).
-    if (this.quotaDock) {
-      this.quotaDock.minSignalLevel = nightNumber >= 3 ? 2 : 1;
+      this.cargo.requiredProcessed = this.quotaDock?.requiredProcessed ?? this.signalManager?.requiredProcessed ?? 0;
     }
 
     this.hud?.show();
     this.hud?.setNight(nightNumber);
-    this.hud?.setSignals(
-      this.quotaDock?.collectedCount ?? 0,
-      this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0,
-      { minSignalLevel: this.quotaDock?.minSignalLevel ?? 1 },
-    );
+    this._showSignals();
     this.hud?.setTime(this.nightClock?.timeString ?? '6:00 PM');
     this.hud?.setPrompt('');
     this.banner?.clear();
@@ -339,14 +338,22 @@ export class GameController extends Component {
     if (!this.hud) return;
     this.hud.setTime(this.nightClock?.timeString ?? '6:00 PM');
 
-    // Quota progress comes from the drive box dock (saved drives in the
-    // docked box), falling back to the signal manager's required count
-    // for the denominator.
-    const collected = this.quotaDock?.collectedCount ?? 0;
-    const required  = this.quotaDock?.requiredCount ?? this.signalManager?.required ?? 0;
-    this.hud.setSignals(collected, required, {
-      minSignalLevel: this.quotaDock?.minSignalLevel ?? 1,
-    });
+    this._showSignals();
+  }
+
+  /** The quota on the HUD. Progress comes from the drive box dock (saved
+   *  drives in the docked box, and how many of them are processed),
+   *  falling back to the signal manager's counts for the denominators. */
+  _showSignals() {
+    const dock = this.quotaDock;
+    this.hud?.setSignals(
+      dock?.collectedCount ?? 0,
+      dock?.requiredCount ?? this.signalManager?.required ?? 0,
+      {
+        processed: dock?.processedCount ?? 0,
+        processedRequired: dock?.requiredProcessed ?? this.signalManager?.requiredProcessed ?? 0,
+      },
+    );
   }
 
   /** The one place `state` changes, so every change is announced. Iterates
@@ -370,6 +377,9 @@ export class GameController extends Component {
     this._shiftPrompt = this._morningKey();
     this._endShift('morning', PROMPT[this._shiftPrompt]);
   }
-  _gameOver() { this._endShift('gameOver', PROMPT.failed); }
+  _gameOver() {
+    this.quotaMissed = true;
+    this._endShift('gameOver', PROMPT.quotaMissed);
+  }
   _finish()   { this._endShift('finished', PROMPT.finished); }
 }
