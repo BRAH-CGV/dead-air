@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
-import { TutorialRunner } from '../gameplay/TutorialSteps.js';
+import { TutorialRunner, COFFEE_STAGE } from '../gameplay/TutorialSteps.js';
 import { NAP } from '../gameplay/Nap.js';
 import { placeArrow } from '../ui/TutorialOverlay.js';
 
@@ -16,8 +16,13 @@ import { placeArrow } from '../ui/TutorialOverlay.js';
 //   - The clock holds at 7 PM, after dark, until the quota is met, so
 //     there is no hurry and no signal of the shift's own comes up.
 //   - One signal, placed off the dish's park so it has to be found,
-//     comes up once the player is at the computer and never fades.
-//   - Stamina is held full, so the Sleep Demon never comes.
+//     comes up once the player is at the computer and never fades. Saved,
+//     it is carried to the server room's processing console and processed
+//     (cyan) before it is boxed; the words stay up, small, over the console.
+//   - Stamina never drains: it is held at full until the stamina step,
+//     which drops it to `stamina` (51 %: just over half, where the Sleep
+//     Demon would start), so the coffee and the nap after it are seen to
+//     fill it. Whatever raises it is kept.
 //   - No storm, dust eyes or UFO of their own (they stay off on night 0);
 //     the storm step summons one whose outage is forced (StormOutage.force).
 //   - The nap step sets the bunk's alarm to 6 AM, so one nap sees the
@@ -40,6 +45,8 @@ export const TUTORIAL = Object.freeze({
   signal: Object.freeze({ yaw: Math.PI / 4 + 0.6, pitch: -0.6 }),
   /** Where a retry of night 0 starts, past the story. */
   retryStep: 'deskBox',
+  /** Stamina from the stamina step on: just over the Sleep Demon's half. */
+  stamina: 0.51,
 });
 
 export class Tutorial extends Component {
@@ -54,6 +61,8 @@ export class Tutorial extends Component {
    * @param {Array}  [opts.drives]       The office's drives
    * @param {Array}  [opts.driveBoxes]   The office's drive boxes
    * @param {object} [opts.quotaDock]    The airlock's DriveBoxDock
+   * @param {object} [opts.serverSlot]   The processing console's DriveSlot: insertedDrive
+   * @param {object} [opts.processingScreen]  ProcessingScreen: isOpen
    * @param {object} [opts.grid]         PowerGrid
    * @param {object} [opts.suit]         EVASuit
    * @param {object} [opts.nap]
@@ -62,6 +71,9 @@ export class Tutorial extends Component {
    * @param {object} [opts.cargoDock]    The buggy boot's DriveBoxDock: depositedBox
    * @param {object} [opts.sendOff]      BuggySendOff: active through the cutscene
    * @param {object} [opts.flashlight]   The player's Flashlight: on
+   * @param {{ harvest?: object, items?: object, machine?: object }} [opts.coffee]
+   *        The night's CoffeeHarvest, the CoffeeItems and the bedroom's
+   *        CoffeeMachine, for how far the coffee has got
    * @param {(p: THREE.Vector3) => boolean} [opts.onDesk]  A world point is on the computer desk
    * @param {object} [opts.sandstorm]
    * @param {object} [opts.stormOutage]
@@ -69,7 +81,9 @@ export class Tutorial extends Component {
    * @param {THREE.Camera} [opts.camera] The player's camera, for the arrow
    * @param {() => { width: number, height: number }} [opts.screen]
    * @param {() => boolean} [opts.covered]  A panel covers the view (the
-   *        generator's breakers): the words and arrow hide, the steps run on
+   *        generator's breakers): the words and arrow hide, the steps run on.
+   *        Ignored while the processing console's screen is up: its step is
+   *        shown over it
    * @param {Object<string, { object: THREE.Object3D|(() => THREE.Object3D|null), lift?: number }>} [opts.targets]
    *        What each step's arrow points at, by name; `lift` raises the
    *        point (metres) off the object's origin.
@@ -77,15 +91,17 @@ export class Tutorial extends Component {
   constructor({
     controller, clock, stamina = null, signalManager = null, terminal = null,
     driveManager = null, drives = [], driveBoxes = [], quotaDock = null, grid = null,
+    serverSlot = null, processingScreen = null,
     suit = null, nap = null, bed = null, bedRest = null, cargoDock = null, sendOff = null,
-    flashlight = null, onDesk = null,
+    flashlight = null, onDesk = null, coffee = null,
     sandstorm = null, stormOutage = null,
     overlay = null, camera = null, screen = null, covered = null, targets = {},
   }) {
     super();
     Object.assign(this, {
       controller, clock, stamina, signalManager, terminal, driveManager, drives,
-      driveBoxes, quotaDock, grid, suit, nap, bed, bedRest, cargoDock, sendOff, flashlight, onDesk,
+      driveBoxes, quotaDock, grid, serverSlot, processingScreen,
+      suit, nap, bed, bedRest, cargoDock, sendOff, flashlight, onDesk, coffee,
       sandstorm, stormOutage, overlay, camera, targets,
     });
     this.screen = screen ?? (() => this._windowSize());
@@ -94,11 +110,17 @@ export class Tutorial extends Component {
     this.runner = new TutorialRunner({ onEnter: step => this._enter(step) });
     this._signal = null;
     this._off = null;
+    /** What stamina is held at: it never drops below this. */
+    this._held = 1;
+    /** How far the coffee has got (COFFEE_STAGE), the furthest yet. */
+    this._coffee = COFFEE_STAGE.none;
     this._ctx = {
       holdingBox: false, boxOnDesk: false,
       driveIn: false, terminalOpen: false, onSignal: false, scanning: false, scanned: false,
-      saved: false, boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
+      saved: false, driveAtConsole: false, consoleOpen: false, processed: false,
+      boxed: false, quotaMet: false, powerOn: true, flashlightOn: false,
       suitOn: false, napping: false, morning: false, boxInBuggy: false, dispatched: false,
+      coffee: COFFEE_STAGE.none,
     };
     this._v = new THREE.Vector3();
     this._ndc = { x: 0, y: 0, behind: false };
@@ -126,6 +148,8 @@ export class Tutorial extends Component {
     }
     this.clock.setTime(TUTORIAL.startHour);
     this.clock.pause();
+    this._held = 1;
+    this._coffee = COFFEE_STAGE.none;
     this._setUpSignal();
     this.runner.reset();
     if (retry) this.runner.goTo(TUTORIAL.retryStep);
@@ -160,6 +184,9 @@ export class Tutorial extends Component {
         this.sandstorm?.summon?.();
         this.stormOutage?.force?.(TUTORIAL.outageAt);
         break;
+      case 'stamina':
+        if (this.stamina) this._held = this.stamina.value = TUTORIAL.stamina;
+        break;
       case 'nap':
         if (this.bed) this.bed.napLength = NAP.lengths.indexOf(null);
         break;
@@ -168,7 +195,7 @@ export class Tutorial extends Component {
 
   onUpdate(dt) {
     if (!this.active) return;
-    this.stamina?.reset();
+    this._holdStamina();
     const state = this.controller.state;
     if (state !== 'playing' && state !== 'morning') {
       this.overlay?.hide();
@@ -177,8 +204,9 @@ export class Tutorial extends Component {
     const ctx = this.readContext();
     this.runner.update(dt, ctx);
     // In the bunk the view is dark, a panel (the breakers) has it, or the
-    // send-off's cutscene does: nothing to read.
-    if (this.bedRest?.active || this.sendOff?.active || this.covered()) {
+    // send-off's cutscene does: nothing to read. The processing console's
+    // screen has the mouse too, but its step is shown over it, small.
+    if (this.bedRest?.active || this.sendOff?.active || (this.covered() && !ctx.consoleOpen)) {
       this.overlay?.hide();
       return;
     }
@@ -199,6 +227,10 @@ export class Tutorial extends Component {
     c.scanning = t?.state === 'scanning';
     c.scanned = !!sig?.scanned;
     c.saved = !!sig?.saved || this._anyDrive(this.drives);
+    const atConsole = this.serverSlot?.insertedDrive;
+    c.driveAtConsole = !!atConsole?.saved && !atConsole.corrupted;
+    c.consoleOpen = !!this.processingScreen?.isOpen;
+    c.processed = this._processed(this.drives);
     c.quotaMet = !!this.quotaDock?.isQuotaMet();
     c.boxed = c.quotaMet || this._boxed();
     c.powerOn = !!this.grid?.on;
@@ -208,7 +240,37 @@ export class Tutorial extends Component {
     c.morning = this.controller.state === 'morning';
     c.boxInBuggy = !!this.cargoDock?.depositedBox;
     c.dispatched = !!this.controller.dispatched;
+    c.coffee = this._readCoffee();
     return c;
+  }
+
+  /** Stamina never drains on night 0; whatever raises it (a cup, a nap) is
+   *  kept, and held from then on. */
+  _holdStamina() {
+    const s = this.stamina;
+    if (!s) return;
+    if (s.value < this._held) s.value = this._held;
+    this._held = s.value;
+  }
+
+  /** How far the night's coffee has got: the furthest it has been, so a bag
+   *  set down again on the way is no step back. */
+  _readCoffee() {
+    const { harvest, items, machine } = this.coffee ?? {};
+    const S = COFFEE_STAGE;
+    let now = S.none;
+    if (items?.held('beans') || items?.loose('beans').length) now = S.beans;
+    if (harvest?.processor === 'loaded') now = Math.max(now, S.loaded);
+    if (harvest?.processor === 'processing') now = Math.max(now, S.processing);
+    if (items?.loose('bag').length) now = Math.max(now, S.bagged);
+    if (items?.held('bag')) now = Math.max(now, S.bagInHand);
+    if (machine?.loaded) now = Math.max(now, S.bagIn);
+    if (machine?.state === 'brewing') now = Math.max(now, S.brewing);
+    if (machine?.state === 'brewed') now = Math.max(now, S.brewed);
+    // Brewed and then no longer: drunk.
+    if (this._coffee >= S.brewed && machine && machine.state !== 'brewed' && machine.state !== 'brewing') now = S.drunk;
+    this._coffee = Math.max(this._coffee, now);
+    return this._coffee;
   }
 
   /** Is a drive box in the player's hands, and is one set down on the desk. */
@@ -227,6 +289,15 @@ export class Tutorial extends Component {
     for (let i = 0; i < drives.length; i++) {
       const d = drives[i];
       if (d?.saved && !d.corrupted) return true;
+    }
+    return false;
+  }
+
+  /** A drive in the list holds a good signal processed past level 1 (cyan). */
+  _processed(drives) {
+    for (let i = 0; i < drives.length; i++) {
+      const d = drives[i];
+      if (d?.saved && !d.corrupted && (d.signalLevel ?? 1) >= 2) return true;
     }
     return false;
   }

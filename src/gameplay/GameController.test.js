@@ -8,7 +8,7 @@ function makeHUD() {
   return {
     show: vi.fn(), hide: vi.fn(),
     setTime: vi.fn(), setSignals: vi.fn(), setNight: vi.fn(),
-    setScanProgress: vi.fn(), setPrompt: vi.fn(),
+    setPrompt: vi.fn(),
   };
 }
 
@@ -114,13 +114,13 @@ describe('GameController', () => {
     gc.startNight(1);
     gc.onUpdate(999);  // past 6 AM
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenCalledWith('Quota not met. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenCalledWith('Quota not met.');
     expect(gc.quotaMissed).toBe(true);
   });
 
   it('a threat failing the night is not a missed quota', () => {
     gc.startNight(1);
-    gc.fail('You have been eaten. Press [E] to try again');
+    gc.fail('You have been eaten.');
     expect(gc.state).toBe('gameOver');
     expect(gc.quotaMissed).toBe(false);
   });
@@ -183,20 +183,16 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');  // unchanged
   });
 
-  it('the interact key retries a failed night, as the prompt promises', () => {
+  it('the interact key does not retry a failed night: the Night failed menu does', () => {
     const engine = attachEngine();
     gc.startNight(2);
     gc.onUpdate(999);
     expect(gc.state).toBe('gameOver');
 
-    gc.onUpdate(0.016);                 // no key: stays failed
-    expect(gc.state).toBe('gameOver');
-
     engine.input.pressed.KeyE = true;   // one-frame press
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(gc.state).toBe('gameOver');
     expect(gc.nightNumber).toBe(2);
-    expect(clock.elapsed).toBe(0);
   });
 
   it('the interact key does not restart a night that is still running', () => {
@@ -288,26 +284,6 @@ describe('GameController', () => {
 
     expect(hud.setTime).toHaveBeenCalled();
     expect(hud.setSignals).toHaveBeenCalled();
-  });
-
-  it('shows scan progress when satellite is scanning', () => {
-    gc.startNight(1);
-    const sig = mgr.signals[0];
-    sat.isScanning = true;
-    sat.scanTarget = sig;
-    sat.scanProgress = 1.5;
-
-    gc.onUpdate(0.016);
-    // scanTime default = 3, so 1.5/3 = 0.5
-    expect(hud.setScanProgress).toHaveBeenCalledWith(0.5);
-  });
-
-  it('hides scan bar when not scanning', () => {
-    gc.startNight(1);
-    sat.isScanning = false;
-
-    gc.onUpdate(0.016);
-    expect(hud.setScanProgress).toHaveBeenCalledWith(-1);
   });
 
   it('onSignalDeleted updates HUD but does not change state', () => {
@@ -432,28 +408,27 @@ describe('GameController', () => {
 
   it('fail() ends a playing shift as a game over with its own prompt', () => {
     gc.startNight(1);
-    gc.fail('You were taken. [E] to retry');
+    gc.fail('You were taken.');
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken.');
     gc.retryNight();
     expect(gc.state).toBe('playing');
   });
 
-  it('fail() can hold the retry back: no prompt and no [E] until it is shown', () => {
-    const engine = attachEngine();
+  it('fail() can hold the prompt back until the death screen has played', () => {
+    attachEngine();
     gc.startNight(1);
-    gc.fail('You have been eaten. Press [E] to try again', { retryAfter: 2 });
+    gc.fail('You have been eaten.', { promptAfter: 2 });
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
-    engine.input.pressed.KeyE = true;   // mashed straight away
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     gc.onUpdate(0.5);
-    expect(gc.state).toBe('gameOver');
-    engine.input.pressed.KeyE = false;
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     gc.onUpdate(1.6);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
-    engine.input.pressed.KeyE = true;
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten.');
+    const calls = hud.setPrompt.mock.calls.length;
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(hud.setPrompt.mock.calls.length).toBe(calls);     // shown once
+    expect(gc.state).toBe('gameOver');
   });
 
   it('fail() does nothing outside a playing shift', () => {
@@ -473,7 +448,7 @@ describe('GameController', () => {
     expect(fn).toHaveBeenLastCalledWith(1, { retry: true });
   });
 
-  it('the E that retries is used up — nothing else acts on that press', () => {
+  it('dead, E is used up every frame — nothing in the world acts on it, and nothing retries', () => {
     const engine = {
       keyBinds: { interact: 'KeyE' },
       input: { pressed: { KeyE: true } },
@@ -481,10 +456,12 @@ describe('GameController', () => {
     };
     gc.gameObject = { scene: { userData: { engine } } };
     gc.startNight(1);
-    gc.fail('taken');
-    gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    gc.fail('taken', { promptAfter: 1 });
+    gc.onUpdate(0.016);                  // the death screen still playing
+    gc.onUpdate(2);                      // and after it
+    expect(engine.consumeAction).toHaveBeenCalledTimes(2);
     expect(engine.consumeAction).toHaveBeenCalledWith('interact');
+    expect(gc.state).toBe('gameOver');
   });
 });
 

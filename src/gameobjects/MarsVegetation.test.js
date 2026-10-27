@@ -374,6 +374,50 @@ describe('treesClearOf — keeping trees off something the scene built', () => {
   });
 });
 
+describe('grassClearOf — keeping grass off something solid in the yard', () => {
+  const tufts = veg => instances(grassOf(veg)).map(({ position }) => `${position.x.toFixed(3)},${position.z.toFixed(3)}`);
+  const inBox = (key, b) => {
+    const [x, z] = key.split(',').map(Number);
+    return x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ;
+  };
+
+  it('drops the blades standing in a box, and moves no other blade', () => {
+    const all = tufts(createMarsVegetation({}));
+    const [x, z] = all[0].split(',').map(Number);
+    const box = { minX: x - 3, maxX: x + 3, minZ: z - 3, maxZ: z + 3 };
+
+    const kept = tufts(createMarsVegetation({ grassClearOf: [box] }));
+    expect(kept.length).toBeLessThan(all.length);
+    expect(kept.some(k => inBox(k, box))).toBe(false);
+    expect(kept).toEqual(all.filter(k => !inBox(k, box)));
+  });
+
+  it('thins and shortens the grass over `fade` toward a box, and leaves it as it was past that', () => {
+    const plain = instances(grassOf(createMarsVegetation({})));
+    const { position: { x, z } } = plain[0];
+    const box = { minX: x - 1, maxX: x + 1, minZ: z - 1, maxZ: z + 1, fade: 2 };
+    const out = p => Math.hypot(Math.max(box.minX - p.x, 0, p.x - box.maxX), Math.max(box.minZ - p.z, 0, p.z - box.maxZ));
+    const key = p => `${p.x.toFixed(3)},${p.z.toFixed(3)}`;
+    const faded = instances(grassOf(createMarsVegetation({ grassClearOf: [box] })));
+    const before = new Map(plain.map(b => [key(b.position), b.scale.y]));
+
+    const band = list => list.filter(b => out(b.position) > 0 && out(b.position) < box.fade);
+    expect(band(faded).length).toBeLessThan(band(plain).length);           // thinner
+    for (const b of band(faded)) {
+      expect(b.scale.y).toBeLessThan(before.get(key(b.position)));         // and shorter
+    }
+    expect(faded.some(b => out(b.position) === 0)).toBe(false);            // none in the box
+    const past = list => list.filter(b => out(b.position) >= box.fade).map(b => `${key(b.position)}:${b.scale.y.toFixed(4)}`);
+    expect(past(faded)).toEqual(past(plain));                              // the rest untouched
+  });
+
+  it('leaves the trees alone', () => {
+    const box = { minX: -100, maxX: 100, minZ: -100, maxZ: 100 };
+    const plain = createMarsVegetation({});
+    expect(createMarsVegetation({ grassClearOf: [box] }).trees.length).toBe(plain.trees.length);
+  });
+});
+
 describe('the trees, for anything that needs to keep out of them', () => {
   it('lists every tree it planted — trunk and canopy reach — none in a kept-clear box', () => {
     const box = { minX: -40, maxX: 40, minZ: 10, maxZ: 25 };

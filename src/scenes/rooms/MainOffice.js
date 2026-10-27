@@ -13,7 +13,9 @@ import { WindowGlass } from '../../gameobjects/WindowGlass.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveBox } from '../../gameobjects/DriveBox.js';
 import { populateGrowRack, GROW_RACK } from '../../gameobjects/GrowRack.js';
-import { buildFoodDispenser, DISPENSER } from '../../gameobjects/FoodDispenser.js';
+import { buildBeanProcessor, PROCESSOR, PROCESSOR_SOLIDS } from '../../gameobjects/BeanProcessor.js';
+import { CoffeeBushes } from '../../components/CoffeeBushes.js';
+import { CoffeeProcessor } from '../../components/CoffeeProcessor.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { screenSurface } from '../../components/ScreenView.js';
 import { deskWingGeometry, deskWingOutline, deskWingSolids } from './DeskWing.js';
@@ -43,9 +45,9 @@ const DRIVE_BOX_LAYOUT = [
 // (ambient, moon) belongs to the scene, not the room.
 //
 // Furnished for the job and nothing else: the computer desk facing the
-// window, the grow rack and the food dispenser beside it, a bin, a shelf of
-// spares, a poster. The coffee is in the bedroom (LivingQuarters): a cup
-// means leaving the desk.
+// window, the coffee bushes' grow rack and the bean processor beside it, a
+// bin, a shelf of spares, a poster. The coffee machine is in the bedroom
+// (LivingQuarters): a cup means leaving the desk.
 //
 // ── Interior layout mock-up ──
 // Placeholder shapes for the planned layout, to walk around in before the
@@ -59,10 +61,10 @@ const DRIVE_BOX_LAYOUT = [
 //     and the stand are render-only — a collider on the desk could stop the
 //     interact ray short of the terminal or the drive reader — and the
 //     globe's is a ball no bigger than itself.
-//   • The food corner, down the left wall: a two-tier rack of grow beds
-//     under UV lights (GrowRack.js), then the food dispenser and the bin,
-//     short of the doorway. The dispenser is idle for now: the crop is to
-//     feed it one day (#109).
+//   • The coffee corner, down the left wall (#168): a two-tier rack of
+//     coffee bushes under UV lights (GrowRack.js, `coffeeBushes`), then the
+//     bean processor (BeanProcessor.js, `beanProcessor`) and the bin, short
+//     of the doorway. The scene hands both the night's CoffeeHarvest.
 //   • No chair at the station, and no extinguisher by the door.
 //
 // Doorways: front (the original door) → Airlock, and through its hatch to
@@ -186,6 +188,12 @@ export class MainOffice extends Room {
   /** Pickupable drive boxes on the shelf. @type {DriveBox[]} */
   driveBoxes = [];
 
+  /** On the grow rack, by buildProps(). @type {CoffeeBushes|null} */
+  coffeeBushes = null;
+
+  /** On the bean processor, by buildProps(). @type {CoffeeProcessor|null} */
+  beanProcessor = null;
+
   /**
    * @param {import('../../core/Engine.js').Engine} engine
    * @param {object} [opts]
@@ -287,6 +295,7 @@ export class MainOffice extends Room {
     });
     this.computerScreen = desk ? screenSurface(desk.object3d, COMPUTER_SCREEN) : null;
     if (desk) desk.surface = 'wood';   // what a foot on it sounds of (Footsteps)
+    this._lineDesk(desk);
 
     // The station around it: the wings, and what stands on the right one.
     this._buildDeskWings(desk);
@@ -295,11 +304,11 @@ export class MainOffice extends Room {
     this._buildGlobe();
     this._markBoxSpot();
 
-    // Left wall, back to front: the grow beds, the food dispenser and a
+    // Left wall, back to front: the grow beds, the bean processor and a
     // bin, all short of the doorway.
     this._buildGrowBeds();
-    this._buildFoodDispenser();
-    this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 1.9] });
+    this._buildBeanProcessor();
+    this._spawnProp('model:trash-bin', { name: 'TrashBin', position: [-5.68, 0, 2.3] });
 
     // Right wall: spare parts on a shelf; a poster where the eye lands
     // walking in from the airlock. The shelf's open sides face ±x.
@@ -333,25 +342,21 @@ export class MainOffice extends Room {
     this._buildDriveBoxes();
   }
 
-  /** Where food will come from: a nutrient processor that turns the grow
-   *  beds' crop into meals (#109), built beside them (FoodDispenser: a hopper
-   *  for the crop, a lit process window, a meal bay with a tray waiting).
-   *  Until it is wired up it does nothing, and only says what it is —
-   *  stamina comes from the bedroom's coffee machine. One box is its
-   *  collider, the one the interact ray hits; the machine is drawn on it. */
-  _buildFoodDispenser() {
-    const size = DISPENSER.size;
-    const go = this._addTurnedBox('VendingMachine', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, 0);
-    buildFoodDispenser(go.object3d, {
+  /** Where the coffee comes from: the bean processor beside the grow beds
+   *  (BeanProcessor.js: a hopper on its side for the beans, a lit process
+   *  window, a bay the bags of ground coffee drop into). Solid round the
+   *  bay, not across it (PROCESSOR_SOLIDS), so a bag stands in it and the
+   *  ray reaches it; the machine is drawn on the body and worked by the
+   *  CoffeeProcessor on it. */
+  _buildBeanProcessor() {
+    const size = PROCESSOR.size;
+    const go = this._addTurnedBox('BeanProcessor', [-5.9 + size[0] / 2, size[1] / 2, 0.95], size, 0, null, PROCESSOR_SOLIDS);
+    const parts = buildBeanProcessor(go.object3d, {
       own: r => this._own(r),
-      labels: this.engine.assets?.get('tex:dispenser-labels') ?? null,
+      labels: this.engine.assets?.get('tex:processor-labels') ?? null,
       ceiling: this.height,
     });
-
-    // A label under the crosshair, nothing to press yet.
-    const label = new Interactable();
-    label.promptLabel = 'Food dispenser — empty';
-    go.addComponent(label);
+    this.beanProcessor = go.addComponent(new CoffeeProcessor({ parts }));
   }
 
   /** Drive reader slot on the desk surface, right of the computer. A small
@@ -427,7 +432,9 @@ export class MainOffice extends Room {
   // ──────────────────────────────────────────
   /** `_addStaticBox` with a yaw: the body is turned with the mesh. Pass no
    *  material for a collider with nothing drawn. */
-  _addTurnedBox(name, position, size, rotationY, material = null) {
+  /** `parts`: boxes in the GameObject's own space ({ size, at }) to make
+   *  it solid with, in place of one box of `size`. */
+  _addTurnedBox(name, position, size, rotationY, material = null, parts = null) {
     const go = new GameObject(name);
     go.object3d.position.set(...position);
     go.object3d.rotation.y = rotationY;
@@ -445,13 +452,13 @@ export class MainOffice extends Room {
         .setTranslation(position[0] + ox, position[1] + oy, position[2] + oz)
         .setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) }),
     );
-    const collider = world.createCollider(
-      RAPIER.ColliderDesc.cuboid(size[0] / 2, size[1] / 2, size[2] / 2),
+    const boxes = parts ?? [{ size, at: [0, 0, 0] }];
+    go.colliders = boxes.map(({ size: [w, h, d], at }) => world.createCollider(
+      RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2).setTranslation(...at),
       body,
-    );
+    ));
     go.rigidBody = body;
-    go.colliders = [collider];
-    go.collider  = collider;
+    go.collider  = go.colliders[0];
     go._originalSize = [...size];
     this.engine._bodyToGO?.set(body.handle, go);
     this.root.addChild(go);
@@ -471,6 +478,26 @@ export class MainOffice extends Room {
     this.engine._bodyToGO?.set(body.handle, go);
     this.root.addChild(go);
     return go;
+  }
+
+  /** The desk drawn from inside too, dark. Its model is drawn front faces
+   *  only (the manifest's `side: 'front'`), but it is a shell with no
+   *  faces under the keyboard tray and none on the kneehole's inner walls:
+   *  crouched beside it, the player saw up through the tray and out through
+   *  the side panels. A copy of each mesh drawing only its back faces fills
+   *  every such gap with the shell's dark inside, and is hidden behind the
+   *  front faces everywhere else. The geometry is the asset cache's. */
+  _lineDesk(desk) {
+    const meshes = [];
+    desk?.object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+    if (!meshes.length) return;
+    const material = this._own(new THREE.MeshStandardMaterial({ color: 0x1c1612, roughness: 0.9, side: THREE.BackSide }));
+    for (const mesh of meshes) {
+      const inside = new THREE.Mesh(mesh.geometry, material);
+      inside.name = 'DeskInside';
+      inside.receiveShadow = true;
+      mesh.add(inside);
+    }
   }
 
   /** The desk top carried on to each side: a wing turned 45° in toward the
@@ -567,14 +594,16 @@ export class MainOffice extends Room {
     this.root.object3d.add(this.boxSpot);
   }
 
-  /** Along the left wall, behind the dispenser: the grow rack (GrowRack.js),
+  /** Along the left wall, behind the processor: the grow rack (GrowRack.js),
    *  two tiers of three soil trays, each tier under UV grow lights, two
-   *  plants to a tray. One box is the collider — the whole rack is solid to
-   *  walk into — and the rack is drawn on it. */
+   *  coffee bushes to a tray. One box is the collider — the whole rack is
+   *  solid to walk into — and the rack is drawn on it; the CoffeeBushes on
+   *  it picks the bush under the crosshair. */
   _buildGrowBeds() {
     const size = GROW_RACK.size;
     const go = this._addTurnedBox('GrowBeds', [-5.9 + size[0] / 2, size[1] / 2, -1.52], size, 0);
-    populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
+    const { bushes, setBush } = populateGrowRack(go.object3d, { assets: this.engine.assets, own: r => this._own(r) });
+    this.coffeeBushes = go.addComponent(new CoffeeBushes({ bushes, setBush }));
   }
 
   /** A red bulb in a socket on the computer desk's shelf, just left of the

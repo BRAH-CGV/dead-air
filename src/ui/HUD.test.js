@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { HUD, RadarOverlay } from './HUD.js';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { HUD, RadarOverlay, RadarTelemetry } from './HUD.js';
 import {
   DishRig,
   createLocalRig,
@@ -506,5 +507,393 @@ describe('RadarOverlay UFO warning', () => {
     expect(el.classList.toggle).toHaveBeenCalledTimes(1);
     overlay.setWarning('');
     expect(el.classList.toggle).toHaveBeenLastCalledWith('is-shown', false);
+  });
+});
+
+// ── RadarTelemetry ──────────────────────────────────────────
+
+describe('RadarTelemetry', () => {
+  function makeRoot() {
+    const root = document.createElement('div');
+    return root;
+  }
+
+  it('registers blocks and rows, creating the expected DOM structure', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'a', label: 'A', format: String },
+        { key: 'b', label: 'B', format: (v) => v.toFixed(1) },
+      ]},
+    ]);
+
+    const blocks = root.querySelectorAll('.telemetry-block');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].dataset.block).toBe('test');
+
+    const title = blocks[0].querySelector('.telemetry-block-title');
+    expect(title.textContent).toBe('TEST');
+
+    const rows = blocks[0].querySelectorAll('.telemetry-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('.telemetry-label').textContent).toBe('A');
+    expect(rows[0].querySelector('.telemetry-value').textContent).toBe('—');
+    expect(rows[1].querySelector('.telemetry-label').textContent).toBe('B');
+  });
+
+  it('update() writes formatted values into the DOM', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'val', label: 'V', format: (v) => v.toFixed(2) },
+      ]},
+    ]);
+
+    tm.update({ val: 3.14159 });
+    const valueEl = root.querySelector('.telemetry-value');
+    expect(valueEl.textContent).toBe('3.14');
+  });
+
+  it('update() skips DOM writes when the formatted value is unchanged', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'val', label: 'V', format: (v) => v.toFixed(0) },
+      ]},
+    ]);
+
+    tm.update({ val: 42.1 });
+    const valueEl = root.querySelector('.telemetry-value');
+    expect(valueEl.textContent).toBe('42');
+
+    // Same formatted value — no DOM write
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { subtree: true, childList: true, characterData: true });
+    tm.update({ val: 42.4 });  // also formats to '42'
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+
+    // Different formatted value — DOM write
+    tm.update({ val: 43.0 });
+    expect(valueEl.textContent).toBe('43');
+  });
+
+  it('is null-safe: constructing with no root does not throw', () => {
+    expect(() => new RadarTelemetry(null)).not.toThrow();
+    const tm = new RadarTelemetry(null);
+    expect(() => tm.update({ val: 1 })).not.toThrow();
+    expect(() => tm.show()).not.toThrow();
+    expect(() => tm.hide()).not.toThrow();
+  });
+
+  it('ignores update keys that were not registered', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [
+      { name: 'test', title: 'TEST', rows: [
+        { key: 'a', label: 'A', format: String },
+      ]},
+    ]);
+    expect(() => tm.update({ a: 'ok', unknown: 'ignored' })).not.toThrow();
+    expect(root.querySelector('.telemetry-value').textContent).toBe('ok');
+  });
+
+  it('RadarOverlay wires a telemetry panel and exposes setTelemetry', () => {
+    const overlay = new RadarOverlay(null);
+    // Null-root telemetry is created; setTelemetry should not throw
+    expect(() => overlay.setTelemetry({ dishAz: 1.0 })).not.toThrow();
+  });
+
+  it('clears leftover blocks when constructed on the same container twice', () => {
+    const root = makeRoot();
+    const blocks = [{ name: 't', title: 'T', rows: [
+      { key: 'v', label: 'V', format: String },
+    ]}];
+    new RadarTelemetry(root, blocks);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+    // Second construction on the same root must NOT double up.
+    new RadarTelemetry(root, blocks);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+  });
+
+  it('dispose() clears the container and the row registry', () => {
+    const root = makeRoot();
+    const tm = new RadarTelemetry(root, [{ name: 't', title: 'T', rows: [
+      { key: 'v', label: 'V', format: String },
+    ]}]);
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(1);
+    tm.dispose();
+    expect(root.querySelectorAll('.telemetry-block')).toHaveLength(0);
+    // After dispose, updates are silently ignored (row registry cleared).
+    expect(() => tm.update({ v: 'x' })).not.toThrow();
+  });
+});
+
+// ── RadarOverlay lock-on progress bar ─────────────────────
+
+describe('RadarOverlay.setLockOnProgress', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-lockon-progress"><div class="scan-fill"></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('sets the fill height to 0% at progress 0', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(0);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('0%');
+  });
+
+  it('sets the fill height to 50% at progress 0.5', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(0.5);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('50%');
+  });
+
+  it('sets the fill height to 100% at progress 1', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(1);
+    const fill = overlay.root.querySelector('.scan-fill');
+    expect(fill.style.height).toBe('100%');
+  });
+
+  it('clamps values outside 0–1', () => {
+    const overlay = makeOverlay();
+    overlay.setLockOnProgress(-0.5);
+    expect(overlay.root.querySelector('.scan-fill').style.height).toBe('0%');
+    overlay.setLockOnProgress(2);
+    expect(overlay.root.querySelector('.scan-fill').style.height).toBe('100%');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setLockOnProgress(0.5)).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.setBarColor', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-scan-progress"><div class="scan-fill"></div></div><div id="radar-lockon-progress"><div class="scan-fill"></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('sets the fill background on both bars', () => {
+    const overlay = makeOverlay();
+    overlay.setBarColor('rgba(255, 40, 40, 0.9)');
+    const fills = overlay.root.querySelectorAll('.scan-fill');
+    expect(fills[0].style.background).toBe('rgba(255, 40, 40, 0.9)');
+    expect(fills[1].style.background).toBe('rgba(255, 40, 40, 0.9)');
+  });
+
+  it('restores the default colour', () => {
+    const overlay = makeOverlay();
+    overlay.setBarColor('rgba(255, 40, 40, 0.9)');
+    overlay.setBarColor('rgba(0, 255, 200, 0.7)');
+    const fills = overlay.root.querySelectorAll('.scan-fill');
+    expect(fills[0].style.background).toBe('rgba(0, 255, 200, 0.7)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setBarColor('red')).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.setDriveIndicators', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-drive-indicators"><div class="drive-indicator"><div class="drive-indicator-dot" id="drive-dot"></div></div><div class="drive-indicator"><div class="drive-indicator-dot" id="signal-dot"></div></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('drive dot is dark when no drive is inserted', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(false, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('drive dot glows teal when drive is inserted', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('signal dot is dark when drive has no signal', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('signal dot glows green when drive has a signal', () => {
+    const overlay = makeOverlay();
+    overlay.setDriveIndicators(true, true);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.setDriveIndicators(true, true)).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.flashIndicator', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-drive-indicators"><div class="drive-indicator"><div class="drive-indicator-dot" id="drive-dot"></div></div><div class="drive-indicator"><div class="drive-indicator-dot" id="signal-dot"></div></div></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('flashes the drive dot red on the first call to setDriveIndicators', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    // First phase (0–0.075 s): red.
+    overlay.setDriveIndicators(false, false);
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('flashes the signal dot red when told to', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('signal');
+    overlay.setDriveIndicators(true, false);
+    expect(overlay.root.querySelector('#signal-dot').style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('returns true on each flash phase transition', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    // First call: phase 0 starts → transition.
+    expect(overlay.setDriveIndicators(false, false)).toBe(true);
+    // Same frame, same phase → no transition.
+    expect(overlay.setDriveIndicators(false, false)).toBe(false);
+    // Advance into phase 1 → transition.
+    overlay._flashTime = 0.075;
+    expect(overlay.setDriveIndicators(false, false)).toBe(true);
+  });
+
+  it('returns to normal after 3 full on/off cycles (6 phases)', () => {
+    const overlay = makeOverlay();
+    overlay.flashIndicator('drive');
+    const phaseDur = 0.075;
+    // Advance through all 6 phases (3 on + 3 off) to finish the flash.
+    for (let i = 0; i < 6; i++) {
+      overlay._flashTime = (i + 1) * phaseDur;
+      overlay.setDriveIndicators(true, false);
+    }
+    // After 6 phases the flash is cleared; drive dot should be teal.
+    expect(overlay._flashWhich).toBeNull();
+    expect(overlay.root.querySelector('#drive-dot').style.background).toBe('rgba(0, 255, 200, 0.85)');
+  });
+
+  it('does not throw when the element is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.flashIndicator('drive')).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.startLetMeIn / stopLetMeIn', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="radar-let-me-in"></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('creates text elements inside the container', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    const container = overlay.root.querySelector('#radar-let-me-in');
+    expect(container.querySelectorAll('.let-me-in-text').length).toBe(6);
+    overlay.stopLetMeIn();
+  });
+
+  it('sets the active flag', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    expect(overlay._letMeInActive).toBe(true);
+    overlay.stopLetMeIn();
+    expect(overlay._letMeInActive).toBe(false);
+  });
+
+  it('stopLetMeIn hides all texts', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    // Advance past the first stagger so at least one text is visible.
+    vi.advanceTimersByTime(500);
+    overlay.stopLetMeIn();
+    for (const item of overlay._letMeInItems) {
+      expect(item.el.style.opacity).toBe('0');
+      expect(item.visible).toBe(false);
+    }
+  });
+
+  it('is idempotent — calling start twice does not duplicate elements', () => {
+    vi.useFakeTimers();
+    const overlay = makeOverlay();
+    overlay.startLetMeIn();
+    overlay.startLetMeIn();
+    const container = overlay.root.querySelector('#radar-let-me-in');
+    expect(container.querySelectorAll('.let-me-in-text').length).toBe(6);
+    overlay.stopLetMeIn();
+  });
+
+  it('is null-safe when the container is missing', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.startLetMeIn()).not.toThrow();
+    expect(() => overlay.stopLetMeIn()).not.toThrow();
+  });
+});
+
+describe('RadarOverlay.startContinuousBlink / stopContinuousBlink', () => {
+  function makeOverlay() {
+    const root = document.createElement('div');
+    root.innerHTML = '<div id="drive-dot"></div><div id="signal-dot"></div>';
+    return new RadarOverlay(root);
+  }
+
+  it('overrides the drive dot red while the continuous blink is active', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    // Drive not inserted, no signal — but the blink should override.
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#drive-dot');
+    // After one call the timer is near zero; the first phase is ON (red).
+    expect(dot.style.background).toBe('rgba(255, 50, 50, 0.9)');
+  });
+
+  it('stops overriding after stopContinuousBlink', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    overlay.stopContinuousBlink();
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#drive-dot');
+    expect(dot.style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('does not affect the signal dot', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    overlay.setDriveIndicators(false, false);
+    const dot = overlay.root.querySelector('#signal-dot');
+    expect(dot.style.background).toBe('rgb(51, 51, 51)');
+  });
+
+  it('is null-safe', () => {
+    const overlay = new RadarOverlay(null);
+    expect(() => overlay.startContinuousBlink()).not.toThrow();
+    expect(() => overlay.stopContinuousBlink()).not.toThrow();
+  });
+
+  it('returns true on phase transitions so the terminal plays the beep', () => {
+    const overlay = makeOverlay();
+    overlay.startContinuousBlink();
+    // First call: phase 0 just started → transition detected.
+    const beep = overlay.setDriveIndicators(false, false);
+    expect(beep).toBe(true);
   });
 });

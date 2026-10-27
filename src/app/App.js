@@ -476,8 +476,8 @@ export class App {
     }
     if (state === 'gameOver') {
       // A UFO catch fails the shift and then burns the screen white with
-      // "You were taken" — let that play (it has its own [E] retry) before
-      // the menu covers it. A missed quota has no white-out: shown at once.
+      // "You were taken" — let that play before the menu covers it (the
+      // menu is the only retry: GameController takes no key for it). A missed quota has no white-out: shown at once.
       // _catch() starts the white-out right after fail(), in the same call:
       // a microtask sees whether it did.
       clearTimeout(this._failTimer);
