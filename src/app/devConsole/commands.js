@@ -26,6 +26,7 @@ import { DriveSlot } from '../../components/DriveSlot.js';
 import { InteractionSystem } from '../../components/InteractionSystem.js';
 import { SignalTarget } from '../../gameplay/SignalTarget.js';
 import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
+import { playerBody } from '../../components/PlayerBody.js';
 
 /**
  * on|off (or a pair of words of its own) → true|false; nothing flips `current`.
@@ -167,6 +168,23 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
       say: (on) => (on ? 'Model debug logging on: reloading the scene' : 'Model debug logging off'),
     }),
+
+    {
+      name: 'bring', usage: 'bring', help: 'Teleport the player to the fly camera\'s position',
+      run: () => {
+        const cam = tool(engine.debugCamera, 'The fly camera isn\'t available yet');
+        if (!cam.active) throw new CommandError('Start the fly camera first (fly)');
+        const controller = engine.playerController;
+        if (!controller) throw new CommandError('No player controller');
+        const pos = cam.camera.position;
+        const { standEyeOffset } = playerBody();
+        controller.teleport(
+          [pos.x, pos.y - standEyeOffset, pos.z],
+          { yaw: cam.yaw, pitch: cam.pitch }
+        );
+        return 'Player brought to the fly camera';
+      },
+    },
 
     {
       name: 'dream', usage: 'dream [level]', help: 'Drop into the dream (1-3, default: tonight); waking comes back to this night',

@@ -5,6 +5,7 @@ import { createCommands, parseToggle, parseUnit, parseHour } from './commands.js
 import { NightManager } from '../../systems/NightManager.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Stamina } from '../../gameplay/Stamina.js';
+import { playerBody } from '../../components/PlayerBody.js';
 
 /** A flag object whose methods flip it, like the real debug tools. */
 function flag(key, on, off) {
@@ -84,13 +85,24 @@ function fakeEngine(scene) {
   // Player with object3d for the signals command.
   const playerObject = new THREE.Object3D();
   playerObject.position.set(0, 0, 0);
+  const debugCameraPos = new THREE.Vector3(5, 3, -10);
+  const debugCamera = {
+    active: false,
+    enable: vi.fn(() => { debugCamera.active = true; }),
+    disable: vi.fn(() => { debugCamera.active = false; }),
+    camera: { position: debugCameraPos },
+    yaw: 0.5,
+    pitch: -0.2,
+  };
+  const playerController = { teleport: vi.fn() };
   return {
     activeScene: scene,
     player: { name: 'Player', object3d: playerObject },
     debugModels: false,
     physicsDebug,
     levelEditor,
-    debugCamera: flag('active', 'enable', 'disable'),
+    debugCamera,
+    playerController,
     fullbright: flag('active', 'enable', 'disable'),
     perfStats: flag('visible', 'show', 'hide'),
     crosshair,
@@ -225,7 +237,7 @@ describe('createCommands', () => {
 
   it('registers every old debug key as a command', () => {
     for (const name of ['colliders', 'editor', 'fly', 'noclip', 'fullbright', 'perf', 'fps',
-      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'ragno', 'music', 'stamina', 'time', 'power', 'suit', 'zones', 'signals']) {
+      'night', 'models', 'ufo', 'storm', 'eyes', 'evil', 'ragno', 'music', 'stamina', 'time', 'power', 'suit', 'zones', 'signals', 'bring']) {
       expect(c.find(name), name).not.toBe(null);
     }
   });
@@ -704,6 +716,46 @@ describe('createCommands', () => {
       const { ok, out } = run('signals');
       expect(ok).toBe(false);
       expect(out[0]).toBe('No player to spawn near');
+    });
+  });
+
+  describe('bring', () => {
+    it('teleports the player to the fly camera and disables it', () => {
+      engine.debugCamera.active = true;
+      engine.debugCamera.camera.position.set(5, 3, -10);
+      engine.debugCamera.yaw = 0.5;
+      engine.debugCamera.pitch = -0.2;
+      const { standEyeOffset } = playerBody();
+      const { ok, out } = run('bring');
+      expect(ok).toBe(true);
+      expect(out).toEqual(['Player brought to the fly camera']);
+      expect(engine.playerController.teleport).toHaveBeenCalledWith(
+        [5, 3 - standEyeOffset, -10],
+        { yaw: 0.5, pitch: -0.2 }
+      );
+    });
+
+    it('refuses when the fly camera is not active', () => {
+      engine.debugCamera.active = false;
+      const { ok, out } = run('bring');
+      expect(ok).toBe(false);
+      expect(out[0]).toMatch(/fly camera first/i);
+      expect(engine.playerController.teleport).not.toHaveBeenCalled();
+    });
+
+    it('says so when the fly camera is not available', () => {
+      engine.debugCamera = null;
+      const { ok, out } = run('bring');
+      expect(ok).toBe(false);
+      expect(out[0]).toMatch(/fly camera isn't available/i);
+    });
+
+    it('says so when there is no player controller', () => {
+      engine.debugCamera.active = true;
+      engine.playerController = null;
+      const { ok, out } = run('bring');
+      expect(ok).toBe(false);
+      expect(out[0]).toMatch(/no player controller/i);
     });
   });
 
