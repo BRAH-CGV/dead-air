@@ -342,3 +342,33 @@ describe('InteractionSystem crosshair', () => {
   });
 });
 
+describe('InteractionSystem promptsHidden', () => {
+  it('hides the prompt but still targets interactables', () => {
+    const target = new GameObject('Console');
+    const interactable = target.addComponent(new class extends Interactable {
+      promptLabel = '[E] Use';
+    }());
+    const collider = { parent: () => ({ handle: 2 }) };
+
+    const { sys, engine, prompt } = makePlayer({
+      hit: { collider, timeOfImpact: 1 },
+    });
+    engine._bodyToGO.set(2, target);
+
+    // Normal: prompt shows.
+    sys.onUpdate(0);
+    expect(prompt.show).toHaveBeenCalled();
+
+    // Hide prompts: prompt is hidden, but target is still set.
+    sys.promptsHidden = true;
+    sys.onUpdate(0);
+    expect(prompt.hide).toHaveBeenCalled();
+    expect(sys.currentTarget).toBe(interactable);
+  });
+
+  it('starts with promptsHidden false', () => {
+    const { sys } = makePlayer();
+    expect(sys.promptsHidden).toBe(false);
+  });
+});
+

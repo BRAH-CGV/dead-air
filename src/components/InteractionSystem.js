@@ -71,6 +71,10 @@ export class InteractionSystem extends Component {
    *  Clear to null to hand control back. */
   promptOverride = null;
 
+  /** When true, the prompt text is hidden but interaction still works —
+   *  toggled by the `hud` debug command. */
+  promptsHidden = false;
+
   /** Tracks whether we already hid the prompt for an override, so we only
    *  hide once and force a re-show when the override clears. */
   _promptWasSuppressed = false;
@@ -179,7 +183,7 @@ export class InteractionSystem extends Component {
     // When another system has claimed the prompt (promptOverride is set),
     // suppress our prompt logic entirely. Reset _prevTarget so that when
     // the override clears, we re-evaluate from scratch.
-    if (this.promptOverride) {
+    if (this.promptOverride || this.promptsHidden) {
       if (!this._promptWasSuppressed) {
         this.prompt?.hide();
         this._promptWasSuppressed = true;

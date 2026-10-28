@@ -23,6 +23,7 @@ import { UsageError, CommandError } from './DevConsole.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
+import { InteractionSystem } from '../../components/InteractionSystem.js';
 import { SignalTarget } from '../../gameplay/SignalTarget.js';
 import { SIGNAL_FADE_SECONDS, VISIBLE_SECONDS, PITCH_MIN, PITCH_MAX } from '../../gameplay/SignalManager.js';
 
@@ -401,13 +402,15 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
     }),
     toggle({
-      name: 'hud', help: 'Hide or show the HUD overlay and crosshair',
+      name: 'hud', help: 'Hide or show the HUD overlay, crosshair and interaction prompts',
       target: () => system('hud', 'HUD'),
       get: (hud) => hud.visible,
       set: (hud, on) => {
         on ? hud.show() : hud.hide();
         const crosshair = engine.crosshair;
         if (crosshair) on ? crosshair.show() : crosshair.hide();
+        const interaction = engine.player?.getComponent?.(InteractionSystem);
+        if (interaction) interaction.promptsHidden = !on;
       },
       say: (on) => `HUD ${on ? 'shown' : 'hidden'}`,
     }),
