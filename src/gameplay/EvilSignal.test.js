@@ -513,7 +513,7 @@ describe('EvilSignal nights', () => {
     const one = evilSig(signalManager);
     evil.hover(one);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
-    evil.onUpdate(EVIL.lockSeconds + 0.1);      // pinned with no drive, then gone
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);      // pinned with no drive, then gone
     expect(evil._respawnTimer).toBe(EVIL.respawnDelaySeconds);
 
     evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);   // long before its own hour
@@ -524,7 +524,7 @@ describe('EvilSignal nights', () => {
     // Dodged again: no third.
     evil.hover(two);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil._respawnTimer).toBeNull();
     clock.currentTime = second;
     evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);

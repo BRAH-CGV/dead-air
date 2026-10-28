@@ -75,9 +75,10 @@ export const EVIL = {
    *  TEMP: 30 s for debugging. Restore before release. */
   respawnDelaySeconds: 30,
   /** Seconds the player has to wipe a corrupted drive at the ServerRoom
-   *  console before the shift ends ("You were silenced").
-   *  TEMP: 15 s for debugging. Restore before release. */
-  silenceSeconds: 15,
+   *  console before the shift ends ("You were silenced"). Must be longer
+   *  than lockWithDriveSeconds so the lock releases before the shift ends.
+   *  TEMP: 35 s for debugging. Restore before release. */
+  silenceSeconds: 35,
   /** Seconds between random hops of the corrupted drive at the start of
    *  the silence timer. The interval ramps down to driveHopEnd as doom
    *  builds, so the drive jumps faster and faster. */
