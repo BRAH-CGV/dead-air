@@ -35,6 +35,9 @@ export class DebugCamera {
 
   active = false;
 
+  /** FOV the player camera had when we entered fly mode, restored on disable. */
+  _savedFov = null;
+
   speed       = 8;      // m/s, multiplied by boost while Shift is held
   boost       = 4;
   sensitivity = 0.002;  // rad per mouse px — matches the player's default
@@ -69,6 +72,10 @@ export class DebugCamera {
     this._player = player ?? null;
     this.active  = true;
 
+    // Remember the player camera's FOV so disable() can restore it — the
+    // scroll-wheel zoom below changes it while flying.
+    this._savedFov = this.camera.fov;
+
     // Inherit the camera's current aim (the controller writes YXZ Euler
     // straight onto it), so the switch is seamless.
     this.yaw   = this.camera.rotation.y;
@@ -102,6 +109,13 @@ export class DebugCamera {
       this.camera.position.set(0, 0, 0);
       this.camera.rotation.set(0, 0, 0);
     }
+
+    // Put the FOV back where the player (or settings) left it.
+    if (this._savedFov != null) {
+      this.camera.fov = this._savedFov;
+      this.camera.updateProjectionMatrix();
+    }
+    this._savedFov = null;
 
     this._parent = null;
     this._player = null;

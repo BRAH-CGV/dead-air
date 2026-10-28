@@ -321,6 +321,61 @@ describe('DebugCamera scroll-wheel zoom', () => {
   });
 });
 
+describe('DebugCamera FOV restore on disable', () => {
+  it('saves the camera FOV on enable and restores it on disable', () => {
+    const { scene, player, camera } = buildRig();
+    camera.fov = 75;
+    camera.updateProjectionMatrix();
+    const dbg = new DebugCamera(camera, scene);
+
+    dbg.enable(player);
+    // Change FOV while flying (as the scroll wheel would).
+    camera.fov = 110;
+    camera.updateProjectionMatrix();
+
+    dbg.disable();
+
+    expect(camera.fov).toBe(75);
+  });
+
+  it('restores a non-default FOV (settings-driven)', () => {
+    const { scene, player, camera } = buildRig();
+    camera.fov = 60;   // player chose 60° in settings
+    camera.updateProjectionMatrix();
+    const dbg = new DebugCamera(camera, scene);
+
+    dbg.enable(player);
+    camera.fov = 100;
+    camera.updateProjectionMatrix();
+
+    dbg.disable();
+
+    expect(camera.fov).toBe(60);
+  });
+
+  it('restores FOV even when no zoom was applied while flying', () => {
+    const { scene, player, camera } = buildRig();
+    camera.fov = 75;
+    const dbg = new DebugCamera(camera, scene);
+
+    dbg.enable(player);
+    dbg.disable();
+
+    expect(camera.fov).toBe(75);
+  });
+
+  it('clears _savedFov after disable', () => {
+    const { scene, player, camera } = buildRig();
+    const dbg = new DebugCamera(camera, scene);
+
+    dbg.enable(player);
+    expect(dbg._savedFov).toBe(75);
+
+    dbg.disable();
+    expect(dbg._savedFov).toBeNull();
+  });
+});
+
 describe('Component.enabled guard (GameObject propagation)', () => {
   class Probe extends Component {
     updates = 0;
