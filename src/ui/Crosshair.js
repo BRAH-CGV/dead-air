@@ -9,6 +9,8 @@
 export class Crosshair {
   constructor(root = document.getElementById('crosshair')) {
     this.root = root;
+    /** When true, show() is a no-op — the HUD command hid the crosshair. */
+    this._hudHidden = false;
   }
 
   /** Highlight the reticle (e.g. when aiming at an interactable). */
@@ -28,9 +30,16 @@ export class Crosshair {
     this.root.style.display = 'none';
   }
 
-  /** Show the reticle after a hide(). */
+  /** Show the reticle after a hide(), unless the HUD command hid it. */
   show() {
-    if (!this.root) return;
+    if (!this.root || this._hudHidden) return;
     this.root.style.display = 'block';
+  }
+
+  /** Called by the `hud` debug command to suppress the crosshair. */
+  setHudHidden(hidden) {
+    this._hudHidden = hidden;
+    if (hidden) this.hide();
+    else this.show();
   }
 }

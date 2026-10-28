@@ -407,8 +407,7 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       get: (hud) => hud.visible,
       set: (hud, on) => {
         on ? hud.show() : hud.hide();
-        const crosshair = engine.crosshair;
-        if (crosshair) on ? crosshair.show() : crosshair.hide();
+        engine.crosshair?.setHudHidden(!on);
         const interaction = engine.player?.getComponent?.(InteractionSystem);
         if (interaction) interaction.promptsHidden = !on;
       },

@@ -74,7 +74,13 @@ function withZones(scene) {
 function fakeEngine(scene) {
   const physicsDebug = { visible: false, toggle: vi.fn(() => { physicsDebug.visible = !physicsDebug.visible; }) };
   const levelEditor = { enabled: false, toggle: vi.fn(() => { levelEditor.enabled = !levelEditor.enabled; }) };
-  const crosshair = { visible: true, show: vi.fn(() => { crosshair.visible = true; }), hide: vi.fn(() => { crosshair.visible = false; }) };
+  const crosshair = {
+    visible: true,
+    show: vi.fn(() => { crosshair.visible = true; }),
+    hide: vi.fn(() => { crosshair.visible = false; }),
+    setHudHidden: vi.fn((hidden) => { crosshair._hudHidden = hidden; if (hidden) crosshair.hide(); else crosshair.show(); }),
+    _hudHidden: false,
+  };
   // Player with object3d for the signals command.
   const playerObject = new THREE.Object3D();
   playerObject.position.set(0, 0, 0);
@@ -616,11 +622,11 @@ describe('createCommands', () => {
       expect(run('hud off').out).toEqual(['HUD hidden']);
       expect(scene.hud.hide).toHaveBeenCalledOnce();
       expect(scene.hud.visible).toBe(false);
-      expect(engine.crosshair.hide).toHaveBeenCalledOnce();
+      expect(engine.crosshair.setHudHidden).toHaveBeenCalledWith(true);
       expect(run('hud on').out).toEqual(['HUD shown']);
       expect(scene.hud.show).toHaveBeenCalledOnce();
       expect(scene.hud.visible).toBe(true);
-      expect(engine.crosshair.show).toHaveBeenCalledOnce();
+      expect(engine.crosshair.setHudHidden).toHaveBeenCalledWith(false);
     });
 
     it('hud with no argument flips visibility', () => {
