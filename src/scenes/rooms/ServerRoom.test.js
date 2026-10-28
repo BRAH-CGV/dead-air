@@ -3,7 +3,7 @@ import * as THREE from 'three';
 
 vi.mock('@dimforge/rapier3d', async () => (await import('../../test/fakeRapier.js')).rapierModule());
 
-import { ServerRoom } from './ServerRoom.js';
+import { ServerRoom, paintDeleteScreen } from './ServerRoom.js';
 import { makeEngine, pointLights } from '../../test/fakeRapier.js';
 import { Interactable } from '../../components/Interactable.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -343,6 +343,28 @@ describe('ServerRoom', () => {
     const interactable = console_.getComponent(Interactable);
     expect(interactable).not.toBeNull();
     expect(interactable.promptLabel).toBe('[E] Delete signal');
+  });
+
+  it('the delete console\'s screen says what it is for (#186)', () => {
+    const console_ = room.root.find('DeleteConsole');
+    const screen = console_.object3d.getObjectByName('DeleteScreen');
+    expect(screen).toBeDefined();
+    expect(screen.material.name).toBe('ScreenGlass');
+    expect(screen.castShadow).toBe(false);
+  });
+
+  it('paints DELETE in the middle of the screen, inside a border', () => {
+    const calls = [];
+    const ctx = new Proxy({}, {
+      get: (target, key) => key in target ? target[key] : (...args) => calls.push([key, ...args]),
+      set: (target, key, value) => { target[key] = value; return true; },
+    });
+    paintDeleteScreen(ctx, 600, 500);
+    const text = calls.find(c => c[0] === 'fillText');
+    expect(text.slice(1)).toEqual(['DELETE', 300, 250]);
+    expect(ctx.textAlign).toBe('center');
+    expect(ctx.textBaseline).toBe('middle');
+    expect(calls.some(c => c[0] === 'stroke' || c[0] === 'strokeRect')).toBe(true);
   });
 
   it('the delete console drive slot is at position (1.960, 0.405, 2.577) with rotation (0, -90, 0)', () => {

@@ -32,7 +32,7 @@ export const SCHEMA = {
                     options: [{ value: 'toggle', label: 'TOGGLE' }, { value: 'hold', label: 'HOLD' }] },
   showFps:        { tab: 'game', type: 'bool', label: 'Show FPS', default: false },
 
-  sensitivity:    { tab: 'controls', type: 'number', label: 'Sensitivity', min: 0.1, max: 3, step: 0.05, default: 1, format: times },
+  sensitivity:    { tab: 'controls', type: 'number', label: 'Sensitivity', min: 0.1, max: 5, step: 0.05, default: 1, format: times },
   invertY:        { tab: 'controls', type: 'bool', label: 'Invert Y', default: false },
   smoothing:      { tab: 'controls', type: 'number', label: 'Smoothing', min: 0, max: 0.8, step: 0.05, default: 0.2, format: (v) => v.toFixed(2) },
   keyBinds:       { tab: 'controls', type: 'binds', label: 'Key binds', default: (d) => ({ ...d.keyBinds }) },

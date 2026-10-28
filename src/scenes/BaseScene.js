@@ -26,7 +26,7 @@ import { SkyFollow } from '../components/SkyFollow.js';
 import { NightManager } from '../systems/NightManager.js';
 import { MainOffice, WINDOW_CORNER_RADIUS, deskStation } from './rooms/MainOffice.js';
 import { ServerRoom } from './rooms/ServerRoom.js';
-import { LivingQuarters } from './rooms/LivingQuarters.js';
+import { LivingQuarters, COFFEE_MACHINE } from './rooms/LivingQuarters.js';
 import { Airlock } from './rooms/Airlock.js';
 import { Corridor } from './rooms/Corridor.js';
 import { Ambience, AMBIENCE } from '../components/Ambience.js';
@@ -90,6 +90,11 @@ import { SecurityCamera } from '../gameobjects/SecurityCamera.js';
 import { CameraTerminal, createCameraInteractable, CAMERA_FLASH } from '../components/CameraTerminal.js';
 import { CameraOverlay } from '../ui/CameraOverlay.js';
 import { Stamina } from '../gameplay/Stamina.js';
+import { CoffeeHarvest, COFFEE_HARVEST } from '../gameplay/CoffeeHarvest.js';
+import { CoffeeItems } from '../components/CoffeeItems.js';
+import { ProcessorSound } from '../components/ProcessorSound.js';
+import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
+import { CoffeeBeans, CoffeeBag, COFFEE_BAG } from '../gameobjects/CoffeeGoods.js';
 import { StaminaDrain } from '../components/StaminaDrain.js';
 import { SleepDemon, sightRay, SLEEP_DEMON_FIGURE } from '../gameplay/SleepDemon.js';
 import { createMonsterFigure } from '../gameobjects/MonsterFigure.js';
@@ -106,6 +111,8 @@ import { Footsteps } from '../components/Footsteps.js';
 import { BedroomPCPanel } from '../ui/BedroomPCPanel.js';
 import { colonyMap } from '../ui/colonyMap.js';
 import { RunRecord } from '../gameplay/RunRecord.js';
+import { ThreatWatch } from '../gameplay/ThreatWatch.js';
+import { threatForecast } from '../gameplay/ThreatForecast.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { RagnoFigure } from '../gameobjects/RagnoFigure.js';
 import { Ragno, ragnoRay } from '../gameplay/Ragno.js';
@@ -201,6 +208,17 @@ const BUGGY_HALF_LENGTH = 2.6;
  *  Room-local equals world (the office root is at the origin); y is half a
  *  box's height. */
 const BOX_PARKING = [[1.1, 0.06, 4.72], [1.6, 0.06, 4.72]];
+
+/** Metres round the generator kept free of grass. The tallest blade
+ *  (1.45 m), tipped its furthest, reaches about 1 m from its root. */
+const GRASS_GENERATOR_CLEARANCE = 1;
+/** Metres past that over which the grass grows back, thin and short at
+ *  first: a hard edge left a few tall blades standing alone by the casing. */
+const GRASS_GENERATOR_FADE = 2;
+
+/** Metres from the coffee machine's top a bag let go docks on it from:
+ *  enough for the floor in front of its table. */
+const COFFEE_DOCK_REACH = 1.4;
 
 /** Metres either side of the fence kept free of trees. The widest canopy in
  *  the belt (a pine, ~4.7 m across) reaches 2.35 m from its trunk. */
@@ -383,6 +401,7 @@ export class BaseScene extends Scene {
     this._addGameplaySystems();
     this._addCameraTerminal();
     this._addScreenPictures();
+    this._addCoffee();
     this._addStamina();
     this._addBedRest();
     this._addBuggySendOff();
@@ -392,6 +411,7 @@ export class BaseScene extends Scene {
     this._addUfo();
     this._addSandstorm();
     this._addRagno();
+    this._addThreatWatch();
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
@@ -749,6 +769,11 @@ export class BaseScene extends Scene {
     this.radarOverlay = new RadarOverlay();
     this.processingScreen = new ProcessingScreen();
 
+    // Show the radar overlay (and its telemetry panel) from scene build,
+    // not only after the first terminal interaction. The overlay stays
+    // permanently visible once shown.
+    this.radarOverlay.show();
+
     // The real sky behind the radar grid: the backdrop reads it live, so it
     // turns with the night and drowns in the dawn exactly as the window
     // view does.
@@ -791,9 +816,9 @@ export class BaseScene extends Scene {
     this.gameController.terminal      = this.terminal;
     this.gameController.hud           = this.hud;
     this.gameController.banner        = this.banner;
-    // What each morning's buggy takes to the hub, for the bedroom PC. On
-    // the engine, so a dream's rebuild between nights keeps it.
-    this.gameController.run           = (this.engine.run ??= new RunRecord());
+    // The run's array name and each night's threat log, for the bedroom PC.
+    // On the engine, so a dream's rebuild between nights keeps it.
+    this.engine.run ??= new RunRecord();
     gameplayGO.addComponent(this.gameController);
 
     // The banner's timing runs on real time (engine.realDt), ticked by a
@@ -806,14 +831,16 @@ export class BaseScene extends Scene {
 
     // The red signal (the next threat, in early): it scans itself, pins
     // the dish when no drive is in, and corrupts the drive it is saved to
-    // — a red drive never counts towards the quota. Summoned with G until
-    // it gets a night of its own.
+    // — a red drive never counts towards the quota. Twice on night 3, each
+    // at an hour of its own on the night clock (scheduleEvil); the console's
+    // `evil` brings it on any night.
     this.evilSignal = new EvilSignal({
       controller:    this.gameController,
       signalManager: this.signalManager,
       terminal:      this.terminal,
       driveManager:  this.driveManager,
       satellite:     this.satellite,
+      clock:         this.nightClock,
     });
     gameplayGO.addComponent(this.evilSignal);
     this.terminal.evilSignal = this.evilSignal;
@@ -1176,6 +1203,19 @@ export class BaseScene extends Scene {
     const endFront = Math.min(...[this.rooms.ServerRoom, this.rooms.LivingQuarters].map(r => r.bounds().max.z));
     const fenceRect = yardRect({ halfX: footprint.halfX, halfZ: endFront });
 
+    // The generator, in the far corner of the fenced yard, on the side away
+    // from the buggy — a walk out into the storm to cut the power, along the
+    // wire. Read off the fence, so it follows the yard. Its control panel is
+    // on its −z side, facing back across the yard. _addPower() puts its
+    // switch on it. Placed before the grass, which is kept off it.
+    const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
+    const [insetX, insetZ] = GENERATOR_CORNER_INSET;
+    const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
+    this.generator = this.engine.spawnModel('model:generator', {
+      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
+    });
+    this._adopt(this._outside, this.generator);
+
     const rocks = createMarsRocks({ footprint });
     const belt = createMarsVegetation({
       footprint,
@@ -1193,6 +1233,9 @@ export class BaseScene extends Scene {
         ...[-1, 1].map(side => this._poleView(side)),
         ...[-1, 1].map(side => this._yardWalk(side, fenceRect)),
       ],
+      // Blades grew up through the generator's casing.
+      grassClearOf: this._footprintOf(this.generator, GRASS_GENERATOR_CLEARANCE)
+        .map(box => ({ ...box, fade: GRASS_GENERATOR_FADE })),
     });
     // Masts on the rim, blinking. The belt closed the horizon, so these are
     // what is left to look at in the distance — and standing one at the end of
@@ -1291,19 +1334,17 @@ export class BaseScene extends Scene {
     const buggy = this._addBuggy(BUGGY_SPOT, THREE.MathUtils.degToRad(95.7), 1.237);
     this.buggyCargo = this._addBuggyCargo(buggy);
 
-    // The generator, in the far corner of the fenced yard, on the side away
-    // from the buggy — a walk out into the storm to cut the power, along the
-    // wire. Read off the fence, so it follows the yard. Its control panel is
-    // on its −z side, facing back across the yard. _addPower() puts its
-    // switch on it.
-    const side = Math.sign(BUGGY_SPOT[0]) < 0 ? 1 : -1;   // across from the buggy
-    const [insetX, insetZ] = GENERATOR_CORNER_INSET;
-    const genX = side > 0 ? fenceRect.maxX - insetX : fenceRect.minX + insetX;
-    this.generator = this.engine.spawnModel('model:generator', {
-      name: 'Generator', position: [genX, 0, fenceRect.maxZ - insetZ],
-    });
-    this._adopt(this._outside, this.generator);
     this.dishPad = dishPad;
+  }
+
+  /** A GameObject's ground-plan rectangle, grown by `margin` metres all
+   *  round, as a one-box list; empty if it has no mesh (tests). */
+  _footprintOf(go, margin = 0) {
+    if (!go) return [];
+    go.object3d.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(go.object3d);
+    if (box.isEmpty()) return [];
+    return [{ minX: box.min.x - margin, maxX: box.max.x + margin, minZ: box.min.z - margin, maxZ: box.max.z + margin }];
   }
 
   /** The camera the main menu is drawn through (`menuCamera`, #115): over
@@ -1918,7 +1959,7 @@ export class BaseScene extends Scene {
   // ──────────────────────────────────────────
   /** Stamina drains through the shift — faster outside, and faster still
    *  while the player stares at the dust eyes — and the bedroom's coffee
-   *  machine tops it up, a couple of cups a night. The drain ticks on
+   *  machine tops it up, a cup for each ripe bush picked (_addCoffee). The drain ticks on
    *  GameplaySystems after the controller, and before the demon and the
    *  fatigue effects, so within a frame both read this frame's stamina. */
   _addStamina() {
@@ -1926,6 +1967,7 @@ export class BaseScene extends Scene {
     const machine = this.rooms.LivingQuarters.coffeeMachine;
     if (machine) {
       machine.stamina = this.stamina;
+      machine.items = this.coffeeItems;
       // The machine at work while a cup brews, and its start click.
       machine.gameObject.addComponent(new CoffeeSound({ machine }));
       // A slurp as the cup is drunk (a quiet recording, so lifted).
@@ -1947,10 +1989,62 @@ export class BaseScene extends Scene {
       controller:   this.gameController,
       hud:          this.hud,
       grid:         this.power,
-      onNightStart: () => machine?.reset(),
+      onNightStart: () => { this.coffee.newNight(); this.coffeeItems.reset(); machine?.reset(); },
       isOutside:    () => !!this.engine.camera && this._isOutside(this.engine.camera.getWorldPosition(_staminaEye)),
       isStaring:    () => !!this.dustEyes?.staredAt,
     }));
+  }
+
+  /** The night's coffee (#168): a CoffeeHarvest over the office rack's
+   *  bushes, two ripe a night (a new one on each night start, from the
+   *  stamina drain's), and the piles of beans and bags of ground coffee
+   *  carried from the rack to the processor and on to the bedroom's coffee
+   *  machine (CoffeeItems, as many of each as there are ripe bushes, built
+   *  once and parked between uses). The goods are the office's, like its
+   *  drives. Rooms don't know about gameplay, so it is wired here, and in
+   *  _addStamina for the machine. */
+  _addCoffee() {
+    const office = this.rooms.MainOffice;
+    const { coffeeBushes, beanProcessor } = office;
+    const own = r => office._own(r);
+    const make = (Kind, name) => Array.from({ length: COFFEE_HARVEST.ripePerNight }, (_, i) => {
+      const item = new Kind(`${name}_${i + 1}`, { own });
+      office.root.addChild(item);
+      return item;
+    });
+    this.coffee = new CoffeeHarvest({ bushes: coffeeBushes?.bushes.length ?? 0 });
+    this.coffeeItems = this._sceneRoot.find('GameplaySystems').addComponent(new CoffeeItems({
+      beans: make(CoffeeBeans, 'CoffeeBeans'),
+      bags: make(CoffeeBag, 'CoffeeBag'),
+      pickup: this.pickupSystem,
+      engine: this.engine,
+    }));
+    coffeeBushes?.bind(this.coffee, this.coffeeItems);
+    beanProcessor?.bind(this.coffee, this.coffeeItems);
+    // Their sounds: the grind while a pile is processed, and what each
+    // machine takes in (the pile or bag is parked away with its own voice).
+    beanProcessor?.gameObject.addComponent(new ProcessorSound({ harvest: this.coffee }));
+    beanProcessor?.gameObject.addComponent(new ImpactSound(IMPACT_SOUNDS.beans));
+    this._addCoffeeDock();
+  }
+
+  /** The bedroom coffee machine's top: a bag of ground coffee let go near
+   *  it docks there (a SnapSocket, like the drive boxes' and the airlock's),
+   *  seen and still able to be picked back off, until a cup is brewed from
+   *  it. Near is within `COFFEE_DOCK_REACH` of the top: the table round it
+   *  and the floor in front. The bag sounds its own seating. */
+  _addCoffeeDock() {
+    const machine = this.rooms.LivingQuarters.coffeeMachine;
+    if (!machine) return;
+    const dock = machine.gameObject.addComponent(new SnapSocket({
+      slots: [{ offset: { y: COFFEE_MACHINE[1] / 2 + COFFEE_BAG.size[1] / 2 + 0.005 } }],
+      snapDistance: COFFEE_DOCK_REACH,
+      sounds: 'item',
+      attachedPromptLabel: '[E] Pick up',
+      canAccept: item => machine.accepts(item),
+    }));
+    for (const bag of this.coffeeItems.bags) dock.addCandidate(bag);
+    machine.dock = dock;
   }
 
   /** The Sleep Demon, in the corner of the player's eye once they tire (see
@@ -2124,15 +2218,16 @@ export class BaseScene extends Scene {
   // The bedroom PC (#114)
   // ──────────────────────────────────────────
   /** The computer on the bedroom desk: the room put it there, this hands
-   *  it the night, its panel (#bedroom-pc), the run record and the colony
-   *  map — the six neighbours where the radar has them, and the buggy's
-   *  route out toward the hub. */
+   *  it the night, its panel (#bedroom-pc), the run record (last night's
+   *  threats), the forecast and the colony map — the six neighbours where
+   *  the radar has them, and the buggy's route out toward the hub. */
   _addBedroomPC() {
     const pc = this.rooms.LivingQuarters?.pc;
     if (!pc) return;
     pc.controller = this.gameController;
     pc.panel = new BedroomPCPanel();
     pc.run = this.engine.run;
+    pc.forecast = threatForecast;
     pc.map = colonyMap({
       neighbours: this.satellite?.neighbours ?? [],
       route: this._buggyRoutePoints(),
@@ -2218,7 +2313,15 @@ export class BaseScene extends Scene {
 
     this.whiteOut = new WhiteOut();
     this.evilSignal.whiteOut = this.whiteOut;
-    this.evilSignal.hooks = { setPlayerLocked: locked => this._setPlayerLocked(locked) };
+    this.evilSignal.hooks = {
+      setPlayerLocked: locked => this._setPlayerLocked(locked),
+      // A due appearance waits out the UFO's visit and a nap (both built
+      // after this, so read when asked).
+      busy: () => {
+        const phase = this.ufoThreat?.phase;
+        return (!!phase && phase !== 'waiting' && phase !== 'gone') || !!this.nap?.napping;
+      },
+    };
     this.evilSignal.deleteWarning = new DeleteWarning();
     this._redOut = new RedOut();
     this._pipeline = new PostPipeline();
@@ -2562,6 +2665,40 @@ export class BaseScene extends Scene {
     return 'outside';
   }
 
+  /** The night's threat log for the bedroom PC (ThreatWatch): each kind
+   *  noted as it first shows, put on the run record as the shift ends. One
+   *  source a kind, as ThreatForecast names them, each reading the system
+   *  live. After every threat it reads; nothing allocated per frame. */
+  _addThreatWatch() {
+    const eyesOut = () => {
+      for (const slot of this.dustEyes?.slots ?? []) if (slot.phase !== 'off') return true;
+      return false;
+    };
+    const ufoHere = () => {
+      const phase = this.ufoThreat?.phase;
+      return phase === 'approaching' || phase === 'expanding' || phase === 'lethal' || phase === 'caught';
+    };
+    const corrupt = () => {
+      for (const s of this.signalManager?.signals ?? []) if (s.evil && s.appeared) return true;
+      return false;
+    };
+    this.threatWatch = this._sceneRoot.find('GameplaySystems').addComponent(new ThreatWatch());
+    Object.assign(this.threatWatch, {
+      controller: this.gameController,
+      clock:      this.nightClock,
+      run:        this.engine.run,
+      sources: {
+        storm:   () => (this.sandstorm?.level ?? 0) > 0.5,
+        outage:  () => !!this.stormOutage?.flickering,
+        eyes:    eyesOut,
+        prowler: () => { const l = this.ragno?.logic; return !!l && l.state !== 'off' && !l.indoors; },
+        vents:   () => !!this.ragno?.logic?.indoors,
+        aerial:  ufoHere,
+        corrupt,
+      },
+    });
+  }
+
   /** Ragno, the camera entity (Ragno.js): his figure under Threats on the
    *  scene root, built hidden so its shaders compile behind the loading
    *  screen, and the component that runs him on GameplaySystems. After the
@@ -2650,22 +2787,49 @@ export class BaseScene extends Scene {
   _addTutorial() {
     const office = this.rooms.MainOffice;
     const airlock = this.rooms.Airlock;
+    const server = this.rooms.ServerRoom;
     const boxes = office.driveBoxes ?? [];
     const eye = new THREE.Vector3();
     const at = new THREE.Vector3();
-    // The drive box nearest the player, for "put it in a box".
-    const nearestBox = () => {
+    // The drive box nearest the player, for "pick up a box"; with
+    // `withRoom`, the nearest with a free slot, for "put it in a box" (the
+    // shelf's boxes start full, so the one the drive came out of).
+    const nearestBox = (withRoom = false) => {
       if (!boxes.length || !this.engine.camera) return null;
       this.engine.camera.getWorldPosition(eye);
       let best = null;
       let bestDist = Infinity;
       for (const box of boxes) {
+        if (withRoom && !box.receiver.attachments.includes(null)) continue;
         const d = box.object3d.getWorldPosition(at).distanceToSquared(eye);
         if (d < bestDist) { bestDist = d; best = box.object3d; }
       }
       return best;
     };
     const bed = this.rooms.LivingQuarters.bed;
+    // The coffee lesson's arrows: the ripe bush nearest the player, and a
+    // bag once one is out (the processor that makes it until then).
+    const bushes = office.coffeeBushes;
+    const processorObject = office.beanProcessor?.gameObject.object3d ?? null;
+    const bushMark = new THREE.Object3D();
+    const ripeBush = () => {
+      if (!bushes || !this.coffee || !this.engine.camera) return null;
+      this.engine.camera.getWorldPosition(eye);
+      const rack = bushes.gameObject.object3d;
+      let best = null;
+      let bestDist = Infinity;
+      this.coffee.bushes.forEach((state, i) => {
+        if (state !== 'ripe') return;
+        rack.localToWorld(at.copy(bushes.bushes[i]));
+        const d = at.distanceToSquared(eye);
+        if (d < bestDist) { bestDist = d; best = i; }
+      });
+      if (best === null) return null;
+      rack.localToWorld(bushMark.position.copy(bushes.bushes[best]));
+      bushMark.updateMatrixWorld(true);
+      return bushMark;
+    };
+    const bagOut = () => this.coffeeItems?.loose('bag')[0]?.object3d ?? processorObject;
     this.tutorial = new Tutorial({
       controller:    this.gameController,
       clock:         this.nightClock,
@@ -2676,6 +2840,8 @@ export class BaseScene extends Scene {
       drives:        office.drives ?? [],
       driveBoxes:    boxes,
       quotaDock:     airlock.quotaDock ?? null,
+      serverSlot:    server?.driveSlot ?? null,
+      processingScreen: this.processingScreen ?? null,
       grid:          this.power ?? null,
       suit:          this.suit ?? null,
       nap:           this.nap ?? null,
@@ -2687,22 +2853,31 @@ export class BaseScene extends Scene {
       bed,
       flashlight:    this.engine.player?.getComponent(Flashlight) ?? null,
       onDesk:        (p) => office.isOnDesk(p),
+      coffee:        { harvest: this.coffee, items: this.coffeeItems, machine: this.rooms.LivingQuarters.coffeeMachine },
       overlay:       new TutorialOverlay(undefined, {
         keyLabel: (text) => tutorialKeys(text, this.engine.keyBinds ?? {}),
       }),
       camera:        this.engine.camera ?? null,
       // The breaker panel has the mouse (_usePanel): it covers the words.
+      // (So does the processing console, but the tutorial shows over it.)
       covered:       () => !!this.engine.uiHasMouse,
       targets: {
         reader:    { object: office.driveReader?.object3d ?? null, lift: 0.05 },
         computer:  { object: office.root.find('ComputerDesk')?.object3d ?? null, lift: 1.05 },
-        box:       { object: nearestBox, lift: 0.1 },
+        box:       { object: () => nearestBox(), lift: 0.1 },
+        openBox:   { object: () => nearestBox(true) ?? nearestBox(), lift: 0.1 },
         desk:      { object: office.boxSpot ?? null, lift: 0.1 },
         dock:      { object: airlock.quotaDockGO?.object3d ?? null, lift: 0.3 },
+        serverReader:  { object: server?.driveSlot?.gameObject?.object3d ?? null, lift: 0.05 },
+        serverConsole: { object: server?.root.find('ServerConsole')?.object3d ?? null, lift: 0.6 },
         locker:    { object: airlock.root.find('SuitLocker')?.object3d ?? null, lift: 1.2 },
         generator: { object: this.generator?.object3d ?? null, lift: 1.2 },
         bed:       { object: bed?.gameObject?.object3d ?? null, lift: 0.6 },
         buggy:     { object: this.buggyBoot?.object3d ?? null, lift: 0.6 },
+        bush:      { object: ripeBush, lift: 0.1 },
+        processor: { object: processorObject, lift: 0.5 },
+        bag:       { object: bagOut, lift: 0.15 },
+        coffee:    { object: this.rooms.LivingQuarters.coffeeMachine?.gameObject.object3d ?? null, lift: 0.35 },
       },
     });
     this._sceneRoot.find('GameplaySystems').addComponent(this.tutorial);

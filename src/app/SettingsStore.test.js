@@ -60,6 +60,14 @@ describe('SettingsStore', () => {
     expect(s.values.shadows).toBe('low');
   });
 
+  it('lets sensitivity go up to 5× for touchpads and slow mice (#117), still 1× by default', () => {
+    expect(SCHEMA.sensitivity).toMatchObject({ min: 0.1, max: 5, default: 1 });
+    const s = make(memoryStorage({ [SETTINGS_KEY]: JSON.stringify({ sensitivity: 4.5 }) }));
+    expect(s.values.sensitivity).toBe(4.5);
+    s.set('sensitivity', 9);
+    expect(s.values.sensitivity).toBe(5);
+  });
+
   it('has a dust storm quality on the VIDEO tab: 0 to 1, full by default, shown as a percentage', () => {
     const entry = SCHEMA.stormQuality;
     expect(entry).toMatchObject({ tab: 'video', type: 'number', min: 0, max: 1, default: 1 });

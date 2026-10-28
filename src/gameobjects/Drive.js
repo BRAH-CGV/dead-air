@@ -4,14 +4,20 @@ import { Component } from '../core/Component.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
 import { packGroups } from '../core/PhysicsLayers.js';
+import { DRIVE_ATLAS, mapBoxFaces, cachedTexture } from './propAtlases.js';
 
 // ─────────────────────────────────────────────
 // Drive  –  Physical hard drive (pickup-able small cube)
 // ─────────────────────────────────────────────
 // A small box representing a hard drive. Placed near the desk as a physics
-// object the player can pick up and carry to the drive reader. When a signal
-// is saved to it, the material turns green (later this will be an indicator
-// light on a proper model).
+// object the player can pick up and carry to the drive reader. Its casing
+// wears `tex:drive` and its normal map `tex:drive-normal`
+// (scripts/make-prop-textures.mjs: its size on top, vents
+// on the −z end, the connector on the +z end) once _init finds it loaded.
+// An LED on the edge between the top and the −z end shows what is stored:
+// dark when blank, green for a saved signal, cyan processed, red the
+// anomalous one (SIGNAL_LEVEL_COLORS). Seen from above both lying in the
+// reader and standing in a box (the −z end up).
 //
 // The drive is a dynamic physics body created in _init() (the engine
 // lifecycle hook). Before _init it is a plain visual with a Pickupable
@@ -22,7 +28,7 @@ import { packGroups } from '../core/PhysicsLayers.js';
 //   const drive = new Drive('Drive_1');
 //   drive.object3d.position.set(1.2, 0.02, -2.0);
 //   // After _init runs (engine lifecycle):
-//   drive.setSaved(true);        // turns green
+//   drive.setSaved(true);        // LED green
 //   drive.enablePhysics();       // gravity on, rest damping (the default)
 //   drive.disablePhysics();      // floats in place — scripted states
 //   drive.makeKinematic();       // locked in place (e.g. in the reader)
@@ -30,8 +36,16 @@ import { packGroups } from '../core/PhysicsLayers.js';
 // Owns its geometry and material; dispose() frees them.
 // ─────────────────────────────────────────────
 
-/** Default colour — dark grey plastic. */
+/** Default colour — dark grey plastic; white once the casing's texture
+ *  (which carries the grey) is on. */
 const DEFAULT_COLOR = 0x3a3a3a;
+
+/** The LED: a lens over the edge between the top and the −z end, standing
+ *  just proud of both, on the +x half — big enough to read across the
+ *  office what a drive holds. Metres. */
+const LED_SIZE = [0.032, 0.01, 0.014];
+/** Its lens unlit: dark smoked plastic. */
+const LED_OFF_COLOR = 0x1c1c1c;
 
 /** Emissive colour per signal processing level. Level 1 is the default
  *  saved state (green); higher levels are reached by processing the
@@ -106,9 +120,14 @@ class SignalProcessing extends Component {
 }
 
 export class Drive extends GameObject {
-  /** @type {THREE.Mesh} */
+  /** @type {THREE.Mesh} The casing. */
   _mesh;
-  /** @type {THREE.MeshStandardMaterial} */
+  /** @type {THREE.MeshStandardMaterial} The casing's. */
+  _bodyMaterial;
+  /** @type {THREE.Mesh} The indicator LED. */
+  _led;
+  /** @type {THREE.MeshStandardMaterial} The LED's: its emissive is the
+   *  indicator (and the doom glow). */
   _material;
 
   /** Marker used by generic snap receivers to accept only drives. */
@@ -184,6 +203,7 @@ export class Drive extends GameObject {
    *  attaches a Pickupable component. */
   _init(scene, world) {
     super._init(scene, world);
+    this._applySkin(cachedTexture(scene, 'tex:drive'), cachedTexture(scene, 'tex:drive-normal'));
 
     const engine = scene.userData.engine;
     if (!engine?.RAPIER) return;
@@ -508,6 +528,8 @@ export class Drive extends GameObject {
   dispose() {
     this.clearDoomGlow();
     this._mesh?.geometry?.dispose();
+    this._bodyMaterial?.dispose();
+    this._led?.geometry?.dispose();
     this._material?.dispose();
     // Physics bodies are owned by the Rapier world — the engine frees the
     // whole world on scene teardown, so we don't remove individual bodies
@@ -517,21 +539,49 @@ export class Drive extends GameObject {
     this.colliders = [];
   }
 
+  /** Put the casing's texture and its normal map on (from the asset cache;
+   *  the cache owns them, so dispose() never frees them). Without the
+   *  texture it stays plain grey. */
+  _applySkin(texture, normal = null) {
+    if (!texture || this._bodyMaterial.map === texture) return;
+    this._bodyMaterial.map = texture;
+    if (normal) this._bodyMaterial.normalMap = normal;
+    this._bodyMaterial.color.setHex(0xffffff);
+    this._bodyMaterial.needsUpdate = true;
+  }
+
   _build() {
-    this._material = new THREE.MeshStandardMaterial({
+    const [w, h, d] = this._size;
+    this._bodyMaterial = new THREE.MeshStandardMaterial({
       color: DEFAULT_COLOR,
       roughness: 0.6,
       metalness: 0.3,
-      emissive: 0x000000,
-      emissiveIntensity: 0,
     });
     this._mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(...this._size),
-      this._material,
+      mapBoxFaces(new THREE.BoxGeometry(w, h, d), DRIVE_ATLAS.faces, DRIVE_ATLAS.size),
+      this._bodyMaterial,
     );
     this._mesh.name = 'DriveMesh';
     this._mesh.castShadow = true;
     this._mesh.receiveShadow = true;
     this.object3d.add(this._mesh);
+
+    this._material = new THREE.MeshStandardMaterial({
+      color: LED_OFF_COLOR,
+      roughness: 0.25,
+      metalness: 0,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+    });
+    this._led = new THREE.Mesh(new THREE.BoxGeometry(...LED_SIZE), this._material);
+    this._led.name = 'DriveLED';
+    // Its middle on the edge, pulled in so it stands a millimetre proud.
+    const proud = 0.001;
+    this._led.position.set(
+      w / 2 - 0.02,
+      h / 2 - LED_SIZE[1] / 2 + proud,
+      -d / 2 + LED_SIZE[2] / 2 - proud,
+    );
+    this.object3d.add(this._led);
   }
 }

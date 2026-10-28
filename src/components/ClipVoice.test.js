@@ -101,6 +101,17 @@ describe('ClipVoice', () => {
     expect(new Set(sound.played)).toEqual(new Set(['ONE', 'TWO']));
   });
 
+  it('plays a span of a clip, asked as { key, span: [start, length] }, and the whole of one asked by key', () => {
+    const sound = fakeSound();
+    const at = [];
+    sound.play.mockImplementation(() => { sound.isPlaying = true; at.push([sound.buffer, sound.offset, sound.duration]); });
+    const voice = new ClipVoice({ sound, random: () => 0 });
+    const go = host({ 'sfx:shakes': 'SHAKES', 'sfx:whole': 'WHOLE' });
+    voice.play(go, clipSet([{ key: 'sfx:shakes', span: [0.44, 0.5] }, { key: 'sfx:missing', span: [0, 1] }]));
+    voice.play(go, clipSet(['sfx:whole']));
+    expect(at).toEqual([['SHAKES', 0.44, 0.5], ['WHOLE', 0, undefined]]);   // the whole clip again after a span
+  });
+
   it('starts nothing while the browser holds the audio back', () => {
     const sound = fakeSound();
     sound.context = { state: 'suspended' };

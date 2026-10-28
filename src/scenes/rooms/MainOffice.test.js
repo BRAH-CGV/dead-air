@@ -36,9 +36,12 @@ vi.mock('@dimforge/rapier3d', () => {
 
 import { MainOffice, WINDOW_CORNER_RADIUS } from './MainOffice.js';
 import { CoffeeMachine } from '../../components/CoffeeMachine.js';
+import { CoffeeBushes } from '../../components/CoffeeBushes.js';
+import { CoffeeProcessor } from '../../components/CoffeeProcessor.js';
 import { GameObject } from '../../core/GameObject.js';
 import { Interactable } from '../../components/Interactable.js';
 import { Pickupable } from '../../components/Pickupable.js';
+import { READER_SLOT } from '../../gameobjects/DriveReader.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
 import { WallClock } from '../../gameobjects/WallClock.js';
 import { DigitalClock } from '../../gameobjects/DigitalClock.js';
@@ -154,7 +157,7 @@ function doorwayApproaches(room) {
 }
 
 /** Everything standing on the floor that isn't part of the shell. */
-const FURNITURE = ['ComputerDesk', 'DeskWing_Left', 'DeskWing_Right', 'GrowBeds', 'VendingMachine', 'TrashBin', 'Shelf'];
+const FURNITURE = ['ComputerDesk', 'DeskWing_Left', 'DeskWing_Right', 'GrowBeds', 'BeanProcessor', 'TrashBin', 'Shelf'];
 
 describe('MainOffice', () => {
   let engine, room;
@@ -310,6 +313,32 @@ describe('MainOffice', () => {
     expect(plain.map).toBeNull();
   });
 
+  it('draws the desk from inside too, dark, so the kneehole has a ceiling and walls from a crouch', () => {
+    const withMesh = makeEngine();
+    const deskMaterial = new THREE.MeshStandardMaterial({ name: 'Computer', map: new THREE.Texture(), side: THREE.FrontSide });
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const spawn = withMesh.spawnModel.getMockImplementation();
+    withMesh.spawnModel.mockImplementation((key, opts) => {
+      const go = spawn(key, opts);
+      if (key === 'model:retro-computer') go.object3d.add(new THREE.Mesh(geometry, deskMaterial));
+      return go;
+    });
+    const office = new MainOffice(withMesh);
+    office.build();
+    const [shell] = office.root.find('ComputerDesk').object3d.children;
+    const inside = shell.children.find(c => c.name === 'DeskInside');
+    expect(inside.geometry).toBe(geometry);                    // the same shell
+    expect(inside.material.side).toBe(THREE.BackSide);         // only where the front faces aren't
+    expect(shell.material).toBe(deskMaterial);                 // the desk itself as it was
+    // The geometry is the asset cache's; the lining's own material is the room's.
+    let geometryFreed = false, liningFreed = false;
+    geometry.addEventListener('dispose', () => { geometryFreed = true; });
+    inside.material.addEventListener('dispose', () => { liningFreed = true; });
+    office.dispose();
+    expect(geometryFreed).toBe(false);
+    expect(liningFreed).toBe(true);
+  });
+
   it('leaves the desk itself bare: no joystick, no camera console', () => {
     expect(room.root.find('Joystick')).toBeNull();
     expect(room.root.find('CameraConsole')).toBeNull();
@@ -435,7 +464,7 @@ describe('MainOffice', () => {
     expect(bias).toBe(0);
   });
 
-  it('lines the left wall with the food corner: a two-tier rack of grow beds, then the dispenser and the bin', () => {
+  it('lines the left wall with the coffee corner: a two-tier rack of coffee bushes, then the bean processor and the bin', () => {
     const rack = room.root.find('GrowBeds');
     expect(rack.rigidBody.isFixed()).toBe(true);
     expect(room.root.find('GrowCounter')).toBeNull();          // no counter top any more
@@ -464,12 +493,15 @@ describe('MainOffice', () => {
     expect(glows.length).toBe(2);
     expect(new THREE.Box3().setFromObject(rack.object3d).max.y).toBeLessThan(1.9);
 
-    // Front to back along the wall: beds, dispenser, bin — nothing touching.
-    const d = footprint(room.root.find('VendingMachine'));
+    // Front to back along the wall: beds, processor, bin — nothing touching.
+    const d = footprint(room.root.find('BeanProcessor'));
     const b = footprint(room.root.find('TrashBin'));
     expect(c.z1).toBeLessThan(d.z0);
     expect(d.z1).toBeLessThan(b.z0);
-    expect(room.root.find('VendingMachine').object3d.position.z).toBeCloseTo(0.95);
+    // The hopper on the processor's side, toward the bin, clear of it too.
+    const hopper = new THREE.Box3().setFromObject(room.root.find('BeanProcessor').object3d.getObjectByName('Processor_hopper'));
+    expect(hopper.max.z).toBeLessThan(b.z0 - 0.1);
+    expect(room.root.find('BeanProcessor').object3d.position.z).toBeCloseTo(0.95);
   });
 
   it('keeps only a little trash in the bin, on its floor, inside its wall', () => {
@@ -497,34 +529,38 @@ describe('MainOffice', () => {
     expect(material.pbrMetallicRoughness.roughnessFactor ?? 1).toBeGreaterThan(0.8);
   });
 
-  it('keeps the food dispenser, idle until the grow beds feed it (#109); the coffee is in the bedroom', () => {
-    const use = room.root.find('VendingMachine').getComponent(Interactable);
-    expect(use.promptLabel).toMatch(/food dispenser/i);
-    expect(use.promptLabel).not.toMatch(/\[E\]/);              // a label, nothing to do yet
-    expect(() => use.onInteract({})).not.toThrow();
+  it('the coffee starts here (#168): bushes to pick on the rack, the processor beside them; the machine is in the bedroom', () => {
+    expect(room.coffeeBushes).toBeInstanceOf(CoffeeBushes);
+    expect(room.root.find('GrowBeds').getComponent(Interactable)).toBe(room.coffeeBushes);
+    expect(room.coffeeBushes.bushes.length).toBe(12);
+    expect(room.beanProcessor).toBeInstanceOf(CoffeeProcessor);
+    expect(room.root.find('BeanProcessor').getComponent(Interactable)).toBe(room.beanProcessor);
+    expect(room.beanProcessor.promptLabel).toMatch(/bean processor/i);
+    expect(() => room.beanProcessor.onInteract({})).not.toThrow();   // nothing wired, nothing to do
     expect(room.root.find('CoffeeMachine')).toBeNull();
     expect(room.root.descendants().some(go => go.getComponent(CoffeeMachine))).toBe(false);
   });
 
-  it('builds the food dispenser as a nutrient processor on its collider: hopper, process window, meal bay, its plates', () => {
-    const go = room.root.find('VendingMachine');
-    expect(go._originalSize).toEqual([0.7, 1.9, 0.9]);
+  it('builds the bean processor on its collider: hopper, process window, the bay and its chute, its plates', () => {
+    const go = room.root.find('BeanProcessor');
+    expect(go._originalSize).toEqual([0.7, 1.7, 0.9]);
+    expect(go.colliders.length).toBeGreaterThan(1);                      // solid round the bay, not across it
     expect(engine._bodyToGO.get(go.rigidBody.handle)).toBe(go);
-    for (const part of ['steel', 'hopper', 'window', 'tray', 'bayLight', 'pipes', 'labels']) {
-      expect(go.object3d.getObjectByName(`Dispenser_${part}`), part).toBeDefined();
+    for (const part of ['steel', 'hopper', 'window', 'chute', 'bayLight', 'pipes', 'labels', 'paddles']) {
+      expect(go.object3d.getObjectByName(`Processor_${part}`), part).toBeDefined();
     }
-    const pipes = new THREE.Box3().setFromObject(go.object3d.getObjectByName('Dispenser_pipes'));
+    const pipes = new THREE.Box3().setFromObject(go.object3d.getObjectByName('Processor_pipes'));
     expect(pipes.max.y).toBeCloseTo(room.height, 2);                     // the conduit meets the ceiling
 
-    const entry = ASSETS['tex:dispenser-labels'];
+    const entry = ASSETS['tex:processor-labels'];
     expect(entry).toMatchObject({ type: 'texture', colorSpace: 'srgb' });
-    expect(PRELOAD).toContain('tex:dispenser-labels');
+    expect(PRELOAD).toContain('tex:processor-labels');
     expect(() => readFileSync(new URL(`../../../public/${entry.url}`, import.meta.url))).not.toThrow();
     const atlas = new THREE.Texture();
-    engine.assets = { get: key => (key === 'tex:dispenser-labels' ? atlas : null) };
+    engine.assets = { get: key => (key === 'tex:processor-labels' ? atlas : null) };
     const dressed = new MainOffice(engine);
     dressed.build();
-    expect(dressed.root.find('VendingMachine').object3d.getObjectByName('Dispenser_labels').material.map).toBe(atlas);
+    expect(dressed.root.find('BeanProcessor').object3d.getObjectByName('Processor_labels').material.map).toBe(atlas);
   });
 
   it('keeps the furniture inside the room and out of every doorway', () => {
@@ -788,12 +824,14 @@ describe('MainOffice', () => {
     }
   });
 
-  it('DriveSlot component is configured with a snap offset for the reader surface', () => {
+  it('DriveSlot seats a drive half into the reader\'s front slot, pins first', () => {
     const reader = room.driveReader;
     const slot = reader.getComponent(DriveSlot);
     expect(slot).not.toBeNull();
-    // The snap offset lifts the drive above the reader surface.
-    expect(slot.snapOffset.y).toBeGreaterThan(0);
+    expect(slot.slots[0].offset).toMatchObject(READER_SLOT.offset);
+    // Turned half round: the drive's pins (+z) lead into the reader (−z).
+    const pins = new THREE.Vector3(0, 0, 1).applyQuaternion(slot.slots[0].rotation);
+    expect(pins.z).toBeCloseTo(-1);
   });
 
   it('leaves global lights (ambient, moon) to the scene', () => {

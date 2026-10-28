@@ -96,7 +96,7 @@ export const UFO_SOUNDS = {
   ringing:   'sfx:ear-ringing',
 };
 
-const CAUGHT_PROMPT = 'You were taken. [E] to retry';
+const CAUGHT_PROMPT = 'You were taken.';
 
 /** Seconds of drift from the flight sound that are corrected onto it. */
 const AUDIO_SYNC_WINDOW = 0.5;

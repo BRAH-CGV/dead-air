@@ -119,6 +119,11 @@ export class OfficeScene extends Scene {
     this.hud          = new HUD();
     this.radarOverlay = new RadarOverlay();
 
+    // Show the radar overlay (and its telemetry panel) from scene build,
+    // not only after the first terminal interaction. The overlay stays
+    // permanently visible once shown.
+    this.radarOverlay.show();
+
     // The real sky behind the radar grid — reads the sky live each frame,
     // so it turns and dawns in step with the view out of the window.
     this.radarOverlay.setSky(this.sky);

@@ -60,8 +60,8 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     cargo = scene.buggyCargo;
   });
 
-  /** Dock a shelf box holding the quota's saved drives and run the clock
-   *  out: it is morning. @returns the docked box */
+  /** Dock a shelf box holding the quota's saved drives, enough of them
+   *  processed, and run the clock out: it is morning. @returns the docked box */
   function workTheShift() {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
@@ -69,6 +69,7 @@ describe('BaseScene — the drives go out to the buggy before bed', () => {
     dock.socket.attach(box, 0);
     const seated = box.receiver.attachedItems.filter(Boolean);
     for (let i = 0; i < dock.requiredCount; i++) seated[i].setSaved(true);
+    for (let i = 0; i < dock.requiredProcessed; i++) seated[i].setSignalLevel(2);
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');

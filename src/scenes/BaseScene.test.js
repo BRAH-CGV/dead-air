@@ -35,6 +35,7 @@ import { StormOutage } from '../gameplay/StormOutage.js';
 import { Nap, NAP } from '../gameplay/Nap.js';
 import { BedRest } from '../components/BedRest.js';
 import { BED_TRANSITION } from '../gameplay/BedTransition.js';
+import { threatForecast, THREAT_KINDS } from '../gameplay/ThreatForecast.js';
 
 // A full base build takes several seconds under jsdom (8–16 s when the
 // suite runs in parallel), past vitest's 5 s test and 10 s hook defaults.
@@ -98,15 +99,17 @@ describe('BaseScene', () => {
     expect(Object.keys(scene.rooms).sort()).toEqual(['Airlock', 'LivingQuarters', 'MainOffice', 'ServerRoom']);
   });
 
-  it('wires the bedroom PC (#114): the night, the panel, the run, the map; a screen the demon counts', () => {
+  it('wires the bedroom PC (#114): the night, the panel, the run, the forecast, the map; a screen the demon counts', () => {
     const { pc } = scene.rooms.LivingQuarters;
     expect(pc.controller).toBe(scene.gameController);
     expect(pc.panel).toBeTruthy();
     // One run record, on the engine, so it outlives a dream's rebuild; the
-    // controller writes each morning's delivery to it.
+    // threat watch writes each night's log to it.
     expect(engine.run).toBeTruthy();
     expect(pc.run).toBe(engine.run);
-    expect(scene.gameController.run).toBe(engine.run);
+    expect(scene.threatWatch.run).toBe(engine.run);
+    // Tonight's forecast, read off the threats' own rules.
+    expect(pc.forecast).toBe(threatForecast);
     // The six neighbours and the buggy's way out to the hub.
     expect(pc.map.neighbours).toHaveLength(6);
     expect(pc.map.route.length).toBeGreaterThan(1);
@@ -116,6 +119,31 @@ describe('BaseScene', () => {
     pc.open = true;
     expect(scene.sleepDemon.terminal.state).toBe('reading');
     pc.open = false;
+  });
+
+  it("watches tonight's threats for the PC's log (#114): each kind as it first shows, written as the shift ends", () => {
+    const watch = scene.threatWatch;
+    const gameplay = engine._rootObjects.find(go => go.name === 'SceneRoot').find('GameplaySystems');
+    expect(gameplay.components).toContain(watch);
+    expect(watch.controller).toBe(scene.gameController);
+    expect(watch.clock).toBe(scene.nightClock);
+    expect(Object.keys(watch.sources).sort()).toEqual([...THREAT_KINDS].sort());
+    // All quiet before anything comes.
+    for (const kind of THREAT_KINDS) expect(watch.sources[kind]()).toBe(false);
+    scene.sandstorm.level = 1;
+    expect(watch.sources.storm()).toBe(true);
+    scene.ragno.logic.state = 'approach';
+    expect(watch.sources.prowler()).toBe(true);
+    expect(watch.sources.vents()).toBe(false);
+    scene.ragno.logic.indoors = true;
+    expect(watch.sources.prowler()).toBe(false);
+    expect(watch.sources.vents()).toBe(true);
+    scene.ufoThreat.phase = 'approaching';
+    expect(watch.sources.aerial()).toBe(true);
+    scene.dustEyes.slots[0].phase = 'watch';
+    expect(watch.sources.eyes()).toBe(true);
+    scene.signalManager.signals.push({ evil: true, appeared: true });
+    expect(watch.sources.corrupt()).toBe(true);
   });
 
   it('keeps the run record a rebuild finds on the engine', () => {
@@ -772,8 +800,8 @@ describe('BaseScene gameplay loop', () => {
     expect(scene.gameController.nightNumber).toBe(scene.nights.currentNight);
   });
 
-  /** Dock a shelf box with enough saved drives to meet the quota, then run
-   *  the clock out: it is morning. */
+  /** Dock a shelf box with enough saved drives to meet the quota, enough of
+   *  them processed, then run the clock out: it is morning. */
   function workTheShift() {
     const { gameController, rooms } = scene;
     const dock = rooms.Airlock.quotaDock;
@@ -783,6 +811,7 @@ describe('BaseScene gameplay loop', () => {
     for (let i = 0; i < dock.requiredCount; i++) {
       seated[i].setSaved(true);
     }
+    for (let i = 0; i < dock.requiredProcessed; i++) seated[i].setSignalLevel(2);
     gameController.onSignalSaved();
     gameController.onUpdate(999);
     expect(gameController.state).toBe('morning');
@@ -919,6 +948,7 @@ describe('BaseScene gameplay loop', () => {
     dock.socket.attach(docked, 0);
     const dockedDrives = docked.receiver.attachedItems.filter(Boolean);
     for (let i = 0; i < dock.requiredCount; i++) dockedDrives[i].setSaved(true);
+    for (let i = 0; i < dock.requiredProcessed; i++) dockedDrives[i].setSignalLevel(2);
     const otherDrive = other.receiver.attachedItems[0];
     otherDrive.setSaved(true);
     gameController.onSignalSaved();
@@ -1548,7 +1578,22 @@ describe('BaseScene power and the UFO', () => {
     expect(evil.terminal).toBe(scene.terminal);
     expect(evil.driveManager).toBe(scene.driveManager);
     expect(evil.satellite).toBe(scene.satellite);
+    expect(evil.clock).toBe(scene.nightClock);
     expect(scene.terminal.evilSignal).toBe(evil);
+  });
+
+  it('holds the evil signal back while the UFO visits or the player naps', () => {
+    const { busy } = scene.evilSignal.hooks;
+    scene.ufoThreat.phase = 'waiting';
+    scene.nap.napping = false;
+    expect(busy()).toBe(false);
+    scene.ufoThreat.phase = 'approaching';
+    expect(busy()).toBe(true);
+    scene.ufoThreat.phase = 'gone';
+    expect(busy()).toBe(false);
+    scene.nap.napping = true;
+    expect(busy()).toBe(true);
+    scene.nap.napping = false;
   });
 
   it('in view of the window means anywhere in the main office — no hiding behind the furniture', () => {

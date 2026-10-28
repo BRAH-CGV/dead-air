@@ -10,8 +10,13 @@ import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 // ─────────────────────────────────────────────
 // EvilSignal  –  the red one that is not a signal
 // ─────────────────────────────────────────────
-// For testing, summon() — the dev console's `evil` — puts it in the sky. It
-// has no night of its own yet; EVIL.nights is where that will go.
+// It comes on night 3 (EVIL.nights), twice (EVIL.appearances): each at an
+// hour of its own, one in each part of EVIL.spawnHours (scheduleEvil), and
+// never while something else has the night — the power out, the UFO
+// overhead, a nap, a red drive still counting down, the last one still up.
+// A due appearance waits for all of those to clear; nothing skips it. For
+// testing, summon() — the dev console's `evil` — puts it in the sky now, on
+// any night.
 //
 // It reads as an ordinary blip except that it is red. The moment the radar
 // cursor is on it, it scans itself — no Enter, no wait, no dish to settle —
@@ -20,8 +25,10 @@ import { DOOM_FADE_SECONDS } from '../gameobjects/Drive.js';
 // signal is saved to it (turning it RED/corrupted), the drive is ejected,
 // and the player must wipe it at the ServerRoom console within
 // EVIL.silenceSeconds (15 s) or the shift ends: "You were silenced."
-// If no drive is inserted during the lock, the signal disappears but
-// respawns later in the night (after EVIL.respawnDelaySeconds).
+// If no drive is inserted during the lock, the signal disappears, and the
+// night's next appearance comes early (after EVIL.respawnDelaySeconds)
+// rather than at its hour. The night's count never grows: dodging the last
+// one is the end of it.
 //
 // Rooms don't know about gameplay: the scene hands it the signal manager,
 // the terminal, the drive reader and the array, and it drives itself.
@@ -38,14 +45,14 @@ const CAUGHT_SCREEN = { tone: 'blood', fadeMs: 0, redMs: 2500, messageDelayMs: 2
 
 /** Tuning. Seconds and radians unless stated. */
 export const EVIL = {
-  /** The nights it appears on. Night 3 is the first (and currently only)
-   *  scheduled night; doubleChance controls whether it comes twice. */
+  /** The nights it appears on. */
   nights: [3],
-  /** Probability of a second appearance on a scheduled night. 0 = always
-   *  once, 1 = always twice. 0.25 = once guaranteed, 25% chance of two. */
-  doubleChance: 0.25,
-  /** Where it fades in (clock hours after midnight), once scheduled. */
-  spawnHours: [1, 4],
+  /** How many times it comes on each of those nights — always that many. */
+  appearances: 2,
+  /** Clock hours (from midnight, so -4 is 8 PM) it comes between: well
+   *  after dark, with time left before 6 AM to wipe a red drive. Split into
+   *  `appearances` equal parts, one appearance at a random hour in each. */
+  spawnHours: [-4, 4],
   /** Spawn band on the radar disc, as a fraction of its radius: the
    *  middle 2/3 — never at the zenith's dead centre nor out on the rim. */
   spawnRadius: [1 / 6, 5 / 6],
@@ -59,9 +66,10 @@ export const EVIL = {
    *  TEMP: 10 s for debugging (was 30). Restore before release. */
   lockSeconds: 10,
   /** The drive-inserted penalty: seconds the array is pinned when a drive
-   *  is in the reader (blank or with a signal). Shorter than no-drive.
-   *  TEMP: 5 s for debugging. Restore before release. */
-  lockWithDriveSeconds: 5,
+   *  is in the reader (blank or with a signal), or until the corrupted
+   *  drive is wiped — whichever comes first.
+   *  TEMP: 30 s for debugging. Restore before release. */
+  lockWithDriveSeconds: 30,
   /** Seconds after a no-drive lock before the evil signal respawns at a
    *  new random position. The player dealt with it, but it comes back.
    *  TEMP: 30 s for debugging. Restore before release. */
@@ -112,6 +120,27 @@ export const HUM = {
   detune: -200,
 };
 
+/**
+ * The clock hours the red signal is due on a night, earliest first: one at
+ * a random hour in each equal part of `hours`, so they never bunch up.
+ * None on a night it doesn't come.
+ * @param {object} opts
+ * @param {number} opts.night
+ * @param {() => number} [opts.random]
+ * @returns {number[]}
+ */
+export function scheduleEvil({
+  night, random = Math.random,
+  nights = EVIL.nights, appearances = EVIL.appearances, hours = EVIL.spawnHours,
+}) {
+  if (!nights.includes(night)) return [];
+  const [from, to] = hours;
+  const part = (to - from) / appearances;
+  const due = [];
+  for (let i = 0; i < appearances; i++) due.push(from + (i + random()) * part);
+  return due;
+}
+
 export class EvilSignal extends Component {
   // ── External references (set by BaseScene during wiring) ──
   /** @type {import('./GameController.js').GameController|null} */
@@ -130,8 +159,13 @@ export class EvilSignal extends Component {
   deleteWarning = null;
   /** @type {import('../core/RedOut.js').RedOut|null} */
   redOut = null;
-  /** @type {{ setPlayerLocked: (locked: boolean) => void }|null} */
+  /** `busy()` is true while something else has the night (the UFO, a
+   *  nap): a due appearance waits for it. Set by BaseScene.
+   *  @type {{ setPlayerLocked: (locked: boolean) => void, busy?: () => boolean }|null} */
   hooks = null;
+  /** The night clock, which the schedule is read against.
+   *  @type {import('./NightClock.js').NightClock|null} */
+  clock = null;
 
   /** True while the cursor is being dragged to the signal centre.
    *  ComputerTerminal checks this to freeze WASD input. */
@@ -164,10 +198,10 @@ export class EvilSignal extends Component {
   /** Seconds until the evil signal respawns after a no-drive lock, or null
    *  when not counting down. @type {number|null} */
   _respawnTimer = null;
-  /** How many more times the signal can appear this night. Set by _reset
-   *  from the night schedule; summon() decrements it; _release() gates
-   *  respawn on it.  @type {number} */
-  _spawnsRemaining = 0;
+  /** Clock hours of the night's appearances still to come, earliest first
+   *  (scheduleEvil). One is taken off as it appears; a no-drive dodge pulls
+   *  the next one forward. @type {number[]} */
+  _schedule = [];
   /** Seconds left to wipe the corrupted drive before game over, or null
    *  when no corrupted drive is outstanding. @type {number|null} */
   _silenceTimer = null;
@@ -187,6 +221,18 @@ export class EvilSignal extends Component {
    *  the same night can infect a drive again.
    *  @type {boolean} */
   _driveInfected = false;
+  /** True once the silence timer was started (in _infectDrive). Used to
+   *  detect early release: if the timer was started and the drive was
+   *  wiped (_corruptedDriveWiped), the lock ends early. Cleared in _reset().
+   *  @type {boolean} */
+  _silenceTimerStarted = false;
+  /** Set true in the silence-timer block when _findCorruptedDrive()
+   *  returns null AFTER the timer was started — meaning the player wiped
+   *  the corrupted drive. Checked in the locked block to end the lock
+   *  early. Cleared each frame before the silence-timer block runs, and
+   *  in _reset().
+   *  @type {boolean} */
+  _corruptedDriveWiped = false;
   /** Sparks flying from the corrupted drive while the silence timer runs.
    *  @type {import('./DriveSparks.js').DriveSparks|null} */
   _sparks = null;
@@ -209,6 +255,8 @@ export class EvilSignal extends Component {
    * @param {import('../components/ComputerTerminal.js').ComputerTerminal} [opts.terminal]
    * @param {import('./DriveManager.js').DriveManager} [opts.driveManager]
    * @param {import('../gameobjects/Satellite.js').Satellite} [opts.satellite]
+   * @param {import('./NightClock.js').NightClock} [opts.clock]  The schedule's
+   *        clock; without one only summon() brings it.
    * @param {() => number} [opts.random]
    * @param {{ play: Function, dispose: Function }} [opts.voice]  Plays the
    *        sparks; a ClipVoice when left out.
@@ -217,11 +265,11 @@ export class EvilSignal extends Component {
    */
   constructor({
     controller = null, signalManager = null, terminal = null,
-    driveManager = null, satellite = null, random = Math.random, voice = new ClipVoice(),
+    driveManager = null, satellite = null, clock = null, random = Math.random, voice = new ClipVoice(),
     hum = new LoopVoice({ key: HUM.key, placed: HUM.placed, detune: HUM.detune }),
   } = {}) {
     super();
-    Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, random });
+    Object.assign(this, { controller, signalManager, terminal, driveManager, satellite, clock, random });
     this._voice = voice;
     this._hum = hum;
     /** What the hum should be this frame, set by the countdown. */
@@ -284,7 +332,6 @@ export class EvilSignal extends Component {
     this._target = target;
     this._hover = null;
     this._mustLeave = false;
-    this._spawnsRemaining--;
     return true;
   }
 
@@ -346,21 +393,24 @@ export class EvilSignal extends Component {
       return;  // skip the rest while pulling
     }
 
-    // The respawn timer ticks even when not locked.
+    // The respawn timer ticks even when not locked. Dodged with no drive,
+    // the night's next appearance comes now rather than at its hour.
     if (this._respawnTimer !== null) {
       this._respawnTimer -= dt;
       if (this._respawnTimer <= 0) {
         this._respawnTimer = null;
-        this.summon();   // a new red signal at a new random position
+        if (this._schedule.length) this._schedule[0] = -Infinity;
       }
     }
 
     // The silence timer ticks even when not locked — the corrupted drive
     // must be wiped at the ServerRoom console before it runs out.
+    this._corruptedDriveWiped = false;
     if (this._silenceTimer !== null) {
       const corrupted = this._findCorruptedDrive();
       if (!corrupted) {
         // The drive was wiped (or lost): no more threat.
+        this._corruptedDriveWiped = this._silenceTimerStarted;
         this._disposeSparks();
         this._silenceTimer = null;
         this._driveHopTimer = null;
@@ -431,18 +481,13 @@ export class EvilSignal extends Component {
           this._disposeSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;
+          this._release();           // end the dish lock before game over
           this._caught = true;
-          this.controller?.fail('', { retryAfter: 4 });
+          this.controller?.fail('', { promptAfter: 4 });
           this.terminal?.exit?.();
           this.whiteOut?.play(CAUGHT_MESSAGE, CAUGHT_SCREEN);
           this.hooks?.setPlayerLocked?.(true);
           return;
-        }
-        // Warn the player while the lock is not showing its own message.
-        if (!this.locked) {
-          this.terminal?.radar?.setInfo?.(
-            `ANOMALOUS SIGNAL ON DRIVE — wipe in ${Math.ceil(this._silenceTimer)} s`,
-          );
         }
       }
     }
@@ -461,6 +506,14 @@ export class EvilSignal extends Component {
       }
     }
 
+    // The night's next appearance, once its hour has come and nothing else
+    // has the night. Taken off the schedule only once it is in the sky.
+    const now = this.clock?.currentTime ?? -Infinity;
+    if (this._schedule.length && this._respawnTimer === null
+        && now >= this._schedule[0] && this._canAppear() && this.summon()) {
+      this._schedule.shift();
+    }
+
     if (!this.locked) return;
 
     // The array stays physically on it — even if the player walks away
@@ -472,6 +525,10 @@ export class EvilSignal extends Component {
 
     // Infect any drive inserted during the lock phase.
     this._infectDrive();
+
+    // The DRIVE indicator dot on the radar blinks red continuously while
+    // the lock waits for a drive; once one is infected the blink stops.
+    if (!this._driveInfected) this.terminal?.radar?.startContinuousBlink?.();
 
     // The radar shows the same glitchy effect as the UFO, centered on the
     // locked signal, while the dish is held.
@@ -486,15 +543,27 @@ export class EvilSignal extends Component {
     }
 
     this._remain -= dt;
-    if (this._remain <= 0) {
+    // Release early if the corrupted drive was wiped before the lock
+    // timer ran out. _corruptedDriveWiped is only set when the drive
+    // actually disappeared (not when the silence timer expires on its
+    // own), so a large dt that expires both timers still runs the full
+    // lock duration.
+    if (this._remain <= 0 || this._corruptedDriveWiped) {
       this._release();
       this._mustLeave = true;   // don't re-grab while the cursor sits on it
       return;
     }
-    this._showLock();
   }
 
   // ── Private ──────────────────────────────
+
+  /** Whether a due appearance may come now: the dish free, no red drive
+   *  counting down, the terminal powered (or nobody could see it), and
+   *  nothing else holding the night. summon() checks the rest. */
+  _canAppear() {
+    return !this.locked && !this.pullingIn && this._silenceTimer === null
+      && this.terminal?.powered !== false && !this.hooks?.busy?.();
+  }
 
   /** Start the pull-in animation: the cursor and dish are dragged from
    *  their current position to the signal's centre on the radar disc.
@@ -510,6 +579,16 @@ export class EvilSignal extends Component {
     this._pullTarget = sig;
     this._pullTimer = EVIL.pullInSeconds;
     this.pullingIn = true;
+    // The progress bars fill to 100% and turn red for the duration of
+    // the pull-in and the lock that follows — _evilBarsActive prevents
+    // _updateRadarDisplay() from overwriting them each frame.
+    if (this.terminal) {
+      this.terminal._evilBarsActive = true;
+      this.terminal.radar?.setLockOnProgress?.(1);
+      this.terminal.radar?.setScanProgress?.(1);
+      this.terminal.radar?.setBarColor?.('rgba(255, 40, 40, 0.9)');
+      this.terminal.radar?.startLetMeIn?.();
+    }
   }
 
   /** Hovered: it scans itself at once, then locks the dish. The lock runs
@@ -519,7 +598,6 @@ export class EvilSignal extends Component {
     this.signalManager?.markScanned(sig.id);
     this.locked = true;
     this._remain = EVIL.lockWithDriveSeconds;
-    this._showLock();
     // Infect any drive that's already inserted right as the lock starts.
     this._infectDrive();
   }
@@ -538,14 +616,19 @@ export class EvilSignal extends Component {
     drive.saveEvilToDrive();
     // Shoot the corrupted drive out of the reader in a random direction.
     drive.ejectInsertedDrive?.();
-    this.terminal?.radar?.setInfo?.('Anomalous signal copied — the drive reads RED');
     // Force the player out of the computer screen so they must chase the
     // corrupted drive and wipe it at the ServerRoom console.
     this.terminal?.exit?.();
     this._silenceTimer = EVIL.silenceSeconds;
+    this._silenceTimerStarted = true;
     this._driveHopTimer = EVIL.driveHopStart;
     this._driveInfected = true;
     this.deleteWarning?.show();
+    // The "LET ME IN" flashing text has done its job — the drive is
+    // corrupted and the DELETE warning takes over as the visual cue.
+    this.terminal?.radar?.stopLetMeIn?.();
+    // The DRIVE indicator dot stops its continuous blink — drive corrupted.
+    this.terminal?.radar?.stopContinuousBlink?.();
     // Sparks: fly out of the corrupted drive at an increasing rate. A
     // second infection while the first window still runs must not leak
     // the first system.
@@ -554,33 +637,37 @@ export class EvilSignal extends Component {
     this.scene?.add(this._sparks.points);
   }
 
-  /** The radar info line while the dish is held — seconds remaining. */
-  _showLock() {
-    this.terminal?.radar?.setInfo?.(
-      `SIGNAL LOCKED — the dish is held for ${Math.ceil(this._remain)} s`,
-    );
-  }
-
   /** Let go of the dish: the hold is over, or the shift ended. The signal
    *  disappears — it's been dealt with. If no drive was inserted (the
-   *  signal wasn't saved), it will respawn later in the night. */
+   *  signal wasn't saved), the night's next appearance comes early. */
   _release() {
     if (!this.locked) return;
     this.locked = false;
     this._remain = 0;
-    this.terminal?.radar?.setInfo?.('');
     if (this.terminal?.radar) {
       this.terminal.radar.evilLock = null;
     }
-    // No drive was used: the signal will respawn later so the player must
-    // deal with it again. With a drive, the consequence is on the drive —
-    // no respawn. Check before marking deleted (which makes resolved true).
+    // No drive was used: the next appearance comes sooner, so the player
+    // must deal with it again. With a drive, the consequence is on the
+    // drive — the next keeps its hour. Check before marking deleted (which
+    // makes resolved true).
+    // Reset the progress bars: clear the evil colour and empty the fills.
+    if (this.terminal) {
+      this.terminal._evilBarsActive = false;
+      this.terminal.radar?.setBarColor?.('rgba(0, 255, 200, 0.7)');
+      this.terminal.radar?.setLockOnProgress?.(0);
+      this.terminal.radar?.setScanProgress?.(0);
+      this.terminal.radar?.stopLetMeIn?.();
+    }
+    // The DRIVE indicator dot stops its continuous blink — the lock is over.
+    this.terminal?.radar?.stopContinuousBlink?.();
+
     const noDrive = !this._target?.resolved;
     // The signal has been dealt with — make it disappear from the radar.
     if (this._target && !this._target.resolved) {
       this._target.deleted = true;
     }
-    if (noDrive && this._spawnsRemaining > 0) {
+    if (noDrive && this._schedule.length > 0) {
       this._respawnTimer = EVIL.respawnDelaySeconds;
     }
   }
@@ -627,7 +714,7 @@ export class EvilSignal extends Component {
   }
 
   /** A new night: the manager rebuilds its signals, so drop the old target
-   *  and any hold. On scheduled nights, summon the first signal. */
+   *  and any hold, and lay out the night's appearances. */
   _reset(night) {
     this._release();
     this._target = null;
@@ -640,27 +727,34 @@ export class EvilSignal extends Component {
     this._pullTargetCursor = null;
     this._respawnTimer = null;
     this._silenceTimer = null;
+    this._silenceTimerStarted = false;
+    this._corruptedDriveWiped = false;
     this._driveHopTimer = null;
     this._driveInfected = false;
     this.deleteWarning?.hide();
     this.redOut?.clear();
     this._disposeSparks();
+    // Reset the progress bars (in case the night ended mid-lock).
+    if (this.terminal) {
+      this.terminal._evilBarsActive = false;
+      this.terminal.radar?.setBarColor?.('rgba(0, 255, 200, 0.7)');
+      this.terminal.radar?.setLockOnProgress?.(0);
+      this.terminal.radar?.setScanProgress?.(0);
+      this.terminal.radar?.stopLetMeIn?.();
+    }
     // Clear the doom glow from whatever drive was showing it.
     this._lastCorruptedDrive?.clearDoomGlow?.();
     this._lastCorruptedDrive = null;
     // Reset the shared doom light.
     if (this.doomLight) this.doomLight.intensity = 0;
     this._doomLightFadeRemaining = null;
+    // The DRIVE indicator dot stops its continuous blink — night reset.
+    this.terminal?.radar?.stopContinuousBlink?.();
     if (this._caught) {
       this._caught = false;
       this.hooks?.setPlayerLocked?.(false);
       this.whiteOut?.clear();
     }
-    // Schedule spawns for the new night: on scheduled nights, at least one
-    // appearance with a chance of a second.
-    const n = night ?? this.controller?.nightNumber;
-    const onSchedule = EVIL.nights.includes(n);
-    this._spawnsRemaining = onSchedule ? (this.random() < EVIL.doubleChance ? 2 : 1) : 0;
-    if (this._spawnsRemaining > 0) this.summon();
+    this._schedule = scheduleEvil({ night: night ?? this.controller?.nightNumber, random: this.random });
   }
 }

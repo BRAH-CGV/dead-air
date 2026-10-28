@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { populateGrowRack, GROW_RACK, UV_LIGHT } from './GrowRack.js';
+import { populateGrowRack, GROW_RACK, UV_LIGHT, BEAN } from './GrowRack.js';
 
 /** A cached-model stand-in: a Group holding one mesh with its own material,
  *  sized like the real fixture (0.12 × 0.068 × 0.8 m). */
@@ -117,6 +117,47 @@ describe('GrowRack', () => {
       expect(s.y).toBeLessThan(1.2);
     }
     expect(heights.size).toBeGreaterThan(3);
+  });
+
+  it('says where each bush stands, rack-local, one over each half of a tray', () => {
+    const { bushes, plants } = build();
+    expect(bushes.length).toBe(plants[0].count);
+    const half = GROW_RACK.size[1] / 2;
+    for (const b of bushes) {
+      expect(GROW_RACK.trayZ.some(z => Math.abs(b.z - z) < 0.4)).toBe(true);
+      expect(GROW_RACK.tiers.some(t => b.y > t - half && b.y < t - half + 0.6)).toBe(true);   // up in its canopy
+    }
+  });
+
+  it('tints each bush\'s beans by what tonight made of it: ripe a dull red, unripe green, picked gone', () => {
+    const { plants, setBush } = build();
+    const fruit = plants.find(p => p.name === 'GrowPlants_fruit');
+    expect(fruit.instanceColor).toBeTruthy();                   // there from the start: no recompile later
+    const c = new THREE.Color();
+    fruit.getColorAt(0, c);
+    expect(c.getHex()).toBe(BEAN.unripe);                    // nothing ripe until the night says so
+    const version = fruit.instanceColor.version;
+    setBush(3, 'ripe');
+    fruit.getColorAt(3, c);
+    expect(c.getHex()).toBe(BEAN.ripe);
+    expect(fruit.instanceColor.version).toBeGreaterThan(version);   // re-uploaded
+    const hsl = {};
+    new THREE.Color(BEAN.ripe).getHSL(hsl, THREE.SRGBColorSpace);   // as it shows
+    expect(hsl.h).toBeGreaterThan(0.02);                         // a brownish red…
+    expect(hsl.h).toBeLessThan(0.08);
+    expect(hsl.s).toBeLessThan(0.6);                             // …and dull: coffee, not a berry
+    expect(hsl.l).toBeLessThan(0.35);
+    expect(fruit.material.emissiveIntensity).toBe(0);            // no UV wash: it turned them purple
+
+    const m = new THREE.Matrix4();
+    setBush(3, 'picked');
+    fruit.getMatrixAt(3, m);
+    expect(m.determinant()).toBe(0);                             // picked clean: squashed to nothing
+    setBush(3, 'unripe');
+    fruit.getMatrixAt(3, m);
+    expect(m.determinant()).toBeGreaterThan(0.5);                // back for a new night
+    fruit.getColorAt(3, c);
+    expect(c.getHex()).toBe(BEAN.unripe);
   });
 
   it('sinks every plant\'s roots into the soil, never floating above it', () => {

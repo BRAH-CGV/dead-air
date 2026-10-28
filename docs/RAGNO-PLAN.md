@@ -71,8 +71,8 @@ Section 8 lists the decisions made after review.
     back in, he resumes the hunt after `returnGrace`. If the player stays
     out longer than `prowlTimeout`, he leaves by his vent.
 11. **Caught** (within `catchDistance`): he lunges, the screen cuts to
-    black, and `controller.fail(...)` ends the night. `[E]` retries, as
-    with the other threats.
+    black, and `controller.fail(...)` ends the night. The Night failed menu
+    retries, as with the other threats.
 
 ### Rules shared with the other threats
 

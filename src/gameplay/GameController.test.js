@@ -3,13 +3,12 @@ import { GameController } from './GameController.js';
 import { NightClock, NIGHT_SECONDS, SHIFT } from './NightClock.js';
 import { SignalManager } from './SignalManager.js';
 import { NightManager } from '../systems/NightManager.js';
-import { RunRecord } from './RunRecord.js';
 
 function makeHUD() {
   return {
     show: vi.fn(), hide: vi.fn(),
     setTime: vi.fn(), setSignals: vi.fn(), setNight: vi.fn(),
-    setScanProgress: vi.fn(), setPrompt: vi.fn(),
+    setPrompt: vi.fn(),
   };
 }
 
@@ -34,11 +33,12 @@ describe('GameController', () => {
     banner = makeBanner();
     sat  = makeSatellite();
     // A plain dock stub — the controller only reads collectedCount /
-    // requiredCount and calls isQuotaMet().
+    // requiredCount (and the processed pair) and calls isQuotaMet().
     quotaDock = {
       requiredCount: 3,
       collectedCount: 0,
-      minSignalLevel: 1,
+      requiredProcessed: 0,
+      processedCount: 0,
       isQuotaMet() { return this.collectedCount >= this.requiredCount; },
     };
 
@@ -78,15 +78,23 @@ describe('GameController', () => {
     expect(mgr.signals).toHaveLength(10);
     expect(hud.show).toHaveBeenCalled();
     expect(hud.setNight).toHaveBeenCalledWith(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { minSignalLevel: 1 });  // night 1's quota, synced to the dock
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { processed: 0, processedRequired: 1 });  // night 1's quota, synced to the dock
+  });
+
+  it('startNight hands the dock the night\'s processed quota: 1, 2, 4', () => {
+    for (const [night, processed] of [[1, 1], [2, 2], [3, 4]]) {
+      gc.startNight(night);
+      expect(quotaDock.requiredProcessed).toBe(processed);
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, mgr.required, { processed: 0, processedRequired: processed });
+    }
   });
 
   it('startNight scales required count with night number', () => {
     gc.startNight(1);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { minSignalLevel: 1 });
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 5, { processed: 0, processedRequired: 1 });
 
     gc.startNight(2);
-    expect(hud.setSignals).toHaveBeenCalledWith(0, 6, { minSignalLevel: 1 });
+    expect(hud.setSignals).toHaveBeenCalledWith(0, 6, { processed: 0, processedRequired: 2 });
   });
 
   it('auto-starts night 1 on first update when autoStart is true', () => {
@@ -106,7 +114,22 @@ describe('GameController', () => {
     gc.startNight(1);
     gc.onUpdate(999);  // past 6 AM
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenCalledWith('Night failed. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenCalledWith('Quota not met.');
+    expect(gc.quotaMissed).toBe(true);
+  });
+
+  it('a threat failing the night is not a missed quota', () => {
+    gc.startNight(1);
+    gc.fail('You have been eaten.');
+    expect(gc.state).toBe('gameOver');
+    expect(gc.quotaMissed).toBe(false);
+  });
+
+  it('a retry clears the missed quota', () => {
+    gc.startNight(1);
+    gc.onUpdate(999);
+    gc.retryNight();
+    expect(gc.quotaMissed).toBe(false);
   });
 
   it('meeting the quota early keeps the shift running until 6 AM', () => {
@@ -160,20 +183,16 @@ describe('GameController', () => {
     expect(gc.state).toBe('playing');  // unchanged
   });
 
-  it('the interact key retries a failed night, as the prompt promises', () => {
+  it('the interact key does not retry a failed night: the Night failed menu does', () => {
     const engine = attachEngine();
     gc.startNight(2);
     gc.onUpdate(999);
     expect(gc.state).toBe('gameOver');
 
-    gc.onUpdate(0.016);                 // no key: stays failed
-    expect(gc.state).toBe('gameOver');
-
     engine.input.pressed.KeyE = true;   // one-frame press
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(gc.state).toBe('gameOver');
     expect(gc.nightNumber).toBe(2);
-    expect(clock.elapsed).toBe(0);
   });
 
   it('the interact key does not restart a night that is still running', () => {
@@ -238,7 +257,7 @@ describe('GameController', () => {
       expect(gc.state).toBe('playing');
       expect(clock.currentTime).toBe(0);
       expect(clock.timeString).toBe('12:00 AM');
-      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 6, { minSignalLevel: 1 });  // night 2's quota
+      expect(hud.setSignals).toHaveBeenLastCalledWith(0, 6, { processed: 0, processedRequired: 2 });  // night 2's quota
     });
 
     it('sleeping after the last night finishes the run', () => {
@@ -265,26 +284,6 @@ describe('GameController', () => {
 
     expect(hud.setTime).toHaveBeenCalled();
     expect(hud.setSignals).toHaveBeenCalled();
-  });
-
-  it('shows scan progress when satellite is scanning', () => {
-    gc.startNight(1);
-    const sig = mgr.signals[0];
-    sat.isScanning = true;
-    sat.scanTarget = sig;
-    sat.scanProgress = 1.5;
-
-    gc.onUpdate(0.016);
-    // scanTime default = 3, so 1.5/3 = 0.5
-    expect(hud.setScanProgress).toHaveBeenCalledWith(0.5);
-  });
-
-  it('hides scan bar when not scanning', () => {
-    gc.startNight(1);
-    sat.isScanning = false;
-
-    gc.onUpdate(0.016);
-    expect(hud.setScanProgress).toHaveBeenCalledWith(-1);
   });
 
   it('onSignalDeleted updates HUD but does not change state', () => {
@@ -409,28 +408,27 @@ describe('GameController', () => {
 
   it('fail() ends a playing shift as a game over with its own prompt', () => {
     gc.startNight(1);
-    gc.fail('You were taken. [E] to retry');
+    gc.fail('You were taken.');
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken. [E] to retry');
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You were taken.');
     gc.retryNight();
     expect(gc.state).toBe('playing');
   });
 
-  it('fail() can hold the retry back: no prompt and no [E] until it is shown', () => {
-    const engine = attachEngine();
+  it('fail() can hold the prompt back until the death screen has played', () => {
+    attachEngine();
     gc.startNight(1);
-    gc.fail('You have been eaten. Press [E] to try again', { retryAfter: 2 });
+    gc.fail('You have been eaten.', { promptAfter: 2 });
     expect(gc.state).toBe('gameOver');
-    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
-    engine.input.pressed.KeyE = true;   // mashed straight away
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     gc.onUpdate(0.5);
-    expect(gc.state).toBe('gameOver');
-    engine.input.pressed.KeyE = false;
+    expect(hud.setPrompt).not.toHaveBeenLastCalledWith('You have been eaten.');
     gc.onUpdate(1.6);
-    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten. Press [E] to try again');
-    engine.input.pressed.KeyE = true;
+    expect(hud.setPrompt).toHaveBeenLastCalledWith('You have been eaten.');
+    const calls = hud.setPrompt.mock.calls.length;
     gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    expect(hud.setPrompt.mock.calls.length).toBe(calls);     // shown once
+    expect(gc.state).toBe('gameOver');
   });
 
   it('fail() does nothing outside a playing shift', () => {
@@ -450,7 +448,7 @@ describe('GameController', () => {
     expect(fn).toHaveBeenLastCalledWith(1, { retry: true });
   });
 
-  it('the E that retries is used up — nothing else acts on that press', () => {
+  it('dead, E is used up every frame — nothing in the world acts on it, and nothing retries', () => {
     const engine = {
       keyBinds: { interact: 'KeyE' },
       input: { pressed: { KeyE: true } },
@@ -458,10 +456,12 @@ describe('GameController', () => {
     };
     gc.gameObject = { scene: { userData: { engine } } };
     gc.startNight(1);
-    gc.fail('taken');
-    gc.onUpdate(0.016);
-    expect(gc.state).toBe('playing');
+    gc.fail('taken', { promptAfter: 1 });
+    gc.onUpdate(0.016);                  // the death screen still playing
+    gc.onUpdate(2);                      // and after it
+    expect(engine.consumeAction).toHaveBeenCalledTimes(2);
     expect(engine.consumeAction).toHaveBeenCalledWith('interact');
+    expect(gc.state).toBe('gameOver');
   });
 });
 
@@ -470,7 +470,7 @@ describe('GameController.refreshPrompt', () => {
     const gc = new GameController();
     const hud = makeHUD();
     const banner = makeBanner();
-    const quotaDock = { requiredCount: 1, collectedCount: collected, minSignalLevel: 1, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
+    const quotaDock = { requiredCount: 1, collectedCount: collected, isQuotaMet() { return this.collectedCount >= this.requiredCount; } };
     Object.assign(gc, { nightClock: new NightClock(), hud, banner, quotaDock, satellite: makeSatellite(), autoStart: false });
     gc.startNight(1);
     return { gc, hud, banner };
@@ -523,7 +523,6 @@ describe('GameController — one twelve-hour shift', () => {
     quotaDock = {
       requiredCount: 3,
       collectedCount: 0,
-      minSignalLevel: 1,
       isQuotaMet() { return this.collectedCount >= this.requiredCount; },
     };
     Object.assign(gc, { nightClock: clock, hud, quotaDock, satellite: makeSatellite(), autoStart: false });
@@ -595,6 +594,15 @@ describe('GameController — loading the drives into the buggy', () => {
     expect(cargo.requiredCount).toBe(quotaDock.requiredCount);
   });
 
+  it('asks for as many of them processed in the buggy as at the airlock', () => {
+    gc.signalManager = new SignalManager({ signalsPerNight: 10 });
+    nights.setNight(1);
+    expect(cargo.requiredProcessed).toBe(1);
+    nights.setNight(3);
+    expect(cargo.requiredProcessed).toBe(4);
+    expect(quotaDock.requiredProcessed).toBe(4);
+  });
+
   it('in the morning, says to load the box into the buggy, and keeps the bed shut until it is', () => {
     toMorning();
     expect(gc.state).toBe('morning');
@@ -656,30 +664,6 @@ describe('GameController — loading the drives into the buggy', () => {
     expect(gc.state).toBe('playing');
     expect(gc.dispatch()).toBe(false);
     expect(gc.dispatched).toBe(false);
-  });
-
-  it("the send-off records the night's processed drives on the run, for the hub", () => {
-    const run = new RunRecord();
-    gc.run = run;
-    nights.setNight(2);
-    toMorning();
-    const drive = (signalLevel) => ({ saved: true, corrupted: false, signalLevel });
-    cargo.depositedBox = { receiver: { attachedItems: [drive(2), drive(2), drive(1)] } };
-    cargo.collectedCount = 3;
-    expect(gc.dispatch()).toBe(true);
-    expect(run.delivered(2)).toBe(2);
-  });
-
-  it('a refused send-off records nothing, and no run is needed', () => {
-    const run = new RunRecord();
-    gc.run = run;
-    toMorning();
-    load(2);
-    expect(gc.dispatch()).toBe(false);
-    expect(run.delivered(1)).toBe(0);
-    gc.run = null;
-    load(3);
-    expect(gc.dispatch()).toBe(true);
   });
 
   it('every night start brings the buggy back: the next morning it is sent again', () => {

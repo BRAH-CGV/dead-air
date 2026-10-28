@@ -541,7 +541,7 @@ describe('Ragno', () => {
       expect(redOut.setIntensity).toHaveBeenCalled();
       expect(redOut.setIntensity.mock.calls.at(-1)[0]).toBe(1);
       expect(controller.fail).toHaveBeenCalled();
-      expect(controller.fail.mock.calls[0][1].retryAfter).toBeLessThan(1);
+      expect(controller.fail.mock.calls[0][1].promptAfter).toBeLessThan(1);
       expect(whiteOut.play).toHaveBeenCalled();
       expect(figure.object3d.visible).toBe(false);
     });

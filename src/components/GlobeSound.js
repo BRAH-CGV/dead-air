@@ -19,6 +19,10 @@ import { GlobeSpin } from './GlobeSpin.js';
 //
 // It follows GlobeSpin's push count, so a press at top speed sounds too.
 // A pause silences it. Placed in the world, on the globe.
+//
+// Mashed into a ball of cheese (GlobeSpin.cheese, #169), it pops once
+// (sfx:pop, Mixkit's "Hard pop click" with its leading click cut off), from
+// a voice of its own so a spin still sounding isn't cut.
 // ─────────────────────────────────────────────
 
 /** Tuning. */
@@ -40,6 +44,8 @@ export const GLOBE_SOUND = {
   voices: 4,
   /** Full volume within this of the globe, metres; inverse falloff beyond. */
   refDistance: 1,
+  /** The pop as it turns to cheese: once, at `volume` of the clip's level. */
+  pop: { key: 'sfx:pop', volume: 0.8 },
 };
 
 export class GlobeSound extends Component {
@@ -48,11 +54,15 @@ export class GlobeSound extends Component {
    * @param {{ pushes: number }} [opts.spin]  Left out, the GameObject's GlobeSpin.
    * @param {THREE.Audio[]|null} [opts.voices]  Built from GLOBE_SOUND.key
    *        when left out. Null or empty: silent.
+   * @param {THREE.Audio|null} [opts.pop]  Built from GLOBE_SOUND.pop.key
+   *        when left out. Null: no pop.
    */
-  constructor({ spin = null, voices } = {}) {
+  constructor({ spin = null, voices, pop } = {}) {
     super();
     this.spin = spin;
     this.voices = voices;
+    this.pop = pop;
+    this._cheese = false;
     this._next = 0;
     this._current = null;
     this._pushes = 0;
@@ -65,11 +75,17 @@ export class GlobeSound extends Component {
     const engine = this.gameObject?.scene?.userData?.engine;
     if (this.voices === undefined) this.voices = this._build(engine);
     this.voices ??= [];
+    if (this.pop === undefined) this.pop = this._buildPop(engine);
+    this._cheese = !!this.spin?.cheese;
     this._offPause ??= engine?.onPauseChange?.(paused => this._onPause(paused)) ?? null;
   }
 
   onUpdate(dt) {
     this._since += dt;
+    if (!this._cheese && this.spin?.cheese) {
+      this._cheese = true;
+      this._pop();
+    }
     const pushes = this.spin?.pushes ?? 0;
     if (pushes === this._pushes) return;
     this._pushes = pushes;
@@ -80,7 +96,7 @@ export class GlobeSound extends Component {
 
   onDestroy() {
     this._offPause?.();
-    for (const v of this.voices ?? []) {
+    for (const v of [...(this.voices ?? []), ...(this.pop ? [this.pop] : [])]) {
       if (v.isPlaying) v.stop();
       try { v.disconnect?.(); } catch (_) { /* never connected */ }
       v.removeFromParent?.();
@@ -122,7 +138,27 @@ export class GlobeSound extends Component {
   }
 
   _onPause(paused) {
-    if (paused) for (const v of this.voices ?? []) if (v.isPlaying) v.stop();
+    if (!paused) return;
+    for (const v of this.voices ?? []) if (v.isPlaying) v.stop();
+    if (this.pop?.isPlaying) this.pop.stop();
+  }
+
+  _pop() {
+    if (!this.pop) return;
+    if (this.pop.isPlaying) this.pop.stop();
+    this.pop.setVolume(GLOBE_SOUND.pop.volume);
+    this.pop.play();
+  }
+
+  /** The pop's voice, a point source on the globe. Null without audio. */
+  _buildPop(engine) {
+    const { key } = GLOBE_SOUND.pop;
+    if (!engine?.audioListener || !engine.assets?.has?.(key)) return null;
+    const audio = new THREE.PositionalAudio(engine.audioListener);
+    audio.setBuffer(engine.assets.get(key));
+    audio.setRefDistance(GLOBE_SOUND.refDistance);
+    this.gameObject.object3d.add(audio);
+    return audio;
   }
 
   /** The voices on the preloaded buffer, as point sources on the globe.

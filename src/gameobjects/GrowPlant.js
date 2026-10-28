@@ -1,25 +1,27 @@
 import * as THREE from 'three';
 
-// A cherry-tomato plant for the grow rack, built in code: a main stem, side
-// shoots each carrying a compound leaf of leaflets, a tuft at the top, and
-// trusses of fruit hanging under the shoots, mostly ripe red, a few still
-// orange or green. Bushy enough to read as a crop from across the office.
+// A coffee bush for the grow rack (#168), built in code: a woody main stem,
+// branches in opposite pairs, each pair turned a quarter from the one below,
+// reaching out nearly level and drooping at the tips; glossy, wavy-edged
+// leaves in opposite pairs along every branch; and clusters of beans
+// hugging the branches at the leaf nodes, as Coffea arabica carries them.
+// A tuft of young leaves at the top.
 //
 // Three geometries, one per material (stems, leaves, fruit), all coloured by
-// vertex so a single material each covers every shade. The rack instances
-// them, so twelve plants are three draw calls. Metres, feet at the origin.
+// vertex so a single material each covers every shade. The beans are a
+// pale neutral: the rack tints them per bush (instanceColor) ripe or
+// unripe, and hides them once picked. The rack instances them, so
+// twelve bushes are three draw calls. Metres, feet at the origin.
 
 export const GROW_PLANT = {
   height: 0.45,
   seed: 1,
 };
 
-const STEM_COLOUR = new THREE.Color(0x4f6e2c);
-const FRUIT = [
-  { colour: new THREE.Color(0xa83a30), share: 0.65 },  // ripe
-  { colour: new THREE.Color(0xb8743c), share: 0.2 },   // turning
-  { colour: new THREE.Color(0x7a9a4a), share: 0.15 },  // green
-];
+const STEM_COLOUR = new THREE.Color(0x5a4a2c);   // woody, grey-brown
+const SHOOT_COLOUR = new THREE.Color(0x4f6e2c);  // the green young growth
+/** Beans are pale and nearly grey: the rack's instance colour is their colour. */
+const BEAN_LIGHTNESS = [0.72, 0.92];
 
 /** Mulberry32: small and seedable. */
 function rng(seed) {
@@ -75,7 +77,7 @@ class Builder {
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
-const SEGMENTS = 3;   // per leaflet, tip to base: 12 triangles
+const SEGMENTS = 4;   // per leaf, tip to base: 16 triangles
 
 /**
  * @param {{ seed?: number, height?: number }} [opts]
@@ -88,32 +90,35 @@ export function buildGrowPlant({ seed = GROW_PLANT.seed, height = GROW_PLANT.hei
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
 
   /** A tapered stem from `a` to `b`. */
-  const stem = (a, b, r0, r1) => {
+  const stem = (a, b, r0, r1, colour = STEM_COLOUR) => {
     const dir = new THREE.Vector3().subVectors(b, a);
     const length = dir.length();
     q.setFromUnitVectors(UP, dir.normalize());
     m4.compose(new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1));
-    stems.addGeometry(new THREE.CylinderGeometry(r1, r0, length, 5, 1, true), m4, STEM_COLOUR);
+    stems.addGeometry(new THREE.CylinderGeometry(r1, r0, length, 5, 1, true), m4, colour);
   };
 
-  /** One leaflet: a pointed oval along `dir`, creased down its midrib, its
-   *  tip drooping. `face` is roughly the way its upper side looks. */
-  const leaflet = (base, dir, face, length, width) => {
+  /** One leaf: a pointed ellipse along `dir`, creased down its midrib, its
+   *  edge rippling (coffee leaves are wavy) and its tip drooping. `face` is
+   *  roughly the way its upper side looks. */
+  const leaf = (base, dir, face, length, width) => {
     const side = new THREE.Vector3().crossVectors(dir, face).normalize();
     const lift = new THREE.Vector3().crossVectors(side, dir).normalize();
-    const hsl = { h: range(0.25, 0.32), s: range(0.55, 0.75), l: range(0.09, 0.17) };
+    const hsl = { h: range(0.27, 0.34), s: range(0.5, 0.7), l: range(0.06, 0.12) };
     const edge = new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l);
-    const rib = new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l + 0.05);
-    const droop = range(0.15, 0.4) * length;
+    const rib = new THREE.Color().setHSL(hsl.h - 0.02, hsl.s, hsl.l + 0.06);
+    const droop = range(0.2, 0.45) * length;
+    const ripple = width * 0.18, phase = range(0, Math.PI * 2);
     const rows = [];
     for (let i = 0; i <= SEGMENTS; i++) {
       const t = i / SEGMENTS;
       const c = base.clone().addScaledVector(dir, length * t).addScaledVector(UP, -droop * t * t);
-      const w = width * Math.pow(Math.sin(Math.PI * t), 0.8);
+      const w = width * Math.pow(Math.sin(Math.PI * t), 0.7);
+      const wave = ripple * Math.sin(phase + t * 9) * Math.sin(Math.PI * t);
       rows.push([
-        c.clone().addScaledVector(side, -w),
-        c.clone().addScaledVector(lift, w * 0.25),
-        c.clone().addScaledVector(side, w),
+        c.clone().addScaledVector(side, -w).addScaledVector(lift, wave),
+        c.clone().addScaledVector(lift, w * 0.2),
+        c.clone().addScaledVector(side, w).addScaledVector(lift, -wave),
       ]);
     }
     for (let i = 0; i < SEGMENTS; i++) {
@@ -125,82 +130,79 @@ export function buildGrowPlant({ seed = GROW_PLANT.seed, height = GROW_PLANT.hei
     }
   };
 
-  /** A compound leaf along a shoot from `a` to `b`: leaflets in pairs and
-   *  one at the tip. */
-  const compoundLeaf = (a, b, pairs, size) => {
-    const along = new THREE.Vector3().subVectors(b, a).normalize();
-    const across = new THREE.Vector3().crossVectors(along, UP);
-    if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
-    across.normalize();
-    for (let i = 0; i < pairs; i++) {
-      const t = 0.3 + (0.7 * i) / pairs;
-      const at = a.clone().lerp(b, t);
-      for (const s of [-1, 1]) {
-        const dir = across.clone().multiplyScalar(s).addScaledVector(along, 0.6).addScaledVector(UP, range(0.05, 0.35)).normalize();
-        leaflet(at, dir, UP, size * range(0.8, 1.15), size * range(0.38, 0.5));
-      }
-    }
-    leaflet(b, along.clone().addScaledVector(UP, 0.2).normalize(), UP, size * 1.1, size * 0.4);
-  };
-
-  /** A truss: a short stalk, then a cluster of fruit hanging under it. */
-  const fruitColour = forceGreen => {
-    if (forceGreen) return FRUIT[2].colour;
-    let r = rand();
-    for (const f of FRUIT) { if ((r -= f.share) <= 0) return f.colour; }
-    return FRUIT[0].colour;
-  };
-  const truss = (from, count, forceGreen) => {
-    const hang = from.clone().add(new THREE.Vector3(range(-0.01, 0.01), -0.03, range(-0.01, 0.01)));
-    stem(from, hang, 0.0025, 0.002);
+  /** A cluster of beans round the branch at `at`: small ovals, each a
+   *  touch lighter or darker, packed tight against the wood. */
+  const cluster = (at, along, count) => {
+    const across = new THREE.Vector3().crossVectors(along, UP).normalize();
     for (let i = 0; i < count; i++) {
-      const r = range(0.014, 0.019);
-      const at = hang.clone().add(new THREE.Vector3(range(-0.03, 0.03), -r - range(0, 0.03), range(-0.03, 0.03)));
-      const tint = fruitColour(forceGreen && i === 0).clone().offsetHSL(range(-0.01, 0.01), 0, range(-0.04, 0.04));
-      m4.compose(at, q.identity(), new THREE.Vector3(1, range(0.9, 1), 1));
-      fruit.addGeometry(new THREE.IcosahedronGeometry(r, 1), m4, tint);
+      const r = range(0.0075, 0.0095);
+      const angle = (i / count) * Math.PI * 2 + range(-0.4, 0.4);
+      const offset = across.clone().multiplyScalar(Math.cos(angle) * r * 1.3)
+        .addScaledVector(UP, Math.sin(angle) * r * 1.1 - r * 0.6)
+        .addScaledVector(along, range(-0.006, 0.006));
+      const l = range(...BEAN_LIGHTNESS);
+      m4.compose(at.clone().add(offset), q.setFromUnitVectors(UP, along), new THREE.Vector3(1, 1.25, 1));
+      fruit.addGeometry(new THREE.IcosahedronGeometry(r, 0), m4, new THREE.Color(l, l, l * 0.97));
     }
   };
 
-  // The main stem, leaning a little.
-  const lean = new THREE.Vector3(range(-0.03, 0.03), 0, range(-0.03, 0.03));
+  // The main stem, leaning a little, woody.
+  const lean = new THREE.Vector3(range(-0.02, 0.02), 0, range(-0.02, 0.02));
   const stemPoint = h => new THREE.Vector3(lean.x * h / height, h, lean.z * h / height);
-  const stemTop = height * 0.9;
+  const stemTop = height * 0.92;
   for (let i = 0; i < 4; i++) {
     const h0 = (stemTop * i) / 4, h1 = (stemTop * (i + 1)) / 4;
     stem(stemPoint(h0), stemPoint(h1), 0.009 - i * 0.0015, 0.0075 - i * 0.0015);
   }
 
-  // Side shoots, spiralling up, each a compound leaf; the lower ones longer.
-  const shoots = 15;
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  const trussFrom = [];
-  for (let i = 0; i < shoots; i++) {
-    const h = 0.07 + ((stemTop - 0.1) * i) / (shoots - 1) + range(-0.01, 0.01);
-    const angle = i * golden + range(-0.3, 0.3);
-    const rise = range(0.35, 0.8);
-    const reach = (0.17 - 0.08 * (i / shoots)) * range(0.85, 1.1);
-    const base = stemPoint(h);
-    const out = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-    const mid = base.clone().addScaledVector(out, reach * 0.5).addScaledVector(UP, reach * rise * 0.6);
-    const tip = base.clone().addScaledVector(out, reach).addScaledVector(UP, reach * rise * 0.5);
-    stem(base, mid, 0.004, 0.0032);
-    stem(mid, tip, 0.0032, 0.002);
-    compoundLeaf(base, tip, 6, range(0.06, 0.075));
-    if (h > 0.16 && h < stemTop - 0.08 && i % 2 === 1) trussFrom.push(base.clone().lerp(tip, 0.55));   // every other shoot, out along it
+  // Branches in opposite pairs, each pair a quarter turn from the last;
+  // the lower ones longer, so the bush is a cone.
+  const pairs = 6;
+  const turn = range(0, Math.PI);
+  for (let p = 0; p < pairs; p++) {
+    const h = 0.08 + ((stemTop - 0.12) * p) / (pairs - 1) + range(-0.008, 0.008);
+    const reach = (0.17 - 0.09 * (p / (pairs - 1))) * range(0.88, 1.08);
+    for (const s of [0, Math.PI]) {
+      const angle = turn + p * Math.PI / 2 + s + range(-0.25, 0.25);
+      const out = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+      const base = stemPoint(h);
+      // Three points out along it: up a little, then level, then drooping.
+      const points = [base];
+      for (let k = 1; k <= 3; k++) {
+        const t = k / 3;
+        points.push(base.clone().addScaledVector(out, reach * t).addScaledVector(UP, reach * (0.18 * t - 0.22 * t * t)));
+      }
+      for (let k = 0; k < 3; k++) stem(points[k], points[k + 1], 0.0042 - k * 0.0009, 0.0033 - k * 0.0009, k < 2 ? STEM_COLOUR : SHOOT_COLOUR);
+
+      // Leaf pairs at four nodes along it, opposite across it, and the
+      // beans at the inner nodes, where the wood is older.
+      for (let n = 0; n < 4; n++) {
+        const t = 0.3 + 0.7 * (n / 3);
+        const seg = Math.min(2, Math.floor(t * 3));
+        const at = points[seg].clone().lerp(points[seg + 1], t * 3 - seg);
+        const along = new THREE.Vector3().subVectors(points[seg + 1], points[seg]).normalize();
+        const across = new THREE.Vector3().crossVectors(along, UP).normalize();
+        const size = range(0.055, 0.075) * (n === 3 ? 0.8 : 1);
+        for (const side of [-1, 1]) {
+          const dir = across.clone().multiplyScalar(side).addScaledVector(along, 0.55).addScaledVector(UP, range(0.0, 0.25)).normalize();
+          leaf(at, dir, UP, size, size * range(0.36, 0.44));
+        }
+        if (n > 0 && n < 3) cluster(at, along, 3 + Math.floor(rand() * 2));
+      }
+      // A leaf at the very tip.
+      leaf(points[3], new THREE.Vector3().subVectors(points[3], points[2]).normalize(), UP, range(0.04, 0.05), 0.016);
+    }
   }
 
-  // The tuft at the top: young shoots with smaller leaves.
+  // The tuft at the top: young shoots with small leaves.
   const top = stemPoint(stemTop);
   for (let i = 0; i < 4; i++) {
-    const angle = (i / 4) * Math.PI * 2 + range(-0.4, 0.4);
-    const tip = top.clone().add(new THREE.Vector3(Math.cos(angle) * 0.05, range(0.02, 0.04), Math.sin(angle) * 0.05));
-    stem(top, tip, 0.003, 0.0018);
-    compoundLeaf(top, tip, 3, range(0.035, 0.045));
+    const angle = (i / 4) * Math.PI * 2 + range(-0.3, 0.3);
+    const tip = top.clone().add(new THREE.Vector3(Math.cos(angle) * 0.03, range(0.02, 0.035), Math.sin(angle) * 0.03));
+    stem(top, tip, 0.0028, 0.0018, SHOOT_COLOUR);
+    const dir = new THREE.Vector3().subVectors(tip, top).normalize();
+    leaf(tip, dir.clone().addScaledVector(UP, 0.4).normalize(), UP, range(0.035, 0.045), 0.014);
   }
-
-  // Trusses of fruit under the middle shoots; the last one keeps a green one.
-  trussFrom.forEach((at, i) => truss(at, 2 + Math.floor(rand() * 2), i === trussFrom.length - 1));
 
   return { stems: stems.build(), leaves: leaves.build(), fruit: fruit.build() };
 }

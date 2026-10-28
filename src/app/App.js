@@ -296,8 +296,8 @@ export class App {
     });
   }
 
-  /** Start the run's record over (engine.run: what each morning's buggy
-   *  took to the hub), under the array the intro named. Reset in place, not
+  /** Start the run's record over (engine.run: the array's name and each
+   *  night's threat log), under the array the intro named. Reset in place, not
    *  replaced: the scene under the menu already holds it. A restart keeps it;
    *  nothing saves it. */
   _newRun(array = null) {
@@ -476,8 +476,8 @@ export class App {
     }
     if (state === 'gameOver') {
       // A UFO catch fails the shift and then burns the screen white with
-      // "You were taken" — let that play (it has its own [E] retry) before
-      // the menu covers it. A missed quota has no white-out: shown at once.
+      // "You were taken" — let that play before the menu covers it (the
+      // menu is the only retry: GameController takes no key for it). A missed quota has no white-out: shown at once.
       // _catch() starts the white-out right after fail(), in the same call:
       // a microtask sees whether it did.
       clearTimeout(this._failTimer);
@@ -510,6 +510,9 @@ export class App {
       night: this._currentNight(),
       saved: dock?.collectedCount ?? 0,
       required: dock?.requiredCount ?? 0,
+      processed: dock?.processedCount ?? 0,
+      processedRequired: dock?.requiredProcessed ?? 0,
+      quotaMissed: !!this.engine.activeScene?.gameController?.quotaMissed,
     };
     this.flow.nightFailed();
     this.engine.setPaused(true);

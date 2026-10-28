@@ -150,6 +150,12 @@ const UP = new THREE.Vector3(0, 1, 0);
  *        (PerimeterFence.fenceKeepOut). Trees there are dropped after the belt
  *        is laid out, so every other tree stands exactly where it would have.
  *        Grass is left alone: blades through a fence read as overgrowth.
+ * @param {Array<{minX: number, maxX: number, minZ: number, maxZ: number, fade?: number}>} [opts.grassClearOf]
+ *        boxes no blade may stand in — round a solid thing in the yard (the
+ *        generator), so the grass doesn't grow up through it. Dropped after
+ *        planting, like the trees, so the rest of the grass stays put. Over
+ *        `fade` metres out from a box the grass thins and shortens toward it,
+ *        so the patch's edge has no lone tall blades standing by it.
  * @returns {GameObject} a group carrying the grass and one mesh per tree part
  */
 export function createMarsVegetation(opts = {}) {
@@ -162,6 +168,7 @@ export function createMarsVegetation(opts = {}) {
     lanes: extraLanes = [],
     heightAt    = terrainHeightAt,
     treesClearOf = [],
+    grassClearOf = [],
   } = opts;
 
   const rand  = makeRandom(seed);
@@ -181,9 +188,8 @@ export function createMarsVegetation(opts = {}) {
   const groves    = layOutGroves(rand, yardAt);
   const site      = { zones, yardAt, lanes, clearings, groves, noise, heightAt };
 
-  const blades = plantGrass(site, rand);
-  const trees  = plantTrees(site, rand).filter(({ position: { x, z } }) =>
-    !treesClearOf.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ));
+  const blades = clearGrass(plantGrass(site, rand), grassClearOf);
+  const trees  = plantTrees(site, rand).filter(({ position: { x, z } }) => !inBox(treesClearOf, x, z));
 
   const time = { value: 0 };
   if (blades.length > 0) {
@@ -202,6 +208,38 @@ export function createMarsVegetation(opts = {}) {
    *  keep out of the trees, or see past them (DustEyes). */
   vegetation.trees = trees.map(({ position: { x, z } }) => ({ x, z, reach: TREE_REACH }));
   return vegetation;
+}
+
+/** The blades kept off `boxes`: none inside one, and over a box's `fade`
+ *  metres out from it fewer and shorter, the nearer the fewer. Which of
+ *  them go is hashed from where each stands, not drawn from the belt's
+ *  random stream, so every other blade stays exactly as it was. */
+function clearGrass(blades, boxes) {
+  if (!boxes.length) return blades;
+  const kept = [];
+  for (const blade of blades) {
+    const { x, z } = blade.position;
+    let t = 1;   // 0 at a box's edge, 1 clear of its fade
+    for (const b of boxes) {
+      const d = Math.hypot(Math.max(b.minX - x, 0, x - b.maxX), Math.max(b.minZ - z, 0, z - b.maxZ));
+      t = Math.min(t, b.fade > 0 ? d / b.fade : (d > 0 ? 1 : 0));
+    }
+    if (t <= 0 || (t < 1 && hash2(x, z) >= t)) continue;
+    if (t < 1) blade.scale.y *= 0.5 + 0.5 * t;
+    kept.push(blade);
+  }
+  return kept;
+}
+
+/** A fixed number in [0, 1) for a point on the ground. */
+function hash2(x, z) {
+  const h = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return h - Math.floor(h);
+}
+
+/** Whether (x, z) is in any of the boxes. */
+function inBox(boxes, x, z) {
+  return boxes.some(b => x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ);
 }
 
 /** Advances the grass sway. One uniform shared by every blade. */

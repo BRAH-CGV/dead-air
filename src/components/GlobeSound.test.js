@@ -113,3 +113,45 @@ describe('GlobeSound', () => {
     expect(g.voices.every(v => !v.isPlaying)).toBe(true);
   });
 });
+
+describe('GlobeSound — the pop as it turns to cheese (#169)', () => {
+  function buildWithPop() {
+    const globe = new GameObject('Globe');
+    const spin = globe.addComponent(new GlobeSpin());
+    const voices = Array.from({ length: GLOBE_SOUND.voices }, fakeSound);
+    const pop = fakeSound();
+    const sound = globe.addComponent(new GlobeSound({ voices, pop }));
+    sound.onStart();
+    return { spin, sound, voices, pop };
+  }
+
+  it('its clip is in the manifest', () => {
+    expect(ASSETS[GLOBE_SOUND.pop.key]).toMatchObject({ type: 'audio', url: 'assets/audio/pop.mp3' });
+  });
+
+  it('pops once, at its level, the moment the globe becomes cheese, and never again', () => {
+    const g = buildWithPop();
+    for (let i = 0; i < 80 && !g.spin.cheese; i++) { push(g); run(g, 1 / 8); }
+    expect(g.spin.cheese).toBe(true);
+    expect(g.pop.play).toHaveBeenCalledTimes(1);
+    expect(g.pop.volume).toBe(GLOBE_SOUND.pop.volume);
+    for (let i = 0; i < 40; i++) { push(g); run(g, 1 / 8); }
+    expect(g.pop.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('no pop for an ordinary spin', () => {
+    const g = buildWithPop();
+    push(g);
+    run(g, 3);
+    expect(g.pop.play).not.toHaveBeenCalled();
+  });
+
+  it('stops the pop on a pause and lets it go when torn down', () => {
+    const g = buildWithPop();
+    g.pop.isPlaying = true;
+    g.sound._onPause(true);
+    expect(g.pop.stop).toHaveBeenCalled();
+    g.sound.onDestroy();
+    expect(g.pop.disconnect).toHaveBeenCalled();
+  });
+});
