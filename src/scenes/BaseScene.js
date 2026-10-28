@@ -2301,7 +2301,19 @@ export class BaseScene extends Scene {
 
     const exposedRooms = [office.bounds(), this.rooms.Airlock.bounds()];
     const hooks = {
-      eyePosition: out => engine.camera.getWorldPosition(out),
+      // Use the player's position, not the camera's — the debug fly camera
+      // can be anywhere, but the threats should judge the character.
+      eyePosition: out => {
+        const player = engine.player?.object3d;
+        if (player) {
+          player.getWorldPosition(out);
+          const crouched = engine.playerController?.crouched;
+          out.y += crouched ? (engine.playerController?.crouchEyeOffset ?? 0.225)
+                            : (engine.playerController?.standEyeOffset ?? 0.565);
+          return out;
+        }
+        return engine.camera.getWorldPosition(out);
+      },
       isOutside: p => this._isOutside(p),
       // Where a lit base gives you away: the office (the room its window
       // looks into) and the airlock (only a hatch from the yard). Whole
@@ -2485,7 +2497,19 @@ export class BaseScene extends Scene {
         .map(part => part.bounds())
         .map(b => ({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z })),
       hooks: {
-        eyePosition:      out => engine.camera.getWorldPosition(out),
+        // Use the player's position, not the camera's — the debug fly camera
+        // can be anywhere, but the threats should judge the character.
+        eyePosition: out => {
+          const player = engine.player?.object3d;
+          if (player) {
+            player.getWorldPosition(out);
+            const crouched = engine.playerController?.crouched;
+            out.y += crouched ? (engine.playerController?.crouchEyeOffset ?? 0.225)
+                              : (engine.playerController?.standEyeOffset ?? 0.565);
+            return out;
+          }
+          return engine.camera.getWorldPosition(out);
+        },
         viewDirection:    out => engine.camera.getWorldDirection(out),
         isOutside:        p => this._isOutside(p),
         hatchShut:        () => this.rooms.Airlock.hatch.locked,
