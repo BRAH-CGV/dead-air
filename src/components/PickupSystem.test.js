@@ -473,6 +473,16 @@ describe('PickupSystem', () => {
     expect(interactionSys.prompt.show).toHaveBeenCalledWith('[E] Drop \u00b7 [R] Rotate \u00b7 [\u2191/\u2193] Push/pull');
   });
 
+  it('respects promptsHidden — does not show drop prompt when HUD is hidden', () => {
+    const { pickupable } = makePickupableGO();
+    system.pickUp(pickupable);
+    interactionSys.promptsHidden = true;
+
+    system.onLateUpdate(1 / 60);
+    expect(interactionSys.promptOverride).toBe(system);
+    expect(interactionSys.prompt.show).not.toHaveBeenCalled();
+  });
+
   // ── Rotation (#60) ──
 
   describe('rotation', () => {

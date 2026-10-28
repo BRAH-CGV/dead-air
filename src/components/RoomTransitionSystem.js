@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../core/Component.js';
 import { PromptLabel } from '../ui/PromptLabel.js';
+import { InteractionSystem } from './InteractionSystem.js';
 
 // ─────────────────────────────────────────────
 // RoomTransitionSystem  –  Component (attach to Player)
@@ -96,7 +97,9 @@ export class RoomTransitionSystem extends Component {
     if (target === this._promptDoor && text === this._promptText) return;
     this._promptDoor = target;
     this._promptText = text;
-    if (target) this.prompt?.show(text);
+    // Respect the HUD toggle — don't show the prompt if promptsHidden is set.
+    const interaction = this.gameObject?.getComponent?.(InteractionSystem);
+    if (target && !interaction?.promptsHidden) this.prompt?.show(text);
     else this.prompt?.hide();
   }
 

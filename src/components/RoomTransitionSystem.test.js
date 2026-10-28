@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('@dimforge/rapier3d', () => ({ default: {} }));
 
 import { RoomTransitionSystem } from './RoomTransitionSystem.js';
+import { InteractionSystem } from './InteractionSystem.js';
 import { Door } from '../gameobjects/Door.js';
 import { GameObject } from '../core/GameObject.js';
 
@@ -153,5 +154,18 @@ describe('RoomTransitionSystem', () => {
     moveTo(sys, 0, 1, 0);
     expect(door.onPlayerEnter).toHaveBeenCalledTimes(1);
     expect(sys.currentRoom.name).toBe('R');
+  });
+
+  it('respects promptsHidden — does not show locked door prompt when HUD is hidden', () => {
+    const door = makeDoor('Door:A', [2, 1.1, 5], { locked: true });
+    door.lockedPrompt = 'Opens on night 2';
+    const sys = attach({ doors: [door] });
+    // Add an InteractionSystem with promptsHidden = true (simulates the hud command).
+    const interaction = new InteractionSystem();
+    interaction.promptsHidden = true;
+    player.addComponent(interaction);
+
+    moveTo(sys, 2, 1, 5.5);
+    expect(prompt.visible).toBe(false);
   });
 });

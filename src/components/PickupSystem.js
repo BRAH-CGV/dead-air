@@ -384,12 +384,15 @@ export class PickupSystem extends Component {
     // take priority over tooltip Interactables like the drive reader label.
     if (held) {
       this.interactionSystem.promptOverride = this;
-      const binds = this._getEngine()?.keyBinds ?? {};
-      const rotate = keyName(binds.rotateHeld ?? 'KeyR');
-      const push = `${keyName(binds.holdFurther ?? 'ArrowUp')}/${keyName(binds.holdCloser ?? 'ArrowDown')}`;
-      this.interactionSystem.prompt?.show(this._rotateLatched
-        ? `[E] Drop \u00b7 [${rotate}] Stop rotating`
-        : `[E] Drop \u00b7 [${rotate}] Rotate \u00b7 [${push}] Push/pull`);
+      // Respect the HUD toggle — don't show the prompt if promptsHidden is set.
+      if (!this.interactionSystem.promptsHidden) {
+        const binds = this._getEngine()?.keyBinds ?? {};
+        const rotate = keyName(binds.rotateHeld ?? 'KeyR');
+        const push = `${keyName(binds.holdFurther ?? 'ArrowUp')}/${keyName(binds.holdCloser ?? 'ArrowDown')}`;
+        this.interactionSystem.prompt?.show(this._rotateLatched
+          ? `[E] Drop \u00b7 [${rotate}] Stop rotating`
+          : `[E] Drop \u00b7 [${rotate}] Rotate \u00b7 [${push}] Push/pull`);
+      }
     } else {
       this.interactionSystem.promptOverride = null;
     }
