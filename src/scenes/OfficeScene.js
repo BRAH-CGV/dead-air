@@ -383,15 +383,7 @@ export class OfficeScene extends Scene {
       scale: 0.478,
     });
     this._office.addChild(radar);
-      
-    const switchboard = this.engine.spawnModel('model:switchboard', { 
-      name: 'Switchboard', 
-      position: [5.72, 1.15, 1.25], 
-      rotationY: -Math.PI / 2,
-      scale: 0.638,
-    });
-    this._office.addChild(switchboard);
-  
+
     const cameras = [
       { name: 'SecurityCamera_Window', position: [-2.2, 2.75, -4.65], rotation: [Math.PI / 5, -Math.PI / 8, 0] },
       { name: 'SecurityCamera_Door', position: [4.9, 2.65, 3.9], rotation: [Math.PI / 4, -Math.PI * 0.78, 0] },

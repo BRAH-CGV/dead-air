@@ -42,35 +42,6 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **Modifications** | None recorded |
 
 
-
-### Server console (terminal)
-
-"console03b"
-(https://sketchfab.com/3d-models/console03b-a7301efe05454ed38c257524137b0045)
-by ~Drift~ (QuickDriftVR) is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/server-console.glb` |
-| **Manifest key** | `model:server-console` |
-| **Used for** | Server room console/terminal prop |
-| **Modifications** | None recorded |
-
-### Server rack (tall)
-
-"Server Rack - Low Poly"
-(https://sketchfab.com/3d-models/server-rack-low-poly-458b456d8a064517bd7f1fcdeba78304)
-by PolyDavid is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/server-rack-tall.glb` |
-| **Manifest key** | `model:server-rack-tall` |
-| **Used for** | Tall server rack prop |
-| **Modifications** | None recorded |
-
 ### Bed
 
 "PBR Bed Model" (https://www.cgtrader.com/free-3d-models/furniture/bed/pbr-bed-model)
@@ -99,19 +70,6 @@ by Ottto3d is licensed under Creative Commons Attribution
 | **Used for** | Metal storage locker prop |
 | **Modifications** | Base-colour recoloured from rust to dark gunmetal; roughness, metalness and normal map smoothed |
 
-### Metal barrel
-
-"Rusty metal barrel" (https://sketchfab.com/3d-models/rusty-metal-barrel-419a6272e7a94367a5fea7b23383a811)
-by pgonarg is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/barrel.glb` |
-| **Manifest key** | `model:barrel` |
-| **Used for** | Metal barrel prop |
-| **Modifications** | None recorded |
-
 ### Shelf
 
 "Metal Shelf - 5MB"
@@ -125,7 +83,6 @@ by Mehdi Shahsavan (ahmagh2e) is licensed under Creative Commons Attribution
 | **Manifest key** | `model:shelf` |
 | **Used for** | Metal shelving unit prop |
 | **Modifications** | None recorded |
-
 
 
 ### Mars rover
@@ -224,19 +181,6 @@ by ClintonAbbott.Art is licensed under Creative Commons Attribution
 | **Used for** | Dead / exterior tree foliage |
 | **Modifications** | None recorded |
 
-### Fire extinguisher
-
-"Fire Extinguisher" (https://sketchfab.com/3d-models/fire-extinguisher-e3316e8c891843fab3eb09b87b5840e7)
-by wasabicats is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/fire-extinguisher.glb` |
-| **Manifest key** | `model:fire-extinguisher` |
-| **Used for** | Wall-mounted fire extinguisher prop |
-| **Modifications** | None recorded |
-
 ### Ceiling light
 
 "Industrial Light" (https://sketchfab.com/3d-models/industrial-light-0bcbb6f2a3e54b6b8c69e241bbd5bc5f)
@@ -249,20 +193,6 @@ by ConhuirParker is licensed under Creative Commons Attribution
 | **Manifest key** | `model:light-ceiling` |
 | **Used for** | UV grow lights on the office's grow rack |
 | **Modifications** | Hung face-down; glow recoloured UV purple at runtime (`GrowRack.js`) |
-
-### Wall light
-
-"Industrial Bulkhead Wall Lamp Lowpoly"
-(https://sketchfab.com/3d-models/industrial-bulkhead-wall-lamp-lowpoly-4c50439bcbc247629fe2194862d7acc9)
-by iwanPlays is licensed under Creative Commons Attribution
-(http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/wall-light.glb` |
-| **Manifest key** | `model:wall-light` |
-| **Used for** | Wall-mounted light fixture |
-| **Modifications** | None recorded |
 
 ### Chainlink fence
 
@@ -411,7 +341,7 @@ by KloWorks is licensed under Creative Commons Attribution
 | **Used for** | Stackable crate prop |
 | **Modifications** | None recorded |
 
-### Wall screen
+### Security-camera monitor
 
 "retro cyberpunk computer screens"
 (https://sketchfab.com/3d-models/retro-cyberpunk-computer-screens-6fbdcecb1b1e4f41947b4c03b5eed8f9)
@@ -420,70 +350,52 @@ by ribot02 is licensed under Creative Commons Attribution
 
 | | |
 |---|---|
-| **File** | `public/assets/models/wall-screen.glb` |
-| **Manifest key** | `model:wall-screen` |
-| **Used for** | Wall-mounted retro CRT/monitor screens |
-| **Modifications** | None recorded |
-
-The security-camera monitor is cut from the same model:
-
-| | |
-|---|---|
 | **File** | `public/assets/models/camera-monitor.glb` |
 | **Manifest key** | `model:camera-monitor` |
 | **Used for** | The security-camera monitor on the office desk |
 | **Modifications** | The bottom-left screen only, cut out of the bank of four; turned to face +z, scaled to 0.6 m wide, stood on the floor; screen made dark glass, as if off |
 
-### Interior door
+### Server room consoles
 
-"Aluminum door" (https://sketchfab.com/3d-models/aluminum-door-4200759a99154a9fbc6c74fd132371cb)
-by Paule Gennadievich (PauleMenson) is licensed under Creative Commons
-Attribution (http://creativecommons.org/licenses/by/4.0/).
-
-| | |
-|---|---|
-| **File** | `public/assets/models/door-interior.glb` |
-| **Manifest key** | `model:door-interior` |
-| **Used for** | Interior door prop |
-| **Modifications** | None recorded |
-
-### Radar terminal — TODO: resolve
-
-Which of these was downloaded as `industrial_terminal.glb` (now
-`radar-terminal.glb`)? One entry, drop the loser.
-
-- https://skfb.ly/oNDNS
-- https://skfb.ly/pISt8 (noted: poly count on the higher side)
+"Industrial Terminal"
+(https://sketchfab.com/3d-models/industrial-terminal-846bb4773f74406bb8a24fcf2f17cf22)
+by Vaportrash is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
 | **File** | `public/assets/models/radar-terminal.glb` |
 | **Manifest key** | `model:radar-terminal` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The server room's processing console and its signal-delete console |
+| **Modifications** | Renamed from `industrial_terminal.glb`; our own screen picture drawn over its CRT |
 
-### Desk with computer — TODO: resolve
+### Office computer desk
 
-Which of these was downloaded as `retro_futuristic_computer.glb` (now
-`retro-computer.glb`)?
-
-- https://skfb.ly/ozTNu
-- https://skfb.ly/oTuU9
+"Retro Futuristic Computer"
+(https://sketchfab.com/3d-models/retro-futuristic-computer-a197548492214728929d897245dab32a)
+by heslachris is licensed under Creative Commons Attribution
+(http://creativecommons.org/licenses/by/4.0/).
 
 | | |
 |---|---|
 | **File** | `public/assets/models/retro-computer.glb` |
 | **Manifest key** | `model:retro-computer` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The office's computer desk, where signals are scanned and saved |
+| **Modifications** | Renamed from `retro_futuristic_computer.glb`; glass transmission and double-sided faces turned off in the manifest; its inside lined in a dark material; our own screen picture drawn over its monitor |
 
-### Security camera — TODO: resolve
+### Security camera
 
-- https://skfb.ly/oKtDJ
+"Security Camera"
+(https://sketchfab.com/3d-models/security-camera-7a4d8b033982421e8a1de6b52e979176)
+by Llop (llopestepari), under the Sketchfab Free Standard licence
+(https://sketchfab.com/licenses).
 
 | | |
 |---|---|
 | **File** | `public/assets/models/security-camera.glb` |
 | **Manifest key** | `model:security-camera` |
-| **Title / author / licence** | TODO — open the link and fill in |
+| **Used for** | The security cameras in the older test scenes (`OfficeScene`, `TestScene`); the base's own cameras are built in code (`SecurityCamera.js`) |
+| **Modifications** | None |
 
 ### Mars globe and stand
 
@@ -527,6 +439,7 @@ not yet decided as a team.
 | | |
 |---|---|
 | **File** | `public/assets/models/sleep-demon.glb` |
+| **Source** | The download itself is not kept in `public/` (it would ship in the build); re-download it from the link above to re-bake |
 | **Manifest key** | `model:sleep-demon` |
 | **Used for** | The Sleep Demon's body, drawn as a pitch-black shade (`MonsterFigure`) |
 | **Modifications** | Baked by `scripts/bake-sleep-demon.mjs`: bind pose baked in, rig, textures, eyes, gums, teeth and the head card dropped, decimated from 18,396 to 3,000 triangles, scaled to 1.8 m, eye and mouth markers added. Our own eyes and grin are drawn on it |
@@ -1043,17 +956,6 @@ One wind loop, mixed by us from four Freesound recordings, all Creative Commons 
 | **Used for** | Ragno crawling through a duct (`Ragno`, `DuctCrawl`): his steps, and thuds and creaks layered over them |
 | **Modifications** | Snippets of both cut and joined into one mono file; played in pieces (`DUCT_CRAWL`), each pitched a little apart |
 
-
-## Downloaded but unattributed — TODO
-
-These files sit in `public/assets/models/` with no source link on record.
-If any is downloaded rather than made by us, it needs a full entry above
-before submission (the credits screen must list all non-original work):
-
-- `switchboard.glb`, downloaded as `switchboard_ussr.glb` (`model:switchboard`)
-- `bush.glb`, downloaded as `best-bush.glb` (`model:bush`)
-- `break-panel.glb` (`model:break-panel`)
-- `the_boiled_one_horror_game_-_boiled_one.glb` (not in the manifest)
 
 ## Candidate links — upcoming assets
 

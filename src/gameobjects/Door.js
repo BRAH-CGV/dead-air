@@ -14,8 +14,8 @@ import { GameObject } from '../core/GameObject.js';
 // Rapier intersection events: fixed-vs-kinematic pairs aren't reported by
 // default, and a point-in-box test needs no WASM to unit-test.
 //
-// Room.addDoor creates these. For a door model later, spawn with
-// `engine.spawnModel('model:door-interior', { type: Door })` — the model
+// Room.addDoor creates these. For a door model later, add it to the manifest
+// and spawn it with `engine.spawnModel(key, { type: Door })` — the model
 // becomes the visual and the procedural panel is dropped.
 // ─────────────────────────────────────────────
 
