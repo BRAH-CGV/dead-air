@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import { UsageError, CommandError } from './DevConsole.js';
+import { tallyDrawCalls, formatTally } from '../../core/DrawCallTally.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -156,6 +157,21 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
       say: (on) => `FPS readout ${on ? 'on' : 'off'}`,
     }),
+    {
+      name: 'drawcalls', usage: 'drawcalls [shadows]',
+      help: 'Draw one frame from here and list its draw calls by pass and by what drew them; shadows redraws every shadow map in it',
+      run: ([arg]) => {
+        if (arg !== undefined && arg !== 'shadows') throw new UsageError(`Unknown option "${arg}"`);
+        const { renderer, scene, renderCamera } = engine;
+        if (!renderer || !scene || !renderCamera) throw new CommandError('Nothing is being rendered yet');
+        if (arg === 'shadows') engine.shadows?.invalidate();
+        const tally = tallyDrawCalls(renderer, () => {
+          renderer.render(scene, renderCamera);
+          for (const pass of engine.screenPasses ?? []) pass.render();
+        });
+        return formatTally(tally);
+      },
+    },
     toggle({
       name: 'models', help: 'Log each model as it spawns, and reload the scene to show them',
       target: () => engine,

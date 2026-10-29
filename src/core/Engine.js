@@ -269,6 +269,9 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // The frame resets info itself (_renderFrame), so the FPS readout counts
+    // the screen passes along with the main render rather than instead of it.
+    this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = true;
     // PCF, not PCFSoft: three r185 deprecates PCFSoft and swaps it for PCF on
     // the first shadow render — after the warm-up has compiled every lit
@@ -837,12 +840,16 @@ export class Engine {
     // The moving bodies too: a carried or knocked object's shadow follows it.
     this.shadows.update(this.rigidBodyMap);
     this.postProcess?.preRender();
+    // info counts the whole frame: reset once here, not by each render().
+    const info = this.renderer.info;
+    info?.reset?.();
     this.renderer.render(this.scene, this.renderCamera);
     this.postProcess?.postRender();
+    const beforeScreens = info?.render.calls ?? 0;
     for (const pass of this.screenPasses) pass.render();
-    // After render: renderer.info now holds this frame's totals, shadow
-    // passes included. No-op while the readout is hidden.
-    this.perfStats?.update(frameDt, this.renderer.info);
+    // info now holds this frame's totals, shadow and screen passes included.
+    // No-op while the readout is hidden.
+    if (info) this.perfStats?.update(frameDt, info, info.render.calls - beforeScreens);
 
     // Still behind the loading screen: reveal once the frames are smooth.
     if (this._settle?.push(frameDt)) {

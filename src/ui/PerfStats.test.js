@@ -64,6 +64,19 @@ describe('PerfStats', () => {
     expect(text).toMatch(/Textures\s+34/);
   });
 
+  it('shows the heaviest frame of the interval next to the last, and how much of it was screen passes (#175)', () => {
+    const stats = new PerfStats(undefined, { interval: 0.5 });
+    stats.toggle();
+    // The whole frame's calls in info; the screen passes' share beside it.
+    for (let i = 0; i < 29; i++) {
+      if (i === 10) stats.update(1 / 60, info({ calls: 500 }), 380);
+      else stats.update(1 / 60, info({ calls: 120 }), 0);
+    }
+    stats.update(1 / 60, info({ calls: 130 }), 10);
+    const text = stats.root.textContent;
+    expect(text).toMatch(/Draw calls\s+130 \(screens 10\), most 500 \(screens 380\)/);
+  });
+
   it('does not refresh before the interval has passed', () => {
     const stats = new PerfStats(undefined, { interval: 0.5 });
     stats.toggle();
