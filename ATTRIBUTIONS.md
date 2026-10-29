@@ -26,7 +26,7 @@ licensed under Creative Commons Attribution
 | **File** | `public/assets/models/dish-tower.glb` |
 | **Manifest key** | `model:dish-tower` |
 | **Used for** | The satellite dish outside the office |
-| **Modifications** | Created a base that the dish sits on and moves with |
+| **Modifications** | Created a base that the dish sits on and moves with; simplified from 14,304 to 9,340 triangles within 0.02 % of its size (`scripts/slim-models.mjs`) |
 
 
 ### Server
@@ -165,7 +165,7 @@ by DJMaesen (bumstrum) is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/tree-fantasy.glb` |
 | **Manifest key** | `model:tree-fantasy` |
 | **Used for** | Dead / exterior tree foliage |
-| **Modifications** | None recorded |
+| **Modifications** | Its unused specular-glossiness materials and their images removed (`scripts/slim-models.mjs`) |
 
 ### Low poly dead tree
 
@@ -179,7 +179,7 @@ by ClintonAbbott.Art is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/tree-dead.glb` |
 | **Manifest key** | `model:tree-dead` |
 | **Used for** | Dead / exterior tree foliage |
-| **Modifications** | None recorded |
+| **Modifications** | Its unused specular-glossiness materials and their images removed (`scripts/slim-models.mjs`) |
 
 ### Ceiling light
 
@@ -206,7 +206,7 @@ by Gamedirection is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/chainlink-fence.glb` |
 | **Manifest key** | `model:chainlink-fence` |
 | **Used for** | Exterior fencing |
-| **Modifications** | None recorded |
+| **Modifications** | Its unused specular-glossiness materials and their images removed (`scripts/slim-models.mjs`); our own materials drawn in their place (`PerimeterFence`) |
 
 ### Simple desk
 
@@ -286,7 +286,7 @@ No attribution required; credited anyway.
 | **File** | `public/assets/models/bigger-shelf.glb` |
 | **Manifest key** | `model:bigger-shelf` |
 | **Used for** | The bedroom's storage racks |
-| **Modifications** | None recorded |
+| **Modifications** | Simplified from 6,372 to 3,182 triangles within 0.02 % of its size (`scripts/slim-models.mjs`) |
 
 ### Generator
 
@@ -367,7 +367,7 @@ by Vaportrash is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/radar-terminal.glb` |
 | **Manifest key** | `model:radar-terminal` |
 | **Used for** | The server room's processing console and its signal-delete console |
-| **Modifications** | Renamed from `industrial_terminal.glb`; our own screen picture drawn over its CRT |
+| **Modifications** | Renamed from `industrial_terminal.glb`; our own screen picture drawn over its CRT; simplified from 12,638 to 5,096 triangles within 0.02 % of its size (`scripts/slim-models.mjs`) |
 
 ### Office computer desk
 
@@ -381,7 +381,7 @@ by heslachris is licensed under Creative Commons Attribution
 | **File** | `public/assets/models/retro-computer.glb` |
 | **Manifest key** | `model:retro-computer` |
 | **Used for** | The office's computer desk, where signals are scanned and saved |
-| **Modifications** | Renamed from `retro_futuristic_computer.glb`; glass transmission and double-sided faces turned off in the manifest; its inside lined in a dark material; our own screen picture drawn over its monitor |
+| **Modifications** | Renamed from `retro_futuristic_computer.glb`; glass transmission and double-sided faces turned off in the manifest; its inside lined in a dark material; our own screen picture drawn over its monitor; its unused transmission map removed |
 
 ### Security camera
 
@@ -420,7 +420,7 @@ Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 | **File** | `public/assets/models/ufo.glb` |
 | **Manifest key** | `model:ufo` |
 | **Used for** | The UFO threat — the saucer that comes once a night (`Ufo`) |
-| **Modifications** | Renamed from `bob_lazar_ufo.glb`; scaled ×5 in the manifest |
+| **Modifications** | Renamed from `bob_lazar_ufo.glb`; scaled ×5 in the manifest; textures cut to 512 px |
 
 ### Sleep Demon — ⚠ non-commercial license, ripped game asset
 

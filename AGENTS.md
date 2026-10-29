@@ -887,7 +887,8 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 
 1. Drop the file in `public/assets/` — lowercase, hyphen-separated, `.glb` for models.
 2. Add a key to [`src/assets/manifest.js`](src/assets/manifest.js). The `url` is relative to `public/`, so `public/assets/models/desk.glb` → `'assets/models/desk.glb'`.
-3. Use it: `engine.spawnModel('model:desk', { position: [0, 0, -3] })`, or `engine.assets.get('tex:foo')` for a texture.
+3. Use it: `engine.spawnModel('model:bed', { position: [0, 0, -3] })`, or `engine.assets.get('tex:foo')` for a texture.
+4. For a model, run `node scripts/slim-models.mjs public/assets/models/<name>.glb` (#175). It strips what three never reads (specular-glossiness materials, a transmission map the manifest turns off), folds flat-colour textures into factors, turns every PNG into lossless WebP (checked pixel for pixel) and applies the model's `TEXTURE_BUDGET` / `TRIANGLE_BUDGET`, if it has one. `src/assets/models.test.js` fails until it has been run. Every file under `public/assets` must be a manifest entry: `manifest.test.js` fails on one that isn't.
 
 Sounds go in `public/assets/audio/` as `type: 'audio'`, keyed `sfx:<name>`; `assets.load` decodes them to a shared `AudioBuffer`, played through a `THREE.Audio` on `engine.audioListener` (it rides on the camera, and resumes on the first click — Chrome blocks audio before a user gesture).
 
