@@ -52,6 +52,7 @@ import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
 import { PortalCulling, doorPortal } from '../systems/PortalCulling.js';
+import { DriveInstancer } from '../gameobjects/DriveInstancer.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
   groundChunk,
@@ -427,6 +428,7 @@ export class BaseScene extends Scene {
     this._addTutorial();
     this._buildOcclusion();
     this._buildPortalCulling();
+    this._addDriveInstancer();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -475,6 +477,7 @@ export class BaseScene extends Scene {
     this._offBuggyNight?.();
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
+    this.driveInstancer?.dispose();
     this.dust?.dispose();
     for (const { go } of this.dustEyes?.slots ?? []) go.dispose();
     this.ragnoFigure?.dispose();
@@ -2973,6 +2976,16 @@ export class BaseScene extends Scene {
     const portals = parts.flatMap(part => part.doors).map(door => doorPortal(door.object3d, door.doorSize, nodes));
     this.portalCulling = new PortalCulling({ nodes, portals, roots: parts.map(part => part.root.object3d) });
     this.engine.renderCullers?.push(this.portalCulling);
+  }
+
+  /** Every drive's casing in one draw call and every LED in another
+   *  (DriveInstancer, #175), updated by the engine before the main view.
+   *  Run once now, so the warm-up draws them as they will be. */
+  _addDriveInstancer() {
+    this.driveInstancer = new DriveInstancer({ root: this._sceneRoot.object3d });
+    this.engine.beforeRender?.push(this.driveInstancer);
+    this._sceneRoot.object3d.updateMatrixWorld(true);
+    this.driveInstancer.update();
   }
 
   _buildOcclusion() {

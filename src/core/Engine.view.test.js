@@ -100,6 +100,27 @@ describe('Engine render cullers', () => {
     expect(c.hide).not.toHaveBeenCalled();
   });
 
+  it('beforeRender hooks run each frame just before the main view, matrices current, cullers or not (#175)', () => {
+    const engine = makeEngine();
+    const order = [];
+    engine.scene = { updateMatrixWorld: vi.fn(() => order.push('matrices')), matrixWorldAutoUpdate: true };
+    engine.renderer.render = vi.fn(() => order.push('frame'));
+    engine.levelEditor.enabled = true;   // the editor stops the culling, not these
+    engine.beforeRender.push({ update: () => order.push('drives') });
+    frame(engine);
+    expect(order.slice(-3)).toEqual(['matrices', 'drives', 'frame']);
+  });
+
+  it('beforeRender is emptied on every scene load', () => {
+    const engine = makeEngine();
+    engine.beforeRender.push({ update: vi.fn() });
+    engine.shadows.release = vi.fn();
+    engine._teardownScene = vi.fn();
+    class Empty { constructor() {} build() {} }
+    try { engine.loadScene(Empty); } catch (_) { /* the rest of loading needs a real scene */ }
+    expect(engine.beforeRender).toEqual([]);
+  });
+
   it('start empty and are emptied on every scene load', () => {
     const engine = makeEngine();
     expect(engine.renderCullers).toEqual([]);

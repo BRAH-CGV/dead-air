@@ -87,6 +87,10 @@ export class Engine {
    *  maps too, so a hidden thing still casts its shadow. Off while the level
    *  editor is open. Emptied on every scene load.
    *  @type {{ hide(camera: THREE.Camera): void, restore(): void }[]} */ renderCullers = [];
+  /** Run each frame just before the main view, its world matrices brought
+   *  up to date first: copying what moved into what draws it (the drives'
+   *  instances, DriveInstancer). Emptied on every scene load.
+   *  @type {{ update(): void }[]} */ beforeRender = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -466,6 +470,7 @@ export class Engine {
     this.viewCamera = null;
     this.screenPasses = [];
     this.renderCullers = [];
+    this.beforeRender = [];
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this, sceneOptions);
@@ -845,14 +850,15 @@ export class Engine {
   renderView() {
     const camera = this.renderCamera;
     const cullers = this.levelEditor?.enabled ? NO_CULLERS : this.renderCullers;
-    if (cullers.length === 0) {
+    if (cullers.length === 0 && this.beforeRender.length === 0) {
       this.renderer.render(this.scene, camera);
       return;
     }
-    // Cullers read world matrices, so bring them up to date here and spare
+    // Both read world matrices, so bring them up to date here and spare
     // three doing it again.
     this.scene.updateMatrixWorld();
     if (!camera.parent) camera.updateMatrixWorld?.();
+    for (const hook of this.beforeRender) hook.update();
     this._restoreBeforeShadows();
     for (const culler of cullers) culler.hide(camera);
     const auto = this.scene.matrixWorldAutoUpdate;

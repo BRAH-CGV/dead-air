@@ -1110,6 +1110,19 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   slats and bars, the camera poles and a rack's four trim slats are each
   baked into one geometry per material (`mergeGeometries`), placed as
   before.
+- **Drives are instanced** (`DriveInstancer`, `BaseScene._addDriveInstancer`,
+  #175). Every drive's casing is one instance of one InstancedMesh and every
+  LED one of another: 2 draw calls for all of them, where each drive was 2.
+  The drives don't know: each still builds, moves and colours its own
+  meshes, which are hidden once adopted (still `castShadow`, which is how
+  the shadow scheduler knows a moving drive needs its maps redrawn). Each
+  frame, before the main view (`engine.beforeRender`, after the world
+  matrices are updated), the instancer copies each drive's matrices and its
+  LED's emissive × intensity (a per-instance attribute the LED's shader
+  reads in place of `emissive`). So anything that sets a drive's LED keeps
+  working; anything that reads a drive's look should read the drive, not
+  the instancer. Live drives are `Drive.live`, from construction to
+  `dispose()`. A drive of another size than the first is left to draw itself.
 - **Never hide a light with `visible = false`** — the light count is compiled
   into every lit shader, so it recompiles the scene. Zero its intensity.
 - **Occlusion zones** (`BaseScene._buildOcclusion`): room furnishings go

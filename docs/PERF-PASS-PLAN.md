@@ -48,6 +48,10 @@
   - static pieces baked into one mesh each: the wall clock's marks (12 → 1),
     each drive box's slot markers (8 → 1), each vent hood (14 → 3) and
     grille (10 → 3), each camera pole (4 → 1), each rack's trim (4 → 1).
+  - the drives instanced: 64 draw calls for the shelf's 32 drives → 2.
+- **Measured in game** (`drawcalls`, before the drives): the corridor view
+  449 → 378 with the merges → 315 with portal culling; the worst spot
+  standing still 341 → 287.
 - **Tools.** `perf` counts the whole frame (it showed whichever render came
   last, often the security feed's), and `drawcalls` breaks one down.
 
