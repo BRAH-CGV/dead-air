@@ -122,9 +122,10 @@ describe('BedroomPCPanel', () => {
       expect($('.pc-forecast-empty').textContent).toBe(PC_TEXT.noShifts);
     });
 
-    it('its wording is marked as a placeholder until the story has some', () => {
+    it('carries no placeholder note', () => {
       show();
-      expect($('.pc-body').textContent).toContain(PC_TEXT.placeholder);
+      expect($('.pc-body').textContent).not.toMatch(/placeholder/i);
+      expect($$('.pc-body .pc-note')).toHaveLength(0);
     });
 
     it('has a label and a forecast line for every kind of threat', async () => {
