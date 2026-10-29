@@ -61,4 +61,27 @@ describe('Engine loadScene', () => {
     expect(engine.postProcess.preCompile).toHaveBeenCalledWith(engine.scene, engine.camera);
     expect(order.slice(-2)).toEqual(['compile', 'red']);
   });
+
+  it('compileScene() then draws everything once off screen, so the first sight of a room uploads nothing (#175)', async () => {
+    const { engine, order } = makeEngine();
+    const THREE = await import('three');
+    engine.scene = new THREE.Scene();
+    engine.renderer.target = null;
+    engine.renderer.getRenderTarget = function () { return this.target; };
+    engine.renderer.setRenderTarget = function (t) { this.target = t; };
+    engine.renderer.render = vi.fn(() => order.push(engine.renderer.target ? 'upload' : 'screen'));
+    await engine.compileScene();
+    expect(order.slice(-2)).toEqual(['compile', 'upload']);
+  });
+
+  it("runs the scene's beforeRender hooks once it is built, before anything compiles (the drives' skin, #175)", () => {
+    const { engine, order } = makeEngine();
+    engine.scene = { name: 'scene', updateMatrixWorld: vi.fn() };
+    class HookedScene {
+      constructor(e) { this.engine = e; }
+      build() { this.engine.beforeRender.push({ update: () => order.push('hook') }); }
+    }
+    engine.loadScene(HookedScene);
+    expect(order).toEqual(['loaded', 'hook', 'compile']);
+  });
 });

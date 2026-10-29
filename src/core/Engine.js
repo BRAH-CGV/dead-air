@@ -11,7 +11,7 @@ import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ShadowScheduler } from './ShadowScheduler.js';
 import { FrameSettle } from './FrameSettle.js';
-import { warmUp, precompile } from './WarmUp.js';
+import { warmUp, precompile, uploadAll } from './WarmUp.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
@@ -491,6 +491,12 @@ export class Engine {
 
     for (const listener of [...this._sceneLoadedListeners]) listener(this.activeScene);
 
+    // The scene's beforeRender hooks once now, its objects initialised: the
+    // drive instancer copies the drives' skin (applied as they init), so
+    // what compiles next is what draws (#175).
+    this.scene.updateMatrixWorld?.();
+    for (const hook of this.beforeRender) hook.update();
+
     // After the listeners: the settings they apply (shadows on or off) are
     // part of every lit shader's key.
     if (compile) {
@@ -510,6 +516,9 @@ export class Engine {
     // rebuild didn't, and the first red death after one (Ragno's, the evil
     // signal's) recompiled every lit material mid-lunge — a freeze.
     await this.postProcess?.preCompile?.(this.scene, this.camera);
+    // And everything drawn once, off screen: the buffers and textures
+    // uploaded now, not on the first sight of each room (#175).
+    uploadAll({ renderer: this.renderer, scene: this.scene, camera: this.camera });
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping
