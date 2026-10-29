@@ -1,0 +1,187 @@
+# Performance pass (#175)
+
+> The goal: the game runs as well as it can on lab hardware, and **nothing
+> changes in game**. Every phase below is either lossless (the same pixels,
+> the same sounds) or near-lossless and gated on someone looking at it.
+> Ordered by payoff per hour. Each phase lists its tests first, as AGENTS.md
+> asks.
+
+## Done on this branch
+
+- **Unused assets deleted.** Every file in `public/` is copied into the
+  build, used or not. Gone: `switchboard.glb` (preloaded, 11 MB) and its
+  byte-identical twin `break-panel.glb`, `fire-extinguisher.glb` and
+  `desk.glb` (both preloaded), `bush`, `barrel`, `server-console`,
+  `server-rack-tall`, `door-interior`, `wall-light`, `wall-screen`, and the
+  Boiled One source the Sleep Demon was baked from. `public/assets` went
+  from 116 MB to 74 MB, and the preload from about 15 MB less.
+- **Credits.** The retro computer, the industrial terminal and the security
+  camera now have full entries; the TODO and "unattributed" lists are gone.
+- **Guard.** `manifest.test.js` fails on any file under `public/assets`
+  the manifest doesn't name, and on any entry whose file is missing.
+
+## Still open (decisions, not work)
+
+- **`cj.glb` has no credit.** It is the player's body, seen only from the
+  fly camera, but it ships and loads in every build. It needs a source in
+  ATTRIBUTIONS.md, or it should be lazy-loaded on `fly` (Phase 5), or both.
+- **The legacy scenes.** `OfficeScene` and `TestScene` are reached only
+  from the level editor's scene switcher (dev builds). They are the only
+  users of `security-camera.glb` and `tex:floor-basecolor` /
+  `tex:floor-normal`. Deleting both scenes would drop those assets too.
+- **The bed's designer** is still not recorded (CGTrader page).
+
+## Phase 0 — Baseline (no code)
+
+Nothing is tuned blind. Before any phase lands, and again after it, take
+the same numbers on lab hardware (or the weakest laptop the team has), on
+mains power, at 1920 × 1080, `devicePixelRatio` 1.
+
+| Where | Numbers |
+|---|---|
+| Cold start | Time from load to the main menu, DevTools Network, cache off |
+| Main menu shot | FPS avg / worst, draw calls, triangles (`perf`) |
+| At the desk, looking out the window | same |
+| Leaned in to the security monitor | same |
+| Server room, bedroom | same |
+| The yard, calm and at full storm (`storm`) | same |
+| The office under the UFO's beam (`ufo`) | same |
+| Night 1 → 2 → 3 by sleeping, then Main menu → New game twice | JS heap and GPU memory (Chrome Task Manager): must not climb |
+
+Keep the table in this file, one column per phase, so every change is
+judged against the same spots.
+
+## Phase 1 — Lossless asset slimming
+
+Same pixels, fewer bytes. Lower cold start; no runtime cost change.
+
+**Tests first** (`src/assets/models.test.js`, reading each `.glb` with
+`@gltf-transform/core`, already a dev dependency):
+
+- No model in the manifest declares `KHR_materials_pbrSpecularGlossiness`
+  (three's loader drops it, so anything inside it is dead bytes).
+- No model carries a texture that no material slot three reads.
+- `retro-computer.glb` carries no transmission textures.
+
+**Work** (one script, `scripts/slim-models.mjs`, run once and committed):
+
+1. **Strip dead textures.** The tree and fence downloads keep their colour
+   maps inside the specular-glossiness extension, which three's
+   GLTFLoader never parses: `tree-fantasy` 3.9 MB, `tree-dead` 1.0 MB,
+   `chainlink-fence` 74 KB of images nobody decodes. Drop the extension
+   and `prune()`. The trees keep their normal maps and look exactly as
+   they do now (they already render without those colour maps).
+2. **Strip the computer's transmission maps.** The manifest sets
+   `transmission: 0` on `retro-computer`, so three never binds them. Its
+   nine 1024² maps are 5.5 MB for a 350-triangle model; drop the
+   transmission extension and its maps from the file, and keep the
+   manifest flag as a belt.
+3. **`dedup()` + `prune()` everywhere**, which removes repeated images and
+   accessors at no visual cost.
+4. **PNG → lossless WebP** for every embedded image
+   (`EXT_texture_webp`, which three's loader and Chrome both support).
+   Lossless WebP is typically 25–35 % smaller than PNG, pixel-identical.
+
+Check: re-run `npm run build`, compare `dist/` size; screenshots before and
+after must be identical, which Ryan checks by eye at the Phase 0 spots.
+
+## Phase 2 — Texture memory (near-lossless)
+
+The biggest runtime lever on integrated GPUs. Every 1024² texture costs
+about 5.6 MB of GPU memory once uploaded (RGBA8 with mipmaps), however
+small its file is. There are about 65 live 1024² textures across the
+placed models, about 360 MB if every one is uploaded. A texture larger
+than the screen can ever show is memory and bandwidth for nothing.
+
+**Rule:** size each texture to the most texels the screen can show of that
+prop at the nearest the player can stand to it. A 0.5 m bin seen from no
+nearer than 1 m covers at most ~500 px on a 1080p screen, so 512² is
+already over what it can show.
+
+**Candidates** (largest waste first; each is a judgement call for Ryan):
+
+| Model | Now | Proposed | Why |
+|---|---|---|---|
+| `light-ceiling` | 4 × 1024² | 256² | Hung at the ceiling as UV fixtures, never closer than ~1.5 m |
+| `crate` | 2 × 1024² PNG, 4.2 MB | 512² | 218 triangles; one small prop |
+| `trash-bin` | 2 × 1024² | 512² | 0.5 m tall |
+| `laptop` | 3 × 1024² | 512² | 0.33 m; the screen is our own canvas, not its texture |
+| `ragno` | 9 × 1024² | 512² | Mostly seen through a camera feed or in the dark |
+| `ufo` | 3 × 1024² | 512² | Seen 35 m up and further |
+| `generator`, `colony-rover` | 4 × 1024² each | keep, or 512² for the AO / roughness maps only | Walked right up to |
+| `radar-terminal`, `retro-computer` | 1024² | keep | Leaned in to; the screen fills the view |
+
+**Tests first:** a per-model texture budget in `models.test.js`
+(`TEXTURE_BUDGET = { 'model:crate': 512, … }`), failing until the files
+are resized.
+
+**Optional knob, measured not assumed:** `AssetManager` raises every
+texture to the GPU's maximum anisotropy (usually 16×). Capping it at 8×
+is invisible on most surfaces and can help integrated GPUs; try it only
+if Phase 0 shows texture sampling bound frames.
+
+## Phase 3 — Geometry (near-lossless)
+
+Simplify with meshoptimizer (`meshoptimizer`, already a dev dependency,
+through `@gltf-transform/functions`' `simplify`), with an error bound so
+small the silhouette doesn't move. Weld first.
+
+| Model | Triangles | Note |
+|---|---|---|
+| `coffee-machine` | 41,074 (75,671 vertices) | A 0.5 m prop on a table; target ~10 k |
+| `laptop` | 14,450 | 0.33 m; target ~5 k |
+| `radar-terminal` | 12,638, drawn twice | target ~6 k |
+| `tree-fantasy` | 7,596 per scrub | Instanced across the valley, so every triangle saved is multiplied by the count; the biggest win here |
+| `dish-tower` | 14,304 | Seen from the desk; keep unless Phase 0 says otherwise |
+
+**Tests first:** a triangle budget per model beside the texture budget.
+**Check:** Ryan compares at the Phase 0 spots; the coffee machine and the
+laptop are seen leaned in close, so their error bound is the tightest.
+
+## Phase 4 — Draw cost (measure first)
+
+The frame at the desk was 111 draw calls and 1.69 M triangles, and ~1.35 M
+of those are the vegetation. Changes here must not change what is drawn,
+only what is skipped.
+
+1. **Chunk the instanced vegetation.** An `InstancedMesh` is culled as one
+   bounding sphere, so if any tree of a kind is in view, every tree of that
+   kind is drawn. Splitting each kind into a grid of chunks lets three cull
+   the chunks behind the camera. Same trees, same places; a few more draw
+   calls for far fewer triangles. Test: each chunk's instances lie inside
+   its bounding sphere, and the union of chunks is the original placement
+   list.
+2. **The grass** is the biggest single mesh by its own comment. The same
+   chunking applies.
+3. **Shadows** are frozen already; seven shadowed lights. Nothing to do
+   unless Phase 0 shows shadow passes in the frame.
+4. **Pixel ratio** is capped at 2 (`Engine`). On a HiDPI laptop that is
+   four times the pixels of a lab monitor. A *Resolution scale* setting
+   would be a player's choice, not a change in game; only if Phase 0 shows
+   fill-rate bound frames.
+
+## Phase 5 — CPU and memory (profile first)
+
+A scan of every per-frame hook (`onUpdate`, `onLateUpdate`,
+`onFixedUpdate`, `update`, `_tick*`) found no allocations: the math
+objects are made once, in constructors. So this phase is profile-led.
+Record a Chrome Performance trace at the Phase 0 spots, and only fix what
+shows. The usual suspects in this code:
+
+- **Rapier rays**: the Sleep Demon's sight rays and Ragno's walkability
+  rays, several a frame each. Count them per frame in a trace.
+- **`ScreenCanvas` DOM reads**: a re-read every frame means some overlay
+  writes its DOM every frame (see "On the screen" in AGENTS.md).
+- **Lazy-load `cj.glb`** (1.9 MB, 17 animations) the first time `fly`
+  turns on, since nothing else ever shows it. Test: `cj` is not in
+  `PRELOAD`, and `fly on` loads it.
+- **Decoded audio** is about 250 MB of float PCM, 200 MB of it the six
+  ambience and music loops. Ryan owns audio; two options for him, neither
+  needed unless memory is short: the three room loops as mono (they
+  correlate 0.98–0.999 L/R, so 33 MB saved and barely audible), and
+  releasing the menu track once the shift starts.
+
+## Order
+
+Phase 0, then 1 (pure win), then 2 and 3 together (one visual check),
+then 4 and 5 only where the numbers point.
