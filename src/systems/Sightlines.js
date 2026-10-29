@@ -23,6 +23,7 @@ import * as THREE from 'three';
 //   forEachInstanceSphere(mesh, fn) each instance's world bounding sphere
 //   splitInstances(mesh, classify)  split one InstancedMesh by a label per instance
 //   partitionInstances(mesh, keep)  …in two, by a yes/no test
+//   groundChunk(center)             which wedge of the ground round the base
 //   collectHideable(root, isFixed)  the parts of a room that can be hidden
 // ─────────────────────────────────────────────
 
@@ -162,6 +163,23 @@ export function partitionInstances(mesh, keep) {
   return { kept, moved };
 }
 
+/**
+ * Which piece of the ground round the base `center` (world x/z) is in: one of
+ * `sectors` equal wedges round the origin, cut again at each of `rings`
+ * metres out. The vegetation is a ring round the base, so an instanced
+ * mesh of it has one bounding sphere round the whole basin and is never
+ * culled; split by this, the pieces behind the camera are (#175).
+ * @param {THREE.Vector3} center
+ * @param {{ sectors?: number, rings?: number[] }} [opts]
+ * @returns {string}
+ */
+export function groundChunk(center, { sectors = 8, rings = [40] } = {}) {
+  const turn = (Math.atan2(center.z, center.x) + Math.PI) / (2 * Math.PI);
+  const sector = Math.min(sectors - 1, Math.floor(turn * sectors));
+  const distance = Math.hypot(center.x, center.z);
+  return `${sector}/${rings.filter(r => distance > r).length}`;
+}
+
 const _ray = new THREE.Ray();
 const _hit = new THREE.Vector3();
 const _corner = new THREE.Vector3();
@@ -209,8 +227,41 @@ function cornerOf(box, i, out) {
   );
 }
 
+/**
+ * The geometry a part of `source` draws with: the same one, unless something
+ * in it is per instance (the grass's sway phase). Then a geometry of its own
+ * that shares every per-vertex attribute and the index — uploaded once, used
+ * by every part — and carries its own instances' values. Sharing the
+ * original's would hand a part's instance i the original's instance i.
+ */
+function partGeometry(source, indices) {
+  const shared = source.geometry;
+  const perInstance = Object.entries(shared.attributes).filter(([, a]) => a.isInstancedBufferAttribute);
+  if (perInstance.length === 0) return shared;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(shared.index);
+  for (const [name, attribute] of Object.entries(shared.attributes)) {
+    if (!attribute.isInstancedBufferAttribute) {
+      geometry.setAttribute(name, attribute);
+      continue;
+    }
+    const size = attribute.itemSize;
+    const values = new attribute.array.constructor(indices.length * size);
+    indices.forEach((from, to) => {
+      for (let k = 0; k < size; k++) values[to * size + k] = attribute.array[from * size + k];
+    });
+    geometry.setAttribute(name, new THREE.InstancedBufferAttribute(values, size, attribute.normalized, attribute.meshPerAttribute));
+  }
+  for (const group of shared.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
+  geometry.boundingSphere = shared.boundingSphere?.clone() ?? null;
+  geometry.boundingBox = shared.boundingBox?.clone() ?? null;
+  geometry.name = shared.name;
+  return geometry;
+}
+
 function copyInstances(source, indices, name) {
-  const mesh = new THREE.InstancedMesh(source.geometry, source.material, indices.length);
+  const mesh = new THREE.InstancedMesh(partGeometry(source, indices), source.material, indices.length);
   mesh.name = name;
   mesh.position.copy(source.position);
   mesh.quaternion.copy(source.quaternion);

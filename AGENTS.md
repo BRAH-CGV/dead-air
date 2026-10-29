@@ -1101,7 +1101,13 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   rewritten every frame (the mast beacons' lamps) sets
   `userData.liveInstances`: the sort splits instanced scenery into copies,
   and a component still writing to the original would be writing to a mesh
-  nobody draws.
+  nobody draws. An instanced mesh over `CHUNK_TRIANGLES` (200 k: the grass
+  and the heavier trees) is also cut into wedges of ground round the base
+  (`groundChunk`, 8 sectors × 2 rings), so three culls the wedges behind the
+  camera; one mesh of the whole ring was drawn whichever way the player
+  looked (#175). A split part whose geometry has per-instance attributes
+  (the grass's `aPhase`) gets a geometry of its own carrying its instances'
+  values, sharing the per-vertex buffers; the scene owns and disposes it.
   When the office is redesigned, keep anything meant to be seen from the
   yard out of the rooms' furnishings, and don't add a window the fenced yard
   can see — see `docs/PERFORMANCE-PLAN.md` §3. In DevTools (dev builds),

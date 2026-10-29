@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows,
-  partitionInstances, collectHideable, hiddenFromRegion, splitInstances,
+  partitionInstances, collectHideable, hiddenFromRegion, splitInstances, groundChunk,
 } from './Sightlines.js';
 
 // ─────────────────────────────────────────────
@@ -275,6 +275,66 @@ describe('hiddenFromRegion with several occluders', () => {
 
   it('still sees past the end of the whole building', () => {
     expect(hiddenFromRegion(new THREE.Sphere(new THREE.Vector3(22, 0.3, -6), 0.3), eyes, [middle, left, right])).toBe(false);
+  });
+});
+
+describe('splitInstances with per-instance attributes (the grass sway phase, #175)', () => {
+  function swaying(labels) {
+    const group = new THREE.Group();
+    const geometry = new THREE.BoxGeometry();
+    geometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(new Float32Array([10, 11, 12, 13]), 1));
+    geometry.setAttribute('aTint', new THREE.InstancedBufferAttribute(new Float32Array([0, 1, 2, 3, 4, 5, 6, 7]), 2));
+    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshBasicMaterial(), 4);
+    for (let i = 0; i < 4; i++) mesh.setMatrixAt(i, new THREE.Matrix4().makeTranslation(i, 0, 0));
+    group.add(mesh);
+    return { mesh, parts: splitInstances(mesh, (_sphere, i) => labels[i]) };
+  }
+
+  it("each part's instances keep their own values, not the first ones of the original", () => {
+    const { parts } = swaying(['a', 'b', 'a', 'b']);
+    expect([...parts.get('a').geometry.attributes.aPhase.array]).toEqual([10, 12]);
+    expect([...parts.get('b').geometry.attributes.aPhase.array]).toEqual([11, 13]);
+    expect([...parts.get('b').geometry.attributes.aTint.array]).toEqual([2, 3, 6, 7]);
+    expect(parts.get('b').geometry.attributes.aTint.itemSize).toBe(2);
+  });
+
+  it('shares everything per vertex with the original, so nothing is uploaded twice', () => {
+    const { mesh, parts } = swaying(['a', 'b', 'a', 'b']);
+    const part = parts.get('a').geometry;
+    expect(part).not.toBe(mesh.geometry);
+    expect(part.attributes.position).toBe(mesh.geometry.attributes.position);
+    expect(part.attributes.normal).toBe(mesh.geometry.attributes.normal);
+    expect(part.index).toBe(mesh.geometry.index);
+  });
+
+  it('a geometry with nothing per instance is shared as before', () => {
+    const group = new THREE.Group();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 2);
+    mesh.setMatrixAt(1, new THREE.Matrix4().makeTranslation(5, 0, 0));
+    group.add(mesh);
+    const parts = splitInstances(mesh, (_sphere, i) => (i ? 'b' : 'a'));
+    expect(parts.get('a').geometry).toBe(mesh.geometry);
+  });
+});
+
+describe('groundChunk (the vegetation cut into pieces the frustum can cull, #175)', () => {
+  const at = (bearing, distance) => new THREE.Vector3(Math.cos(bearing) * distance, 0, Math.sin(bearing) * distance);
+
+  it('is the same chunk for neighbours in one sector and ring', () => {
+    expect(groundChunk(at(0.1, 60))).toBe(groundChunk(at(0.2, 80)));
+  });
+
+  it('cuts the ring round the base into sectors', () => {
+    const keys = new Set(Array.from({ length: 8 }, (_, i) => groundChunk(at(-Math.PI + (i + 0.5) * Math.PI / 4, 60))));
+    expect(keys.size).toBe(8);
+  });
+
+  it('and a near ring from a far one', () => {
+    expect(groundChunk(at(0.1, 20))).not.toBe(groundChunk(at(0.1, 60)));
+  });
+
+  it('takes its own sectors and rings', () => {
+    expect(groundChunk(at(0.1, 20), { sectors: 1, rings: [] })).toBe(groundChunk(at(3, 90), { sectors: 1, rings: [] }));
   });
 });
 

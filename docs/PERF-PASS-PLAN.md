@@ -13,23 +13,58 @@
   byte-identical twin `break-panel.glb`, `fire-extinguisher.glb` and
   `desk.glb` (both preloaded), `bush`, `barrel`, `server-console`,
   `server-rack-tall`, `door-interior`, `wall-light`, `wall-screen`, and the
-  Boiled One source the Sleep Demon was baked from. `public/assets` went
-  from 116 MB to 74 MB, and the preload from about 15 MB less.
+  Boiled One source the Sleep Demon was baked from.
 - **Credits.** The retro computer, the industrial terminal and the security
   camera now have full entries; the TODO and "unattributed" lists are gone.
 - **Guard.** `manifest.test.js` fails on any file under `public/assets`
   the manifest doesn't name, and on any entry whose file is missing.
+- **Phase 1, 2 and 3: `scripts/slim-models.mjs`** (budgets and checks in
+  `src/assets/models.test.js`), over every model but `cj` and the
+  security camera:
+  - specular-glossiness materials dropped: the trees' and the fence's
+    images, ~5 MB three never decoded;
+  - the desk's transmission map dropped (transmission is off in the
+    manifest; WarmUp still uploaded it: ~5.6 MB of GPU memory);
+  - flat-colour textures folded into their factors (the globe's stand);
+  - every PNG to lossless WebP, each checked pixel for pixel first;
+  - the UFO's textures to 512 (it is never nearer than 35 m);
+  - radar terminal 12.6 k → 5.1 k triangles, dish tower 14.3 k → 9.3 k,
+    storage rack 6.4 k → 3.2 k, within 0.02 % of each one's size. The
+    coffee machine (every vertex a seam) and the scrub tree (all open
+    pieces) don't simplify at that bound, so they were left alone.
+- **Phase 4: the vegetation in wedges.** `CHUNK_TRIANGLES` in BaseScene,
+  `groundChunk` in Sightlines. Measured on the belt (stand-in trees of the
+  real triangle counts, three's own sphere-in-frustum test, five views
+  from the desk and the yard): from 2.8 M triangles submitted to about
+  1.45 M, for about 30 more draw calls.
+- **Found on the way:** every split of the grass (the occlusion sort's,
+  long before this) handed each part the first blades' sway phases. Split
+  parts now carry their own per-instance values.
 
-## Still open (decisions, not work)
+`public/assets` went from 116 MB to 59 MB.
 
-- **`cj.glb` has no credit.** It is the player's body, seen only from the
-  fly camera, but it ships and loads in every build. It needs a source in
-  ATTRIBUTIONS.md, or it should be lazy-loaded on `fly` (Phase 5), or both.
-- **The legacy scenes.** `OfficeScene` and `TestScene` are reached only
-  from the level editor's scene switcher (dev builds). They are the only
-  users of `security-camera.glb` and `tex:floor-basecolor` /
-  `tex:floor-normal`. Deleting both scenes would drop those assets too.
+### For Ryan to look at
+
+Nothing above should look different; these are the places to check, at
+the Phase 0 spots:
+
+- The UFO up close in its beam (512 textures).
+- The two server-room consoles leaned in, the dish from the desk, the
+  bedroom's storage racks (simplified).
+- The grass sways as before, with each blade on its own phase (it was
+  sharing phases between split parts before).
+- Draw calls in `perf` rise by about 30 outside; triangles should fall
+  by about half. If a lab machine is CPU bound and gets slower, raise
+  `CHUNK_TRIANGLES` or use fewer sectors in `groundChunk`.
+
+## Still open
+
+- **`cj.glb` and the security-camera model** are left as they are (decided:
+  not part of this pass; `LEAVE` in the script).
 - **The bed's designer** is still not recorded (CGTrader page).
+- **Not done, by choice:** smaller textures on anything the player can walk
+  up to (the Phase 2 table below beyond the UFO), and the anisotropy cap.
+  Both would change what is on screen up close; only after Phase 0.
 
 ## Phase 0 — Baseline (no code)
 
