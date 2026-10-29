@@ -861,7 +861,7 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 | `fly [on\|off]` (`noclip`) | `DebugCamera` | Free-fly noclip camera |
 | `fullbright [on\|off]` | `Fullbright` | Unlit lighting — everything at albedo brightness |
 | `perf [on\|off]` (`fps`) | `PerfStats` | FPS (average and worst frame), draw calls and triangles for the whole frame (shadow maps and screen passes included: the engine resets `renderer.info` once a frame, `autoReset` off), the last frame's and the heaviest of the half second, each with the screen passes' share; loaded geometries/textures. Also shown by Settings → GAME → Show FPS, in any build |
-| `drawcalls [shadows]` | `DrawCallTally` | Draw one frame from where you stand and list its draw calls by pass (main, shadow maps, screen passes) and by what drew them, three levels below the scene; `shadows` redraws every shadow map in it first |
+| `drawcalls [shadows]` | `DrawCallTally` | Draw one frame from where you stand and list its draw calls by pass (main, shadow maps, screen passes) and by what drew them: in game by room, then the 40 heaviest props; every line, a level deeper, in the browser console (F12). `shadows` redraws every shadow map first |
 | `editor [on\|off]` | `LevelEditor` | Visual object placement. Closes the console and plays on without the pointer lock, so the editor has the mouse; only from a console opened in game |
 | `models [on\|off]` | Engine | Model debug logging, and reload the scene (same night) |
 | `night [n]` | `NightManager` (BaseScene) | Jump to night `n` (0, the tutorial, to the last), or on to the next; wraps back to night 1 after the last |

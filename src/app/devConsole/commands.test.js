@@ -275,10 +275,16 @@ describe('createCommands', () => {
       } }];
       engine.shadows = { invalidate: vi.fn() };
 
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { ok, out } = run('drawcalls');
       expect(ok).toBe(true);
       expect(out[0]).toBe('3 draw calls: main 1, shadow maps 1, screen passes 1');
-      expect(out).toContain('  1  main    MainOffice/Desk');
+      expect(out).toContain('  1  main    MainOffice');       // by room
+      expect(out).toContain('  1  main    MainOffice/Desk');  // then by prop
+      // The full list, a level deeper, for the browser's console (F12).
+      expect(log).toHaveBeenCalledOnce();
+      expect(log.mock.calls[0][0]).toContain('MainOffice/Desk');
+      log.mockRestore();
       expect(engine.shadows.invalidate).not.toHaveBeenCalled();
 
       run('drawcalls shadows');

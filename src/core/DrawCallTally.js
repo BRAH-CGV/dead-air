@@ -7,12 +7,16 @@
 // tally wraps it for the length of one frame and puts it back after.
 //
 // What drew it is the object's path below the scene, a few levels deep, so
-// a room's props add up under the room. A split instanced mesh's parts
-// ('MarsGrass:always#3/1') are counted under their mesh ('MarsGrass').
+// a room's props add up under the room; the base's own wrapper (SceneRoot)
+// is left out. A split instanced mesh's parts ('MarsGrass:always#3/1') are
+// counted under their mesh ('MarsGrass'). rollUp adds the lines up a level
+// or two, for a list short enough to read in game.
 // ─────────────────────────────────────────────
 
 /** Levels below the scene a draw is filed under. */
 const DEPTH = 3;
+/** Nodes that only wrap a scene, left out of a path. */
+const WRAPPERS = new Set(['SceneRoot']);
 
 /**
  * Run `draw` (a frame) with every draw call counted.
@@ -46,7 +50,7 @@ export function tallyDrawCalls(renderer, draw) {
  * @param {number} [limit]
  * @returns {string[]}
  */
-export function formatTally({ passes, by }, limit = 25) {
+export function formatTally({ passes, by }, limit = Infinity) {
   const total = passes.main + passes.shadow + passes.screen;
   const rows = [...by].sort((a, b) => b[1] - a[1]);
   const lines = [`${total} draw calls: main ${passes.main}, shadow maps ${passes.shadow}, screen passes ${passes.screen}`];
@@ -58,8 +62,26 @@ export function formatTally({ passes, by }, limit = 25) {
   return lines;
 }
 
+/**
+ * The tally with each path cut to its first `depth` levels, the lines that
+ * then share a pass and a path added together.
+ * @param {{ passes: object, by: Map<string, number> }} tally
+ * @param {number} depth
+ */
+export function rollUp({ passes, by }, depth) {
+  const up = new Map();
+  for (const [key, count] of by) {
+    const [pass, path] = key.split('\t');
+    const short = `${pass}\t${path.split('/').slice(0, depth).join('/')}`;
+    up.set(short, (up.get(short) ?? 0) + count);
+  }
+  return { passes, by: up };
+}
+
 function pathOf(object) {
   const names = [];
-  for (let o = object; o?.parent; o = o.parent) names.push((o.name || o.type).split(':')[0]);
+  for (let o = object; o?.parent; o = o.parent) {
+    if (!(WRAPPERS.has(o.name) && !o.parent.parent)) names.push((o.name || o.type).split(':')[0]);
+  }
   return names.reverse().slice(0, DEPTH).join('/') || '(no parent)';
 }

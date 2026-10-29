@@ -20,7 +20,7 @@
 
 import * as THREE from 'three';
 import { UsageError, CommandError } from './DevConsole.js';
-import { tallyDrawCalls, formatTally } from '../../core/DrawCallTally.js';
+import { tallyDrawCalls, formatTally, rollUp } from '../../core/DrawCallTally.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -159,7 +159,7 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
     }),
     {
       name: 'drawcalls', usage: 'drawcalls [shadows]',
-      help: 'Draw one frame from here and list its draw calls by pass and by what drew them; shadows redraws every shadow map in it',
+      help: 'Draw one frame from here and list its draw calls by pass and by what drew them (a level deeper in the browser console); shadows redraws every shadow map first',
       run: ([arg]) => {
         if (arg !== undefined && arg !== 'shadows') throw new UsageError(`Unknown option "${arg}"`);
         const { renderer, scene, renderCamera } = engine;
@@ -169,7 +169,15 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
           renderer.render(scene, renderCamera);
           for (const pass of engine.screenPasses ?? []) pass.render();
         });
-        return formatTally(tally);
+        // The full list for the browser's console (F12), where it can be copied.
+        console.log(formatTally(tally).join('\n'));
+        // In game, short enough for the log: by room, then the heaviest props.
+        return [
+          ...formatTally(rollUp(tally, 1)),
+          'Heaviest:',
+          ...formatTally(rollUp(tally, 2), 40).slice(1),
+          'Everything, a level deeper: the browser console (F12)',
+        ];
       },
     },
     toggle({
