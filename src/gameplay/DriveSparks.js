@@ -8,16 +8,21 @@ import * as THREE from 'three';
 // from a gentle trickle to a dense spray as the silence timer runs out.
 // Each drive hop triggers an extra burst on top of the continuous emission.
 //
-// EvilSignal owns the lifecycle: it creates the sparks when a drive is
-// infected, ticks them each frame, and disposes them when the drive is
-// wiped or the night resets. The Points object is added directly to the
-// scene root (not the GameObject hierarchy) since it needs no physics.
+// EvilSignal owns the lifecycle: it builds the sparks once with the scene,
+// hidden, so the warm-up compiles their shader (built at the infection, it
+// compiled there: a hitch, #175); starts them when a drive is infected,
+// ticks them each frame, stops them when the drive is wiped or the night
+// resets, and disposes them with the scene. The Points object is added
+// directly to the scene root (not the GameObject hierarchy) since it needs
+// no physics.
 //
 //   const sparks = new DriveSparks();
-//   scene.object3d.add(sparks.points);
+//   scene.object3d.add(sparks.points);      // hidden until start()
+//   sparks.start();                         // a drive infected
 //   sparks.tick(dt, drive, doomFraction);   // each frame
 //   sparks.burst(20);                       // on each hop
-//   sparks.dispose();                       // when done
+//   sparks.stop();                          // wiped, or the night over
+//   sparks.dispose();                       // with the scene
 // ─────────────────────────────────────────────
 
 /** Tuning. Metres and seconds unless stated. */
@@ -145,6 +150,34 @@ export class DriveSparks {
     this._points = new THREE.Points(this._geometry, this._material);
     this._points.name = 'DriveSparks';
     this._points.frustumCulled = false;
+    this._points.visible = false;
+  }
+
+  /** Shown, from nothing: every spark out and the delay to run again. */
+  start() {
+    this.stop();
+    this._points.visible = true;
+  }
+
+  /** Every spark out, and hidden. */
+  stop() {
+    const posAttr = this._geometry.getAttribute('position');
+    const lifeAttr = this._geometry.getAttribute('aLife');
+    for (let i = 0; i < this._pool.length; i++) {
+      const p = this._pool[i];
+      p.life = 0;
+      p.pos.set(0, -1000, 0);
+      lifeAttr.array[i] = 0;
+      posAttr.array[i * 3] = 0;
+      posAttr.array[i * 3 + 1] = -1000;
+      posAttr.array[i * 3 + 2] = 0;
+    }
+    posAttr.needsUpdate = true;
+    lifeAttr.needsUpdate = true;
+    this._carry = 0;
+    this._elapsed = 0;
+    this._drive = null;
+    this._points.visible = false;
   }
 
   /** The THREE.Points — add/remove from the scene. */

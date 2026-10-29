@@ -122,6 +122,22 @@ describe('BaseScene portal culling', () => {
     }
   });
 
+  it('opens on the outside through the hatch and the office window, for what the moon sees', () => {
+    const culling = scene.portalCulling;
+    const opens = culling.outside.map(p => culling.nodes[p.a].name).sort();
+    expect(opens).toEqual(['Airlock', 'MainOffice']);
+  });
+
+  it('the moon sees the office floor under the window, not the server room under its roof', () => {
+    const culling = scene.portalCulling;
+    const win = scene._officeWindow();
+    // High over the yard behind the window, looking down and in.
+    culling.look(new THREE.Vector3((win.x0 + win.x1) / 2, 600, win.z - 800));
+    expect(culling.sees(new THREE.Sphere(new THREE.Vector3((win.x0 + win.x1) / 2, 0.2, win.z + 0.6), 0.1))).toBe(true);
+    const server = scene.rooms.ServerRoom.bounds().getCenter(new THREE.Vector3());
+    expect(culling.sees(new THREE.Sphere(server, 0.3))).toBe(false);
+  });
+
   it('puts everything back', () => {
     const quarters = scene.rooms.LivingQuarters;
     const [x, , z] = quarters.position;

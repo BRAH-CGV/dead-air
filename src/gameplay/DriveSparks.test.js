@@ -199,4 +199,23 @@ describe('DriveSparks', () => {
     }
     sparks.dispose();
   });
+
+  it('starts hidden, shows on start(), and stop() puts every spark out and hides it (#175)', () => {
+    const sparks = new DriveSparks();
+    expect(sparks.points.visible).toBe(false);
+    sparks.start();
+    expect(sparks.points.visible).toBe(true);
+    const lives = sparks.points.geometry.attributes.aLife;
+    sparks.tick(0.016, makeDrive(), 0.5);   // as EvilSignal does each frame: it learns the drive
+    sparks.burst(20);
+    sparks.tick(0.016, makeDrive(), 0.5);
+    expect(Array.from(lives.array).some(l => l > 0)).toBe(true);
+    sparks.stop();
+    expect(sparks.points.visible).toBe(false);
+    expect(Array.from(lives.array).every(l => l <= 0)).toBe(true);
+    // A fresh start waits out the delay again.
+    sparks.start();
+    sparks.tick(SPARKS.delaySeconds / 2, makeDrive(), 1);
+    expect(Array.from(lives.array).every(l => l <= 0)).toBe(true);
+  });
 });

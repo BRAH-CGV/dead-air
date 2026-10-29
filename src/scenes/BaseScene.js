@@ -51,7 +51,7 @@ import { ProcessingScreen, SCREEN_LAYOUT as PROCESSING_LAYOUT } from '../ui/Proc
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
-import { PortalCulling, doorPortal } from '../systems/PortalCulling.js';
+import { PortalCulling, doorPortal, outsidePortal } from '../systems/PortalCulling.js';
 import { DriveInstancer } from '../gameobjects/DriveInstancer.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
@@ -2973,9 +2973,20 @@ export class BaseScene extends Scene {
   _buildPortalCulling() {
     const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
     const nodes = parts.map(part => ({ name: part.name, box: part.bounds() }));
-    const portals = parts.flatMap(part => part.doors).map(door => doorPortal(door.object3d, door.doorSize, nodes));
-    this.portalCulling = new PortalCulling({ nodes, portals, roots: parts.map(part => part.root.object3d) });
+    const doors = parts.flatMap(part => part.doors);
+    const portals = doors.map(door => doorPortal(door.object3d, door.doorSize, nodes));
+    // The openings to outside, for what a light sees (the moon looks in
+    // through these): the hatch and the office window.
+    const outside = doors.map(door => outsidePortal(door.object3d, door.doorSize, nodes));
+    const win = this._officeWindow();
+    const office = this.rooms.MainOffice;
+    const pane = new THREE.Object3D();
+    pane.position.set((win.x0 + win.x1) / 2, (win.sill + win.top) / 2, win.z - office.wallThick / 2);
+    outside.push(outsidePortal(pane, [win.x1 - win.x0, win.top - win.sill, office.wallThick], nodes));
+    this.portalCulling = new PortalCulling({ nodes, portals, outside, roots: parts.map(part => part.root.object3d) });
     this.engine.renderCullers?.push(this.portalCulling);
+    // Shadow maps redrawn only for what their light can see.
+    if (this.engine.shadows) this.engine.shadows.visibility = this.portalCulling;
   }
 
   /** Every drive's casing in one draw call and every LED in another

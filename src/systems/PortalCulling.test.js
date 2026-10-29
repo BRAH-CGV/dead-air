@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { PortalCulling, doorPortal } from './PortalCulling.js';
+import { PortalCulling, doorPortal, outsidePortal } from './PortalCulling.js';
 
 // ─────────────────────────────────────────────
 // Three rooms in a row along x, 10 m each, joined by 1.2 × 2.2 m doorways
@@ -159,5 +159,89 @@ describe('PortalCulling', () => {
     cull.hide(camera([0, 1.2, 0], [10, 1.2, 0]));
     expect(lamp.visible).toBe(true);
     expect(cull.hiddenCount).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────
+// What a light can see (#175): the same walk, from a light's eye in every
+// direction, so a shadow map is redrawn only for what it can show. A
+// window in A's west wall (x = −5) opens on the outside.
+// ─────────────────────────────────────────────
+
+function westWindow() {
+  const o = new THREE.Object3D();
+  o.position.set(-5, 1.5, 0);
+  o.rotation.y = Math.PI / 2;
+  o.updateMatrixWorld(true);
+  return outsidePortal(o, [2, 1.5, 0.2], NODES);
+}
+const sphere = (x, y, z, r = 0.2) => new THREE.Sphere(new THREE.Vector3(x, y, z), r);
+const OUT = NODES.length;
+
+describe('outsidePortal', () => {
+  it('joins a room to the outside', () => {
+    const w = westWindow();
+    expect(w.a).toBe(0);
+    expect(w.b).toBe(OUT);
+  });
+
+  it('is null for a doorway between two rooms', () => {
+    const o = new THREE.Object3D();
+    o.position.set(5, 1.1, 0);
+    o.rotation.y = Math.PI / 2;
+    o.updateMatrixWorld(true);
+    expect(outsidePortal(o, [1.2, 2.2, 0.2], NODES)).toBeNull();
+  });
+});
+
+describe('PortalCulling look / sees', () => {
+  const culling = () => new PortalCulling({ nodes: NODES, portals: [doorway(5), doorway(15)], outside: [westWindow()], roots: [] });
+
+  it('a light sees all of its own room, and through the doorways only what lines up', () => {
+    const c = culling();
+    c.look(new THREE.Vector3(0, 2.5, 0));
+    expect(c.sees(sphere(-4, 1, 4))).toBe(true);     // its own room, anywhere
+    expect(c.sees(sphere(20, 1, 0))).toBe(true);     // through both doors
+    expect(c.sees(sphere(22, 1, 4))).toBe(false);    // round the far door's corner
+    expect(c.sees(sphere(8, 1, -4.5))).toBe(false);  // beside the near door
+  });
+
+  it('from outside (the moon), only through the window', () => {
+    const c = culling();
+    c.look(new THREE.Vector3(-1000, 600, 0));        // far to the west and up
+    expect(c.sees(sphere(-3, 0.3, 0))).toBe(true);   // the floor just inside the window
+    expect(c.sees(sphere(3, 1, 4))).toBe(false);     // the room's far corner, under the roof
+    expect(c.sees(sphere(10, 1, 0))).toBe(false);    // the next room
+    expect(c.sees(sphere(-30, 0, 0))).toBe(true);    // outside: outside sees outside
+  });
+
+  it('from inside, outside only through the window', () => {
+    const c = culling();
+    c.look(new THREE.Vector3(0, 2.5, 0));
+    expect(c.sees(sphere(-8, 0.5, 0))).toBe(true);   // out of the window, down
+    expect(c.sees(sphere(-8, 0.5, 9))).toBe(false);  // round the outside of the wall
+  });
+
+  it('hideUnseenCasters hides only shadow casters the light cannot see, and restore puts them back', () => {
+    const roots = [new THREE.Group()];
+    const add = (x, z, cast) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial());
+      m.position.set(x, 1, z);
+      m.castShadow = cast;
+      roots[0].add(m);
+      return m;
+    };
+    const unseen = add(22, 4, true);
+    const seen = add(20, 0, true);
+    const noShadow = add(22, 3, false);
+    roots[0].updateMatrixWorld(true);
+    const c = new PortalCulling({ nodes: NODES, portals: [doorway(5), doorway(15)], outside: [westWindow()], roots });
+    c.look(new THREE.Vector3(0, 1.2, 0));
+    c.hideUnseenCasters();
+    expect(unseen.visible).toBe(false);
+    expect(seen.visible).toBe(true);
+    expect(noShadow.visible).toBe(true);
+    c.restore();
+    expect(unseen.visible).toBe(true);
   });
 });

@@ -445,6 +445,7 @@ The Sleep Demon comes every night, 1 to 3 — heard before it is seen: whispers 
 - **It scans itself.** The moment the radar cursor is on it (12° like any signal) it is scanned — no Enter, no dish-settle wait — and then:
   - **No drive**: the array is pinned to it for `EVIL.lockSeconds` (10 s, debug value). The terminal freezes its cursor while `locked`, `EvilSignal` holds the dish on it every frame (walking away from the terminal doesn't free it), the info line counts down, and the radar shows the same glitchy effect as the UFO (wobbling red blob with static and screen tearing, centered on the locked signal). Once the lock ends, the signal disappears, and the night's next appearance (if one is left) comes `EVIL.respawnDelaySeconds` (30 s, debug value) later at a new random position, so the player must deal with it again.
   - **Drive inserted** (blank or with a signal): the evil signal is saved to the drive **immediately** (overwriting any existing signal), turning it **red** (`corrupted`): `setSaved(true, { corrupted: true })`, carried by the night-retry snapshot (`DriveSnapshot`), wiped to blank at the ServerRoom console like any signal. The array is then pinned for `EVIL.lockWithDriveSeconds` (5 s, debug value) — shorter than no-drive. The lock runs even though the signal is already resolved. A silence timer starts at `EVIL.silenceSeconds` (15 s, debug value): if the corrupted drive is not wiped at the ServerRoom console before it expires, the shift ends with **"You were silenced"** (`controller.fail(CAUGHT_PROMPT)`). The radar info line warns with a countdown while the timer runs.
+- **Sparks.** `DriveSparks` is built once with the scene, hidden, so the warm-up compiles its shader; the infection `start()`s it, a wipe or a night start `stop()`s it. Built at the infection, it compiled there: a hitch as the red drive first came out (#175).
 - **Sparks sound.** On each hop (every `driveHopSeconds`, with the burst of sparks) one of `sfx:spark-1…3` plays at random from the corrupted drive (`SPARK_SOUNDS`, via `ClipVoice`, never the same clip twice running). It starts at half of `volume` and climbs to it as the silence timer runs out.
 - **Hum.** While a corrupted drive is out, `sfx:evil-hum` loops very faintly (`HUM`, via `LoopVoice`): about a third of `volume` (0.2) at infection, rising to all of it as the silence timer runs out, eased in and out and stopped at zero. It is played 200 cents (two semitones) below the recording's pitch (`HUM.detune`), which also slows it to 0.89×. It sounds from the drive itself (a positional sound on the corrupted `Drive`, full within 3 m, inverse falloff beyond; `LoopVoice`'s `placed`), so it moves with the drive's hops, and fades out where the drive was when it is wiped. It stops when the drive is wiped, the shift ends or the scene is torn down, and pauses with the game.
 - **Red never counts.** `DriveBoxDock.collectedCount` accepts only `saved && !corrupted`, so a red drive seated in the docked box is worth zero — the quota cannot be met with it merely stored; it must be wiped before the silence timer runs out.
@@ -1083,6 +1084,16 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   that reach it — a point or spot light's `distance`, plus the body's size,
   where it was or where it is; the moon reaches everything — so carrying
   one across the office doesn't redraw the corridors' lamps.
+  On top of that (#175): a map is redrawn for a moving body only if its
+  light can see the body (`shadows.visibility`, the base's `PortalCulling`:
+  from the light's eye through the doorways, the office window and the
+  hatch, so the moon sees in only through those), a light that is off
+  (intensity 0: the UFO's lights all night, the lamps in a power cut) is
+  redrawn as it comes on rather than while dark, and each map is drawn on
+  its own without the casters its light can't see (`renderMaps`, which the
+  engine routes three's shadow pass through). Behind a wall from the light,
+  a caster changes nothing in its map. A red drive thrown about the office
+  redrew 27 maps a frame (1,800 draw calls).
 - **A light that casts no shadow shines through walls.** It lights every
   surface in its range that faces it. The office's ceiling light and every
   corridor's (the airlock's included) cast shadows for that reason (#87):

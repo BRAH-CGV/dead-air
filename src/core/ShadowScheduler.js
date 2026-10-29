@@ -37,10 +37,23 @@ const _dir = new THREE.Vector3();
 const _from = new THREE.Vector3();
 const _to = new THREE.Vector3();
 const _lightPos = new THREE.Vector3();
+const _eye = new THREE.Vector3();
+const _sphere = new THREE.Sphere();
+
+/** How far out a directional light's eye is put, for what it can see. */
+const SUN_DISTANCE = 1000;
 
 export class ShadowScheduler {
   /** Lights under management. @type {THREE.Light[]} */
   lights = [];
+
+  /** What a light can see through the building (PortalCulling, #175), or
+   *  null. With it, a moving body redraws only the maps of the lights that
+   *  can see it, and a map is drawn without the casters its light can't
+   *  see: behind a wall from the light, they would change nothing in it.
+   *  @type {{ look(eye: THREE.Vector3): void, sees(sphere: THREE.Sphere): boolean,
+   *           hideUnseenCasters?(): void, restore?(): void }|null} */
+  visibility = null;
 
   /**
    * @param {object} [opts]
@@ -58,6 +71,10 @@ export class ShadowScheduler {
     this._watched = new Map();
     /** Moving bodies seen by update(): object3d → { casts, last matrix }. */
     this._bodyPoses = new Map();
+    /** Lights owed a redraw that were dark when it fell due (#175): drawn
+     *  as they come on. A dark light's map shows nothing. */
+    this._pending = new Set();
+    this._due = [];
   }
 
   /** Take over every shadow-casting light under `root`. Each gets one render
@@ -67,7 +84,8 @@ export class ShadowScheduler {
       if (!o.isLight || !o.castShadow || !o.shadow || this.lights.includes(o)) return;
       o.shadow.autoUpdate = false;
       this.lights.push(o);
-      this._redraw(o);
+      // Drawn now even if dark: three makes a map only as it first draws it.
+      this._redraw(o, true);
     });
   }
 
@@ -89,6 +107,11 @@ export class ShadowScheduler {
    *         (Engine.rigidBodyMap): any shadow caster among them that moved
    *         redraws every map that reaches it. */
   update(bodies) {
+    for (const light of this._pending) {
+      if (!isLit(light)) continue;
+      this._pending.delete(light);
+      this._redraw(light, true);
+    }
     for (const light of this.lights) {
       if (light.shadow.needsUpdate) continue;
       if (this._moved(light)) this._redraw(light);
@@ -109,6 +132,8 @@ export class ShadowScheduler {
   release() {
     for (const light of this.lights) light.shadow.autoUpdate = true;
     this.lights.length = 0;
+    this.visibility = null;
+    this._pending.clear();
     this._lastPose.clear();
     this._watched.clear();
     this._bodyPoses.clear();
@@ -148,11 +173,53 @@ export class ShadowScheduler {
   _redrawReaching(from, to, reach) {
     for (const light of this.lights) {
       if (light.shadow.needsUpdate) continue;
-      if (reaches(light, from, reach) || (to && reaches(light, to, reach))) this._redraw(light);
+      if (!(reaches(light, from, reach) || (to && reaches(light, to, reach)))) continue;
+      if (this.visibility && !this._sees(light, from, to, reach)) continue;
+      this._redraw(light);
     }
   }
 
-  _redraw(light) {
+  /** Can `light` see a body `reach` round `from` or `to`? */
+  _sees(light, from, to, reach) {
+    this.visibility.look(eyeOf(light, _eye));
+    if (this.visibility.sees(_sphere.set(from, reach))) return true;
+    return !!to && this.visibility.sees(_sphere.set(to, reach));
+  }
+
+  /**
+   * Draw the shadow maps that are due, as three's shadowMap.render would,
+   * but one light at a time, each without the casters it can't see (when
+   * there is a visibility to ask). The engine routes three's call through
+   * here. @param {(...args: any[]) => void} draw  three's own render
+   */
+  renderMaps(draw, ...args) {
+    const visibility = this.visibility;
+    const due = this._due;
+    due.length = 0;
+    if (visibility?.hideUnseenCasters) {
+      for (const light of this.lights) if (light.shadow.needsUpdate) due.push(light);
+    }
+    if (due.length === 0) return draw(...args);
+    for (const light of due) light.shadow.needsUpdate = false;
+    for (const light of due) {
+      light.shadow.needsUpdate = true;
+      visibility.look(eyeOf(light, _eye));
+      visibility.hideUnseenCasters();
+      try {
+        draw(...args);
+      } finally {
+        visibility.restore();
+      }
+      light.shadow.needsUpdate = false;
+    }
+    due.length = 0;
+  }
+
+  _redraw(light, force = false) {
+    if (!force && !isLit(light)) {
+      this._pending.add(light);
+      return;
+    }
     light.shadow.needsUpdate = true;
     this._lastPose.set(light, poseOf(light));
   }
@@ -190,6 +257,22 @@ function poseOf(light, scratch = false) {
  *  A directional light, or one with no range, reaches everywhere; a point or
  *  spot light lights nothing past its `distance` (its shadow camera's far
  *  plane is set to it too). */
+/** Lighting anything: a dark light's map shows nothing, so it can wait. */
+function isLit(light) {
+  return light.visible !== false && light.intensity > 0;
+}
+
+/** Where a light sees from: a point or spot light's position; a
+ *  directional light's, put far out along its direction. */
+function eyeOf(light, out) {
+  light.updateWorldMatrix(true, false);
+  out.setFromMatrixPosition(light.matrixWorld);
+  if (!light.isDirectionalLight || !light.target) return out;
+  light.target.updateWorldMatrix(true, false);
+  _target.setFromMatrixPosition(light.target.matrixWorld);
+  return out.sub(_target).normalize().multiplyScalar(SUN_DISTANCE).add(_target);
+}
+
 function reaches(light, point, reach) {
   if (light.isDirectionalLight || !(light.distance > 0)) return true;
   _lightPos.setFromMatrixPosition(light.matrixWorld);

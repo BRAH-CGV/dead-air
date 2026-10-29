@@ -67,7 +67,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   const hooks = { setPlayerLocked: vi.fn() };
   const redOut = { setIntensity: vi.fn(), clear: vi.fn() };
   const engine = { timeScale: 1, realDt: 0 };
-  const sparks = { tick: vi.fn(), burst: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
+  const sparks = { tick: vi.fn(), burst: vi.fn(), start: vi.fn(), stop: vi.fn(), dispose: vi.fn(), points: { removeFromParent: vi.fn() } };
   _sparksMock = sparks;
   const voice = soundVoice ?? { play: vi.fn(() => true), dispose: vi.fn() };
   const hum = humVoice ?? { set: vi.fn(() => true), dispose: vi.fn() };
@@ -76,6 +76,7 @@ function makeRig({ night = 1, drive = null, random = () => 0.5, soundVoice, humV
   evil.hooks = hooks;
   evil.redOut = redOut;
   evil.gameObject = { scene: { userData: { engine }, add: vi.fn() } };
+  evil.onAwake();
   evil.onStart();
   return { evil, controller, signalManager, terminal, radar, driveManager, satellite, whiteOut, hooks, redOut, sparks, voice, hum, engine, clock };
 }
@@ -1017,17 +1018,28 @@ describe('EvilSignal sparks — sound', () => {
 });
 
 describe('EvilSignal sparks — corrupted drive particle effects', () => {
-  it('sparks are created when a drive is infected', async () => {
+  it('sparks are built with the scene, hidden, so their shader compiles at the warm-up, not at the infection (#175)', async () => {
     const { DriveSparks } = await import('./DriveSparks.js');
+    DriveSparks.mockClear();
     const drive = makeDrive();
-    const { evil, signalManager } = makeRig({ drive });
-    evil.summon();
-    const sig = evilSig(signalManager);
+    const { evil, signalManager, sparks } = makeRig({ drive });
+    expect(DriveSparks).toHaveBeenCalledOnce();
+    expect(evil.gameObject.scene.add).toHaveBeenCalledWith(sparks.points);
+    expect(sparks.start).not.toHaveBeenCalled();
 
-    evil.hover(sig);
+    evil.summon();
+    evil.hover(evilSig(signalManager));
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → engage → infect
 
-    expect(DriveSparks).toHaveBeenCalled();
+    expect(sparks.start).toHaveBeenCalledOnce();
+    expect(DriveSparks).toHaveBeenCalledOnce();   // the same sparks, not new ones
+  });
+
+  it('sparks are disposed with the scene', () => {
+    const { evil, sparks } = makeRig({ drive: makeDrive() });
+    evil.onDestroy();
+    expect(sparks.dispose).toHaveBeenCalled();
+    expect(sparks.points.removeFromParent).toHaveBeenCalled();
   });
 
   it('sparks are ticked each frame with the doom fraction', () => {
@@ -1062,7 +1074,7 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
     expect(sparks.burst).toHaveBeenCalled();
   });
 
-  it('sparks are disposed when the drive is wiped', () => {
+  it('sparks stop when the drive is wiped', () => {
     const drive = makeDrive();
     const { evil, signalManager, sparks } = makeRig({ drive });
     evil.summon();
@@ -1075,10 +1087,11 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
     drive.setSaved(false);
     // One tick to detect the corrupted drive is gone.
     evil.onUpdate(0.016);
-    expect(sparks.dispose).toHaveBeenCalled();
+    expect(sparks.stop).toHaveBeenCalled();
+    expect(sparks.dispose).not.toHaveBeenCalled();
   });
 
-  it('sparks are disposed on night reset', () => {
+  it('sparks stop on night reset', () => {
     const drive = makeDrive();
     const { evil, controller, signalManager, sparks } = makeRig({ drive });
     evil.summon();
@@ -1088,7 +1101,7 @@ describe('EvilSignal sparks — corrupted drive particle effects', () => {
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // complete pull-in → infect
 
     controller.startNight(2);
-    expect(sparks.dispose).toHaveBeenCalled();
+    expect(sparks.stop).toHaveBeenCalled();
   });
 });
 

@@ -279,6 +279,14 @@ export class EvilSignal extends Component {
     this._sparkClips = clipSet(SPARK_SOUNDS.clips);
   }
 
+  /** The sparks, built now and hidden: the warm-up compiles their shader
+   *  with the rest, where building them at the infection compiled it there,
+   *  a hitch as the red drive first came out (#175). */
+  onAwake() {
+    this._sparks = new DriveSparks();
+    this.scene?.add(this._sparks.points);
+  }
+
   onStart() {
     this._offNight = this.controller?.onNightStart?.((night) => this._reset(night)) ?? null;
   }
@@ -287,6 +295,9 @@ export class EvilSignal extends Component {
     this._voice.dispose();
     this._hum.dispose();
     this._release();
+    this._sparks?.dispose();
+    this._sparks?.points.removeFromParent();
+    this._sparks = null;
     this._offNight?.();
     this._offNight = null;
   }
@@ -411,7 +422,7 @@ export class EvilSignal extends Component {
       if (!corrupted) {
         // The drive was wiped (or lost): no more threat.
         this._corruptedDriveWiped = this._silenceTimerStarted;
-        this._disposeSparks();
+        this._stopSparks();
         this._silenceTimer = null;
         this._driveHopTimer = null;
         this.deleteWarning?.hide();
@@ -478,7 +489,7 @@ export class EvilSignal extends Component {
 
         if (this._silenceTimer <= 0) {
           this._humLevel = 0;
-          this._disposeSparks();
+          this._stopSparks();
           this._silenceTimer = null;
           this._driveHopTimer = null;
           this._release();           // end the dish lock before game over
@@ -629,12 +640,9 @@ export class EvilSignal extends Component {
     this.terminal?.radar?.stopLetMeIn?.();
     // The DRIVE indicator dot stops its continuous blink — drive corrupted.
     this.terminal?.radar?.stopContinuousBlink?.();
-    // Sparks: fly out of the corrupted drive at an increasing rate. A
-    // second infection while the first window still runs must not leak
-    // the first system.
-    this._disposeSparks();
-    this._sparks = new DriveSparks();
-    this.scene?.add(this._sparks.points);
+    // Sparks: fly out of the corrupted drive at an increasing rate. The
+    // same sparks every time, started afresh.
+    this._sparks?.start();
   }
 
   /** Let go of the dish: the hold is over, or the shift ended. The signal
@@ -693,13 +701,9 @@ export class EvilSignal extends Component {
     }, true);
   }
 
-  /** Dispose the sparks system and remove its Points from the scene. */
-  _disposeSparks() {
-    if (this._sparks) {
-      this._sparks.dispose();
-      this._sparks.points.removeFromParent();
-      this._sparks = null;
-    }
+  /** Put the sparks out and hide them, ready for the next infection. */
+  _stopSparks() {
+    this._sparks?.stop();
   }
 
   /** First drive in the manager's pool whose signal is corrupted, or null.
@@ -733,7 +737,7 @@ export class EvilSignal extends Component {
     this._driveInfected = false;
     this.deleteWarning?.hide();
     this.redOut?.clear();
-    this._disposeSparks();
+    this._stopSparks();
     // Reset the progress bars (in case the night ended mid-lock).
     if (this.terminal) {
       this.terminal._evilBarsActive = false;

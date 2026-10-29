@@ -873,14 +873,18 @@ export class Engine {
 
   /** three lists what the main view draws, then draws its shadow maps,
    *  then the list: put back what the cullers hid as the shadow maps begin,
-   *  so nothing is missing from a map redrawn this frame. Wrapped once. */
+   *  so nothing is missing from a map redrawn this frame. The maps are then
+   *  drawn through the shadow scheduler, which leaves out of each what its
+   *  light can't see (#175). Wrapped once. */
   _restoreBeforeShadows() {
     const shadowMap = this.renderer.shadowMap;
     if (!shadowMap || shadowMap._restoresCulled) return;
-    const draw = shadowMap.render;
+    const original = shadowMap.render;
+    const draw = (...args) => original.apply(shadowMap, args);
     shadowMap.render = (...args) => {
       for (const culler of this.renderCullers) culler.restore();
-      return draw.apply(shadowMap, args);
+      if (typeof this.shadows?.renderMaps === 'function') return this.shadows.renderMaps(draw, ...args);
+      return draw(...args);
     };
     shadowMap._restoresCulled = true;
   }
