@@ -1092,7 +1092,10 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   redrawn as it comes on rather than while dark, and each map is drawn on
   its own without the casters its light can't see (`renderMaps`, which the
   engine routes three's shadow pass through). Behind a wall from the light,
-  a caster changes nothing in its map. A red drive thrown about the office
+  a caster changes nothing in its map. Only a room's contents can be behind its walls: a
+  room's own shell (walls, floor, ceiling) is what a light outside it sees,
+  so a mesh not wholly inside a node's `inner` box (inside its walls, floor
+  and ceiling) is always drawn. Left out, the roofs let the moon in. A red drive thrown about the office
   redrew 27 maps a frame (1,800 draw calls).
 - **A light that casts no shadow shines through walls.** It lights every
   surface in its range that faces it. The office's ceiling light and every

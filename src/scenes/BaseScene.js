@@ -2972,7 +2972,12 @@ export class BaseScene extends Scene {
    *  doors its portals. The console's `portals` switches it off to compare. */
   _buildPortalCulling() {
     const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
-    const nodes = parts.map(part => ({ name: part.name, box: part.bounds() }));
+    // Each node's inner box: inside its walls, floor and ceiling (bounds()
+    // reaches their outer faces), so the shell itself always counts as seen.
+    const nodes = parts.map(part => {
+      const box = part.bounds();
+      return { name: part.name, box, inner: box.clone().expandByScalar(-part.wallThick) };
+    });
     const doors = parts.flatMap(part => part.doors);
     const portals = doors.map(door => doorPortal(door.object3d, door.doorSize, nodes));
     // The openings to outside, for what a light sees (the moon looks in

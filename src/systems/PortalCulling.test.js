@@ -245,3 +245,36 @@ describe('PortalCulling look / sees', () => {
     expect(unseen.visible).toBe(true);
   });
 });
+
+describe('a room shell is seen from outside (#175: the moon lit through the roofs)', () => {
+  // Each room's interior: inside 0.2 m walls, floor and ceiling.
+  const inner = (b) => b.clone().expandByScalar(-0.2);
+  const SHELLED = NODES.map(n => ({ ...n, inner: inner(n.box) }));
+
+  it("the moon sees every room's roof, though no opening shows it", () => {
+    const c = new PortalCulling({ nodes: SHELLED, portals: [], outside: [], roots: [] });
+    c.look(new THREE.Vector3(10, 1000, 0));
+    // B's ceiling slab: a mesh across the room at the top of the shell.
+    expect(c.sees(new THREE.Sphere(new THREE.Vector3(10, 2.95, 0), 5))).toBe(true);
+    // A crate wholly inside B: under the roof, unseen.
+    expect(c.sees(new THREE.Sphere(new THREE.Vector3(10, 1, 0), 0.3))).toBe(false);
+  });
+
+  it('hideUnseenCasters never hides a shell mesh from a light outside', () => {
+    const roots = [new THREE.Group()];
+    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, 10), new THREE.MeshBasicMaterial());
+    ceiling.position.set(10, 2.9, 0);
+    ceiling.castShadow = true;
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshBasicMaterial());
+    crate.position.set(10, 1, 0);
+    crate.castShadow = true;
+    roots[0].add(ceiling, crate);
+    roots[0].updateMatrixWorld(true);
+    const c = new PortalCulling({ nodes: SHELLED, portals: [], outside: [], roots });
+    c.look(new THREE.Vector3(10, 1000, 0));
+    c.hideUnseenCasters();
+    expect(ceiling.visible).toBe(true);
+    expect(crate.visible).toBe(false);
+    c.restore();
+  });
+});

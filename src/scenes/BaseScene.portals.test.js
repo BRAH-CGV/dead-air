@@ -138,6 +138,22 @@ describe('BaseScene portal culling', () => {
     expect(culling.sees(new THREE.Sphere(server, 0.3))).toBe(false);
   });
 
+  it("from the moon, no room's walls, floor or ceiling is left out of its map: they keep the light out", () => {
+    const culling = scene.portalCulling;
+    culling.look(new THREE.Vector3(30, 800, -400));
+    culling.hideUnseenCasters();
+    const shell = [];
+    for (const part of [...Object.values(scene.rooms), ...Object.values(scene.corridors)]) {
+      part.root.object3d.traverse((o) => {
+        if (o.isMesh && o.castShadow && /^(Ceiling|Floor|.*Wall.*|Lining.*)$/.test(o.name)) shell.push(o);
+      });
+    }
+    const hidden = shell.filter(m => !m.visible).map(m => m.name);
+    culling.restore();
+    expect(shell.length).toBeGreaterThan(10);
+    expect(hidden).toEqual([]);
+  });
+
   it('puts everything back', () => {
     const quarters = scene.rooms.LivingQuarters;
     const [x, , z] = quarters.position;

@@ -33,6 +33,10 @@ import * as THREE from 'three';
 // the moon sees in only through those. A map is redrawn only for a body
 // its light can see, and drawn without the casters it can't
 // (hideUnseenCasters): behind a wall from the light, they change nothing.
+// Only a room's contents can be behind its walls: a room's own shell (its
+// walls, floor and ceiling) is what an outside light sees of it, so
+// anything not wholly inside a node's `inner` box counts as seen. Left out
+// of the moon's map, the roofs let the moonlight into every room.
 //
 // Main view only. The engine calls hide() just before rendering and
 // restore() as three begins its shadow maps (which it draws after it has
@@ -109,7 +113,8 @@ export class PortalCulling {
 
   /**
    * @param {object} opts
-   * @param {{ name: string, box: THREE.Box3 }[]} opts.nodes  Rooms and corridors, their whole shells
+   * @param {{ name: string, box: THREE.Box3, inner?: THREE.Box3 }[]} opts.nodes  Rooms and
+   *        corridors: their whole shells, and inside their walls, floor and ceiling
    * @param {(ReturnType<typeof doorPortal>|null)[]} opts.portals
    * @param {(ReturnType<typeof outsidePortal>|null)[]} [opts.outside]  For look() only
    * @param {THREE.Object3D[]} opts.roots  What may be hidden lies under these
@@ -179,7 +184,20 @@ export class PortalCulling {
   sees(sphere) {
     const at = this._nodeAt(sphere.center);
     const node = at < 0 ? this._out : at;
-    return node === this._lookFrom || this._inViews(node, sphere);
+    if (node === this._lookFrom) return true;
+    // Part of the shell (or reaching into it): seen from outside the room.
+    if (at >= 0 && !this._inside(at, sphere)) return true;
+    return this._inViews(node, sphere);
+  }
+
+  /** Is all of `sphere` inside the node's walls, floor and ceiling? A
+   *  node given no inner box counts everything as inside. */
+  _inside(node, { center, radius }) {
+    const inner = this.nodes[node].inner;
+    if (!inner) return true;
+    return center.x - radius >= inner.min.x && center.x + radius <= inner.max.x
+      && center.y - radius >= inner.min.y && center.y + radius <= inner.max.y
+      && center.z - radius >= inner.min.z && center.z + radius <= inner.max.z;
   }
 
   /** Hide every shadow caster under the roots the last look() can't see,
