@@ -399,6 +399,16 @@ describe('EvilSignal nights', () => {
     for (const night of [0, 1, 2]) expect(scheduleEvil({ night })).toEqual([]);
   });
 
+  it('a scene that starts already on night 3 still schedules it', () => {
+    // Select night, Continue and the dream's rebuild between nights all set
+    // the night before the first frame, so before onStart subscribes.
+    const { evil, signalManager, clock } = makeRig({ night: 3 });
+    expect(evil._schedule).toHaveLength(EVIL.appearances);
+    clock.currentTime = evil._schedule[0];
+    evil.onUpdate(0.1);
+    expect(evilSig(signalManager)).not.toBeNull();
+  });
+
   it('does not come at the start of the shift, but at its hour', () => {
     const { evil, controller, signalManager, clock } = makeRig();
     controller.startNight(3);
@@ -490,16 +500,17 @@ describe('EvilSignal nights', () => {
     const one = evilSig(signalManager);
     evil.hover(one);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);  // the drive is infected
-    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(drive.corrupted).toBe(true);
-    expect(evil.locked).toBe(false);
 
+    // Its hour comes while the countdown runs (inside the one lock).
     clock.currentTime = second;
-    evil.onUpdate(0.1);
-    expect(evilSig(signalManager)).toBe(one);   // the countdown runs: no second yet
+    evil.onUpdate(EVIL.silenceSeconds - 1);
+    expect(controller.fail).not.toHaveBeenCalled();
+    expect(evilSig(signalManager)).toBe(one);   // no second yet
 
     drive.setSaved(false);                      // wiped at the console
-    evil.onUpdate(0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds);   // the lock runs out
+    expect(evil.locked).toBe(false);
     evil.onUpdate(0.1);
     expect(evilSig(signalManager)).not.toBe(one);
   });
@@ -513,7 +524,7 @@ describe('EvilSignal nights', () => {
     const one = evilSig(signalManager);
     evil.hover(one);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
-    evil.onUpdate(EVIL.lockSeconds + 0.1);      // pinned with no drive, then gone
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);   // pinned with no drive, then gone
     expect(evil._respawnTimer).toBe(EVIL.respawnDelaySeconds);
 
     evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);   // long before its own hour
@@ -524,7 +535,7 @@ describe('EvilSignal nights', () => {
     // Dodged again: no third.
     evil.hover(two);
     evil.onUpdate(EVIL.pullInSeconds + 0.1);
-    evil.onUpdate(EVIL.lockSeconds + 0.1);
+    evil.onUpdate(EVIL.lockWithDriveSeconds + 0.1);
     expect(evil._respawnTimer).toBeNull();
     clock.currentTime = second;
     evil.onUpdate(EVIL.respawnDelaySeconds + 0.1);

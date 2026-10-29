@@ -10,9 +10,7 @@
 //   Threats  last night's log (ThreatWatch, through the RunRecord): each
 //            kind of threat and the hour it first showed, in 24-hour time;
 //            then the forecast for tonight (the next shift, in the
-//            morning), vague: the kinds due, no times (threatForecast).
-//            The wording is placeholder, clearly marked, until the story
-//            has words for it
+//            morning), vague: the kinds due, no times (threatForecast)
 //
 // Text is set with textContent, never as HTML; the map is SVG built with
 // createElementNS. Without markup every call is a no-op.
@@ -24,14 +22,12 @@ import { clockDigits } from '../gameobjects/DigitalClock.js';
 
 export const PC_SCREENS = Object.freeze(['colony', 'threats']);
 
-/** Every word the PC shows: one-line edits. The placeholders are marked as
- *  such; the story's words go here when there are some (docs/STORY.md). */
+/** Every word the PC shows: one-line edits (docs/STORY.md). */
 export const PC_TEXT = Object.freeze({
   unnamedArray: 'YOUR ARRAY',
   tabs: Object.freeze({ colony: 'COLONY', threats: 'THREATS' }),
   hub: 'CENTRAL HUB',
   mapNote: 'Top: the window side. Neighbours at their radar bearings.',
-  placeholder: '[PLACEHOLDER]',
   logTitle: (night) => (night == null ? 'LAST NIGHT' : `LAST NIGHT · NIGHT ${night}`),
   /** One per ThreatForecast kind, as the log lists it. */
   logLabels: Object.freeze({
@@ -58,7 +54,6 @@ export const PC_TEXT = Object.freeze({
   }),
   nothingDue: 'Nothing expected.',
   noShifts: 'No further shifts scheduled.',
-  threatsNote: 'Log labels and forecast wording, until the story has some.',
   hint: '[1] [2] or [←] [→] to switch · [E] or [Q] to close',
 });
 
@@ -130,8 +125,7 @@ export class BedroomPCPanel {
 
     const body = el('div', 'pc-body');
     if (this.screen === 'colony') body.append(colonySvg(map, array), el('p', 'pc-note', PC_TEXT.mapNote));
-    else body.append(logSection(log), forecastSection(forecast),
-      el('p', 'pc-note', `${PC_TEXT.placeholder} ${PC_TEXT.threatsNote}`));
+    else body.append(logSection(log), forecastSection(forecast));
 
     const screen = el('div', 'pc-screen');
     screen.append(header, body, el('div', 'pc-hint', withKeys(PC_TEXT.hint)));

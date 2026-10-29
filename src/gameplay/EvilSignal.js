@@ -281,6 +281,9 @@ export class EvilSignal extends Component {
 
   onStart() {
     this._offNight = this.controller?.onNightStart?.((night) => this._reset(night)) ?? null;
+    // The night may have started before this subscribed (Select night,
+    // Continue and the rebuild between nights set it before the first frame).
+    this._reset(this.controller?.nightNumber);
   }
 
   onDestroy() {
