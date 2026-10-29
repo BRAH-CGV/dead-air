@@ -51,6 +51,7 @@ import { ProcessingScreen, SCREEN_LAYOUT as PROCESSING_LAYOUT } from '../ui/Proc
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
+import { PortalCulling, doorPortal } from '../systems/PortalCulling.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
   groundChunk,
@@ -425,6 +426,7 @@ export class BaseScene extends Scene {
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
+    this._buildPortalCulling();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -2962,6 +2964,17 @@ export class BaseScene extends Scene {
    * that should stay visible from outside (behind a new window, say) needs
    * thought again. AirlockPortal does the switching.
    */
+  /** Another room's things drawn only where a doorway shows them
+   *  (PortalCulling, #175): the rooms and corridors are its nodes, their
+   *  doors its portals. The console's `portals` switches it off to compare. */
+  _buildPortalCulling() {
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    const nodes = parts.map(part => ({ name: part.name, box: part.bounds() }));
+    const portals = parts.flatMap(part => part.doors).map(door => doorPortal(door.object3d, door.doorSize, nodes));
+    this.portalCulling = new PortalCulling({ nodes, portals, roots: parts.map(part => part.root.object3d) });
+    this.engine.renderCullers?.push(this.portalCulling);
+  }
+
   _buildOcclusion() {
     const { engine } = this;
     const zones = new OcclusionZones({ renderer: engine.renderer, scene: engine.scene, camera: engine.camera });

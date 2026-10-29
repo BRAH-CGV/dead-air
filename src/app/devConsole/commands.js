@@ -166,7 +166,9 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
         if (!renderer || !scene || !renderCamera) throw new CommandError('Nothing is being rendered yet');
         if (arg === 'shadows') engine.shadows?.invalidate();
         const tally = tallyDrawCalls(renderer, () => {
-          renderer.render(scene, renderCamera);
+          // Through the engine's own view, so the portal culling counts.
+          if (engine.renderView) engine.renderView();
+          else renderer.render(scene, renderCamera);
           for (const pass of engine.screenPasses ?? []) pass.render();
         });
         // The full list for the browser's console (F12), where it can be copied.
@@ -423,6 +425,13 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       get: (zones) => zones.revealed,
       set: (zones, on) => zones.revealAll(on),
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
+    }),
+    toggle({
+      name: 'portals', help: "Draw other rooms only through the doorways (on), or whole, through their walls (off), to compare",
+      target: () => system('portalCulling', 'portal culling'),
+      get: (culling) => culling.enabled,
+      set: (culling, on) => { culling.enabled = on; },
+      say: (on) => (on ? 'Portal culling on: other rooms drawn through the doorways only' : 'Portal culling off: other rooms drawn whole'),
     }),
 
     {

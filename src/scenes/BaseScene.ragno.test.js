@@ -347,7 +347,9 @@ describe('BaseScene — Ragno', () => {
       expect(hood, name).toBeDefined();
       const grate = hood.getObjectByName('VentGrate');
       expect(grate).toBeDefined();
-      expect(grate.children.length).toBeGreaterThan(4);
+      // Its bars, baked into one mesh (#175), right across the mouth.
+      const size = new THREE.Box3().setFromObject(grate).getSize(new THREE.Vector3());
+      expect(Math.max(size.x, size.z)).toBeGreaterThan(0.5);
     }
   });
 

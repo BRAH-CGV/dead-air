@@ -34,6 +34,9 @@ import { createCJFigure } from '../gameobjects/CJFigure.js';
 // Engine  –  Initialisation & game loop
 // ─────────────────────────────────────────────
 
+/** No render cullers (the level editor is open). */
+const NO_CULLERS = Object.freeze([]);
+
 export class Engine {
   // ── Tunables ──────────────────────────────
   static FIXED_DT   = 1 / 60;
@@ -79,6 +82,11 @@ export class Engine {
    *  `render()` (the security monitor's picture, FeedDisplay). They belong
    *  to the scene that added them: emptied on every scene load.
    *  @type {{ render(): void }[]} */ screenPasses = [];
+  /** Hide what the main view can't see just before it is drawn, and put it
+   *  back after (PortalCulling, #175). Put back as three starts its shadow
+   *  maps too, so a hidden thing still casts its shadow. Off while the level
+   *  editor is open. Emptied on every scene load.
+   *  @type {{ hide(camera: THREE.Camera): void, restore(): void }[]} */ renderCullers = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -457,6 +465,7 @@ export class Engine {
     this._teardownScene();
     this.viewCamera = null;
     this.screenPasses = [];
+    this.renderCullers = [];
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this, sceneOptions);
@@ -830,6 +839,46 @@ export class Engine {
   }
 
   /** Draw the frame and consume one-frame input — runs paused or not. */
+  /** Draw the main view through renderCamera, the render cullers hiding
+   *  what it can't see for the length of the draw. The console's
+   *  `drawcalls` draws through this too, so it counts what is really drawn. */
+  renderView() {
+    const camera = this.renderCamera;
+    const cullers = this.levelEditor?.enabled ? NO_CULLERS : this.renderCullers;
+    if (cullers.length === 0) {
+      this.renderer.render(this.scene, camera);
+      return;
+    }
+    // Cullers read world matrices, so bring them up to date here and spare
+    // three doing it again.
+    this.scene.updateMatrixWorld();
+    if (!camera.parent) camera.updateMatrixWorld?.();
+    this._restoreBeforeShadows();
+    for (const culler of cullers) culler.hide(camera);
+    const auto = this.scene.matrixWorldAutoUpdate;
+    this.scene.matrixWorldAutoUpdate = false;
+    try {
+      this.renderer.render(this.scene, camera);
+    } finally {
+      this.scene.matrixWorldAutoUpdate = auto;
+      for (const culler of cullers) culler.restore();
+    }
+  }
+
+  /** three lists what the main view draws, then draws its shadow maps,
+   *  then the list: put back what the cullers hid as the shadow maps begin,
+   *  so nothing is missing from a map redrawn this frame. Wrapped once. */
+  _restoreBeforeShadows() {
+    const shadowMap = this.renderer.shadowMap;
+    if (!shadowMap || shadowMap._restoresCulled) return;
+    const draw = shadowMap.render;
+    shadowMap.render = (...args) => {
+      for (const culler of this.renderCullers) culler.restore();
+      return draw.apply(shadowMap, args);
+    };
+    shadowMap._restoresCulled = true;
+  }
+
   _renderFrame(frameDt) {
     // ── Render ──
     this.physicsDebug?.update();
@@ -843,7 +892,7 @@ export class Engine {
     // info counts the whole frame: reset once here, not by each render().
     const info = this.renderer.info;
     info?.reset?.();
-    this.renderer.render(this.scene, this.renderCamera);
+    this.renderView();
     this.postProcess?.postRender();
     const beforeScreens = info?.render.calls ?? 0;
     for (const pass of this.screenPasses) pass.render();

@@ -244,3 +244,17 @@ describe('DriveBox', () => {
     expect(drives[3]._pickupable.promptLabel).toBe('[E] Pick up');
   });
 });
+
+describe('DriveBox slot markers (#175)', () => {
+  it('are one mesh, one draw call, a marker over each slot', () => {
+    const box = new DriveBox('Markers');
+    const markers = [];
+    box.object3d.traverse(o => { if (o.name === 'DriveBoxSlotMarker') markers.push(o); });
+    expect(markers).toHaveLength(1);
+    // A box is 24 vertices: one per slot.
+    expect(markers[0].geometry.attributes.position.count).toBe(box.receiver.slots.length * 24);
+    const top = box.size[1] / 2;
+    const ys = markers[0].geometry.attributes.position.array.filter((_, i) => i % 3 === 1);
+    expect(Math.min(...ys)).toBeGreaterThan(top);
+  });
+});

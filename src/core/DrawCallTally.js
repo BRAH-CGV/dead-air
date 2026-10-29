@@ -9,7 +9,7 @@
 // What drew it is the object's path below the scene, a few levels deep, so
 // a room's props add up under the room; the base's own wrapper (SceneRoot)
 // is left out. A split instanced mesh's parts ('MarsGrass:always#3/1') are
-// counted under their mesh ('MarsGrass'). rollUp adds the lines up a level
+// counted under their mesh ('MarsGrass'); a room keeps its name ('Room:MainOffice'). rollUp adds the lines up a level
 // or two, for a list short enough to read in game.
 // ─────────────────────────────────────────────
 
@@ -81,7 +81,11 @@ export function rollUp({ passes, by }, depth) {
 function pathOf(object) {
   const names = [];
   for (let o = object; o?.parent; o = o.parent) {
-    if (!(WRAPPERS.has(o.name) && !o.parent.parent)) names.push((o.name || o.type).split(':')[0]);
+    if (WRAPPERS.has(o.name) && !o.parent.parent) continue;
+    const name = o.name || o.type;
+    // A split instanced mesh's part ('MarsGrass:always#3/1') under its mesh;
+    // other names keep theirs ('Room:MainOffice').
+    names.push(o.isInstancedMesh ? name.split(':')[0] : name);
   }
   return names.reverse().slice(0, DEPTH).join('/') || '(no parent)';
 }

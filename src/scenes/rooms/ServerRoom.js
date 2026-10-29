@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { READER_SIZE, READER_SLOT, readerMaterial, skinReader } from '../../gameobjects/DriveReader.js';
 import { Room } from './Room.js';
 import { Interactable } from '../../components/Interactable.js';
@@ -154,11 +155,15 @@ export class ServerRoom extends Room {
     // geometry shared by every LED — 16 identical slats and 12 identical
     // dots were each allocating their own before, which is 28 extra
     // geometries and 28 extra shader-program variants for no visual gain.
+    const slat = new THREE.BoxGeometry(0.02, 0.05, 0.3);
+    const slats = [1.7, 1.45, 1.2, 0.95].map(y => slat.clone().translate(0.01, y, 0));
     const shared = {
-      trimGeometry: this._own(new THREE.BoxGeometry(0.02, 0.05, 0.3)),
+      // A rack's four trim slats in one geometry: one draw call a rack (#175).
+      trimGeometry: this._own(mergeGeometries(slats)),
       trimMaterial: this._own(new THREE.MeshBasicMaterial({ color: 0x35ff7a })),
       ledGeometry:  this._own(new THREE.BoxGeometry(0.05, 0.05, 0.02)),
     };
+    for (const geometry of [slat, ...slats]) geometry.dispose();
 
     let n = 0;
     const addPair = (side, z) => {
@@ -302,12 +307,8 @@ export class ServerRoom extends Room {
     // Static glow-in-the-dark trim, like the console's — unlit so it reads
     // as self-luminous regardless of how dark the room is. Wide, flat
     // slats (a glowing status-vent strip), not thin rods: a 2 cm-thick rod
-    // reads as nothing at normal viewing distance.
-    [1.7, 1.45, 1.2, 0.95].forEach((y) => {
-      const slat = new THREE.Mesh(shared.trimGeometry, shared.trimMaterial);
-      slat.position.set(0.01, y, 0);
-      groupGO.object3d.add(slat);
-    });
+    // reads as nothing at normal viewing distance. All four in one mesh.
+    groupGO.object3d.add(new THREE.Mesh(shared.trimGeometry, shared.trimMaterial));
 
     // Geometry is shared; the material is NOT — LEDStrip writes
     // `emissiveIntensity` per dot, so a shared material would blink every

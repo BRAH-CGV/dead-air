@@ -192,8 +192,10 @@ describe('ServerRoom', () => {
 
       // Static glow-in-the-dark trim — unlit (MeshBasicMaterial), so it
       // reads as self-luminous no matter how dark the room is.
+      // Four slats in one mesh, one draw call (#175).
       const trim = group.object3d.children.filter(o => o.isMesh && o.material.isMeshBasicMaterial);
-      expect(trim.length, group.name).toBeGreaterThanOrEqual(1);
+      expect(trim.length, group.name).toBe(1);
+      expect(trim[0].geometry.attributes.position.count, group.name).toBe(4 * 24);
 
       const glow = group.object3d.children.find(o => o.isPointLight);
       if (side < 0) { expect(glow, group.name).toBeUndefined(); continue; }

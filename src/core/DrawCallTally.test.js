@@ -20,7 +20,7 @@ function world() {
   const desk = new THREE.Group(); desk.name = 'ComputerDesk';
   const mesh = new THREE.Mesh(); mesh.name = 'Body';
   const outside = new THREE.Group(); outside.name = 'Outside';
-  const grass = new THREE.Mesh(); grass.name = 'MarsGrass:always#3/1';
+  const grass = new THREE.InstancedMesh(new THREE.BufferGeometry(), undefined, 1); grass.name = 'MarsGrass:always#3/1';
   scene.add(room, outside); room.add(desk); desk.add(mesh); outside.add(grass);
   return { scene, mesh, grass };
 }
@@ -62,7 +62,7 @@ describe('tallyDrawCalls', () => {
     scene.add(outside);
     const tally = tallyDrawCalls(renderer, () => {
       for (const name of ['MarsGrass:always#0/0', 'MarsGrass:always#1/0', 'MarsGrass:interior#1/1']) {
-        const m = new THREE.Mesh(); m.name = name; outside.add(m);
+        const m = new THREE.InstancedMesh(new THREE.BufferGeometry(), undefined, 1); m.name = name; outside.add(m);
         renderer.renderBufferDirect(null, scene, null, null, m, null);
       }
     });
@@ -75,11 +75,11 @@ describe('tallyDrawCalls under the base', () => {
     const renderer = fakeRenderer();
     const scene = new THREE.Scene();
     const root = new THREE.Group(); root.name = 'SceneRoot';
-    const room = new THREE.Group(); room.name = 'MainOffice';
+    const room = new THREE.Group(); room.name = 'Room:MainOffice';
     const mesh = new THREE.Mesh(); mesh.name = 'Desk';
     scene.add(root); root.add(room); room.add(mesh);
     const tally = tallyDrawCalls(renderer, () => renderer.renderBufferDirect(null, scene, null, null, mesh, null));
-    expect([...tally.by.keys()]).toEqual(['main\tMainOffice/Desk']);
+    expect([...tally.by.keys()]).toEqual(['main\tRoom:MainOffice/Desk']);
   });
 });
 

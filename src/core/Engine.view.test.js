@@ -56,6 +56,63 @@ describe('Engine view camera', () => {
 });
 
 // ─────────────────────────────────────────────
+// Engine.renderCullers  –  hidden from the main view only (portal culling, #175)
+// ─────────────────────────────────────────────
+describe('Engine render cullers', () => {
+  const culler = (order) => ({
+    hide: vi.fn((camera) => order.push(`hide ${camera.name}`)),
+    restore: vi.fn(() => order.push('restore')),
+  });
+
+  it('hide just before the main view, and put things back before post-process and screen passes', () => {
+    const engine = makeEngine();
+    const order = [];
+    engine.scene = { updateMatrixWorld: vi.fn(), matrixWorldAutoUpdate: true };
+    engine.renderer.render = vi.fn(() => order.push('frame'));
+    engine.postProcess = { preRender: vi.fn(), postRender: vi.fn(() => order.push('post')) };
+    engine.screenPasses.push({ render: () => order.push('pass') });
+    engine.renderCullers.push(culler(order));
+    frame(engine);
+    expect(order.slice(-5)).toEqual(['hide player', 'frame', 'restore', 'post', 'pass']);
+    expect(engine.scene.matrixWorldAutoUpdate).toBe(true);
+  });
+
+  it('bring everything back as the shadow maps begin, so a hidden thing still casts its shadow', () => {
+    const engine = makeEngine();
+    const order = [];
+    const shadowMap = { render: vi.fn(() => order.push('shadows')) };
+    engine.renderer.shadowMap = shadowMap;
+    engine.scene = { updateMatrixWorld: vi.fn(), matrixWorldAutoUpdate: true };
+    engine.renderer.render = vi.fn(() => { order.push('list'); engine.renderer.shadowMap.render(); order.push('draw'); });
+    engine.renderCullers.push(culler(order));
+    frame(engine);
+    expect(order.slice(-6)).toEqual(['hide player', 'list', 'restore', 'shadows', 'draw', 'restore']);
+  });
+
+  it('stay out of the way while the level editor is open', () => {
+    const engine = makeEngine();
+    const order = [];
+    engine.scene = { updateMatrixWorld: vi.fn(), matrixWorldAutoUpdate: true };
+    engine.levelEditor.enabled = true;
+    const c = culler(order);
+    engine.renderCullers.push(c);
+    frame(engine);
+    expect(c.hide).not.toHaveBeenCalled();
+  });
+
+  it('start empty and are emptied on every scene load', () => {
+    const engine = makeEngine();
+    expect(engine.renderCullers).toEqual([]);
+    engine.renderCullers.push(culler([]));
+    engine.shadows.release = vi.fn();
+    engine._teardownScene = vi.fn();
+    class Empty { constructor() {} build() {} }
+    try { engine.loadScene(Empty); } catch (_) { /* the rest of loading needs a real scene */ }
+    expect(engine.renderCullers).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────
 // Engine.screenPasses  –  drawn over the finished frame (the CCTV switch)
 // ─────────────────────────────────────────────
 describe('Engine screen passes', () => {

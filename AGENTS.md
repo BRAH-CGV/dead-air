@@ -870,6 +870,7 @@ Every debug tool is a command in the **developer console** (`src/app/devConsole/
 | `power [on\|off]` | `GeneratorSound` | Start or stop the generator, sound and grid; refused while the breakers are tripped |
 | `suit [on\|off]` | `EVASuit` | Put the suit on or take it off |
 | `zones [reveal\|hide]` | `OcclusionZones` | Draw everything, or cull again |
+| `portals [on\|off]` | `PortalCulling` | Draw other rooms only through the doorways (on, the default), or whole through their walls (off), to compare |
 | `ufo` | `UfoThreat.summon` | **Testing only.** Start a UFO visit now; ignored mid-visit or outside a shift |
 | `storm` | `Sandstorm.summon` | **Testing only.** Start a sandstorm now, on any night; ignored while one is blowing or outside a shift |
 | `eyes [fence\|window\|both]` | `DustEyes.summon` | **Testing only.** Bring dust eyes now, wherever you are (with a storm, if none is blowing); ignored outside a shift or during a UFO visit |
@@ -1089,6 +1090,26 @@ This project uses **test-driven development**. For every new feature, bug fix, o
   quarters' lamp and the server room's glows still don't. Each shadowed
   light is one more texture unit in every lit shader (seven now, of a
   guaranteed sixteen), so add one where the leak shows, not everywhere.
+- **Portal culling** (`PortalCulling`, `BaseScene._buildPortalCulling`,
+  #175). three culls by the camera's frustum alone, so every room the view
+  pointed at was drawn through its walls (449 draw calls from the quarters'
+  corridor looking into the office). Rooms and corridors are nodes, their
+  `Door`s portals; each frame, from the camera's room, the view is walked
+  out through every doorway it can see, narrowed to the opening each time,
+  and anything in another room that none of those views meets is hidden for
+  the main render (`engine.renderCullers`, `Engine.renderView`). A thing is
+  placed by where it stands, not which room it hangs under (a carried drive);
+  only drawable leaves are hidden, never a light; nothing while the camera
+  is in no room or the level editor is open. Things are put back as three
+  starts its shadow maps (it lists the main view's draws first), so a
+  redrawn map still has every caster. A new room needs nothing: its doors
+  are its portals. A doorway with no `Door` (an open arch) would be a wall
+  to it, so give it one. `portals off` in the console to compare.
+- **Bake static pieces into one mesh.** Every mesh is a draw call: the
+  wall clock's twelve marks, a drive box's eight slot markers, the vents'
+  slats and bars, the camera poles and a rack's four trim slats are each
+  baked into one geometry per material (`mergeGeometries`), placed as
+  before.
 - **Never hide a light with `visible = false`** — the light count is compiled
   into every lit shader, so it recompiles the scene. Zero its intensity.
 - **Occlusion zones** (`BaseScene._buildOcclusion`): room furnishings go
