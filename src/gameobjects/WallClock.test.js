@@ -106,3 +106,21 @@ describe('WallClock', () => {
     expect(freed.size).toBe(resources.size);
   });
 });
+
+describe('WallClock hour marks (#175)', () => {
+  it('are one mesh, one draw call, with twelve marks round the face, the quarters longer', () => {
+    const clock = new WallClock();
+    const marks = [];
+    clock.object3d.traverse(o => { if (o.name === 'ClockMarks') marks.push(o); });
+    expect(marks).toHaveLength(1);
+    const meshes = [];
+    clock.object3d.traverse(o => { if (o.isMesh) meshes.push(o); });
+    // body, face, marks, two hands, cap
+    expect(meshes.length).toBeLessThanOrEqual(6);
+    // A box is 24 vertices: twelve of them.
+    expect(marks[0].geometry.attributes.position.count).toBe(12 * 24);
+    const box = new THREE.Box3().setFromObject(marks[0]);
+    const size = box.getSize(new THREE.Vector3());
+    expect(size.x).toBeCloseTo(size.y, 2);   // round the face, not in a line
+  });
+});

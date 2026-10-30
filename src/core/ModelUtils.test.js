@@ -232,14 +232,14 @@ describe('collectGeometry', () => {
   });
 });
 
-describe('the real desk.glb, end to end', () => {
-  // The stand-in desk ships no UCX_ meshes, so it exercises exactly the tier-1
-  // path the manifest asks for: measure the bounds, fit one box.
+describe('the real metal-chair.glb, end to end', () => {
+  // The chair ships no UCX_ meshes, so it exercises exactly the tier-1 path
+  // the manifest asks for: measure the bounds, fit one box.
   const gltf = new GLTFLoader().parseAsync(
-    toArrayBuffer(readFileSync('public/assets/models/desk.glb')), '',
+    toArrayBuffer(readFileSync('public/assets/models/metal-chair.glb')), '',
   );
 
-  it('resolves to a single box that actually wraps the desk', async () => {
+  it('resolves to a single box that actually wraps the chair', async () => {
     const { scene } = await gltf;
     prepareModel(scene);
 
@@ -255,7 +255,7 @@ describe('the real desk.glb, end to end', () => {
     expect(resolved.parts[0].kind).toBe('cuboid');
 
     // Authored origin-on-floor, so the box has to be lifted to half its height
-    // — otherwise it sinks and the player walks through the top of the desk.
+    // — otherwise it sinks and the player walks through the seat.
     const [box] = resolved.parts;
     expect(box.halfExtents[1]).toBeCloseTo(size.y / 2);
     expect(box.position[1]).toBeCloseTo(size.y / 2, 1);

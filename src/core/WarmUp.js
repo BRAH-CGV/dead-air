@@ -1,3 +1,5 @@
+import { WebGLRenderTarget } from 'three';
+
 // ─────────────────────────────────────────────
 // WarmUp  –  pay every first-use GPU cost behind the loading screen
 // ─────────────────────────────────────────────
@@ -121,6 +123,44 @@ export async function warmUp({
 export async function precompile({ renderer, scene, camera }) {
   if (renderer?.compileAsync) await renderer.compileAsync(scene, camera);
   else renderer?.compile?.(scene, camera);
+}
+
+/**
+ * The warm-up's last step for a rebuild, unseen: draw everything once,
+ * hidden or behind the camera, into a small target off screen, so every
+ * buffer and texture is on the GPU before the player first looks at it.
+ * Portal culling draws a room only once a doorway shows it; after a
+ * rebuild, which only compiles, the office's first sight uploaded the lot
+ * at once (#175). No shadow map is drawn meanwhile: a hidden caster shown
+ * for this would land in it. Into a target, the programs are the red
+ * pass's variants, which a rebuild compiles anyway.
+ * @param {object} opts
+ * @param {import('three').WebGLRenderer|null} opts.renderer
+ * @param {import('three').Scene} opts.scene
+ * @param {import('three').Camera} opts.camera
+ */
+export function uploadAll({ renderer, scene, camera }) {
+  if (!renderer?.render || !renderer.setRenderTarget) return;
+  const target = new WebGLRenderTarget(16, 16);
+  const previous = renderer.getRenderTarget();
+  const shadows = renderer.shadowMap;
+  const { autoUpdate, needsUpdate } = shadows ?? {};
+  const restoreVisible = showAll(scene);
+  const culled = [];
+  scene.traverse((o) => {
+    if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); }
+  });
+  try {
+    if (shadows) { shadows.autoUpdate = false; shadows.needsUpdate = false; }
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+  } finally {
+    renderer.setRenderTarget(previous);
+    if (shadows) { shadows.autoUpdate = autoUpdate; shadows.needsUpdate = needsUpdate; }
+    for (const o of culled) o.frustumCulled = true;
+    restoreVisible();
+    target.dispose();
+  }
 }
 
 /** Show every hidden object; returns a function that hides them again.

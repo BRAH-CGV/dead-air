@@ -51,8 +51,11 @@ import { ProcessingScreen, SCREEN_LAYOUT as PROCESSING_LAYOUT } from '../ui/Proc
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { DREAM_AFTER_NIGHT } from '../gameplay/dream.js';
 import { OcclusionZones } from '../systems/OcclusionZones.js';
+import { PortalCulling, doorPortal, outsidePortal } from '../systems/PortalCulling.js';
+import { DriveInstancer } from '../gameobjects/DriveInstancer.js';
 import {
   windowHalfSpaces, sphereSeenThroughWindows, boxSeenThroughWindows, splitInstances, forEachInstanceSphere, hiddenFromRegion, collectHideable,
+  groundChunk,
 } from '../systems/Sightlines.js';
 import { AirlockPortal } from '../components/AirlockPortal.js';
 import { PLAYER_BODY } from '../components/PlayerBody.js';
@@ -238,6 +241,15 @@ const OCCLUDER_MARGIN = 0.3;
  *  saves work on every frame indoors, where the player spends the night. */
 const MIN_SPLIT_TRIANGLES = 8000;
 
+/** An instanced mesh this heavy is also cut into wedges of ground round the
+ *  base (groundChunk), so three culls the wedges behind the camera: one
+ *  mesh of the whole ring has one bounding sphere round the basin, which
+ *  every view meets (#175). Measured on the belt from the desk and the yard:
+ *  8 wedges × 2 rings over 200 k triangles took what was drawn from 2.8 M
+ *  triangles to about 1.45 M for some 30 more draw calls. Lighter meshes
+ *  aren't worth the calls. */
+export const CHUNK_TRIANGLES = 200_000;
+
 /** Highest an eye gets in the yard: standing, at the top of a jump (Engine
  *  jumps at 4 m/s, so v²/2g ≈ 0.82 m), plus margin for a low step. */
 const EYE_TOP = PLAYER_BODY.standEyeHeight + (4 * 4) / (2 * 9.81) + 0.4;
@@ -415,6 +427,8 @@ export class BaseScene extends Scene {
     this._addNap();
     this._addTutorial();
     this._buildOcclusion();
+    this._buildPortalCulling();
+    this._addDriveInstancer();
 
     console.timeEnd('BaseScene.build');
     this._logBuildStats();
@@ -463,6 +477,7 @@ export class BaseScene extends Scene {
     this._offBuggyNight?.();
     this._offPower?.forEach(off => off());
     this.ufo?.dispose();
+    this.driveInstancer?.dispose();
     this.dust?.dispose();
     for (const { go } of this.dustEyes?.slots ?? []) go.dispose();
     this.ragnoFigure?.dispose();
@@ -2952,6 +2967,43 @@ export class BaseScene extends Scene {
    * that should stay visible from outside (behind a new window, say) needs
    * thought again. AirlockPortal does the switching.
    */
+  /** Another room's things drawn only where a doorway shows them
+   *  (PortalCulling, #175): the rooms and corridors are its nodes, their
+   *  doors its portals. The console's `portals` switches it off to compare. */
+  _buildPortalCulling() {
+    const parts = [...Object.values(this.rooms), ...Object.values(this.corridors)];
+    // Each node's inner box: inside its walls, floor and ceiling (bounds()
+    // reaches their outer faces), so the shell itself always counts as seen.
+    const nodes = parts.map(part => {
+      const box = part.bounds();
+      return { name: part.name, box, inner: box.clone().expandByScalar(-part.wallThick) };
+    });
+    const doors = parts.flatMap(part => part.doors);
+    const portals = doors.map(door => doorPortal(door.object3d, door.doorSize, nodes));
+    // The openings to outside, for what a light sees (the moon looks in
+    // through these): the hatch and the office window.
+    const outside = doors.map(door => outsidePortal(door.object3d, door.doorSize, nodes));
+    const win = this._officeWindow();
+    const office = this.rooms.MainOffice;
+    const pane = new THREE.Object3D();
+    pane.position.set((win.x0 + win.x1) / 2, (win.sill + win.top) / 2, win.z - office.wallThick / 2);
+    outside.push(outsidePortal(pane, [win.x1 - win.x0, win.top - win.sill, office.wallThick], nodes));
+    this.portalCulling = new PortalCulling({ nodes, portals, outside, roots: parts.map(part => part.root.object3d) });
+    this.engine.renderCullers?.push(this.portalCulling);
+    // Shadow maps redrawn only for what their light can see.
+    if (this.engine.shadows) this.engine.shadows.visibility = this.portalCulling;
+  }
+
+  /** Every drive's casing in one draw call and every LED in another
+   *  (DriveInstancer, #175), updated by the engine before the main view.
+   *  Run once now, so the warm-up draws them as they will be. */
+  _addDriveInstancer() {
+    this.driveInstancer = new DriveInstancer({ root: this._sceneRoot.object3d });
+    this.engine.beforeRender?.push(this.driveInstancer);
+    this._sceneRoot.object3d.updateMatrixWorld(true);
+    this.driveInstancer.update();
+  }
+
   _buildOcclusion() {
     const { engine } = this;
     const zones = new OcclusionZones({ renderer: engine.renderer, scene: engine.scene, camera: engine.camera });
@@ -2983,11 +3035,13 @@ export class BaseScene extends Scene {
     //   neither  'unseen'    never drawn (the debug views still show it)
     this.yardView = this._yardView();
     const view = { windows: windowHalfSpaces(Object.values(this.rooms)), ...this.yardView };
-    const sorted = { yard: [], interior: [], unseen: [] };
+    const sorted = { yard: [], interior: [], unseen: [], geometries: [] };
     for (const child of [...this._outside.object3d.children]) {
       if (child.name === 'MarsTerrain') continue;   // the ground under everything
       sortOutdoors(child, view, sorted);
     }
+    // A split part with something per instance has a geometry of its own.
+    for (const geometry of sorted.geometries) this._own(geometry);
     zones.add('yard', sorted.yard);
     zones.add('interior', sorted.interior);
     zones.add('unseen', sorted.unseen);
@@ -3396,10 +3450,16 @@ function zoneFor(seenInside, seenOutside) {
  * beacons' lamps: split, they stayed the red they were copied with.) It is
  * sorted whole, by its bounds, like any other object.
  *
+ * A heavy one (CHUNK_TRIANGLES) is cut into wedges of ground as well, zone
+ * by zone. A part that has to carry per-instance values gets a geometry of
+ * its own (splitInstances); those land in `out.geometries` for the scene
+ * to dispose.
+ *
  * @param {THREE.Object3D} object
  * @param {{ windows: import('../systems/Sightlines.js').HalfSpace[],
  *           eyes: THREE.Box3, occluders: THREE.Box3[] }} view
- * @param {{ yard: THREE.Object3D[], interior: THREE.Object3D[], unseen: THREE.Object3D[] }} out
+ * @param {{ yard: THREE.Object3D[], interior: THREE.Object3D[], unseen: THREE.Object3D[],
+ *           geometries: THREE.BufferGeometry[] }} out
  */
 function sortOutdoors(object, view, out) {
   const { windows, eyes, occluders } = view;
@@ -3420,8 +3480,15 @@ function sortOutdoors(object, view, out) {
         for (let i = 0; i < labels.length; i++) if (labels[i] === zone) labels[i] = 'always';
       }
     }
+    if (perInstance * labels.length >= CHUNK_TRIANGLES) {
+      forEachInstanceSphere(object, (sphere, i) => { labels[i] += `#${groundChunk(sphere.center)}`; });
+    }
     const parts = splitInstances(object, (_sphere, i) => labels[i]);
-    for (const [zone, mesh] of parts) if (zone !== 'always') out[zone].push(mesh);
+    for (const [label, mesh] of parts) {
+      const zone = label.split('#')[0];
+      if (zone !== 'always') out[zone].push(mesh);
+      if (mesh.geometry !== object.geometry) out.geometries.push(mesh.geometry);
+    }
     return;
   }
 

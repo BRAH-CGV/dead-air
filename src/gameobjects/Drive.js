@@ -120,6 +120,9 @@ class SignalProcessing extends Component {
 }
 
 export class Drive extends GameObject {
+  /** Every drive built and not yet disposed: what the DriveInstancer draws. */
+  static live = new Set();
+
   /** @type {THREE.Mesh} The casing. */
   _mesh;
   /** @type {THREE.MeshStandardMaterial} The casing's. */
@@ -183,6 +186,7 @@ export class Drive extends GameObject {
     super(name);
     this._size = size;
     this._build();
+    Drive.live.add(this);
     // The Pickupable is pure data, so it exists before _init: a snap
     // receiver can attach the drive at build time and still swap its
     // prompt and install the detach-on-pickup hook.
@@ -526,6 +530,7 @@ export class Drive extends GameObject {
 
   /** Free the geometry, material, and physics resources this drive built. */
   dispose() {
+    Drive.live.delete(this);
     this.clearDoomGlow();
     this._mesh?.geometry?.dispose();
     this._bodyMaterial?.dispose();

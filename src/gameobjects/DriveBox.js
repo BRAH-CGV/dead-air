@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameObject } from '../core/GameObject.js';
 import { Pickupable } from '../components/Pickupable.js';
 import { ImpactSound, IMPACT_SOUNDS } from '../components/ImpactSound.js';
@@ -237,15 +238,17 @@ export class DriveBox extends GameObject {
     this.object3d.add(this._mesh);
 
     // Black rectangles mark each slot — thin quads in the X-Z plane (facing
-    // ±Y) sized to the standing drive's footprint. Placeholder visual.
+    // ±Y) sized to the standing drive's footprint. Placeholder visual. One
+    // per slot, baked into one geometry: one draw call, not eight (#175).
     const markerSize = [this.slotExtents[0], 0.002, this.slotExtents[2]];
-    this._slotMarkerGeometry = new THREE.BoxGeometry(...markerSize);
+    const marker = new THREE.BoxGeometry(...markerSize);
+    const placed = this.receiver.slots.map(slot =>
+      marker.clone().translate(slot.offset.x, this.size[1] / 2 + 0.002, slot.offset.z));
+    this._slotMarkerGeometry = mergeGeometries(placed);
+    for (const geometry of [...placed, marker]) geometry.dispose();
     this._slotMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    for (const slot of this.receiver.slots) {
-      const marker = new THREE.Mesh(this._slotMarkerGeometry, this._slotMarkerMaterial);
-      marker.name = 'DriveBoxSlotMarker';
-      marker.position.set(slot.offset.x, this.size[1] / 2 + 0.002, slot.offset.z);
-      this.object3d.add(marker);
-    }
+    const markers = new THREE.Mesh(this._slotMarkerGeometry, this._slotMarkerMaterial);
+    markers.name = 'DriveBoxSlotMarker';
+    this.object3d.add(markers);
   }
 }

@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import { UsageError, CommandError } from './DevConsole.js';
+import { tallyDrawCalls, formatTally, rollUp } from '../../core/DrawCallTally.js';
 import { NightClock } from '../../gameplay/NightClock.js';
 import { Drive } from '../../gameobjects/Drive.js';
 import { DriveSlot } from '../../components/DriveSlot.js';
@@ -156,6 +157,31 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       },
       say: (on) => `FPS readout ${on ? 'on' : 'off'}`,
     }),
+    {
+      name: 'drawcalls', usage: 'drawcalls [shadows]',
+      help: 'Draw one frame from here and list its draw calls by pass and by what drew them (a level deeper in the browser console); shadows redraws every shadow map first',
+      run: ([arg]) => {
+        if (arg !== undefined && arg !== 'shadows') throw new UsageError(`Unknown option "${arg}"`);
+        const { renderer, scene, renderCamera } = engine;
+        if (!renderer || !scene || !renderCamera) throw new CommandError('Nothing is being rendered yet');
+        if (arg === 'shadows') engine.shadows?.invalidate();
+        const tally = tallyDrawCalls(renderer, () => {
+          // Through the engine's own view, so the portal culling counts.
+          if (engine.renderView) engine.renderView();
+          else renderer.render(scene, renderCamera);
+          for (const pass of engine.screenPasses ?? []) pass.render();
+        });
+        // The full list for the browser's console (F12), where it can be copied.
+        console.log(formatTally(tally).join('\n'));
+        // In game, short enough for the log: by room, then the heaviest props.
+        return [
+          ...formatTally(rollUp(tally, 1)),
+          'Heaviest:',
+          ...formatTally(rollUp(tally, 2), 40).slice(1),
+          'Everything, a level deeper: the browser console (F12)',
+        ];
+      },
+    },
     toggle({
       name: 'models', help: 'Log each model as it spawns, and reload the scene to show them',
       target: () => engine,
@@ -399,6 +425,13 @@ export function createCommands(engine, { closeConsole, rebuild, settings } = {})
       get: (zones) => zones.revealed,
       set: (zones, on) => zones.revealAll(on),
       say: (on) => (on ? 'Zones revealed: everything is drawn' : 'Zones hidden: culled as normal'),
+    }),
+    toggle({
+      name: 'portals', help: "Draw other rooms only through the doorways (on), or whole, through their walls (off), to compare",
+      target: () => system('portalCulling', 'portal culling'),
+      get: (culling) => culling.enabled,
+      set: (culling, on) => { culling.enabled = on; },
+      say: (on) => (on ? 'Portal culling on: other rooms drawn through the doorways only' : 'Portal culling off: other rooms drawn whole'),
     }),
 
     {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { warmUp, collectTextures, precompile } from './WarmUp.js';
+import { warmUp, collectTextures, precompile, uploadAll } from './WarmUp.js';
 
 // ─────────────────────────────────────────────
 // WarmUp  –  pay every first-use GPU cost behind the loading screen
@@ -144,5 +144,58 @@ describe('precompile', () => {
     await precompile({ renderer, scene: root, camera });
     expect(renderer.compile).toHaveBeenCalledWith(root, camera);
     await expect(precompile({ renderer: {}, scene: root, camera })).resolves.toBeUndefined();
+  });
+});
+
+describe('uploadAll (a rebuild: what the loading screen warm-up does, unseen, #175)', () => {
+  function offscreenRenderer() {
+    const seen = [];
+    const renderer = {
+      target: null,
+      shadowMap: { autoUpdate: true, needsUpdate: false },
+      getRenderTarget() { return this.target; },
+      setRenderTarget(t) { this.target = t; },
+      render: vi.fn((scene) => {
+        seen.push({
+          target: renderer.target,
+          shadowsFrozen: renderer.shadowMap.autoUpdate === false && renderer.shadowMap.needsUpdate === false,
+          culled: [], hiddenShown: true,
+        });
+        scene.traverse(o => { if (o.isMesh) { seen.at(-1).culled.push(o.frustumCulled); if (!o.visible) seen.at(-1).hiddenShown = false; } });
+      }),
+    };
+    return { renderer, seen };
+  }
+
+  it('draws everything once, hidden or behind the camera, into a small target off screen', () => {
+    const { root, noCull } = scene();
+    const hidden = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+    hidden.visible = false;
+    root.add(hidden);
+    const { renderer, seen } = offscreenRenderer();
+    uploadAll({ renderer, scene: root, camera: new THREE.PerspectiveCamera() });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].target).not.toBeNull();
+    expect(seen[0].culled.every(c => c === false)).toBe(true);
+    expect(seen[0].hiddenShown).toBe(true);
+    // All put back.
+    expect(renderer.target).toBeNull();
+    expect(hidden.visible).toBe(false);
+    expect(noCull.frustumCulled).toBe(false);
+    expect(root.children[0].frustumCulled).toBe(true);
+  });
+
+  it('draws no shadow map meanwhile: a hidden caster shown for it must not land in one', () => {
+    const { root } = scene();
+    const { renderer, seen } = offscreenRenderer();
+    renderer.shadowMap.needsUpdate = true;
+    uploadAll({ renderer, scene: root, camera: new THREE.PerspectiveCamera() });
+    expect(seen[0].shadowsFrozen).toBe(true);
+    expect(renderer.shadowMap.autoUpdate).toBe(true);
+    expect(renderer.shadowMap.needsUpdate).toBe(true);
+  });
+
+  it('copes with no renderer', () => {
+    expect(() => uploadAll({ renderer: null, scene: scene().root, camera: null })).not.toThrow();
   });
 });

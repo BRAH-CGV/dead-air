@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 import * as THREE from 'three';
 import { ASSETS, PRELOAD, validateManifest } from './manifest.js';
 import { resolveShape } from '../core/ColliderSpec.js';
@@ -117,6 +117,21 @@ describe('manifest', () => {
     expect(existsSync(resolve(ROOT, 'public', ASSETS['sfx:knocks'].url))).toBe(true);
     const credits = readFileSync(resolve(ROOT, 'ATTRIBUTIONS.md'), 'utf8');
     expect(credits).toMatch(/### Knocks — ⚠[\s\S]*?Speedenza[\s\S]*?`sfx:knocks`/);
+  });
+
+  it('ships no file under public/assets that the manifest does not name (#175)', () => {
+    // Everything in public/ is copied into the build, used or not: an
+    // unused download is megabytes on every grader's cold start.
+    const named = new Set(Object.values(ASSETS).map(entry => entry.url));
+    const onDisk = readdirSync(resolve(ROOT, 'public/assets'), { recursive: true, withFileTypes: true })
+      .filter(dirent => dirent.isFile())
+      .map(dirent => relative(resolve(ROOT, 'public'), resolve(dirent.parentPath, dirent.name)).split(sep).join('/'));
+    expect(onDisk.filter(url => !named.has(url))).toEqual([]);
+  });
+
+  it('points every entry at a file that exists', () => {
+    const missing = Object.entries(ASSETS).filter(([, entry]) => !existsSync(resolve(ROOT, 'public', entry.url)));
+    expect(missing.map(([key]) => key)).toEqual([]);
   });
 
   it('has no validation problems', () => {

@@ -11,7 +11,7 @@ import { LoadingScreen } from '../ui/LoadingScreen.js';
 import { ScreenFade } from '../ui/ScreenFade.js';
 import { ShadowScheduler } from './ShadowScheduler.js';
 import { FrameSettle } from './FrameSettle.js';
-import { warmUp, precompile } from './WarmUp.js';
+import { warmUp, precompile, uploadAll } from './WarmUp.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { PerfStats } from '../ui/PerfStats.js';
 import { mergePhysics, resolvePhysics } from './ColliderSpec.js';
@@ -33,6 +33,9 @@ import { createCJFigure } from '../gameobjects/CJFigure.js';
 // ─────────────────────────────────────────────
 // Engine  –  Initialisation & game loop
 // ─────────────────────────────────────────────
+
+/** No render cullers (the level editor is open). */
+const NO_CULLERS = Object.freeze([]);
 
 export class Engine {
   // ── Tunables ──────────────────────────────
@@ -79,6 +82,15 @@ export class Engine {
    *  `render()` (the security monitor's picture, FeedDisplay). They belong
    *  to the scene that added them: emptied on every scene load.
    *  @type {{ render(): void }[]} */ screenPasses = [];
+  /** Hide what the main view can't see just before it is drawn, and put it
+   *  back after (PortalCulling, #175). Put back as three starts its shadow
+   *  maps too, so a hidden thing still casts its shadow. Off while the level
+   *  editor is open. Emptied on every scene load.
+   *  @type {{ hide(camera: THREE.Camera): void, restore(): void }[]} */ renderCullers = [];
+  /** Run each frame just before the main view, its world matrices brought
+   *  up to date first: copying what moved into what draws it (the drives'
+   *  instances, DriveInstancer). Emptied on every scene load.
+   *  @type {{ update(): void }[]} */ beforeRender = [];
   /** @type {GameObject}   */ player;
   /** The player's controller — settings (sensitivity, crouch mode, …) are
    *  written onto it after every build.
@@ -269,6 +281,9 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // The frame resets info itself (_renderFrame), so the FPS readout counts
+    // the screen passes along with the main render rather than instead of it.
+    this.renderer.info.autoReset = false;
     this.renderer.shadowMap.enabled = true;
     // PCF, not PCFSoft: three r185 deprecates PCFSoft and swaps it for PCF on
     // the first shadow render — after the warm-up has compiled every lit
@@ -454,6 +469,8 @@ export class Engine {
     this._teardownScene();
     this.viewCamera = null;
     this.screenPasses = [];
+    this.renderCullers = [];
+    this.beforeRender = [];
 
     // ── Build the new one ──
     this.activeScene = new SceneClass(this, sceneOptions);
@@ -474,6 +491,12 @@ export class Engine {
 
     for (const listener of [...this._sceneLoadedListeners]) listener(this.activeScene);
 
+    // The scene's beforeRender hooks once now, its objects initialised: the
+    // drive instancer copies the drives' skin (applied as they init), so
+    // what compiles next is what draws (#175).
+    this.scene.updateMatrixWorld?.();
+    for (const hook of this.beforeRender) hook.update();
+
     // After the listeners: the settings they apply (shadows on or off) are
     // part of every lit shader's key.
     if (compile) {
@@ -493,6 +516,9 @@ export class Engine {
     // rebuild didn't, and the first red death after one (Ragno's, the evil
     // signal's) recompiled every lit material mid-lunge — a freeze.
     await this.postProcess?.preCompile?.(this.scene, this.camera);
+    // And everything drawn once, off screen: the buffers and textures
+    // uploaded now, not on the first sight of each room (#175).
+    uploadAll({ renderer: this.renderer, scene: this.scene, camera: this.camera });
   }
 
   /** Remove every Three.js object, Rapier body/collider, and bookkeeping
@@ -827,6 +853,51 @@ export class Engine {
   }
 
   /** Draw the frame and consume one-frame input — runs paused or not. */
+  /** Draw the main view through renderCamera, the render cullers hiding
+   *  what it can't see for the length of the draw. The console's
+   *  `drawcalls` draws through this too, so it counts what is really drawn. */
+  renderView() {
+    const camera = this.renderCamera;
+    const cullers = this.levelEditor?.enabled ? NO_CULLERS : this.renderCullers;
+    if (cullers.length === 0 && this.beforeRender.length === 0) {
+      this.renderer.render(this.scene, camera);
+      return;
+    }
+    // Both read world matrices, so bring them up to date here and spare
+    // three doing it again.
+    this.scene.updateMatrixWorld();
+    if (!camera.parent) camera.updateMatrixWorld?.();
+    for (const hook of this.beforeRender) hook.update();
+    this._restoreBeforeShadows();
+    for (const culler of cullers) culler.hide(camera);
+    const auto = this.scene.matrixWorldAutoUpdate;
+    this.scene.matrixWorldAutoUpdate = false;
+    try {
+      this.renderer.render(this.scene, camera);
+    } finally {
+      this.scene.matrixWorldAutoUpdate = auto;
+      for (const culler of cullers) culler.restore();
+    }
+  }
+
+  /** three lists what the main view draws, then draws its shadow maps,
+   *  then the list: put back what the cullers hid as the shadow maps begin,
+   *  so nothing is missing from a map redrawn this frame. The maps are then
+   *  drawn through the shadow scheduler, which leaves out of each what its
+   *  light can't see (#175). Wrapped once. */
+  _restoreBeforeShadows() {
+    const shadowMap = this.renderer.shadowMap;
+    if (!shadowMap || shadowMap._restoresCulled) return;
+    const original = shadowMap.render;
+    const draw = (...args) => original.apply(shadowMap, args);
+    shadowMap.render = (...args) => {
+      for (const culler of this.renderCullers) culler.restore();
+      if (typeof this.shadows?.renderMaps === 'function') return this.shadows.renderMaps(draw, ...args);
+      return draw(...args);
+    };
+    shadowMap._restoresCulled = true;
+  }
+
   _renderFrame(frameDt) {
     // ── Render ──
     this.physicsDebug?.update();
@@ -837,12 +908,16 @@ export class Engine {
     // The moving bodies too: a carried or knocked object's shadow follows it.
     this.shadows.update(this.rigidBodyMap);
     this.postProcess?.preRender();
-    this.renderer.render(this.scene, this.renderCamera);
+    // info counts the whole frame: reset once here, not by each render().
+    const info = this.renderer.info;
+    info?.reset?.();
+    this.renderView();
     this.postProcess?.postRender();
+    const beforeScreens = info?.render.calls ?? 0;
     for (const pass of this.screenPasses) pass.render();
-    // After render: renderer.info now holds this frame's totals, shadow
-    // passes included. No-op while the readout is hidden.
-    this.perfStats?.update(frameDt, this.renderer.info);
+    // info now holds this frame's totals, shadow and screen passes included.
+    // No-op while the readout is hidden.
+    if (info) this.perfStats?.update(frameDt, info, info.render.calls - beforeScreens);
 
     // Still behind the loading screen: reveal once the frames are smooth.
     if (this._settle?.push(frameDt)) {

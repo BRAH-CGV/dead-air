@@ -6,13 +6,13 @@ import { BODY_TYPES, AUTO_SHAPES, PART_TYPES } from '../core/ColliderSpec.js';
 // Nothing outside this file should hard-code an asset path. Ask the
 // AssetManager for a key instead:
 //
-//     engine.assets.instantiate('model:desk')
+//     engine.assets.instantiate('model:trash-bin')
 //     engine.assets.get('tex:floor-basecolor')
 //
 // ── Rules (these come straight from the deployment constraints) ──
 //   • Paths are relative to the site root and must NOT start with '/'.
-//     Files live in `public/`, so `public/assets/models/desk.glb` is written
-//     here as 'assets/models/desk.glb'.
+//     Files live in `public/`, so `public/assets/models/bed.glb` is written
+//     here as 'assets/models/bed.glb'.
 //   • Filenames must be lowercase and hyphen-separated — the LAMP server is
 //     case-sensitive, our dev machines usually are not. `validateManifest()`
 //     shouts in dev if you slip up.
@@ -155,11 +155,6 @@ const PLACED = {
     url: 'assets/models/tree-dead.glb',
     physics: 'static',
   },
-  'model:desk': {
-    type: 'model',
-    url: 'assets/models/desk.glb',
-    physics: 'static',
-  },
   'model:retro-computer': {
     type: 'model',
     url: 'assets/models/retro-computer.glb',
@@ -227,11 +222,6 @@ const PLACED = {
     url: 'assets/models/security-camera.glb',
     physics: 'static',
   },
-  'model:switchboard': {
-    type: 'model',
-    url: 'assets/models/switchboard.glb',
-    physics: 'static',
-  },
   'model:dish-tower': {
     type: 'model',
     url: 'assets/models/dish-tower.glb',
@@ -260,8 +250,8 @@ const PLACED = {
     physics: 'static',
   },
   // Office furniture; the chair is in the bedroom too. Scales take each
-  // download to real size: a 0.9 m chair, 0.5 m bin, 1.9 m shelf, 0.57 m
-  // extinguisher, 0.74 × 1 m poster.
+  // download to real size: a 0.9 m chair, 0.5 m bin, 1.9 m shelf, a
+  // 0.74 × 1 m poster.
   'model:metal-chair': {
     type: 'model',
     url: 'assets/models/metal-chair.glb',
@@ -484,13 +474,6 @@ const PLACED = {
         },
       ],
     },
-  },
-  'model:fire-extinguisher': {
-    type: 'model',
-    url: 'assets/models/fire-extinguisher.glb',
-    scale: 0.012,
-    origin: 'floor',
-    physics: 'static',
   },
   'model:poster': {
     type: 'model',
@@ -884,52 +867,15 @@ const PLACED = {
 /**
  * Sourced, attributed and ready, but not placed in a scene yet. These are
  * fetched on demand — `await assets.load(key)` or spawn them from the level
- * editor, which loads them for you. Preloading the lot would add ~73 MB to a
- * cold start for models nobody sees.
+ * editor, which loads them for you, so a model nobody sees never adds to a
+ * cold start. Empty for now: the downloads that were never placed were
+ * deleted (#175), since every file in public/ ships in the build.
  *
  * Moving one into a scene means moving its entry up into PLACED, so the two
  * lists never drift from what the game actually draws.
  * @type {Record<string, ModelEntry>}
  */
-const LIBRARY = {
-  'model:server-console': {
-    type: 'model',
-    url: 'assets/models/server-console.glb',
-    physics: 'static',
-  },
-  'model:server-rack-tall': {
-    type: 'model',
-    url: 'assets/models/server-rack-tall.glb',
-    physics: 'static',
-  },
-  'model:barrel': {
-    type: 'model',
-    url: 'assets/models/barrel.glb',
-    physics: 'static',
-  },
-  'model:bush': {
-    type: 'model',
-    url: 'assets/models/bush.glb',
-  },
-  'model:break-panel': {
-    type: 'model',
-    url: 'assets/models/break-panel.glb',
-    physics: 'static',
-  },
-  'model:door-interior': {
-    type: 'model',
-    url: 'assets/models/door-interior.glb',
-    physics: 'static',
-  },
-  'model:wall-light': {
-    type: 'model',
-    url: 'assets/models/wall-light.glb',
-  },
-  'model:wall-screen': {
-    type: 'model',
-    url: 'assets/models/wall-screen.glb',
-  },
-};
+const LIBRARY = {};
 
 /**
  * Heard every game, but fetched after the scene is up instead of behind the

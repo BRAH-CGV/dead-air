@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameObject } from '../core/GameObject.js';
 
 // ─────────────────────────────────────────────
@@ -27,6 +28,45 @@ function materials(resources) {
 }
 
 /**
+ * Pieces placed in one object's space, baked into one mesh per material and
+ * shadow setting: a draw call each, where every piece was one (#175).
+ */
+class Pieces {
+  _groups = new Map();
+  _place = new THREE.Object3D();
+  _templates = new Set();
+
+  /** @param {THREE.BufferGeometry} geometry  Copied where it goes; freed by bake() */
+  add(geometry, material, [x, y, z], { rotationX = 0, castShadow = false, receiveShadow = false } = {}) {
+    this._place.position.set(x, y, z);
+    this._place.rotation.set(rotationX, 0, 0);
+    this._place.updateMatrix();
+    const key = `${material.uuid}|${castShadow}|${receiveShadow}`;
+    if (!this._groups.has(key)) this._groups.set(key, { material, castShadow, receiveShadow, geometries: [] });
+    this._groups.get(key).geometries.push(geometry.clone().applyMatrix4(this._place.matrix));
+    this._templates.add(geometry);
+    return this;
+  }
+
+  /** One mesh per group under `parent`, its geometry in `resources`. */
+  bake(parent, resources, name) {
+    for (const { material, castShadow, receiveShadow, geometries } of this._groups.values()) {
+      const geometry = mergeGeometries(geometries);
+      for (const piece of geometries) piece.dispose();
+      resources.push(geometry);
+      const mesh = new THREE.Mesh(geometry, material);
+      if (name) mesh.name = name;
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = receiveShadow;
+      parent.add(mesh);
+    }
+    for (const template of this._templates) template.dispose();
+    this._groups.clear();
+    this._templates.clear();
+  }
+}
+
+/**
  * The hood outside: `depth` deep out of the wall, its open face at +z.
  * @returns {GameObject & { resources: Array<{ dispose(): void }> }}
  */
@@ -35,15 +75,8 @@ export function createVentHood({ width = 0.8, height = 0.55, depth = 0.45, name 
   const resources = [];
   const { steel, dark } = materials(resources);
   const t = 0.03;
-  const box = (w, h, d, x, y, z, mat) => {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    resources.push(geo);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-    return mesh;
-  };
+  const shell = new Pieces();
+  const box = (w, h, d, x, y, z, mat) => shell.add(new THREE.BoxGeometry(w, h, d), mat, [x, y, z], { receiveShadow: true });
   // The sleeve: top, bottom and sides, open at the face.
   box(width, t, depth, 0, height / 2, depth / 2, steel);
   box(width, t, depth, 0, -height / 2, depth / 2, steel);
@@ -53,27 +86,16 @@ export function createVentHood({ width = 0.8, height = 0.55, depth = 0.45, name 
   box(width - t, height - t, 0.02, 0, 0, depth * 0.25, dark);
   // A lip round the face.
   box(width + 0.08, 0.04, 0.04, 0, height / 2 + 0.02, depth, steel);
+  shell.bake(go.object3d, resources);
   // A grate across the mouth: upright bars and two cross rails, just in
-  // from the face.
-  const grate = new THREE.Group();
-  grate.name = 'VentGrate';
-  go.object3d.add(grate);
+  // from the face. A mesh of its own, so it can be found by name.
+  const grate = new Pieces();
   const bar = new THREE.CylinderGeometry(0.012, 0.012, height - t, 6);
   const rail = new THREE.BoxGeometry(width - t, 0.025, 0.02);
-  resources.push(bar, rail);
   const bars = 7, z = depth - 0.03;
-  for (let i = 1; i < bars; i++) {
-    const mesh = new THREE.Mesh(bar, steel);
-    mesh.position.set(-width / 2 + (width * i) / bars, 0, z);
-    mesh.receiveShadow = true;
-    grate.add(mesh);
-  }
-  for (const y of [-height / 4, height / 4]) {
-    const mesh = new THREE.Mesh(rail, steel);
-    mesh.position.set(0, y, z + 0.005);
-    mesh.receiveShadow = true;
-    grate.add(mesh);
-  }
+  for (let i = 1; i < bars; i++) grate.add(bar, steel, [-width / 2 + (width * i) / bars, 0, z], { receiveShadow: true });
+  for (const y of [-height / 4, height / 4]) grate.add(rail, steel, [0, y, z + 0.005], { receiveShadow: true });
+  grate.bake(go.object3d, resources, 'VentGrate');
   go.resources = resources;
   return go;
 }
@@ -86,27 +108,20 @@ export function createVentGrille({ width = 0.8, height = 0.55, slats = 6, name =
   const go = new GameObject(name);
   const resources = [];
   const { steel, dark } = materials(resources);
-  const add = (geo, mat, x, y, z) => {
-    resources.push(geo);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-  };
+  const pieces = new Pieces();
+  const add = (geo, mat, x, y, z) => pieces.add(geo, mat, [x, y, z], { receiveShadow: true });
   add(new THREE.PlaneGeometry(width, height), dark, 0, 0, 0.005);
   const f = 0.04;
   add(new THREE.BoxGeometry(width + f, f, 0.03), steel, 0, height / 2, 0.015);
   add(new THREE.BoxGeometry(width + f, f, 0.03), steel, 0, -height / 2, 0.015);
   add(new THREE.BoxGeometry(f, height, 0.03), steel, width / 2, 0, 0.015);
   add(new THREE.BoxGeometry(f, height, 0.03), steel, -width / 2, 0, 0.015);
+  // The slats take no shadow, as they never did.
   const slat = new THREE.BoxGeometry(width, 0.025, 0.02);
-  resources.push(slat);
   for (let i = 1; i < slats; i++) {
-    const mesh = new THREE.Mesh(slat, steel);
-    mesh.position.set(0, -height / 2 + (height * i) / slats, 0.02);
-    mesh.rotation.x = -0.5;
-    go.object3d.add(mesh);
+    pieces.add(slat, steel, [0, -height / 2 + (height * i) / slats, 0.02], { rotationX: -0.5 });
   }
+  pieces.bake(go.object3d, resources);
   go.resources = resources;
   return go;
 }
@@ -122,14 +137,9 @@ export function createCameraPole({ height = 3.6, name = 'CameraPole' } = {}) {
   const resources = [];
   const steel = new THREE.MeshStandardMaterial({ color: 0x4a4b48, roughness: 0.6, metalness: 0.65 });
   resources.push(steel);
-  const add = (geo, x, y, z, rx = 0) => {
-    resources.push(geo);
-    const mesh = new THREE.Mesh(geo, steel);
-    mesh.position.set(x, y, z);
-    mesh.rotation.x = rx;
-    mesh.castShadow = mesh.receiveShadow = true;
-    go.object3d.add(mesh);
-  };
+  const pieces = new Pieces();
+  const add = (geo, x, y, z, rotationX = 0) =>
+    pieces.add(geo, steel, [x, y, z], { rotationX, castShadow: true, receiveShadow: true });
   const radius = 0.06;
   const post = height + 0.2;
   add(new THREE.CylinderGeometry(radius, 0.08, post, 12), 0, post / 2, 0);
@@ -137,6 +147,7 @@ export function createCameraPole({ height = 3.6, name = 'CameraPole' } = {}) {
   add(new THREE.CylinderGeometry(radius + 0.015, radius + 0.015, 0.03, 12), 0, post + 0.015, 0);
   // A collar the bracket's plate sits on.
   add(new THREE.BoxGeometry(0.16, 0.2, 0.03), 0, height, radius + 0.005);
+  pieces.bake(go.object3d, resources);
   go.resources = resources;
   /** Where the camera's plate goes, in the pole's space: on the collar. */
   go.top = new THREE.Vector3(0, height, radius + 0.02);

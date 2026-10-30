@@ -256,6 +256,45 @@ describe('createCommands', () => {
       expect(engine.fullbright.active).toBe(false);
     });
 
+    it('drawcalls draws one frame and says where its draw calls come from (#175)', () => {
+      const room = new THREE.Group(); room.name = 'MainOffice';
+      const desk = new THREE.Mesh(); desk.name = 'Desk';
+      engine.scene = new THREE.Scene();
+      engine.scene.add(room); room.add(desk);
+      engine.renderCamera = new THREE.PerspectiveCamera();
+      engine.renderer = {
+        target: null,
+        getRenderTarget() { return this.target; },
+        renderBufferDirect: vi.fn(),
+        render(s) { this.renderBufferDirect(null, s, null, null, desk, null); this.renderBufferDirect(null, null, null, null, desk, null); },
+      };
+      engine.screenPasses = [{ render: () => {
+        engine.renderer.target = {};
+        engine.renderer.renderBufferDirect(null, engine.scene, null, null, desk, null);
+        engine.renderer.target = null;
+      } }];
+      engine.shadows = { invalidate: vi.fn() };
+
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const { ok, out } = run('drawcalls');
+      expect(ok).toBe(true);
+      expect(out[0]).toBe('3 draw calls: main 1, shadow maps 1, screen passes 1');
+      expect(out).toContain('  1  main    MainOffice');       // by room
+      expect(out).toContain('  1  main    MainOffice/Desk');  // then by prop
+      // The full list, a level deeper, for the browser's console (F12).
+      expect(log).toHaveBeenCalledOnce();
+      expect(log.mock.calls[0][0]).toContain('MainOffice/Desk');
+      log.mockRestore();
+      expect(engine.shadows.invalidate).not.toHaveBeenCalled();
+
+      run('drawcalls shadows');
+      expect(engine.shadows.invalidate).toHaveBeenCalledOnce();
+    });
+
+    it('drawcalls says so without a renderer', () => {
+      expect(run('drawcalls').ok).toBe(false);
+    });
+
     it('perf shows the readout, and fps is the same', () => {
       expect(run('perf').out).toEqual(['FPS readout on']);
       expect(engine.perfStats.show).toHaveBeenCalledOnce();

@@ -330,3 +330,106 @@ describe('ShadowScheduler', () => {
     });
   });
 });
+
+describe('ShadowScheduler, cheaper redraws (#175)', () => {
+  function body(root) {
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    mesh.castShadow = true;
+    group.add(mesh);
+    root.add(group);
+    root.updateMatrixWorld(true);
+    return { object3d: group };
+  }
+  const moved = (shadows, drive, bodies) => {
+    drive.object3d.position.x += 0.5;
+    shadows.update(bodies);
+  };
+
+  it('draws a dark light once when adopted, so its map exists', () => {
+    const { root, lamp } = scene();
+    lamp.intensity = 0;
+    new ShadowScheduler().adopt(root);
+    expect(lamp.shadow.needsUpdate).toBe(true);
+  });
+
+  it('leaves a dark light alone while a body moves, and redraws it as it comes on', () => {
+    const { root, moon, lamp } = scene();
+    const shadows = new ShadowScheduler();
+    shadows.adopt(root);
+    const drive = body(root);
+    const bodies = new Map([[1, drive]]);
+    shadows.update(bodies);
+    rendered(moon, lamp);
+
+    lamp.intensity = 0;
+    moved(shadows, drive, bodies);
+    expect(moon.shadow.needsUpdate).toBe(true);
+    expect(lamp.shadow.needsUpdate).toBe(false);
+    rendered(moon);
+
+    shadows.update(bodies);
+    expect(lamp.shadow.needsUpdate).toBe(false);   // still dark
+    lamp.intensity = 1;
+    shadows.update(bodies);
+    expect(lamp.shadow.needsUpdate).toBe(true);    // owed, now paid
+  });
+
+  it("redraws only the lights that can see a moving body (walls between, nothing in the map changes)", () => {
+    const { root, moon, lamp } = scene();
+    const shadows = new ShadowScheduler();
+    shadows.adopt(root);
+    const looks = [];
+    shadows.visibility = {
+      look: (eye) => looks.push(eye.clone()),
+      sees: () => looks.length && looks[looks.length - 1].y > 5,   // the moon's eye is high; the lamp's isn't
+    };
+    const drive = body(root);
+    const bodies = new Map([[1, drive]]);
+    shadows.update(bodies);
+    rendered(moon, lamp);
+
+    moved(shadows, drive, bodies);
+    expect(moon.shadow.needsUpdate).toBe(true);
+    expect(lamp.shadow.needsUpdate).toBe(false);
+  });
+
+  it('draws the maps due one light at a time, each without the casters that light cannot see', () => {
+    const { root, moon, lamp } = scene();
+    const shadows = new ShadowScheduler();
+    shadows.adopt(root);
+    const order = [];
+    shadows.visibility = {
+      look: (eye) => order.push(`look ${eye.y > 5 ? 'moon' : 'lamp'}`),
+      sees: () => true,
+      hideUnseenCasters: () => order.push('hide'),
+      restore: () => order.push('restore'),
+    };
+    const draw = () => {
+      order.push(`draw ${[moon, lamp].filter(l => l.shadow.needsUpdate).map(l => (l === moon ? 'moon' : 'lamp')).join('+')}`);
+      rendered(moon, lamp);
+    };
+    shadows.renderMaps(draw, [moon, lamp]);
+    expect(order).toEqual([
+      'look moon', 'hide', 'draw moon', 'restore',
+      'look lamp', 'hide', 'draw lamp', 'restore',
+    ]);
+    expect(moon.shadow.needsUpdate || lamp.shadow.needsUpdate).toBe(false);
+  });
+
+  it('without visibility, or with nothing due, draws as three would', () => {
+    const { root, moon, lamp } = scene();
+    const shadows = new ShadowScheduler();
+    shadows.adopt(root);
+    let calls = 0;
+    shadows.renderMaps(() => { calls++; rendered(moon, lamp); }, [moon, lamp]);
+    expect(calls).toBe(1);
+  });
+
+  it('release() forgets the visibility', () => {
+    const shadows = new ShadowScheduler();
+    shadows.visibility = { look() {}, sees: () => true };
+    shadows.release();
+    expect(shadows.visibility).toBeNull();
+  });
+});

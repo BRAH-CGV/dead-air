@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GameObject } from '../core/GameObject.js';
 import { Component } from '../core/Component.js';
 
@@ -105,19 +106,26 @@ export class WallClock extends GameObject {
     face.position.z = depth + 0.001;
     root.add(face);
 
-    // Hour marks, one shared geometry and material; 12, 3, 6 and 9 longer.
+    // Hour marks, 12, 3, 6 and 9 longer: twelve boxes baked into one
+    // geometry, one draw call rather than twelve (#175).
     const markMaterial = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.6 });
     const shortMark    = new THREE.BoxGeometry(radius * 0.04, radius * 0.1, 0.004);
     const longMark     = new THREE.BoxGeometry(radius * 0.06, radius * 0.18, 0.004);
+    const place = new THREE.Object3D();
+    const placed = [];
     for (let i = 0; i < 12; i++) {
       const long = i % 3 === 0;
-      const mark = new THREE.Mesh(long ? longMark : shortMark, markMaterial);
       const angle = (i / 12) * TWO_PI;
       const r = radius * (long ? 0.72 : 0.76);
-      mark.position.set(Math.sin(angle) * r, Math.cos(angle) * r, depth + 0.003);
-      mark.rotation.z = -angle;
-      root.add(mark);
+      place.position.set(Math.sin(angle) * r, Math.cos(angle) * r, depth + 0.003);
+      place.rotation.z = -angle;
+      place.updateMatrix();
+      placed.push((long ? longMark : shortMark).clone().applyMatrix4(place.matrix));
     }
+    const marks = new THREE.Mesh(mergeGeometries(placed), markMaterial);
+    marks.name = 'ClockMarks';
+    root.add(marks);
+    for (const geometry of [...placed, shortMark, longMark]) geometry.dispose();
 
     const handMaterial = new THREE.MeshStandardMaterial({ color: 0x101214, roughness: 0.5 });
     this.hourHand   = this._hand('HourHand',   radius * 0.5,  radius * 0.07, depth + 0.006, handMaterial);
